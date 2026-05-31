@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:ui';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,40 +11,28 @@ class AppConfig {
   static const supabaseAnonKey =
       'sb_publishable_fBvBBFqJMlIOm1I3d5Oy-w_AbBGuJKH';
 
-  // Password reset links must go to the FlutLab PREVIEW app, not the editor
-  // and not localhost. This exact URL is now in Supabase Auth URL Configuration.
+  // Auth links must go to the FlutLab PREVIEW app, not the editor
+  // and not localhost. Add this preview URL to Supabase Auth URL Configuration.
   static const flutLabPreviewUrl =
       'https://preview.flutlab.io/ricardo_ferguson/farm/';
 
   static const passwordResetUrl =
       'https://preview.flutlab.io/ricardo_ferguson/farm/?resetPassword=true';
 
+  static const emailConfirmationUrl =
+      'https://preview.flutlab.io/ricardo_ferguson/farm/?emailConfirmation=true';
+
   static String? get passwordResetRedirectTo {
     if (!kIsWeb) return null;
     return passwordResetUrl;
   }
 
-  static String? get passwordRecoveryCode {
+  static String? get emailConfirmationRedirectTo {
     if (!kIsWeb) return null;
-
-    try {
-      final href = Uri.base.toString();
-      final uri = Uri.tryParse(href);
-      final queryCode = uri?.queryParameters['code'];
-      if (queryCode != null && queryCode.trim().isNotEmpty) {
-        return queryCode.trim();
-      }
-
-      final match = RegExp(r'(?:[?#&])code=([^&#]+)').firstMatch(href);
-      final rawCode = match?.group(1);
-      if (rawCode == null || rawCode.trim().isEmpty) return null;
-      return Uri.decodeComponent(rawCode.trim());
-    } catch (_) {
-      return null;
-    }
+    return emailConfirmationUrl;
   }
 
-  static Map<String, String> get passwordRecoveryParams {
+  static Map<String, String> get authCallbackParams {
     final params = <String, String>{};
 
     void addParams(String raw) {
@@ -65,43 +52,139 @@ class AppConfig {
     return params;
   }
 
+  static Map<String, String> get passwordRecoveryParams {
+    return authCallbackParams;
+  }
+
+  static String? get authCallbackCode {
+    if (!kIsWeb) return null;
+
+    try {
+      final href = Uri.base.toString();
+      final uri = Uri.tryParse(href);
+      final queryCode = uri?.queryParameters['code'];
+      if (queryCode != null && queryCode.trim().isNotEmpty) {
+        return queryCode.trim();
+      }
+
+      final paramsCode = authCallbackParams['code'];
+      if (paramsCode != null && paramsCode.trim().isNotEmpty) {
+        return paramsCode.trim();
+      }
+
+      final match = RegExp(r'(?:[?#&])code=([^&#]+)').firstMatch(href);
+      final rawCode = match?.group(1);
+      if (rawCode == null || rawCode.trim().isEmpty) return null;
+      return Uri.decodeComponent(rawCode.trim());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? get passwordRecoveryCode {
+    if (!_hasPasswordRecoveryMarker) return null;
+    return authCallbackCode;
+  }
+
+  static String? get emailConfirmationCode {
+    if (!_hasEmailConfirmationMarker) return null;
+    return authCallbackCode;
+  }
+
   static String? get passwordRecoveryAccessToken {
-    final token = passwordRecoveryParams['access_token'];
+    if (!_hasPasswordRecoveryMarker) return null;
+    final token = authCallbackParams['access_token'];
     if (token == null || token.trim().isEmpty) return null;
     return token.trim();
   }
 
   static String? get passwordRecoveryRefreshToken {
-    final token = passwordRecoveryParams['refresh_token'];
+    if (!_hasPasswordRecoveryMarker) return null;
+    final token = authCallbackParams['refresh_token'];
     if (token == null || token.trim().isEmpty) return null;
     return token.trim();
+  }
+
+  static String? get emailConfirmationAccessToken {
+    if (!_hasEmailConfirmationMarker) return null;
+    final token = authCallbackParams['access_token'];
+    if (token == null || token.trim().isEmpty) return null;
+    return token.trim();
+  }
+
+  static String? get emailConfirmationRefreshToken {
+    if (!_hasEmailConfirmationMarker) return null;
+    final token = authCallbackParams['refresh_token'];
+    if (token == null || token.trim().isEmpty) return null;
+    return token.trim();
+  }
+
+  static bool get _hasPasswordRecoveryMarker {
+    if (!kIsWeb) return false;
+
+    final href = Uri.base.toString().toLowerCase();
+    final type = (authCallbackParams['type'] ?? '').trim().toLowerCase();
+
+    return href.contains('resetpassword=true') ||
+        type == 'recovery' ||
+        href.contains('type=recovery');
+  }
+
+  static bool get _hasEmailConfirmationMarker {
+    if (!kIsWeb) return false;
+
+    final href = Uri.base.toString().toLowerCase();
+    final type = (authCallbackParams['type'] ?? '').trim().toLowerCase();
+
+    return href.contains('emailconfirmation=true') ||
+        type == 'signup' ||
+        type == 'email' ||
+        type == 'email_change' ||
+        href.contains('type=signup') ||
+        href.contains('type=email') ||
+        href.contains('type=email_change');
   }
 
   static bool get hasPasswordRecoveryCallback {
     if (!kIsWeb) return false;
 
-    final href = Uri.base.toString().toLowerCase();
-    final hash = Uri.base.fragment.toLowerCase();
-    final search = Uri.base.query.toLowerCase();
-
     // Supabase may redirect password reset links in PKCE format:
-    // https://your-app/?code=...
+    // https://your-app/?resetPassword=true&code=...
     // It may also return access/refresh tokens in the URL hash.
-    // Those values must create a session before updateUser(password) works.
-    return href.contains('resetpassword=true') ||
-        passwordRecoveryCode != null ||
-        passwordRecoveryRefreshToken != null ||
-        href.contains('type=recovery') ||
-        hash.contains('type=recovery') ||
-        search.contains('type=recovery');
+    // Do not treat every code=... URL as a password reset because signup
+    // confirmation links also use code=....
+    return _hasPasswordRecoveryMarker &&
+        (authCallbackCode != null ||
+            passwordRecoveryRefreshToken != null ||
+            Uri.base.toString().toLowerCase().contains('resetpassword=true'));
   }
 
-  static void cleanPasswordRecoveryUrl() {
+  static bool get hasEmailConfirmationCallback {
+    if (!kIsWeb) return false;
+
+    return _hasEmailConfirmationMarker &&
+        (authCallbackCode != null ||
+            emailConfirmationRefreshToken != null ||
+            Uri.base
+                .toString()
+                .toLowerCase()
+                .contains('emailconfirmation=true'));
+  }
+
+  static void cleanAuthCallbackUrl() {
     if (!kIsWeb) return;
 
     try {
-      SystemNavigator.routeInformationUpdated(location: '/', replace: true);
+      final cleanPath = Uri.base.path.trim().isEmpty ? '/' : Uri.base.path;
+      SystemNavigator.routeInformationUpdated(
+        location: cleanPath,
+        replace: true,
+      );
     } catch (_) {}
+  }
+
+  static void cleanPasswordRecoveryUrl() {
+    cleanAuthCallbackUrl();
   }
 }
 
@@ -481,7 +564,7 @@ String formatPaymentStatus(String value) {
 String formatPaymentMethod(String value) {
   switch (value.trim()) {
     case 'cash_on_pickup':
-      return 'Cash on Pickup';
+      return 'Pay when you collect';
     case 'cash_on_delivery':
       return 'Cash on Delivery';
     case 'bank_transfer':
@@ -489,7 +572,7 @@ String formatPaymentMethod(String value) {
     case 'stripe_card':
       return 'Card';
     default:
-      return 'Payment on collection';
+      return 'Pay when you collect';
   }
 }
 
@@ -621,26 +704,8 @@ String shortProductDate(DateTime? date) {
   return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 }
 
-String safeStorageFileName(String value) {
-  final clean = value
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
-      .replaceAll(RegExp(r'^-+|-+$'), '');
-
-  return clean.isEmpty ? 'product' : clean;
-}
-
-Future<String?> pickAndUploadProductImage({required String productName}) async {
-  // Android builds cannot import browser-only dart:html APIs.
-  // Keep this function safe for Google Play builds; product image upload
-  // remains unavailable outside the web editor/preview environment.
-  throw Exception('Image upload is currently enabled for the web preview.');
-}
-
 Widget productImagePreviewFromUrl({
   required String? imageUrl,
-  required String fallbackIcon,
   double height = 130,
 }) {
   final cleanUrl = cleanHostedImageUrl(imageUrl);
@@ -652,9 +717,14 @@ Widget productImagePreviewFromUrl({
       decoration: BoxDecoration(
         color: FarmColors.cardSoft,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FarmColors.line),
       ),
-      child: Center(
-        child: Text(fallbackIcon, style: const TextStyle(fontSize: 48)),
+      child: const Center(
+        child: Icon(
+          Icons.image_outlined,
+          size: 44,
+          color: FarmColors.mutedText,
+        ),
       ),
     );
   }
@@ -803,7 +873,7 @@ Future<SecureCartQuote> fetchSecureCartQuote(List<CartLine> lines) async {
   final response = await supabase
       .from('products')
       .select(
-          'id, name, price, stock_quantity, is_available, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent')
+          'id, name, price, stock_quantity, is_available, approval_status, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent')
       .inFilter('id', ids);
 
   final rowsById = <String, Map<String, dynamic>>{};
@@ -825,8 +895,23 @@ Future<SecureCartQuote> fetchSecureCartQuote(List<CartLine> lines) async {
     final stock = serverProduct.stockQuantity;
     final serverPrice = serverProduct.effectivePrice;
 
-    if (!isAvailable || stock <= 0) {
-      throw Exception('${line.product.name} is not available for checkout.');
+    if (serverProduct.approvalStatus.trim().toLowerCase() != 'approved') {
+      throw Exception(
+          '${line.product.name} is not available for checkout yet.');
+    }
+
+    if (serverProduct.isHidden || !serverProduct.isAvailable) {
+      throw Exception(
+          '${line.product.name} is no longer available in the shop.');
+    }
+
+    if (serverProduct.isReadySoon) {
+      throw Exception(
+          '${line.product.name} is harvesting soon and cannot be checked out yet.');
+    }
+
+    if (stock <= 0) {
+      throw Exception('${line.product.name} is out of stock.');
     }
 
     if (line.quantity > stock) {
@@ -1056,71 +1141,9 @@ Future<List<ProductTraceRecord>> fetchTraceRecordsForProductName(
   }
 }
 
-String _traceSlug(String value) {
-  final cleaned = value
-      .trim()
-      .toUpperCase()
-      .replaceAll(RegExp(r'[^A-Z0-9]+'), '-')
-      .replaceAll(RegExp(r'^-+|-+$'), '');
-
-  if (cleaned.isEmpty) return 'ITEM';
-
-  final parts = cleaned
-      .split('-')
-      .where((part) => part.trim().isNotEmpty)
-      .take(3)
-      .toList();
-
-  return parts.isEmpty ? 'ITEM' : parts.join('-');
-}
-
-String _nonEmptyTraceValue(String value, String fallback) {
-  final clean = value.trim();
-  return clean.isEmpty ? fallback : clean;
-}
-
-ProductTraceRecord generatedTraceRecordForProduct(Product product) {
-  final productCode = _traceSlug(product.name);
-  final idCode = _traceSlug(product.id);
-  final uniqueCode = idCode == 'ITEM' ? productCode : idCode;
-
-  final farmName = (product.farmName ?? '').trim();
-  final farmerName = (product.farmerName ?? '').trim();
-  final parish = (product.parish ?? '').trim();
-
-  final location = [
-    if (farmName.isNotEmpty) farmName,
-    if (parish.isNotEmpty) parish,
-  ].join(' • ');
-
-  return ProductTraceRecord(
-    id: 'generated-trace-${product.id.isEmpty ? productCode : product.id}',
-    traceCode: 'NHM-$productCode-$uniqueCode',
-    productName: product.name,
-    farmLocation:
-        location.isEmpty ? 'The Harvest Place Ja partner farm' : location,
-    harvestDate: 'Available item profile',
-    harvestTime: '',
-    farmerName: farmerName.isEmpty ? 'The Harvest Place Ja farmer' : farmerName,
-    farmingMethod: product.category.toLowerCase().contains('egg')
-        ? 'Naturally raised / farm fresh'
-        : 'Naturally grown / farm fresh',
-    batchNotes:
-        'General item tracker shown for every product. Add a row in product_trace_records for this product to show exact batch harvest details.',
-    qrScanCount: 0,
-  );
-}
-
-bool isGeneratedTraceRecord(ProductTraceRecord record) {
-  return record.id.startsWith('generated-trace-');
-}
-
 Future<List<ProductTraceRecord>> traceRecordsForProduct(Product product) async {
-  final records = await fetchTraceRecordsForProductName(product.name);
-  if (records.isEmpty) {
-    return [generatedTraceRecordForProduct(product)];
-  }
-  return records;
+  // Only return real trace records from Supabase. Generated profiles must not look verified.
+  return fetchTraceRecordsForProductName(product.name);
 }
 
 Future<List<ProductTraceRecord>> fetchAllProductTraceRecords() async {
@@ -1150,15 +1173,6 @@ class ProductTraceOverviewItem {
     required this.product,
     required this.records,
   });
-
-  ProductTraceRecord get primaryRecord {
-    if (records.isEmpty) return generatedTraceRecordForProduct(product);
-    return records.first;
-  }
-
-  bool get hasVerifiedBatch {
-    return records.any((record) => !isGeneratedTraceRecord(record));
-  }
 }
 
 Future<List<ProductTraceOverviewItem>>
@@ -1166,7 +1180,7 @@ Future<List<ProductTraceOverviewItem>>
   final products = await fetchProducts();
   final traceRecords = await fetchAllProductTraceRecords();
 
-  final visibleProducts = products.isEmpty ? fallbackProducts : products;
+  final visibleProducts = products;
 
   return visibleProducts.map((product) {
     final productName = product.name.trim().toLowerCase();
@@ -1183,8 +1197,7 @@ Future<List<ProductTraceOverviewItem>>
 
     return ProductTraceOverviewItem(
       product: product,
-      records:
-          matches.isEmpty ? [generatedTraceRecordForProduct(product)] : matches,
+      records: matches,
     );
   }).toList();
 }
@@ -1238,7 +1251,6 @@ class Product {
   final String id;
   final String name;
   final double price;
-  final String icon;
   final String category;
   final String? description;
   final String? unit;
@@ -1274,7 +1286,6 @@ class Product {
     required this.id,
     required this.name,
     required this.price,
-    required this.icon,
     required this.category,
     this.description,
     this.unit,
@@ -1394,7 +1405,7 @@ class Product {
     if (estimatedReadyDate != null) {
       return 'Available from ${shortProductDate(estimatedReadyDate)}';
     }
-    if (isReadySoon) return 'Ready soon';
+    if (isReadySoon) return 'Harvesting soon';
     return 'Notify me when available';
   }
 
@@ -1416,7 +1427,6 @@ class Product {
       id: (data['id'] ?? '').toString(),
       name: name,
       price: _toDouble(data['price']),
-      icon: _emojiForProduct(name, categoryName),
       category: categoryName,
       description: data['description']?.toString(),
       unit: data['unit']?.toString(),
@@ -1464,22 +1474,6 @@ class Product {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '0') ?? 0;
-  }
-
-  static String _emojiForProduct(String name, String category) {
-    final text = '$name $category'.toLowerCase();
-
-    if (text.contains('lettuce')) return '';
-    if (text.contains('callaloo')) return '';
-    if (text.contains('corn')) return '';
-    if (text.contains('okra')) return '';
-    if (text.contains('pumpkin')) return '';
-    if (text.contains('pepper')) return '';
-    if (text.contains('egg')) return '';
-    if (text.contains('honey')) return '';
-    if (text.contains('fruit')) return '';
-    if (text.contains('herb')) return '';
-    return '🥬';
   }
 }
 
@@ -1577,7 +1571,7 @@ class ProductTrustBadges extends StatelessWidget {
       if (product.isReadySoon)
         badge(
           icon: Icons.schedule_outlined,
-          label: 'Ready Soon',
+          label: 'Harvesting Soon',
           color: FarmColors.warning,
         ),
       if (product.showAsDealOfDay)
@@ -1700,81 +1694,6 @@ class FreshnessScoreCard extends StatelessWidget {
   }
 }
 
-final List<Product> fallbackProducts = [
-  const Product(
-    id: '1',
-    name: 'Lettuce',
-    price: 2.50,
-    icon: '🥬',
-    category: 'Vegetables',
-    stockQuantity: 50,
-    isAvailable: true,
-  ),
-  const Product(
-    id: '2',
-    name: 'Callaloo',
-    price: 2.00,
-    icon: '🌿',
-    category: 'Vegetables',
-    stockQuantity: 50,
-    isAvailable: true,
-  ),
-  const Product(
-    id: '3',
-    name: 'Sweet Corn',
-    price: 1.50,
-    icon: '🌽',
-    category: 'Vegetables',
-    stockQuantity: 50,
-    isAvailable: true,
-  ),
-  const Product(
-    id: '4',
-    name: 'Okra',
-    price: 2.00,
-    icon: '🥒',
-    category: 'Vegetables',
-    stockQuantity: 50,
-    isAvailable: true,
-  ),
-  const Product(
-    id: '5',
-    name: 'Pumpkin',
-    price: 2.50,
-    icon: '🎃',
-    category: 'Vegetables',
-    stockQuantity: 50,
-    isAvailable: true,
-  ),
-  const Product(
-    id: '6',
-    name: 'Bell Pepper',
-    price: 2.50,
-    icon: '🫑',
-    category: 'Vegetables',
-    stockQuantity: 50,
-    isAvailable: true,
-  ),
-  const Product(
-    id: '7',
-    name: 'Eggs',
-    price: 6.00,
-    icon: '🥚',
-    category: 'Eggs',
-    stockQuantity: 30,
-    isAvailable: true,
-  ),
-  const Product(
-    id: '8',
-    name: 'Honey',
-    price: 8.00,
-    icon: '🍯',
-    category: 'Honey',
-    stockQuantity: 20,
-    isAvailable: true,
-  ),
-];
-
 final supabase = Supabase.instance.client;
 
 String friendlyAppError(Object error) {
@@ -1792,6 +1711,47 @@ String friendlyAppError(Object error) {
     return 'This action is not available for your account yet.';
   }
   return text.replaceAll('Exception: ', '').trim();
+}
+
+String friendlyAuthErrorMessage(
+  AuthException error, {
+  required bool isRegister,
+}) {
+  final message = error.message.trim();
+  final lower = message.toLowerCase();
+
+  if (lower.contains('invalid login credentials') ||
+      lower.contains('invalid credentials') ||
+      lower.contains('invalid email or password')) {
+    return 'Email or password is incorrect. Use Forgot Password to reset this account, then try again.';
+  }
+
+  if (lower.contains('email not confirmed') ||
+      lower.contains('confirm your email')) {
+    return 'Please confirm this email address before signing in.';
+  }
+
+  if (lower.contains('rate limit') ||
+      lower.contains('over_email_send_rate_limit') ||
+      lower.contains('too many')) {
+    return 'Too many attempts. Please wait a few minutes, then try again.';
+  }
+
+  if (lower.contains('network') ||
+      lower.contains('failed host lookup') ||
+      lower.contains('socketexception')) {
+    return 'Connection problem. Please check your internet and try again.';
+  }
+
+  if (message.isNotEmpty) {
+    return isRegister
+        ? 'Could not create account: $message'
+        : 'Could not sign in: $message';
+  }
+
+  return isRegister
+      ? 'Could not create account. Please check your details and try again.'
+      : 'Could not sign in. Please check your email and password.';
 }
 
 class FarmDataCache {
@@ -1984,25 +1944,22 @@ Future<List<Product>> _fetchProductsUncached() async {
 
     return (response as List)
         .map((item) => Product.fromSupabase(Map<String, dynamic>.from(item)))
-        .where((product) =>
-            product.approvalStatus == 'approved' &&
-            !product.isReadySoon &&
-            !product.isHidden)
+        .where(isVisibleCustomerProduct)
         .toList();
   }
 
   try {
     final products = await runQuery(extendedSelect);
-    return products.isEmpty ? fallbackProducts : products;
+    return products;
   } catch (error) {
     debugPrint(
         'Extended product fetch unavailable, using compatible fetch: $error');
     try {
       final products = await runQuery(compatibleSelect);
-      return products.isEmpty ? fallbackProducts : products;
+      return products;
     } catch (compatibleError) {
       debugPrint('Failed to fetch products: $compatibleError');
-      return fallbackProducts;
+      return const <Product>[];
     }
   }
 }
@@ -2134,9 +2091,7 @@ Future<List<Product>> _fetchDealOfTheDayProductsUncached() async {
     final products = (response as List)
         .map((item) => Product.fromSupabase(Map<String, dynamic>.from(item)))
         .where((product) =>
-            product.approvalStatus == 'approved' &&
-            !product.isHidden &&
-            product.canAddToCart &&
+            isVisibleCustomerProduct(product) &&
             (product.showAsDealOfDay || product.hasActiveDiscount))
         .toList();
 
@@ -3428,7 +3383,7 @@ Future<List<Product>> fetchAllProducts() async {
       return await runQuery(compatibleSelect);
     } catch (compatibleError) {
       debugPrint('Failed to fetch all products: $compatibleError');
-      return fallbackProducts;
+      return const <Product>[];
     }
   }
 }
@@ -3681,16 +3636,27 @@ Future<Map<String, int>> fetchProductStockByIds(List<String> productIds) async {
 
   final response = await supabase
       .from('products')
-      .select('id, stock_quantity, is_available')
+      .select(
+          'id, stock_quantity, is_available, approval_status, product_status, ready_soon')
       .inFilter('id', ids);
 
   final stock = <String, int>{};
   for (final item in response as List) {
     final data = Map<String, dynamic>.from(item as Map);
+    final status =
+        (data['product_status'] ?? 'available').toString().trim().toLowerCase();
+    final approvalStatus =
+        (data['approval_status'] ?? 'approved').toString().trim().toLowerCase();
     final isAvailable =
         data['is_available'] == null ? true : data['is_available'] == true;
+    final isReadySoon = data['ready_soon'] == true || status == 'ready_soon';
+    final isHidden = status == 'hidden';
+    final isApproved = approvalStatus == 'approved';
+    final canCustomerBuy =
+        isApproved && isAvailable && !isHidden && !isReadySoon;
+
     stock[(data['id'] ?? '').toString()] =
-        isAvailable ? Product._toInt(data['stock_quantity']) : 0;
+        canCustomerBuy ? Product._toInt(data['stock_quantity']) : 0;
   }
   return stock;
 }
@@ -3729,6 +3695,55 @@ Future<void> reduceStockForOrder(String orderId) async {
     final cleanMessage = error.toString().replaceFirst('Exception: ', '');
     debugPrint('Server-side stock reduction failed: $cleanMessage');
     throw Exception(cleanMessage);
+  }
+}
+
+Future<void> ensureStockReducedAfterCheckout({
+  required String orderId,
+  required List<SecureCartLineQuote> checkoutLines,
+}) async {
+  final cleanLines = checkoutLines
+      .where((line) => line.product.id.trim().isNotEmpty && line.quantity > 0)
+      .toList();
+  if (cleanLines.isEmpty) return;
+
+  final productIds = cleanLines.map((line) => line.product.id).toList();
+
+  try {
+    final currentStockById = await fetchProductStockByIds(productIds);
+    var looksAlreadyReduced = false;
+    var looksUnchanged = false;
+
+    for (final line in cleanLines) {
+      final currentStock = currentStockById[line.product.id];
+      if (currentStock == null) continue;
+
+      final expectedAfterCheckout = line.availableStock - line.quantity;
+      if (currentStock <= expectedAfterCheckout) {
+        looksAlreadyReduced = true;
+      } else if (currentStock >= line.availableStock) {
+        looksUnchanged = true;
+      }
+    }
+
+    // secure_checkout / secure_checkout_with_coupon should reduce stock inside
+    // the database transaction. If stock is already lower, do not call the
+    // legacy reducer because that could double-reduce inventory.
+    if (!looksUnchanged || looksAlreadyReduced) {
+      FarmDataCache.clearProducts();
+      return;
+    }
+
+    // Fallback for older database setups where checkout creates the order but
+    // does not reduce product stock. The RPC should be server-side and
+    // idempotent because stock changes must stay protected from race conditions.
+    await reduceStockForOrder(orderId);
+    FarmDataCache.clearProducts();
+  } catch (error) {
+    debugPrint('Post-checkout stock sync failed: $error');
+    throw Exception(
+      'Your order was created, but stock could not be updated. Please contact support before placing this order again.',
+    );
   }
 }
 
@@ -3804,29 +3819,59 @@ Future<bool> isCurrentUserAdminFromDatabase() async {
   final user = supabase.auth.currentUser;
   if (user == null) return false;
 
+  Object? userIdCheckError;
+  Object? idCheckError;
+  Object? emailCheckError;
+
   try {
-    // Preferred secure schema: admin_users.id is the auth.users.id value.
+    // Preferred secure schema: admin_users.user_id references auth.users(id).
+    final response = await supabase
+        .from('admin_users')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (response != null) return true;
+  } catch (error) {
+    userIdCheckError = error;
+  }
+
+  try {
+    // Compatible secure schema: admin_users.id is the auth.users.id value.
     final response = await supabase
         .from('admin_users')
         .select('id')
         .eq('id', user.id)
         .maybeSingle();
 
-    return response != null;
-  } catch (firstError) {
+    if (response != null) return true;
+  } catch (error) {
+    idCheckError = error;
+  }
+
+  final email = user.email?.trim().toLowerCase();
+  if (email != null && email.isNotEmpty) {
     try {
-      // Compatible secure schema: admin_users.user_id references auth.users(id).
+      // Optional compatible schema: admin_users.email stores approved admins.
+      // This helps when the auth user was recreated and the auth.users(id)
+      // changed, but the admin email row still exists.
       final response = await supabase
           .from('admin_users')
-          .select('user_id')
-          .eq('user_id', user.id)
+          .select('email')
+          .ilike('email', email)
           .maybeSingle();
-      return response != null;
-    } catch (secondError) {
-      debugPrint('Admin check failed: $firstError / $secondError');
-      return false;
+
+      if (response != null) return true;
+    } catch (error) {
+      emailCheckError = error;
     }
   }
+
+  debugPrint(
+    'Admin check failed for ${user.email ?? user.id}: '
+    '$userIdCheckError / $idCheckError / $emailCheckError',
+  );
+  return false;
 }
 
 Future<bool> isCurrentUserFarmerFromDatabase() async {
@@ -4819,12 +4864,16 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  // If the app opens from a Supabase reset link, show the password screen
-  // immediately. Flutter web still loads the same app page, so the app must
-  // route this URL internally instead of waiting for a separate web page.
-  bool hasEnteredMarket = AppConfig.hasPasswordRecoveryCallback;
+  // Supabase auth links open the same Flutter web app page. The app must
+  // route password-reset links and signup confirmation links internally.
+  bool hasEnteredMarket = AppConfig.hasPasswordRecoveryCallback ||
+      AppConfig.hasEmailConfirmationCallback ||
+      isLoggedIn;
   bool isPasswordRecovery = AppConfig.hasPasswordRecoveryCallback;
+  bool isEmailConfirmation = AppConfig.hasEmailConfirmationCallback;
   String? passwordRecoveryError;
+  String? emailConfirmationError;
+  String? emailConfirmationMessage;
   late final StreamSubscription<AuthState> _authSubscription;
 
   @override
@@ -4837,6 +4886,7 @@ class _AuthGateState extends State<AuthGate> {
       if (data.event == AuthChangeEvent.passwordRecovery) {
         setState(() {
           isPasswordRecovery = true;
+          isEmailConfirmation = false;
           hasEnteredMarket = true;
           passwordRecoveryError = null;
         });
@@ -4851,10 +4901,15 @@ class _AuthGateState extends State<AuthGate> {
         if (!mounted) return;
         setState(() {
           isPasswordRecovery = true;
+          isEmailConfirmation = false;
           hasEnteredMarket = true;
           passwordRecoveryError = null;
         });
       });
+    }
+
+    if (AppConfig.hasEmailConfirmationCallback) {
+      unawaited(_prepareEmailConfirmationSession());
     }
   }
 
@@ -4864,12 +4919,71 @@ class _AuthGateState extends State<AuthGate> {
     super.dispose();
   }
 
-  void enterMarket() {
-    if (!mounted) return;
-    unawaited(_enterMarketAsGuest());
+  Future<void> _prepareEmailConfirmationSession() async {
+    if (!AppConfig.hasEmailConfirmationCallback) return;
+
+    if (mounted) {
+      setState(() {
+        isEmailConfirmation = true;
+        isPasswordRecovery = false;
+        hasEnteredMarket = true;
+        emailConfirmationError = null;
+        emailConfirmationMessage = null;
+      });
+    }
+
+    try {
+      final code = AppConfig.emailConfirmationCode;
+      final refreshToken = AppConfig.emailConfirmationRefreshToken;
+      final accessToken = AppConfig.emailConfirmationAccessToken;
+      final currentSession = supabase.auth.currentSession;
+
+      if (code != null && code.isNotEmpty) {
+        await supabase.auth.exchangeCodeForSession(code);
+      } else if (refreshToken != null && refreshToken.isNotEmpty) {
+        if (accessToken != null && accessToken.isNotEmpty) {
+          await supabase.auth.setSession(
+            refreshToken,
+            accessToken: accessToken,
+          );
+        } else {
+          await supabase.auth.setSession(refreshToken);
+        }
+      } else if (currentSession == null) {
+        throw Exception(
+          'Open the newest email confirmation link. This link is missing the confirmation code.',
+        );
+      }
+
+      FarmDataCache.clearAll();
+      AppConfig.cleanAuthCallbackUrl();
+
+      if (!mounted) return;
+      setState(() {
+        isEmailConfirmation = false;
+        hasEnteredMarket = true;
+        emailConfirmationError = null;
+        emailConfirmationMessage =
+            'Email confirmed. You can continue shopping.';
+      });
+    } catch (error) {
+      AppConfig.cleanAuthCallbackUrl();
+
+      if (!mounted) return;
+      setState(() {
+        isEmailConfirmation = false;
+        hasEnteredMarket = false;
+        emailConfirmationError = friendlyAppError(error);
+      });
+    }
   }
 
-  Future<void> _enterMarketAsGuest() async {
+  void enterMarket() {
+    if (!mounted) return;
+    setState(() => hasEnteredMarket = true);
+  }
+
+  Future<void> enterMarketAsGuest() async {
     await clearPrivateSessionStateForGuestBrowsing();
     if (!mounted) return;
     setState(() => hasEnteredMarket = true);
@@ -4894,6 +5008,10 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (isEmailConfirmation) {
+      return const EmailConfirmationProgressScreen();
+    }
+
     // This is the important fix: the password reset URL is not a separate
     // physical web page. When the URL contains resetPassword=true, code=..., or
     // recovery tokens, show UpdatePasswordScreen before the splash/landing page.
@@ -4908,6 +5026,28 @@ class _AuthGateState extends State<AuthGate> {
           });
         },
       );
+    }
+
+    if (emailConfirmationMessage != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || emailConfirmationMessage == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(emailConfirmationMessage!)),
+        );
+        emailConfirmationMessage = null;
+      });
+    }
+
+    if (emailConfirmationError != null && !hasEnteredMarket) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || emailConfirmationError == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text('Email confirmation error: $emailConfirmationError')),
+        );
+        emailConfirmationError = null;
+      });
     }
 
     if (passwordRecoveryError != null && !hasEnteredMarket) {
@@ -4935,6 +5075,48 @@ class _AuthGateState extends State<AuthGate> {
   }
 }
 
+class EmailConfirmationProgressScreen extends StatelessWidget {
+  const EmailConfirmationProgressScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      body: SafeArea(
+        child: Center(
+          child: FarmCard(
+            margin: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 18),
+                const Text(
+                  'Confirming your email',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Please wait while we finish setting up your account.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PublicLandingScreen extends StatelessWidget {
   final VoidCallback onEnterMarket;
   final VoidCallback onAuth;
@@ -4959,9 +5141,10 @@ class PublicLandingScreen extends StatelessWidget {
                 'lib/assets/images/logo.png',
                 height: 106,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Text(
-                  '🌿',
-                  style: TextStyle(fontSize: 76),
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.eco_outlined,
+                  size: 76,
+                  color: FarmColors.primary,
                 ),
               ),
             ),
@@ -4987,22 +5170,7 @@ class PublicLandingScreen extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 12),
-            TextButton.icon(
-              icon: const Icon(Icons.menu_book_outlined),
-              label: const Text('Explore the Vegan Ingredient Book'),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => VeganIngredientBookScreen(
-                      onShopTap: onEnterMarket,
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 26),
             FarmCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -5577,9 +5745,10 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
                 'lib/assets/images/logo.png',
                 height: 88,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Text(
-                  '🌿',
-                  style: TextStyle(fontSize: 64),
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.eco_outlined,
+                  size: 64,
+                  color: FarmColors.primary,
                 ),
               ),
             ),
@@ -5728,11 +5897,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> submit() async {
-    final email = emailController.text.trim();
-    final password = passwordController.text.trim();
+    final email = emailController.text.trim().toLowerCase();
+    final password = passwordController.text;
     final fullName = fullNameController.text.trim();
 
-    if (email.isEmpty || password.isEmpty || (isRegister && fullName.isEmpty)) {
+    if (email.isEmpty ||
+        password.trim().isEmpty ||
+        (isRegister && fullName.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please complete all required fields.')),
       );
@@ -5742,19 +5913,38 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => loading = true);
     try {
       if (isRegister) {
-        await supabase.auth.signUp(
+        final response = await supabase.auth.signUp(
           email: email,
           password: password,
+          emailRedirectTo: AppConfig.emailConfirmationRedirectTo,
           data: {
             'full_name': fullName,
             'role': selectedRole,
           },
         );
+
+        FarmDataCache.clearAll();
+
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+
+        if (response.session == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
               content: Text(
-                  'Account created. You are signed in, or check your email if confirmation is enabled.')),
+                'Account created. Please check your email and tap the confirmation link before signing in.',
+              ),
+            ),
+          );
+
+          setState(() {
+            isRegister = false;
+            passwordController.clear();
+          });
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account created. You are signed in.')),
         );
 
         if (widget.returnToPrevious) {
@@ -5771,6 +5961,8 @@ class _LoginScreenState extends State<LoginScreen> {
           password: password,
         );
 
+        FarmDataCache.clearAll();
+
         if (!mounted) return;
         if (widget.returnToPrevious) {
           Navigator.of(context).pop(true);
@@ -5781,12 +5973,27 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       }
+    } on AuthException catch (error) {
+      if (!mounted) return;
+
+      debugPrint('Supabase auth error: ${error.message}');
+
+      final message = friendlyAuthErrorMessage(
+        error,
+        isRegister: isRegister,
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     } catch (error) {
       if (!mounted) return;
 
+      debugPrint('Unexpected auth error: $error');
+
       final message = isRegister
           ? 'Could not create account. Please check your details and try again.'
-          : 'Invalid password.';
+          : 'Could not sign in. Please check your email and password.';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
@@ -5973,41 +6180,7 @@ class AccountScreen extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           const LoyaltySummaryCard(),
-          const SizedBox(height: 18),
-          FarmCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Notifications',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Enable browser notifications for order confirmations and farm updates on this device.',
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.notifications_active_outlined),
-                  label: const Text('Enable Notifications'),
-                  onPressed: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    final allowed = await requestBrowserNotifications();
-                    await saveNotificationPreference(enabled: allowed);
-                    messenger.showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          allowed
-                              ? 'Notifications enabled on this device.'
-                              : 'Notifications were not enabled.',
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
+          // Browser notification UI is hidden until browser notifications are fully implemented.
           const SizedBox(height: 18),
           FarmCard(
             child: Column(
@@ -6053,18 +6226,7 @@ class AccountScreen extends StatelessWidget {
                         );
                       },
                     ),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text('AI Assistant'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AIShoppingAssistantScreen(),
-                          ),
-                        );
-                      },
-                    ),
+                    // AI Assistant entry point hidden until it provides full production value.
                     OutlinedButton.icon(
                       icon: const Icon(Icons.card_giftcard),
                       label: const Text('Rewards'),
@@ -6077,20 +6239,7 @@ class AccountScreen extends StatelessWidget {
                         );
                       },
                     ),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.menu_book_outlined),
-                      label: const Text('Vegan Ingredient Book'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => VeganIngredientBookScreen(
-                              onShopTap: onShopTap,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                    // Vegan Ingredient Book entry point hidden to keep the account tools focused.
                     if (showAdmin)
                       OutlinedButton.icon(
                         icon: const Icon(Icons.admin_panel_settings_outlined),
@@ -6555,7 +6704,6 @@ class FarmerProductsScreen extends StatelessWidget {
     bool readySoon = false;
     bool isDealOfDay = false;
     bool subscribeSaveEnabled = false;
-    bool uploadingImage = false;
 
     await showModalBottomSheet(
       context: context,
@@ -6774,7 +6922,6 @@ class FarmerProductsScreen extends StatelessWidget {
                             const SizedBox(height: 10),
                             productImagePreviewFromUrl(
                               imageUrl: imageController.text,
-                              fallbackIcon: '🥬',
                             ),
                             const SizedBox(height: 10),
                             TextField(
@@ -6783,7 +6930,7 @@ class FarmerProductsScreen extends StatelessWidget {
                               decoration: const InputDecoration(
                                 labelText: 'Image URL',
                                 helperText:
-                                    'Paste a URL or upload an image from this device.',
+                                    'Paste a hosted image URL from Supabase Storage or another trusted source.',
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -6791,77 +6938,13 @@ class FarmerProductsScreen extends StatelessWidget {
                               spacing: 8,
                               runSpacing: 8,
                               children: [
-                                OutlinedButton.icon(
-                                  icon: uploadingImage
-                                      ? const SizedBox(
-                                          height: 16,
-                                          width: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.upload_file_outlined),
-                                  label: Text(uploadingImage
-                                      ? 'Uploading...'
-                                      : 'Upload Image'),
-                                  onPressed: uploadingImage
-                                      ? null
-                                      : () async {
-                                          final messenger =
-                                              ScaffoldMessenger.of(context);
-                                          setSheetState(
-                                              () => uploadingImage = true);
-                                          try {
-                                            final uploadedUrl =
-                                                await pickAndUploadProductImage(
-                                              productName: nameController.text
-                                                      .trim()
-                                                      .isEmpty
-                                                  ? 'farmer-product'
-                                                  : nameController.text.trim(),
-                                            );
-
-                                            if (uploadedUrl != null &&
-                                                uploadedUrl.isNotEmpty) {
-                                              imageController.text =
-                                                  uploadedUrl;
-                                              setSheetState(() {});
-                                              messenger.showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Image uploaded successfully.',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                          } catch (error) {
-                                            messenger.showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  error.toString().replaceFirst(
-                                                        'Exception: ',
-                                                        '',
-                                                      ),
-                                                ),
-                                              ),
-                                            );
-                                          } finally {
-                                            if (sheetContext.mounted) {
-                                              setSheetState(
-                                                  () => uploadingImage = false);
-                                            }
-                                          }
-                                        },
-                                ),
                                 TextButton.icon(
                                   icon: const Icon(Icons.clear),
                                   label: const Text('Clear Image'),
-                                  onPressed: uploadingImage
-                                      ? null
-                                      : () {
-                                          imageController.clear();
-                                          setSheetState(() {});
-                                        },
+                                  onPressed: () {
+                                    imageController.clear();
+                                    setSheetState(() {});
+                                  },
                                 ),
                               ],
                             ),
@@ -7421,6 +7504,8 @@ class _MainNavigationState extends State<MainNavigation> {
   int get accountTabIndex => showAdmin ? 5 : 4;
 
   int selectedIndex = 0;
+  String selectedShopCategory = 'All';
+  int shopCategorySelectionVersion = 0;
   final List<Product> cart = [];
   final Set<String> favoriteProductIds = <String>{};
   final Map<String, Product> favoriteProductCache = <String, Product>{};
@@ -7506,7 +7591,12 @@ class _MainNavigationState extends State<MainNavigation> {
               inventoryRefreshDebounce = Timer(
                 AppPerformanceConfig.realtimeDebounce,
                 () {
-                  if (mounted) setState(() {});
+                  FarmDataCache.clearProducts();
+                  if (mounted) {
+                    setState(() {
+                      authViewVersion++;
+                    });
+                  }
                 },
               );
             },
@@ -7537,6 +7627,52 @@ class _MainNavigationState extends State<MainNavigation> {
 
   void persistCart() {
     OfflineCartStore.save(cart);
+  }
+
+  void refreshInventoryViews() {
+    FarmDataCache.clearProducts();
+    FarmDataCache.clearOrders();
+    unawaited(reconcileCartWithServerStock());
+    if (!mounted) return;
+    setState(() {
+      authViewVersion++;
+    });
+  }
+
+  Future<void> reconcileCartWithServerStock() async {
+    if (cart.isEmpty) return;
+
+    try {
+      final stockById = await fetchProductStockByIds(
+        cart.map((product) => product.id).toList(),
+      );
+      final usedById = <String, int>{};
+      final updatedCart = <Product>[];
+      var changed = false;
+
+      for (final product in cart) {
+        final id = product.id.trim();
+        final availableStock = stockById[id] ?? 0;
+        final used = usedById[id] ?? 0;
+        if (availableStock > used) {
+          updatedCart.add(product);
+          usedById[id] = used + 1;
+        } else {
+          changed = true;
+        }
+      }
+
+      if (!changed || !mounted) return;
+      setState(() {
+        cart
+          ..clear()
+          ..addAll(updatedCart);
+        persistCart();
+        authViewVersion++;
+      });
+    } catch (error) {
+      debugPrint('Cart stock reconciliation skipped: $error');
+    }
   }
 
   int quantityForProduct(Product product) {
@@ -7623,10 +7759,6 @@ class _MainNavigationState extends State<MainNavigation> {
       cart.add(product);
       persistCart();
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${product.name} added to cart')),
-    );
   }
 
   void decreaseProductQuantity(Product product) {
@@ -7679,14 +7811,19 @@ class _MainNavigationState extends State<MainNavigation> {
           body: FarmBoxScreen(
             cart: cart,
             onRemoveFromCart: removeFromCart,
+            onAddToCart: increaseProductQuantity,
             onOrderPlaced: () {
               if (!mounted) return;
               setState(() {
                 cart.clear();
                 persistCart();
+                FarmDataCache.clearProducts();
+                FarmDataCache.clearOrders();
+                authViewVersion++;
                 selectedIndex = ordersTabIndex;
               });
             },
+            onInventoryChanged: refreshInventoryViews,
           ),
         ),
       ),
@@ -7701,15 +7838,39 @@ class _MainNavigationState extends State<MainNavigation> {
       );
     }
 
-    final goToShop = () {
+    void goToShop({String? category}) {
       if (!mounted) return;
-      setState(() => selectedIndex = shopTabIndex);
-    };
+
+      final cleanCategory = category?.trim();
+      setState(() {
+        if (cleanCategory != null && cleanCategory.isNotEmpty) {
+          selectedShopCategory = normalizeProductCategory(cleanCategory);
+          shopCategorySelectionVersion++;
+        }
+        selectedIndex = shopTabIndex;
+      });
+    }
+
+    final goToShopHome = () => goToShop();
+
+    void goToMyBoxFromProductDetail() {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      if (!mounted) return;
+      setState(() {
+        selectedIndex = myBoxTabIndex;
+      });
+    }
+
+    void goToCheckoutFromProductDetail() {
+      // Keep the existing safe checkout path by taking the customer to My Box first.
+      goToMyBoxFromProductDetail();
+    }
 
     final pages = <Widget>[
       HomeScreen(
         key: ValueKey('home-$authViewKey'),
-        onShopTap: goToShop,
+        onShopTap: goToShopHome,
+        onCategoryTap: (category) => goToShop(category: category),
         onCartTap: openFloatingCart,
         cartItemCount: cartItemCount,
         recentlyViewedProducts: recentlyViewedProducts,
@@ -7718,8 +7879,11 @@ class _MainNavigationState extends State<MainNavigation> {
         onRemoveFromCart: decreaseProductQuantity,
         quantityForProduct: quantityForProduct,
         onViewed: trackRecentlyViewed,
+        onViewMyBox: goToMyBoxFromProductDetail,
+        onCheckout: goToCheckoutFromProductDetail,
       ),
       ShopScreen(
+        key: ValueKey('shop-$authViewKey'),
         onAddToCart: increaseProductQuantity,
         onRemoveFromCart: decreaseProductQuantity,
         quantityForProduct: quantityForProduct,
@@ -7727,19 +7891,27 @@ class _MainNavigationState extends State<MainNavigation> {
         onToggleFavorite: toggleFavorite,
         onViewed: trackRecentlyViewed,
         recentlyViewedProducts: recentlyViewedProducts,
+        initialCategory: selectedShopCategory,
+        categorySelectionVersion: shopCategorySelectionVersion,
+        onViewMyBox: goToMyBoxFromProductDetail,
+        onCheckout: goToCheckoutFromProductDetail,
       ),
       FarmBoxScreen(
         cart: cart,
         onRemoveFromCart: removeFromCart,
+        onAddToCart: increaseProductQuantity,
         onOrderPlaced: () {
           if (!mounted) return;
           setState(() {
             cart.clear();
             persistCart();
+            FarmDataCache.clearProducts();
             FarmDataCache.clearOrders();
+            authViewVersion++;
             selectedIndex = ordersTabIndex;
           });
         },
+        onInventoryChanged: refreshInventoryViews,
       ),
       OrdersScreen(key: ValueKey('orders-$authViewKey')),
       if (showAdmin)
@@ -7752,7 +7924,7 @@ class _MainNavigationState extends State<MainNavigation> {
       AccountScreen(
         favoriteProducts: favoriteProducts,
         recentlyViewedProducts: recentlyViewedProducts,
-        onShopTap: goToShop,
+        onShopTap: goToShopHome,
         showAdmin: showAdmin,
         onSignedOut: () {
           if (!mounted) return;
@@ -8707,84 +8879,86 @@ class _InsightPill extends StatelessWidget {
   }
 }
 
-class PersonalizedPromotionCard extends StatelessWidget {
-  final Future<CustomerProfile?> profileFuture;
-  final Future<LoyaltySummary> loyaltyFuture;
-  final List<Product> buyAgainProducts;
-  final List<Product> recommendedProducts;
-  final VoidCallback onShopTap;
+class PopularCategorySummary {
+  final String name;
+  final int availableItemCount;
+  final Product previewProduct;
 
-  const PersonalizedPromotionCard({
-    super.key,
-    required this.profileFuture,
-    required this.loyaltyFuture,
-    required this.buyAgainProducts,
-    required this.recommendedProducts,
-    required this.onShopTap,
+  const PopularCategorySummary({
+    required this.name,
+    required this.availableItemCount,
+    required this.previewProduct,
   });
+}
 
-  @override
-  Widget build(BuildContext context) {
-    return FarmCard(
-      padding: EdgeInsets.zero,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onShopTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Welcome back!',
-                      style: TextStyle(
-                        color: FarmColors.deepGreen,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Browse fresh picks and personalized deals we think you’ll love.',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 12.5,
-                        height: 1.25,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                height: 52,
-                width: 52,
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.favorite_rounded,
-                  color: FarmColors.deepGreen,
-                  size: 24,
-                ),
-              ),
-            ],
+IconData categoryIconForName(String category) {
+  final lower = category.trim().toLowerCase();
+
+  if (lower.contains('vegetable')) return Icons.eco_outlined;
+  if (lower.contains('fruit')) return Icons.spa_outlined;
+  if (lower.contains('ground')) return Icons.grass_outlined;
+  if (lower.contains('herb')) return Icons.local_florist_outlined;
+  if (lower.contains('egg')) return Icons.egg_alt_outlined;
+  if (lower.contains('honey')) return Icons.water_drop_outlined;
+  if (lower.contains('dairy')) return Icons.local_drink_outlined;
+  if (lower.contains('drink')) return Icons.local_cafe_outlined;
+  if (lower.contains('prepared')) return Icons.restaurant_menu_outlined;
+
+  return Icons.category_outlined;
+}
+
+List<PopularCategorySummary> buildPopularCategorySummaries(
+  List<Product> products,
+) {
+  final grouped = <String, List<Product>>{};
+  final seenProductIds = <String>{};
+
+  for (final product in products) {
+    final id = product.id.trim();
+    if (id.isNotEmpty && !seenProductIds.add(id)) continue;
+    if (!isVisibleCustomerProduct(product)) continue;
+
+    final category = normalizeProductCategory(product.category);
+    grouped.putIfAbsent(category, () => <Product>[]).add(product);
+  }
+
+  final summaries = grouped.entries
+      .where((entry) => entry.value.isNotEmpty)
+      .map(
+        (entry) => PopularCategorySummary(
+          name: entry.key,
+          availableItemCount: entry.value.length,
+          previewProduct: entry.value.firstWhere(
+            (product) => cleanHostedImageUrl(product.imageUrl) != null,
+            orElse: () => entry.value.first,
           ),
         ),
-      ),
+      )
+      .toList();
+
+  int categoryOrder(String category) {
+    final index = productCategoryOptions.indexWhere(
+      (option) => option.toLowerCase() == category.toLowerCase(),
     );
+    return index == -1 ? productCategoryOptions.length : index;
   }
+
+  summaries.sort((a, b) {
+    final countCompare = b.availableItemCount.compareTo(a.availableItemCount);
+    if (countCompare != 0) return countCompare;
+
+    final orderCompare = categoryOrder(a.name).compareTo(categoryOrder(b.name));
+    if (orderCompare != 0) return orderCompare;
+
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+
+  return summaries.take(8).toList();
 }
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onShopTap;
+  final ValueChanged<String> onCategoryTap;
   final VoidCallback onCartTap;
   final int cartItemCount;
   final List<Product> recentlyViewedProducts;
@@ -8793,10 +8967,13 @@ class HomeScreen extends StatefulWidget {
   final void Function(Product product) onRemoveFromCart;
   final int Function(Product product) quantityForProduct;
   final void Function(Product product) onViewed;
+  final VoidCallback onViewMyBox;
+  final VoidCallback onCheckout;
 
   const HomeScreen({
     super.key,
     required this.onShopTap,
+    required this.onCategoryTap,
     required this.onCartTap,
     required this.cartItemCount,
     this.recentlyViewedProducts = const [],
@@ -8805,6 +8982,8 @@ class HomeScreen extends StatefulWidget {
     required this.onRemoveFromCart,
     required this.quantityForProduct,
     required this.onViewed,
+    required this.onViewMyBox,
+    required this.onCheckout,
   });
 
   @override
@@ -8816,7 +8995,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Product>> buyAgainProductsFuture;
   late Future<CustomerProfile?> customerProfileFuture;
   late Future<LoyaltySummary> loyaltySummaryFuture;
-  List<Product> cachedHomeProducts = fallbackProducts;
+  List<Product> cachedHomeProducts = const <Product>[];
 
   @override
   void initState() {
@@ -8829,7 +9008,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<List<Product>> loadHomeProducts() async {
     final products = await fetchProducts(forceRefresh: true);
-    final visible = products.isEmpty ? fallbackProducts : products;
+    final visible = products;
 
     visible.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
@@ -8862,6 +9041,8 @@ class _HomeScreenState extends State<HomeScreen> {
           onRemove: () => widget.onRemoveFromCart(product),
           onAddProduct: widget.onAddToCart,
           onViewed: widget.onViewed,
+          onViewMyBox: widget.onViewMyBox,
+          onCheckout: widget.onCheckout,
         ),
       ),
     );
@@ -8876,7 +9057,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (visible.isEmpty) {
       return const FarmCard(
         child: Text(
-          'No products available yet. Add approved products with image URLs to show them here.',
+          'No fresh products are available right now. Please check back soon.',
         ),
       );
     }
@@ -8996,6 +9177,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 buyAgainProducts: buyAgainProducts,
                 favoriteProducts: widget.favoriteProducts,
               );
+              final popularCategories = buildPopularCategorySummaries(products);
 
               return ListView(
                 padding: const EdgeInsets.all(18),
@@ -9006,10 +9188,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onCartTap: widget.onCartTap,
                     cartItemCount: widget.cartItemCount,
                   ),
-                  const SizedBox(height: 14),
-                  PersonalizedLoyaltyCard(
-                    loyaltyFuture: loyaltySummaryFuture,
-                  ),
+
                   const SizedBox(height: 14),
                   PersonalizedHomeHeroLoader(
                     profileFuture: customerProfileFuture,
@@ -9020,13 +9199,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     recentlyViewedProducts: cleanRecentlyViewed,
                     onShopTap: widget.onShopTap,
                   ),
-                  const SizedBox(height: 14),
-                  PersonalizedPromotionCard(
-                    profileFuture: customerProfileFuture,
+                  const SizedBox(height: 18),
+                  PersonalizedLoyaltyCard(
                     loyaltyFuture: loyaltySummaryFuture,
-                    buyAgainProducts: buyAgainProducts,
-                    recommendedProducts: recommendedProducts,
-                    onShopTap: widget.onShopTap,
                   ),
                   if (!snapshot.hasError && recommendedProducts.isNotEmpty) ...[
                     const SizedBox(height: 18),
@@ -9046,37 +9221,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   DealOfTheDaySection(
                     onViewed: widget.onViewed,
                     onAddProduct: widget.onAddToCart,
+                    onViewMyBox: widget.onViewMyBox,
+                    onCheckout: widget.onCheckout,
                   ),
                   ReadySoonHomeSection(onViewed: widget.onViewed),
-                  const SizedBox(height: 14),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        TextButton.icon(
-                          icon: const Icon(Icons.menu_book_outlined),
-                          label: const Text('Vegan Ingredient Book'),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => VeganIngredientBookScreen(
-                                  onShopTap: widget.onShopTap,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
+                  // Vegan Ingredient Book entry point hidden to keep the home page shopping-focused.
                   const SizedBox(height: 18),
                   Row(
                     children: [
                       Expanded(
-                        child: SectionTitle('Recently Harvested'),
+                        child: SectionTitle('Fresh Products'),
                       ),
                       TextButton(
                         onPressed: widget.onShopTap,
@@ -9151,28 +9305,30 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: widget.onShopTap,
                     ),
                   ],
-                  const SizedBox(height: 20),
-                  const SectionTitle('Popular Categories'),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: const [
-                      CategoryPill(icon: '', label: 'Vegetables'),
-                      CategoryPill(icon: '', label: 'Fruits'),
-                      CategoryPill(icon: '', label: 'Eggs'),
-                      CategoryPill(icon: '', label: 'Herbs'),
-                      CategoryPill(icon: '', label: 'Honey'),
-                    ]
-                        .map(
-                          (pill) => InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: widget.onShopTap,
-                            child: pill,
-                          ),
-                        )
-                        .toList(),
-                  ),
+                  if (popularCategories.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    SectionHeader(
+                      title: 'Popular Categories',
+                      subtitle:
+                          'Shop categories with fresh items available now',
+                      actionLabel: 'View shop',
+                      onAction: widget.onShopTap,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: popularCategories.map((category) {
+                        return CategoryPill(
+                          previewProduct: category.previewProduct,
+                          fallbackIcon: categoryIconForName(category.name),
+                          label: category.name,
+                          count: category.availableItemCount,
+                          onTap: () => widget.onCategoryTap(category.name),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ],
               );
             },
@@ -9208,7 +9364,7 @@ class VeganIngredient {
 const List<VeganIngredient> veganIngredients = [
   VeganIngredient(
     name: 'Callaloo',
-    emoji: '🌿',
+    emoji: '',
     category: 'Leafy Greens',
     description:
         'A Jamaican leafy green that works beautifully in soups, sautés, patties, and breakfast bowls.',
@@ -9222,7 +9378,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
   VeganIngredient(
     name: 'Lettuce',
-    emoji: '🥬',
+    emoji: '',
     category: 'Salad Greens',
     description:
         'A crisp, hydrating base for salads, wraps, sandwiches, and light plant-based meals.',
@@ -9236,7 +9392,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
   VeganIngredient(
     name: 'Sweet Corn',
-    emoji: '🌽',
+    emoji: '',
     category: 'Whole Food Carbs',
     description:
         'Naturally sweet, filling, and great for hearty vegan bowls, soups, and side dishes.',
@@ -9250,7 +9406,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
   VeganIngredient(
     name: 'Okra',
-    emoji: '🥒',
+    emoji: '',
     category: 'Vegetables',
     description:
         'A tender pod vegetable often used in stews, soups, and Caribbean-inspired vegan meals.',
@@ -9264,7 +9420,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
   VeganIngredient(
     name: 'Pumpkin',
-    emoji: '🎃',
+    emoji: '',
     category: 'Squash',
     description:
         'A hearty, naturally sweet ingredient for soups, stews, curries, and vegan baking.',
@@ -9278,7 +9434,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
   VeganIngredient(
     name: 'Bell Pepper',
-    emoji: '🫑',
+    emoji: '',
     category: 'Color Vegetables',
     description:
         'A colorful vegetable that adds sweetness, crunch, and freshness to vegan dishes.',
@@ -9292,7 +9448,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
   VeganIngredient(
     name: 'Fresh Herbs',
-    emoji: '🌱',
+    emoji: '',
     category: 'Herbs',
     description:
         'Herbs add flavor without relying on heavy sauces, salt, or processed seasonings.',
@@ -9306,7 +9462,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
   VeganIngredient(
     name: 'Fruit',
-    emoji: '🍎',
+    emoji: '',
     category: 'Fruit',
     description:
         'Fresh fruit is perfect for snacks, smoothies, breakfast bowls, and naturally sweet desserts.',
@@ -9320,6 +9476,7 @@ const List<VeganIngredient> veganIngredients = [
   ),
 ];
 
+// Hidden from navigation pending future recipe/content strategy.
 class VeganIngredientBookScreen extends StatefulWidget {
   final VoidCallback onShopTap;
 
@@ -9404,7 +9561,7 @@ class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
               ),
               child: const Row(
                 children: [
-                  Text('🥗', style: TextStyle(fontSize: 54)),
+                  Icon(Icons.eco_outlined, size: 54, color: Colors.white),
                   SizedBox(width: 16),
                   Expanded(
                     child: Column(
@@ -9540,9 +9697,12 @@ class VeganIngredientCard extends StatelessWidget {
                   color: FarmColors.lightGreen,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Center(
-                  child: Text(ingredient.emoji,
-                      style: const TextStyle(fontSize: 36)),
+                child: const Center(
+                  child: Icon(
+                    Icons.local_florist_outlined,
+                    size: 34,
+                    color: FarmColors.green,
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -9670,6 +9830,10 @@ class ShopScreen extends StatefulWidget {
   final void Function(Product product) onToggleFavorite;
   final void Function(Product product) onViewed;
   final List<Product> recentlyViewedProducts;
+  final String initialCategory;
+  final int categorySelectionVersion;
+  final VoidCallback onViewMyBox;
+  final VoidCallback onCheckout;
 
   const ShopScreen({
     super.key,
@@ -9680,6 +9844,10 @@ class ShopScreen extends StatefulWidget {
     required this.onToggleFavorite,
     required this.onViewed,
     this.recentlyViewedProducts = const [],
+    this.initialCategory = 'All',
+    this.categorySelectionVersion = 0,
+    required this.onViewMyBox,
+    required this.onCheckout,
   });
 
   @override
@@ -9688,8 +9856,8 @@ class ShopScreen extends StatefulWidget {
 
 class _ShopScreenState extends State<ShopScreen> {
   final searchController = TextEditingController();
-  String selectedCategory = 'All';
-  List<Product> products = fallbackProducts;
+  late String selectedCategory;
+  List<Product> products = const <Product>[];
   List<Product> readySoonProducts = const [];
   List<Product> buyAgainProducts = const [];
   bool loadingProducts = true;
@@ -9699,6 +9867,7 @@ class _ShopScreenState extends State<ShopScreen> {
   @override
   void initState() {
     super.initState();
+    selectedCategory = normalizeProductCategory(widget.initialCategory);
     searchController.addListener(() {
       searchDebounce?.cancel();
       searchDebounce = Timer(AppPerformanceConfig.debounce, () {
@@ -9706,6 +9875,21 @@ class _ShopScreenState extends State<ShopScreen> {
       });
     });
     loadProducts();
+  }
+
+  @override
+  void didUpdateWidget(covariant ShopScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.categorySelectionVersion != oldWidget.categorySelectionVersion) {
+      final nextCategory = normalizeProductCategory(widget.initialCategory);
+      if (selectedCategory != nextCategory) {
+        setState(() {
+          selectedCategory = nextCategory;
+          searchController.clear();
+        });
+      }
+    }
   }
 
   @override
@@ -9744,7 +9928,7 @@ class _ShopScreenState extends State<ShopScreen> {
 
       if (!mounted) return;
       setState(() {
-        products = cleanProducts.isEmpty ? fallbackProducts : cleanProducts;
+        products = cleanProducts;
         readySoonProducts = cleanReadySoon;
         buyAgainProducts = uniqueVisibleProducts(fetchedBuyAgain, limit: 10);
         loadingProducts = false;
@@ -9753,10 +9937,10 @@ class _ShopScreenState extends State<ShopScreen> {
       debugPrint('Shop product load failed: $error');
       if (!mounted) return;
       setState(() {
-        products = fallbackProducts;
+        products = const <Product>[];
         loadingProducts = false;
         productLoadMessage =
-            'Using sample products while the shop refreshes. Pull refresh to try again.';
+            'No fresh products are available right now. Please check back soon.';
       });
     }
   }
@@ -9946,6 +10130,8 @@ class _ShopScreenState extends State<ShopScreen> {
                   onRemove: () => widget.onRemoveFromCart(product),
                   onAddProduct: widget.onAddToCart,
                   onViewed: widget.onViewed,
+                  onViewMyBox: widget.onViewMyBox,
+                  onCheckout: widget.onCheckout,
                 ),
               ),
             );
@@ -9957,6 +10143,8 @@ class _ShopScreenState extends State<ShopScreen> {
         DealOfTheDaySection(
           onViewed: widget.onViewed,
           onAddProduct: widget.onAddToCart,
+          onViewMyBox: widget.onViewMyBox,
+          onCheckout: widget.onCheckout,
           compact: true,
         ),
         const SizedBox(height: 18),
@@ -9998,7 +10186,7 @@ class _ShopScreenState extends State<ShopScreen> {
                 const SizedBox(height: 10),
                 Text(
                   activeCategory == 'All'
-                      ? 'No products match your search.'
+                      ? 'No products match your search. Try another category or clear the search.'
                       : 'No items are currently available in $activeCategory. Try another category or refresh the shop.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
@@ -10034,6 +10222,8 @@ class _ShopScreenState extends State<ShopScreen> {
                     onRemove: () => widget.onRemoveFromCart(product),
                     onAddProduct: widget.onAddToCart,
                     onViewed: widget.onViewed,
+                    onViewMyBox: widget.onViewMyBox,
+                    onCheckout: widget.onCheckout,
                   ),
                 ),
               );
@@ -10501,13 +10691,17 @@ class ProductMiniRail extends StatelessWidget {
 class FarmBoxScreen extends StatelessWidget {
   final List<Product> cart;
   final void Function(Product product) onRemoveFromCart;
+  final void Function(Product product) onAddToCart;
   final VoidCallback onOrderPlaced;
+  final VoidCallback? onInventoryChanged;
 
   const FarmBoxScreen({
     super.key,
     required this.cart,
     required this.onRemoveFromCart,
+    required this.onAddToCart,
     required this.onOrderPlaced,
+    this.onInventoryChanged,
   });
 
   Map<String, CartLine> get groupedCart {
@@ -10552,11 +10746,15 @@ class FarmBoxScreen extends StatelessWidget {
                 FarmCard(
                   child: Row(
                     children: const [
-                      Text('🧺', style: TextStyle(fontSize: 60)),
+                      Icon(
+                        Icons.shopping_basket_outlined,
+                        size: 54,
+                        color: FarmColors.green,
+                      ),
                       SizedBox(width: 14),
                       Expanded(
                         child: Text(
-                          'Tap + in Shop to add produce to your box.',
+                          'Browse fresh produce and add your favorites to your box.',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -10570,7 +10768,7 @@ class FarmBoxScreen extends StatelessWidget {
                 if (lines.isEmpty)
                   const FarmCard(
                     child: Text(
-                      'Your farm box is empty. Go to Shop and tap + to add fresh produce.',
+                      'Your farm box is empty. Browse fresh produce and add your favorites.',
                       style: TextStyle(fontSize: 16),
                     ),
                   )
@@ -10600,13 +10798,48 @@ class FarmBoxScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          IconButton(
-                            onPressed: () => onRemoveFromCart(product),
-                            icon: const Icon(Icons.remove_circle_outline),
-                          ),
-                          Text(
-                            '${line.quantity}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          Container(
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: FarmColors.lightGreen,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Remove one',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 40,
+                                    minHeight: 40,
+                                  ),
+                                  onPressed: () => onRemoveFromCart(product),
+                                  icon: const Icon(Icons.remove),
+                                  color: FarmColors.green,
+                                ),
+                                Text(
+                                  '${line.quantity}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: FarmColors.green,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Add one more',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 40,
+                                    minHeight: 40,
+                                  ),
+                                  onPressed: product.canAddToCart
+                                      ? () => onAddToCart(product)
+                                      : null,
+                                  icon: const Icon(Icons.add),
+                                  color: FarmColors.green,
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -10626,7 +10859,7 @@ class FarmBoxScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '${cart.length} items • J\$${subtotal.toStringAsFixed(2)}',
+                    'Subtotal: J\$${subtotal.toStringAsFixed(2)}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -10649,6 +10882,7 @@ class FarmBoxScreen extends StatelessWidget {
                                 cartLines: lines,
                                 subtotal: subtotal,
                                 onOrderPlaced: onOrderPlaced,
+                                onInventoryChanged: onInventoryChanged,
                               ),
                             ),
                           );
@@ -10733,7 +10967,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
               if (orders.isEmpty) {
                 return const FarmCard(
-                  child: Text('No orders yet.'),
+                  child: Text(
+                      'No orders yet. When you place an order, it will appear here.'),
                 );
               }
 
@@ -11181,6 +11416,7 @@ String _titleCase(String value) {
   return value[0].toUpperCase() + value.substring(1).toLowerCase();
 }
 
+// Hidden from the main admin tab bar to keep daily admin work focused.
 class AdminAuditLogsScreen extends StatelessWidget {
   const AdminAuditLogsScreen({super.key});
 
@@ -11497,7 +11733,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         return FarmPage(
           child: DefaultTabController(
-            length: 11,
+            length: 10,
             initialIndex: 0,
             child: Column(
               children: [
@@ -11551,7 +11787,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       Tab(
                           icon: Icon(Icons.confirmation_number_outlined),
                           text: 'Coupons'),
-                      Tab(icon: Icon(Icons.fact_check_outlined), text: 'Audit'),
                     ],
                   ),
                 ),
@@ -11621,9 +11856,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       },
                                     ),
                                     ElevatedButton.icon(
-                                      icon: const Icon(
-                                          Icons.picture_as_pdf_outlined),
-                                      label: const Text('Report'),
+                                      icon: const Icon(Icons.article_outlined),
+                                      label: const Text('Report Text'),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: FarmColors.primary,
                                         foregroundColor: Colors.white,
@@ -11636,7 +11870,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                         showDialog(
                                           context: context,
                                           builder: (_) => AlertDialog(
-                                            title: const Text('Sales Report'),
+                                            title:
+                                                const Text('Sales Report Text'),
                                             content: SingleChildScrollView(
                                               child: SelectableText(report),
                                             ),
@@ -11661,7 +11896,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       AdminReviewsTab(refreshKey: refreshKey),
                       AdminCouponsTab(
                           refreshKey: refreshKey, onChanged: refresh),
-                      AdminAuditLogsTab(refreshKey: refreshKey),
                     ],
                   ),
                 ),
@@ -11818,7 +12052,8 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
           return const Padding(
             padding: EdgeInsets.all(18),
             child: FarmCard(
-              child: Text('No orders found yet.'),
+              child: Text(
+                  'No orders yet. When you place an order, it will appear here.'),
             ),
           );
         }
@@ -11893,7 +12128,9 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
             ),
             const SizedBox(height: 14),
             if (filteredOrders.isEmpty)
-              const FarmCard(child: Text('No orders match this filter.'))
+              const FarmCard(
+                  child:
+                      Text('No orders match this filter. Try another status.'))
             else
               ...filteredOrders.map((order) => Padding(
                     padding: const EdgeInsets.only(bottom: 14),
@@ -12625,11 +12862,14 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
     bool readySoon = product?.isReadySoon ?? false;
     bool isDealOfDay = product?.isDealOfDay ?? false;
     bool subscribeSaveEnabled = product?.subscribeSaveEnabled ?? false;
-    bool uploadingImage = false;
     bool saving = false;
 
-    await showDialog(
+    await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
@@ -12663,7 +12903,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                       : selectedProductStatus;
 
               if (name.isEmpty || price == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   const SnackBar(
                       content: Text('Enter product name and valid price.')),
                 );
@@ -12741,7 +12981,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                 }
 
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(this.context).showSnackBar(
                     SnackBar(
                       content: Text(product == null
                           ? 'Product added successfully'
@@ -12757,7 +12997,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                 }
 
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(this.context).showSnackBar(
                     const SnackBar(
                       content: Text(
                           'Could not save product. Please check the item details and try again.'),
@@ -12767,381 +13007,421 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
               }
             }
 
-            return AlertDialog(
-              title: Text(product == null ? 'Add Product' : 'Edit Product'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameController,
-                      decoration:
-                          const InputDecoration(labelText: 'Product name'),
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 12,
+                right: 12,
+                bottom: MediaQuery.of(dialogContext).viewInsets.bottom + 12,
+              ),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  height: MediaQuery.of(dialogContext).size.height * 0.92,
+                  child: Material(
+                    color: FarmColors.card,
+                    elevation: 12,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(28),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: priceController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Price'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: stockController,
-                      keyboardType: TextInputType.number,
-                      decoration:
-                          const InputDecoration(labelText: 'Stock quantity'),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: selectedCategory,
-                      decoration: const InputDecoration(labelText: 'Category'),
-                      items: productCategoryOptions
-                          .map(
-                            (category) => DropdownMenuItem<String>(
-                              value: category,
-                              child: Text(category),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: saving
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setDialogState(() {
-                                selectedCategory = value;
-                              });
-                            },
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: selectedProductStatus,
-                      decoration:
-                          const InputDecoration(labelText: 'Product status'),
-                      items: const [
-                        DropdownMenuItem(
-                            value: 'available', child: Text('Available')),
-                        DropdownMenuItem(
-                            value: 'ready_soon', child: Text('Ready Soon')),
-                        DropdownMenuItem(
-                            value: 'out_of_stock', child: Text('Out of Stock')),
-                        DropdownMenuItem(
-                            value: 'hidden', child: Text('Hidden')),
-                      ],
-                      onChanged: saving
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setDialogState(() {
-                                selectedProductStatus = value;
-                                readySoon = value == 'ready_soon';
-                                if (readySoon) isAvailable = false;
-                              });
-                            },
-                    ),
-                    SwitchListTile(
-                      value: readySoon,
-                      title: const Text('Ready soon item'),
-                      subtitle: const Text(
-                          'Show this item in the Ready Soon section and let customers request alerts.'),
-                      activeColor: FarmColors.warning,
-                      onChanged: saving
-                          ? null
-                          : (value) {
-                              setDialogState(() {
-                                readySoon = value;
-                                selectedProductStatus =
-                                    value ? 'ready_soon' : 'available';
-                                if (value) isAvailable = false;
-                              });
-                            },
-                    ),
-                    if (readySoon) ...[
-                      TextField(
-                        controller: estimatedReadyDateController,
-                        decoration: const InputDecoration(
-                          labelText: 'Estimated ready date',
-                          helperText: 'Use YYYY-MM-DD',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: expectedStockController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                            labelText: 'Expected quantity'),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    SwitchListTile(
-                      value: isDiscountActive,
-                      title: const Text('Discount / deal active'),
-                      subtitle: const Text(
-                          'Show a sale price and deal badge like an online marketplace.'),
-                      activeColor: FarmColors.warning,
-                      onChanged: saving
-                          ? null
-                          : (value) =>
-                              setDialogState(() => isDiscountActive = value),
-                    ),
-                    if (isDiscountActive) ...[
-                      TextField(
-                        controller: originalPriceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration:
-                            const InputDecoration(labelText: 'Original price'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: discountPriceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration:
-                            const InputDecoration(labelText: 'Discount price'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: discountPercentController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration: const InputDecoration(
-                            labelText: 'Discount percent'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: discountLabelController,
-                        decoration: const InputDecoration(
-                            labelText: 'Deal label',
-                            hintText: 'Today’s Deal, Fresh Pick Deal...'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: discountStartsController,
-                        decoration: const InputDecoration(
-                            labelText: 'Deal starts at',
-                            helperText: 'Optional ISO date/time'),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: discountEndsController,
-                        decoration: const InputDecoration(
-                            labelText: 'Deal ends at',
-                            helperText: 'Optional ISO date/time'),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    const SizedBox(height: 10),
-                    SwitchListTile(
-                      value: isDealOfDay,
-                      title: const Text('Deal of the Day'),
-                      subtitle: const Text(
-                          'Feature this product in the customer Deal of the Day section.'),
-                      activeColor: FarmColors.warning,
-                      onChanged: saving
-                          ? null
-                          : (value) =>
-                              setDialogState(() => isDealOfDay = value),
-                    ),
-                    if (isDealOfDay) ...[
-                      TextField(
-                        controller: dealRankController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Deal display rank',
-                          helperText: 'Lower numbers show first',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    SwitchListTile(
-                      value: subscribeSaveEnabled,
-                      title: const Text('Subscribe & Save'),
-                      subtitle: const Text(
-                          'Allow customers to create repeat orders for this item.'),
-                      activeColor: FarmColors.success,
-                      onChanged: saving
-                          ? null
-                          : (value) => setDialogState(
-                              () => subscribeSaveEnabled = value),
-                    ),
-                    if (subscribeSaveEnabled) ...[
-                      TextField(
-                        controller: subscribeSavePercentController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration: const InputDecoration(
-                            labelText: 'Subscribe & Save discount %'),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    const SizedBox(height: 10),
-                    SwitchListTile(
-                      value: isOrganic,
-                      title: const Text('Organic item'),
-                      subtitle: Text(
-                        isOrganic
-                            ? 'Shown as organic in the shop'
-                            : 'Turn on only if this item is organic',
-                      ),
-                      activeColor: FarmColors.green,
-                      onChanged: saving
-                          ? null
-                          : (value) {
-                              setDialogState(() {
-                                isOrganic = value;
-                              });
-                            },
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: unitController,
-                      decoration: const InputDecoration(labelText: 'Unit'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: descriptionController,
-                      maxLines: 3,
-                      decoration:
-                          const InputDecoration(labelText: 'Short description'),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: FarmColors.cream,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: FarmColors.lightGreen),
-                      ),
+                    clipBehavior: Clip.antiAlias,
+                    child: SafeArea(
+                      top: false,
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Product Image',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 10),
-                          productImagePreviewFromUrl(
-                            imageUrl: imageUrlController.text,
-                            fallbackIcon: product?.icon ?? '🥬',
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: imageUrlController,
-                            onChanged: (_) => setDialogState(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'Image URL or uploaded image link',
-                              helperText:
-                                  'Paste a hosted image URL. Gallery/camera upload can connect here later.',
+                          Container(
+                            width: 42,
+                            height: 5,
+                            margin: const EdgeInsets.only(top: 10, bottom: 8),
+                            decoration: BoxDecoration(
+                              color: FarmColors.line,
+                              borderRadius: BorderRadius.circular(999),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              OutlinedButton.icon(
-                                icon: uploadingImage
-                                    ? const SizedBox(
-                                        height: 16,
-                                        width: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(18, 4, 10, 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    product == null
+                                        ? 'Add Product'
+                                        : 'Edit ${product.name}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Close',
+                                  onPressed: saving
+                                      ? null
+                                      : () => Navigator.pop(dialogContext),
+                                  icon: const Icon(Icons.close),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding:
+                                  const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextField(
+                                    controller: nameController,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Product name'),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextField(
+                                    controller: priceController,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    decoration: const InputDecoration(
+                                        labelText: 'Price'),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextField(
+                                    controller: stockController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Stock quantity'),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  DropdownButtonFormField<String>(
+                                    value: selectedCategory,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Category'),
+                                    items: productCategoryOptions
+                                        .map(
+                                          (category) =>
+                                              DropdownMenuItem<String>(
+                                            value: category,
+                                            child: Text(category),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: saving
+                                        ? null
+                                        : (value) {
+                                            if (value == null) return;
+                                            setDialogState(() {
+                                              selectedCategory = value;
+                                            });
+                                          },
+                                  ),
+                                  const SizedBox(height: 10),
+                                  DropdownButtonFormField<String>(
+                                    value: selectedProductStatus,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Product status'),
+                                    items: const [
+                                      DropdownMenuItem(
+                                          value: 'available',
+                                          child: Text('Available')),
+                                      DropdownMenuItem(
+                                          value: 'ready_soon',
+                                          child: Text('Ready Soon')),
+                                      DropdownMenuItem(
+                                          value: 'out_of_stock',
+                                          child: Text('Out of Stock')),
+                                      DropdownMenuItem(
+                                          value: 'hidden',
+                                          child: Text('Hidden')),
+                                    ],
+                                    onChanged: saving
+                                        ? null
+                                        : (value) {
+                                            if (value == null) return;
+                                            setDialogState(() {
+                                              selectedProductStatus = value;
+                                              readySoon = value == 'ready_soon';
+                                              if (readySoon)
+                                                isAvailable = false;
+                                            });
+                                          },
+                                  ),
+                                  SwitchListTile(
+                                    value: readySoon,
+                                    title: const Text('Ready soon item'),
+                                    subtitle: const Text(
+                                        'Show this item in the Ready Soon section and let customers request alerts.'),
+                                    activeColor: FarmColors.warning,
+                                    onChanged: saving
+                                        ? null
+                                        : (value) {
+                                            setDialogState(() {
+                                              readySoon = value;
+                                              selectedProductStatus = value
+                                                  ? 'ready_soon'
+                                                  : 'available';
+                                              if (value) isAvailable = false;
+                                            });
+                                          },
+                                  ),
+                                  if (readySoon) ...[
+                                    TextField(
+                                      controller: estimatedReadyDateController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Estimated ready date',
+                                        helperText: 'Use YYYY-MM-DD',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: expectedStockController,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                          labelText: 'Expected quantity'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  SwitchListTile(
+                                    value: isDiscountActive,
+                                    title: const Text('Discount / deal active'),
+                                    subtitle: const Text(
+                                        'Show a sale price and deal badge like an online marketplace.'),
+                                    activeColor: FarmColors.warning,
+                                    onChanged: saving
+                                        ? null
+                                        : (value) => setDialogState(
+                                            () => isDiscountActive = value),
+                                  ),
+                                  if (isDiscountActive) ...[
+                                    TextField(
+                                      controller: originalPriceController,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      decoration: const InputDecoration(
+                                          labelText: 'Original price'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: discountPriceController,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      decoration: const InputDecoration(
+                                          labelText: 'Discount price'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: discountPercentController,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      decoration: const InputDecoration(
+                                          labelText: 'Discount percent'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: discountLabelController,
+                                      decoration: const InputDecoration(
+                                          labelText: 'Deal label',
+                                          hintText:
+                                              'Today’s Deal, Fresh Pick Deal...'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: discountStartsController,
+                                      decoration: const InputDecoration(
+                                          labelText: 'Deal starts at',
+                                          helperText: 'Optional ISO date/time'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: discountEndsController,
+                                      decoration: const InputDecoration(
+                                          labelText: 'Deal ends at',
+                                          helperText: 'Optional ISO date/time'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  const SizedBox(height: 10),
+                                  SwitchListTile(
+                                    value: isDealOfDay,
+                                    title: const Text('Deal of the Day'),
+                                    subtitle: const Text(
+                                        'Feature this product in the customer Deal of the Day section.'),
+                                    activeColor: FarmColors.warning,
+                                    onChanged: saving
+                                        ? null
+                                        : (value) => setDialogState(
+                                            () => isDealOfDay = value),
+                                  ),
+                                  if (isDealOfDay) ...[
+                                    TextField(
+                                      controller: dealRankController,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Deal display rank',
+                                        helperText: 'Lower numbers show first',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  SwitchListTile(
+                                    value: subscribeSaveEnabled,
+                                    title: const Text('Subscribe & Save'),
+                                    subtitle: const Text(
+                                        'Allow customers to create repeat orders for this item.'),
+                                    activeColor: FarmColors.success,
+                                    onChanged: saving
+                                        ? null
+                                        : (value) => setDialogState(
+                                            () => subscribeSaveEnabled = value),
+                                  ),
+                                  if (subscribeSaveEnabled) ...[
+                                    TextField(
+                                      controller:
+                                          subscribeSavePercentController,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      decoration: const InputDecoration(
+                                          labelText:
+                                              'Subscribe & Save discount %'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  const SizedBox(height: 10),
+                                  SwitchListTile(
+                                    value: isOrganic,
+                                    title: const Text('Organic item'),
+                                    subtitle: Text(
+                                      isOrganic
+                                          ? 'Shown as organic in the shop'
+                                          : 'Turn on only if this item is organic',
+                                    ),
+                                    activeColor: FarmColors.green,
+                                    onChanged: saving
+                                        ? null
+                                        : (value) {
+                                            setDialogState(() {
+                                              isOrganic = value;
+                                            });
+                                          },
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextField(
+                                    controller: unitController,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Unit'),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextField(
+                                    controller: descriptionController,
+                                    maxLines: 3,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Short description'),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: FarmColors.cream,
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                          color: FarmColors.lightGreen),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Product Image',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold),
                                         ),
-                                      )
-                                    : const Icon(Icons.upload_file_outlined),
-                                label: Text(uploadingImage
-                                    ? 'Uploading...'
-                                    : 'Upload Image'),
-                                onPressed: saving || uploadingImage
-                                    ? null
-                                    : () async {
-                                        final messenger =
-                                            ScaffoldMessenger.of(context);
-                                        setDialogState(
-                                            () => uploadingImage = true);
-                                        try {
-                                          final uploadedUrl =
-                                              await pickAndUploadProductImage(
-                                            productName: nameController.text
-                                                    .trim()
-                                                    .isEmpty
-                                                ? product?.name ?? 'product'
-                                                : nameController.text.trim(),
-                                          );
-
-                                          if (uploadedUrl != null &&
-                                              uploadedUrl.isNotEmpty) {
-                                            imageUrlController.text =
-                                                uploadedUrl;
-                                            setDialogState(() {});
-                                            messenger.showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Image uploaded successfully.',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        } catch (error) {
-                                          messenger.showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                error.toString().replaceFirst(
-                                                      'Exception: ',
-                                                      '',
-                                                    ),
-                                              ),
+                                        const SizedBox(height: 10),
+                                        productImagePreviewFromUrl(
+                                          imageUrl: imageUrlController.text,
+                                        ),
+                                        const SizedBox(height: 10),
+                                        TextField(
+                                          controller: imageUrlController,
+                                          onChanged: (_) =>
+                                              setDialogState(() {}),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Image URL',
+                                            helperText:
+                                                'Paste a hosted image URL from Supabase Storage or another trusted source.',
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            TextButton.icon(
+                                              icon: const Icon(Icons.clear),
+                                              label: const Text('Clear Image'),
+                                              onPressed: () {
+                                                imageUrlController.clear();
+                                                setDialogState(() {});
+                                              },
                                             ),
-                                          );
-                                        } finally {
-                                          if (dialogContext.mounted) {
-                                            setDialogState(
-                                                () => uploadingImage = false);
-                                          }
-                                        }
-                                      },
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SwitchListTile(
+                                    value: isAvailable,
+                                    title: const Text('Visible in shop'),
+                                    activeColor: FarmColors.green,
+                                    onChanged: (value) {
+                                      setDialogState(() => isAvailable = value);
+                                    },
+                                  ),
+                                ],
                               ),
-                              TextButton.icon(
-                                icon: const Icon(Icons.clear),
-                                label: const Text('Clear Image'),
-                                onPressed: () {
-                                  imageUrlController.clear();
-                                  setDialogState(() {});
-                                },
-                              ),
-                            ],
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: saving
+                                        ? null
+                                        : () => Navigator.pop(dialogContext),
+                                    child: const Text('Cancel'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: saving ? null : saveProduct,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: FarmColors.primary,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: Text(saving ? 'Saving...' : 'Save'),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    SwitchListTile(
-                      value: isAvailable,
-                      title: const Text('Visible in shop'),
-                      activeColor: FarmColors.green,
-                      onChanged: (value) {
-                        setDialogState(() => isAvailable = value);
-                      },
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: saving ? null : () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: saving ? null : saveProduct,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: FarmColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: Text(saving ? 'Saving...' : 'Save'),
-                ),
-              ],
             );
           },
         );
@@ -13559,6 +13839,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
   }
 }
 
+// Hidden from navigation until this becomes a production-ready shopping helper.
 class AIShoppingAssistantScreen extends StatefulWidget {
   const AIShoppingAssistantScreen({super.key});
 
@@ -13950,7 +14231,8 @@ class FavoritesScreen extends StatelessWidget {
       title: 'Favorites',
       subtitle: 'Saved products you love',
       products: products,
-      emptyText: 'No favorites yet. Tap the heart on products in Shop.',
+      emptyText:
+          'No favorites yet. Tap the heart on products you love while shopping.',
       onShopTap: onShopTap,
     );
   }
@@ -13972,7 +14254,8 @@ class RecentlyViewedScreen extends StatelessWidget {
       title: 'Recently Viewed',
       subtitle: 'Products you checked recently',
       products: products,
-      emptyText: 'No recently viewed products yet.',
+      emptyText:
+          'No recently viewed products yet. Products you open will appear here.',
       onShopTap: onShopTap,
     );
   }
@@ -14730,7 +15013,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               child: FutureBuilder<List<Product>>(
                 future: fetchProducts(),
                 builder: (context, snapshot) {
-                  final products = snapshot.data ?? fallbackProducts;
+                  final products = snapshot.data ?? const <Product>[];
                   return Column(
                     children: [
                       DropdownButtonFormField<Product>(
@@ -15560,7 +15843,7 @@ class ReadySoonRail extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SectionHeader(
-          title: 'Ready Soon',
+          title: 'Harvesting Soon',
           subtitle: 'Fresh items coming soon',
         ),
         const SizedBox(height: 12),
@@ -15703,12 +15986,16 @@ class _ReadySoonHomeSectionState extends State<ReadySoonHomeSection> {
 class DealOfTheDaySection extends StatefulWidget {
   final void Function(Product product) onViewed;
   final void Function(Product product)? onAddProduct;
+  final VoidCallback? onViewMyBox;
+  final VoidCallback? onCheckout;
   final bool compact;
 
   const DealOfTheDaySection({
     super.key,
     required this.onViewed,
     this.onAddProduct,
+    this.onViewMyBox,
+    this.onCheckout,
     this.compact = false,
   });
 
@@ -15737,6 +16024,8 @@ class _DealOfTheDaySectionState extends State<DealOfTheDaySection> {
           onRemove: () {},
           onAddProduct: widget.onAddProduct,
           onViewed: widget.onViewed,
+          onViewMyBox: widget.onViewMyBox,
+          onCheckout: widget.onCheckout,
         ),
       ),
     );
@@ -15949,12 +16238,16 @@ class FrequentlyBoughtTogetherSection extends StatelessWidget {
   final Product product;
   final void Function(Product product)? onAddProduct;
   final void Function(Product product)? onViewed;
+  final VoidCallback? onViewMyBox;
+  final VoidCallback? onCheckout;
 
   const FrequentlyBoughtTogetherSection({
     super.key,
     required this.product,
     this.onAddProduct,
     this.onViewed,
+    this.onViewMyBox,
+    this.onCheckout,
   });
 
   void openProduct(BuildContext context, Product item) {
@@ -15969,6 +16262,8 @@ class FrequentlyBoughtTogetherSection extends StatelessWidget {
           onRemove: () {},
           onAddProduct: onAddProduct,
           onViewed: onViewed,
+          onViewMyBox: onViewMyBox,
+          onCheckout: onCheckout,
         ),
       ),
     );
@@ -16032,10 +16327,6 @@ class FrequentlyBoughtTogetherSection extends StatelessWidget {
                         for (final item in bundle) {
                           onAddProduct?.call(item);
                         }
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Bundle added to My Box.')),
-                        );
                       },
                       icon: const Icon(Icons.add_shopping_cart_outlined),
                       label: const Text('Add Bundle'),
@@ -16096,12 +16387,16 @@ class RecommendedForYouDetailSection extends StatelessWidget {
   final Product currentProduct;
   final void Function(Product product)? onAddProduct;
   final void Function(Product product)? onViewed;
+  final VoidCallback? onViewMyBox;
+  final VoidCallback? onCheckout;
 
   const RecommendedForYouDetailSection({
     super.key,
     required this.currentProduct,
     this.onAddProduct,
     this.onViewed,
+    this.onViewMyBox,
+    this.onCheckout,
   });
 
   @override
@@ -16109,7 +16404,7 @@ class RecommendedForYouDetailSection extends StatelessWidget {
     return FutureBuilder<List<Product>>(
       future: fetchProducts(),
       builder: (context, snapshot) {
-        final sourceProducts = snapshot.data ?? fallbackProducts;
+        final sourceProducts = snapshot.data ?? const <Product>[];
         final recommended = buildRecommendedForYouProducts(
           allProducts: sourceProducts,
           recentlyViewedProducts: const [],
@@ -16148,6 +16443,8 @@ class RecommendedForYouDetailSection extends StatelessWidget {
                       onRemove: () {},
                       onAddProduct: onAddProduct,
                       onViewed: onViewed,
+                      onViewMyBox: onViewMyBox,
+                      onCheckout: onCheckout,
                     ),
                   ),
                 );
@@ -16167,6 +16464,8 @@ class ProductDetailScreen extends StatelessWidget {
   final VoidCallback onRemove;
   final void Function(Product product)? onAddProduct;
   final void Function(Product product)? onViewed;
+  final VoidCallback? onViewMyBox;
+  final VoidCallback? onCheckout;
 
   const ProductDetailScreen({
     super.key,
@@ -16176,6 +16475,8 @@ class ProductDetailScreen extends StatelessWidget {
     required this.onRemove,
     this.onAddProduct,
     this.onViewed,
+    this.onViewMyBox,
+    this.onCheckout,
   });
 
   String get description {
@@ -16334,6 +16635,111 @@ class ProductDetailScreen extends StatelessWidget {
     );
   }
 
+  Future<void> showAddedToMyBoxActions(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: FarmColors.surface,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: FarmColors.shadow.withOpacity(0.16),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: FarmColors.lightGreen,
+                      foregroundColor: FarmColors.green,
+                      child: Icon(Icons.check_rounded),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Added to My Box',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${product.name} is ready in your farm box.',
+                            style: const TextStyle(color: FarmColors.mutedText),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: onCheckout == null
+                        ? null
+                        : () {
+                            Navigator.pop(sheetContext);
+                            onCheckout?.call();
+                          },
+                    icon: const Icon(Icons.shopping_bag_outlined),
+                    label: const Text('Checkout'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: onViewMyBox == null
+                        ? null
+                        : () {
+                            Navigator.pop(sheetContext);
+                            onViewMyBox?.call();
+                          },
+                    icon: const Icon(Icons.shopping_bag_outlined),
+                    label: const Text('View My Box'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('Continue Shopping'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void handlePrimaryAdd(BuildContext context) {
+    onAdd();
+    showAddedToMyBoxActions(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final unit = (product.unit ?? '').trim();
@@ -16490,17 +16896,21 @@ class ProductDetailScreen extends StatelessWidget {
               product: product,
               onAddProduct: onAddProduct,
               onViewed: onViewed,
+              onViewMyBox: onViewMyBox,
+              onCheckout: onCheckout,
             ),
             const SizedBox(height: 14),
             RecommendedForYouDetailSection(
               currentProduct: product,
               onAddProduct: onAddProduct,
               onViewed: onViewed,
+              onViewMyBox: onViewMyBox,
+              onCheckout: onCheckout,
             ),
             const SizedBox(height: 14),
             detailTile(
               icon: Icons.storefront_outlined,
-              title: 'Farm / Seller',
+              title: 'Grown by',
               value: '$farmerLine\n$farmLine',
             ),
             const SizedBox(height: 12),
@@ -16535,7 +16945,7 @@ class ProductDetailScreen extends StatelessWidget {
               ? (inStock
                   ? PrimaryFarmButton(
                       label: 'Add to My Box',
-                      onPressed: onAdd,
+                      onPressed: () => handlePrimaryAdd(context),
                     )
                   : NotifyMeWhenReadyButton(product: product))
               : Container(
@@ -16602,9 +17012,6 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final description = (product.description ?? '').trim().isEmpty
-        ? 'Fresh natural harvest from the farm.'
-        : product.description!.trim();
     final unit = (product.unit ?? '').trim();
     final inStock = product.canAddToCart;
 
@@ -16692,9 +17099,10 @@ class ProductCard extends StatelessWidget {
                 (product.parish ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 3),
               Text(
-                [product.farmName, product.parish]
-                    .where((item) => (item ?? '').trim().isNotEmpty)
-                    .join(' • '),
+                'Grown by ${[
+                  product.farmName,
+                  product.parish
+                ].where((item) => (item ?? '').trim().isNotEmpty).join(' • ')}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -16704,19 +17112,7 @@ class ProductCard extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 4),
-            Text(
-              description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.2,
-                color: FarmColors.mutedText,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ProductTrustBadges(product: product, compact: true),
+            const SizedBox(height: 6),
             if (product.isLowStock) ...[
               const SizedBox(height: 6),
               Text(
@@ -16772,23 +17168,7 @@ class ProductCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: DiscountPriceText(product: product, compact: true),
-                ),
-                const Icon(Icons.star, size: 14, color: Color(0xFFF2B705)),
-                const SizedBox(width: 2),
-                Text(
-                  '4.8',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: FarmColors.mutedText,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
+            DiscountPriceText(product: product, compact: true),
             const SizedBox(height: 10),
             if (quantity <= 0)
               inStock
@@ -16872,9 +17252,12 @@ class ProductVisual extends StatelessWidget {
         decoration: BoxDecoration(
           color: FarmColors.chipBackground,
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: FarmColors.line),
         ),
-        child: Center(
-          child: Text(product.icon, style: TextStyle(fontSize: size)),
+        child: Icon(
+          Icons.image_outlined,
+          size: (size * 0.58).clamp(18.0, 44.0).toDouble(),
+          color: FarmColors.mutedText,
         ),
       );
     }
@@ -17059,19 +17442,52 @@ class SectionHeader extends StatelessWidget {
 }
 
 class CategoryPill extends StatelessWidget {
-  final String icon;
+  final Product? previewProduct;
+  final IconData fallbackIcon;
   final String label;
+  final int? count;
+  final VoidCallback? onTap;
 
-  const CategoryPill({super.key, required this.icon, required this.label});
+  const CategoryPill({
+    super.key,
+    this.previewProduct,
+    this.fallbackIcon = Icons.category_outlined,
+    required this.label,
+    this.count,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
-      avatar: Text(icon),
+    final labelText = count == null ? label : '$label • $count available';
+    final imageUrl = cleanHostedImageUrl(previewProduct?.imageUrl);
+
+    Widget avatar() {
+      if (imageUrl == null) {
+        return Icon(fallbackIcon, size: 18, color: FarmColors.green);
+      }
+
+      return ClipOval(
+        child: Image.network(
+          imageUrl,
+          height: 26,
+          width: 26,
+          fit: BoxFit.cover,
+          cacheWidth: 64,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) =>
+              Icon(fallbackIcon, size: 18, color: FarmColors.green),
+        ),
+      );
+    }
+
+    return ActionChip(
+      avatar: avatar(),
       label: Text(
-        label,
+        labelText,
         style: const TextStyle(fontWeight: FontWeight.w800),
       ),
+      onPressed: onTap,
       backgroundColor: FarmColors.chipBackground,
       side: const BorderSide(color: FarmColors.border),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
@@ -17259,13 +17675,13 @@ class OrderSuccessScreen extends StatelessWidget {
               PrimaryFarmButton(
                 label: 'View My Orders',
                 onPressed: () {
-                  Navigator.pop(context);
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 },
               ),
               const SizedBox(height: 14),
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 },
                 child: const Text('Back to app'),
               ),
@@ -17281,12 +17697,14 @@ class CheckoutScreen extends StatefulWidget {
   final List<CartLine> cartLines;
   final double subtotal;
   final VoidCallback onOrderPlaced;
+  final VoidCallback? onInventoryChanged;
 
   const CheckoutScreen({
     super.key,
     required this.cartLines,
     required this.subtotal,
     required this.onOrderPlaced,
+    this.onInventoryChanged,
   });
 
   @override
@@ -17324,6 +17742,45 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   double get deliveryFee =>
       fulfillmentType == 'delivery' ? (deliveryFees[deliveryZone] ?? 0.0) : 0.0;
+
+  bool _isPrepaidPaymentMethod(String method) {
+    return method == 'bank_transfer' || method == 'stripe_card';
+  }
+
+  void _syncPaymentMethodForFulfillment(String fulfillment) {
+    fulfillmentType = fulfillment;
+    if (fulfillment == 'delivery' && !_isPrepaidPaymentMethod(paymentMethod)) {
+      paymentMethod = 'bank_transfer';
+    }
+  }
+
+  List<DropdownMenuItem<String>> _paymentMethodItems() {
+    return <DropdownMenuItem<String>>[
+      if (fulfillmentType != 'delivery')
+        const DropdownMenuItem(
+          value: 'cash_on_pickup',
+          child: Text(
+            'Pay when you collect',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      const DropdownMenuItem(
+        value: 'bank_transfer',
+        child: Text(
+          'Bank Transfer',
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      if (paymentMethod == 'stripe_card')
+        const DropdownMenuItem(
+          value: 'stripe_card',
+          child: Text(
+            'Card',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+    ];
+  }
 
   double get checkoutTotal {
     final total = widget.subtotal + deliveryFee - discountAmount;
@@ -17384,7 +17841,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (profile.fullName.isNotEmpty) nameController.text = profile.fullName;
       if (profile.phone.isNotEmpty) phoneController.text = profile.phone;
       if (profile.address.isNotEmpty) addressController.text = profile.address;
-      fulfillmentType = 'delivery';
+      _syncPaymentMethodForFulfillment('delivery');
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Saved delivery address selected.')),
@@ -17489,6 +17946,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    if (fulfillmentType == 'delivery' &&
+        !_isPrepaidPaymentMethod(paymentMethod)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Home Delivery requires payment before delivery. Please choose Bank Transfer or Card, or switch to Farm Pickup.',
+          ),
+        ),
+      );
+      return;
+    }
+
     if (paymentMethod == 'bank_transfer' &&
         bankReferenceController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -17503,6 +17972,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       secureQuote = await fetchSecureCartQuote(widget.cartLines);
     } catch (error) {
+      FarmDataCache.clearProducts();
+      FarmDataCache.clearOrders();
+      widget.onInventoryChanged?.call();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -17534,13 +18006,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       var total = (secureSubtotal + deliveryFee - trustedDiscountAmount)
           .clamp(0, double.infinity)
           .toDouble();
-      final selectedPaymentMethod =
-          fulfillmentType == 'delivery' && paymentMethod == 'cash_on_pickup'
-              ? 'cash_on_delivery'
-              : paymentMethod;
+      final selectedPaymentMethod = paymentMethod;
       final selectedPaymentStatus = selectedPaymentMethod == 'bank_transfer'
           ? 'pending_verification'
-          : 'unpaid';
+          : selectedPaymentMethod == 'stripe_card'
+              ? 'paid'
+              : 'unpaid';
       final bankReference = selectedPaymentMethod == 'bank_transfer'
           ? bankReferenceController.text.trim()
           : null;
@@ -17656,6 +18127,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         debugPrint('Checkout metadata update skipped: $error');
       }
 
+      await ensureStockReducedAfterCheckout(
+        orderId: orderId,
+        checkoutLines: secureQuote.lines,
+      );
+
       await createOrderConfirmationSupport(
         orderId: orderId,
         customerName: name,
@@ -17674,6 +18150,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'Your order #$orderShortId from The Harvest Place Ja was sent to the farm.',
       );
 
+      FarmDataCache.clearProducts();
+      FarmDataCache.clearOrders();
+
       if (!mounted) return;
 
       widget.onOrderPlaced();
@@ -17688,6 +18167,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
       );
     } catch (error) {
+      FarmDataCache.clearProducts();
+      FarmDataCache.clearOrders();
+      widget.onInventoryChanged?.call();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Checkout failed: ${friendlyAppError(error)}')),
@@ -17749,6 +18231,51 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  Widget _checkoutSectionHeader({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: FarmColors.lightGreen,
+            foregroundColor: FarmColors.green,
+            child: Icon(icon, size: 19),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -17773,9 +18300,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Order Summary',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  _checkoutSectionHeader(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'Review Order',
+                    subtitle:
+                        'Check your items and total before placing the order.',
                   ),
                   const SizedBox(height: 12),
                   ...widget.cartLines.map(
@@ -17783,6 +18312,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       '${line.product.name} x ${line.quantity}',
                       'J\$${(line.product.effectivePrice * line.quantity).toStringAsFixed(2)}',
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  _checkoutRow(
+                    'Fulfillment',
+                    formatFulfillmentType(fulfillmentType),
+                  ),
+                  _checkoutRow(
+                    'Payment',
+                    formatPaymentMethod(paymentMethod),
                   ),
                   if (deliveryFee > 0)
                     _checkoutRow(
@@ -17801,8 +18339,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     strong: true,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Payment status: Unpaid until collected or paid online',
+                  Text(
+                    fulfillmentType == 'delivery'
+                        ? 'Home Delivery requires payment before delivery.'
+                        : 'Pay when you collect is available for Farm Pickup.',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -17815,6 +18355,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _checkoutSectionHeader(
+                    icon: Icons.person_outline,
+                    title: 'Contact',
+                    subtitle: 'Tell us who the order is for.',
+                  ),
                   TextField(
                     controller: nameController,
                     textInputAction: TextInputAction.next,
@@ -17833,7 +18378,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       prefixIcon: Icon(Icons.phone_outlined),
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
+                  _checkoutSectionHeader(
+                    icon: Icons.local_shipping_outlined,
+                    title: 'Pickup or Delivery',
+                    subtitle:
+                        'Choose how and when you want to receive your farm box.',
+                  ),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
                     value: fulfillmentType,
@@ -17851,11 +18402,47 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ],
                     onChanged: (value) {
                       if (value == null) return;
-                      setState(() => fulfillmentType = value);
+                      setState(() => _syncPaymentMethodForFulfillment(value));
                     },
                     decoration: const InputDecoration(
                       labelText: 'Pickup or delivery',
                       prefixIcon: Icon(Icons.local_shipping_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: fulfillmentType == 'delivery'
+                          ? FarmColors.warningSoft
+                          : FarmColors.lightGreen,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: FarmColors.line),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          fulfillmentType == 'delivery'
+                              ? Icons.lock_outline
+                              : Icons.payments_outlined,
+                          color: fulfillmentType == 'delivery'
+                              ? FarmColors.warning
+                              : FarmColors.green,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            fulfillmentType == 'delivery'
+                                ? 'Home Delivery requires payment before delivery. Choose Bank Transfer for delivery.'
+                                : 'Pay when you collect is available for Farm Pickup. You can also choose Bank Transfer.',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -17923,7 +18510,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
+                  _checkoutSectionHeader(
+                    icon: Icons.payments_outlined,
+                    title: 'Payment',
+                    subtitle: fulfillmentType == 'delivery'
+                        ? 'Choose Bank Transfer for delivery. Payment is required before delivery.'
+                        : 'Add a promo code if you have one. Pay when you collect is available for pickup.',
+                  ),
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
@@ -17964,24 +18558,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: paymentMethod,
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'cash_on_pickup',
-                        child: Text('Cash on Pickup',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      DropdownMenuItem(
-                        value: 'cash_on_delivery',
-                        child: Text('Cash on Delivery',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      DropdownMenuItem(
-                        value: 'bank_transfer',
-                        child: Text('Bank Transfer',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                    ],
+                    value: _paymentMethodItems()
+                            .any((item) => item.value == paymentMethod)
+                        ? paymentMethod
+                        : 'bank_transfer',
+                    items: _paymentMethodItems(),
                     onChanged: (value) {
                       if (value == null) return;
                       setState(() => paymentMethod = value);
@@ -18099,13 +18680,62 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
             const SizedBox(height: 22),
-            PrimaryFarmButton(
-              label: loading
-                  ? 'Placing order...'
-                  : 'Place Order • J\$${checkoutTotal.toStringAsFixed(2)}',
-              onPressed: loading ? null : placeOrder,
-            ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+          decoration: BoxDecoration(
+            color: FarmColors.surface,
+            border: Border(top: BorderSide(color: FarmColors.line)),
+            boxShadow: [
+              BoxShadow(
+                color: FarmColors.shadow.withOpacity(0.08),
+                blurRadius: 16,
+                offset: const Offset(0, -6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      'J\$${checkoutTotal.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: FarmColors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: loading ? null : placeOrder,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: FarmColors.primary,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                ),
+                child: Text(loading ? 'Placing...' : 'Place Order'),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,40 +1,22 @@
-android {
-    namespace = "com.theharvestplaceja.app"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = "28.2.13676358"
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
     }
+}
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
+val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
+rootProject.layout.buildDirectory.value(newBuildDir)
 
-    defaultConfig {
-        applicationId = "com.theharvestplaceja.app"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
-    }
+subprojects {
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
+}
 
-    signingConfigs {
-        create("release") {
-            val keystorePath = System.getenv("CM_KEYSTORE_PATH")
-            if (!keystorePath.isNullOrBlank()) {
-                storeFile = file(keystorePath)
-                storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("CM_KEY_ALIAS")
-                keyPassword = System.getenv("CM_KEY_PASSWORD")
-            }
-        }
-    }
+subprojects {
+    project.evaluationDependsOn(":app")
+}
 
-    buildTypes {
-        release {
-            signingConfig = signingConfigs.getByName("release")
-        }
-    }
+tasks.register<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
 }

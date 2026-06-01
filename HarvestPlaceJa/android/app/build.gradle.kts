@@ -26,25 +26,37 @@ android {
         versionName = flutter.versionName
     }
 
+    val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH")
+    val cmKeystorePassword = System.getenv("CM_KEYSTORE_PASSWORD")
+    val cmKeyAlias = System.getenv("CM_KEY_ALIAS")
+    val cmKeyPassword = System.getenv("CM_KEY_PASSWORD")
+
+    val hasCodemagicSigning =
+        !cmKeystorePath.isNullOrBlank() &&
+        !cmKeystorePassword.isNullOrBlank() &&
+        !cmKeyAlias.isNullOrBlank() &&
+        !cmKeyPassword.isNullOrBlank()
+
     signingConfigs {
         create("release") {
-            val keystorePath = System.getenv("CM_KEYSTORE_PATH")
-            val keystorePassword = System.getenv("CM_KEYSTORE_PASSWORD")
-            val keyAliasValue = System.getenv("CM_KEY_ALIAS")
-            val keyPasswordValue = System.getenv("CM_KEY_PASSWORD")
-
-            if (!keystorePath.isNullOrBlank()) {
-                storeFile = file(keystorePath)
-                storePassword = keystorePassword
-                keyAlias = keyAliasValue
-                keyPassword = keyPasswordValue
+            if (hasCodemagicSigning) {
+                storeFile = file(cmKeystorePath!!)
+                storePassword = cmKeystorePassword
+                keyAlias = cmKeyAlias
+                keyPassword = cmKeyPassword
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasCodemagicSigning) {
+                println("Using Codemagic release signing config.")
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                println("Codemagic release signing variables missing. Falling back to debug signing for local/test build only.")
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 }

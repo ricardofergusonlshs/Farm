@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.theharvestplaceja.app"
+    namespace = "com.harvestplaceja.myapp"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.theharvestplaceja.app"
+        applicationId = "com.harvestplaceja.myapp"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

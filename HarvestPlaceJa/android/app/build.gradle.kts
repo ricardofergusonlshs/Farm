@@ -22,8 +22,10 @@ android {
         applicationId = "com.harvestplaceja.myapp"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+
+        // Google Play requires this to increase for every new upload.
+        versionCode = 3
+        versionName = "1.0.2"
     }
 
     val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH")

@@ -24,8 +24,8 @@ android {
         targetSdk = flutter.targetSdkVersion
 
         // Google Play requires this to increase for every new upload.
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
     }
 
     val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH")

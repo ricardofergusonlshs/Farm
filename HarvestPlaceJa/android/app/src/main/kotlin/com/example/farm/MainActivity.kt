@@ -1,4 +1,4 @@
-package com.example.farm
+package com.harvestplaceja.myapp
 
 import io.flutter.embedding.android.FlutterActivity
 

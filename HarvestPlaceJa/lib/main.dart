@@ -18,14 +18,28 @@ class AppConfig {
 
   // Auth links must go to the FlutLab PREVIEW app, not the editor
   // and not localhost. Add this preview URL to Supabase Auth URL Configuration.
-  static const flutLabPreviewUrl =
-      'https://preview.flutlab.io/ricardo_ferguson/farm/';
+    // Auth links should use the current running web URL.
+  // This prevents expired FlutLab preview links from causing 404 errors.
+  static String get webBaseUrl {
+    if (!kIsWeb) return '';
 
-  static const passwordResetUrl =
-      'https://preview.flutlab.io/ricardo_ferguson/farm/?resetPassword=true';
+    final uri = Uri.base;
+    final cleanPath = uri.path.endsWith('/') ? uri.path : '${uri.path}/';
 
-  static const emailConfirmationUrl =
-      'https://preview.flutlab.io/ricardo_ferguson/farm/?emailConfirmation=true';
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: cleanPath,
+    ).toString();
+  }
+
+  // Kept for compatibility if used elsewhere in the app.
+  static String get flutLabPreviewUrl => webBaseUrl;
+
+  static String get passwordResetUrl => '${webBaseUrl}?resetPassword=true';
+
+  static String get emailConfirmationUrl => '${webBaseUrl}?emailConfirmation=true';
 
   static String? get passwordResetRedirectTo {
     if (!kIsWeb) return null;

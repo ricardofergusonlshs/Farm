@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -37,22 +38,38 @@ class AppConfig {
   // Kept for compatibility if used elsewhere in the app.
   static String get flutLabPreviewUrl => webBaseUrl;
 
+  static const mobileAuthCallbackUrl = 'farm://auth-callback/';
+  static const mobilePasswordResetUrl = 'farm://reset-password/';
+
+  static Uri? _mobileAuthUri;
+
+  static void setMobileAuthUri(Uri uri) {
+    _mobileAuthUri = uri;
+  }
+
+  static Uri? get activeAuthUri {
+    if (kIsWeb) return Uri.base;
+    return _mobileAuthUri;
+  }
+
   static String get passwordResetUrl => '${webBaseUrl}?resetPassword=true';
 
   static String get emailConfirmationUrl => '${webBaseUrl}?emailConfirmation=true';
 
   static String? get passwordResetRedirectTo {
-    if (!kIsWeb) return null;
-    return passwordResetUrl;
+    if (kIsWeb) return passwordResetUrl;
+    return mobilePasswordResetUrl;
   }
 
   static String? get emailConfirmationRedirectTo {
-    if (!kIsWeb) return null;
-    return emailConfirmationUrl;
+    if (kIsWeb) return emailConfirmationUrl;
+    return mobileAuthCallbackUrl;
   }
 
   static Map<String, String> get authCallbackParams {
     final params = <String, String>{};
+    final uri = activeAuthUri;
+    if (uri == null) return params;
 
     void addParams(String raw) {
       var clean = raw.trim();
@@ -60,12 +77,14 @@ class AppConfig {
         clean = clean.substring(1);
       }
       if (clean.isEmpty) return;
-      params.addAll(Uri.splitQueryString(clean));
+      try {
+        params.addAll(Uri.splitQueryString(clean));
+      } catch (_) {}
     }
 
     try {
-      addParams(Uri.base.query);
-      addParams(Uri.base.fragment);
+      addParams(uri.query);
+      addParams(uri.fragment);
     } catch (_) {}
 
     return params;
@@ -76,12 +95,11 @@ class AppConfig {
   }
 
   static String? get authCallbackCode {
-    if (!kIsWeb) return null;
+    final uri = activeAuthUri;
+    if (uri == null) return null;
 
     try {
-      final href = Uri.base.toString();
-      final uri = Uri.tryParse(href);
-      final queryCode = uri?.queryParameters['code'];
+      final queryCode = uri.queryParameters['code'];
       if (queryCode != null && queryCode.trim().isNotEmpty) {
         return queryCode.trim();
       }
@@ -91,6 +109,7 @@ class AppConfig {
         return paramsCode.trim();
       }
 
+      final href = uri.toString();
       final match = RegExp(r'(?:[?#&])code=([^&#]+)').firstMatch(href);
       final rawCode = match?.group(1);
       if (rawCode == null || rawCode.trim().isEmpty) return null;
@@ -139,23 +158,33 @@ class AppConfig {
   }
 
   static bool get _hasPasswordRecoveryMarker {
-    if (!kIsWeb) return false;
+    final uri = activeAuthUri;
+    if (uri == null) return false;
 
-    final href = Uri.base.toString().toLowerCase();
+    final href = uri.toString().toLowerCase();
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
     final type = (authCallbackParams['type'] ?? '').trim().toLowerCase();
 
-    return href.contains('resetpassword=true') ||
+    return host == 'reset-password' ||
+        path.contains('reset-password') ||
+        href.contains('resetpassword=true') ||
         type == 'recovery' ||
         href.contains('type=recovery');
   }
 
   static bool get _hasEmailConfirmationMarker {
-    if (!kIsWeb) return false;
+    final uri = activeAuthUri;
+    if (uri == null) return false;
 
-    final href = Uri.base.toString().toLowerCase();
+    final href = uri.toString().toLowerCase();
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
     final type = (authCallbackParams['type'] ?? '').trim().toLowerCase();
 
-    return href.contains('emailconfirmation=true') ||
+    return host == 'auth-callback' ||
+        path.contains('auth-callback') ||
+        href.contains('emailconfirmation=true') ||
         type == 'signup' ||
         type == 'email' ||
         type == 'email_change' ||
@@ -165,7 +194,8 @@ class AppConfig {
   }
 
   static bool get hasPasswordRecoveryCallback {
-    if (!kIsWeb) return false;
+    final uri = activeAuthUri;
+    if (uri == null) return false;
 
     // Supabase may redirect password reset links in PKCE format:
     // https://your-app/?resetPassword=true&code=...
@@ -175,19 +205,19 @@ class AppConfig {
     return _hasPasswordRecoveryMarker &&
         (authCallbackCode != null ||
             passwordRecoveryRefreshToken != null ||
-            Uri.base.toString().toLowerCase().contains('resetpassword=true'));
+            uri.toString().toLowerCase().contains('resetpassword=true') ||
+            uri.host.toLowerCase() == 'reset-password');
   }
 
   static bool get hasEmailConfirmationCallback {
-    if (!kIsWeb) return false;
+    final uri = activeAuthUri;
+    if (uri == null) return false;
 
     return _hasEmailConfirmationMarker &&
         (authCallbackCode != null ||
             emailConfirmationRefreshToken != null ||
-            Uri.base
-                .toString()
-                .toLowerCase()
-                .contains('emailconfirmation=true'));
+            uri.toString().toLowerCase().contains('emailconfirmation=true') ||
+            uri.host.toLowerCase() == 'auth-callback');
   }
 
   static void cleanAuthCallbackUrl() {
@@ -5815,6 +5845,8 @@ class _AuthGateState extends State<AuthGate> {
   String? emailConfirmationError;
   String? emailConfirmationMessage;
   late final StreamSubscription<AuthState> _authSubscription;
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _deepLinkSubscription;
 
   @override
   void initState() {
@@ -5836,6 +5868,8 @@ class _AuthGateState extends State<AuthGate> {
       setState(() {});
     });
 
+    unawaited(_initDeepLinks());
+
     if (AppConfig.hasPasswordRecoveryCallback) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -5855,8 +5889,48 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   void dispose() {
+    _deepLinkSubscription?.cancel();
     _authSubscription.cancel();
     super.dispose();
+  }
+
+  Future<void> _initDeepLinks() async {
+    if (kIsWeb) return;
+
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) {
+        _handleIncomingAuthLink(initialUri);
+      }
+
+      _deepLinkSubscription = _appLinks.uriLinkStream.listen(
+        _handleIncomingAuthLink,
+        onError: (error) {
+          debugPrint('Deep link error: $error');
+        },
+      );
+    } catch (error) {
+      debugPrint('Deep link init skipped: $error');
+    }
+  }
+
+  void _handleIncomingAuthLink(Uri uri) {
+    AppConfig.setMobileAuthUri(uri);
+
+    if (AppConfig.hasPasswordRecoveryCallback) {
+      if (!mounted) return;
+      setState(() {
+        isPasswordRecovery = true;
+        isEmailConfirmation = false;
+        hasEnteredMarket = true;
+        passwordRecoveryError = null;
+      });
+      return;
+    }
+
+    if (AppConfig.hasEmailConfirmationCallback) {
+      unawaited(_prepareEmailConfirmationSession());
+    }
   }
 
   Future<void> _prepareEmailConfirmationSession() async {

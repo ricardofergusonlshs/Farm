@@ -52,13 +52,18 @@ android {
 
     buildTypes {
         release {
-            if (hasCodemagicSigning) {
-                println("Using Codemagic release signing config.")
-                signingConfig = signingConfigs.getByName("release")
-            } else {
-                println("Codemagic release signing variables missing. Falling back to debug signing for local/test build only.")
-                signingConfig = signingConfigs.getByName("debug")
+            if (!hasCodemagicSigning) {
+                throw GradleException(
+                    "Release signing variables are missing. Set CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, and CM_KEY_PASSWORD in Codemagic."
+                )
             }
+
+            println("Using Codemagic release signing config.")
+            signingConfig = signingConfigs.getByName("release")
+        }
+
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }

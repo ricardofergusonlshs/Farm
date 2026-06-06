@@ -21,57 +21,41 @@ Future<PickedProductImage?> pickProductImageFromDevice() async {
     ..accept = 'image/*'
     ..multiple = false;
 
-  final completer = Completer<PickedProductImage?>();
+  input.click();
+  await input.onChange.first;
 
-  input.onChange.listen((_) {
-    final files = input.files;
-    if (files == null || files.isEmpty) {
-      if (!completer.isCompleted) completer.complete(null);
-      return;
+  final files = input.files;
+  if (files == null || files.isEmpty) return null;
+
+  final file = files.first;
+  final reader = html.FileReader();
+  final completer = Completer<Uint8List>();
+
+  reader.onError.first.then((_) {
+    if (!completer.isCompleted) {
+      completer.completeError(Exception('Could not read selected image.'));
     }
-
-    final file = files.first;
-    final reader = html.FileReader();
-
-    reader.onError.listen((_) {
-      if (!completer.isCompleted) completer.complete(null);
-    });
-
-    reader.onLoadEnd.listen((_) {
-      final result = reader.result;
-      if (result is Uint8List) {
-        if (!completer.isCompleted) {
-          completer.complete(
-            PickedProductImage(
-              fileName: file.name,
-              mimeType: file.type.isEmpty ? 'image/jpeg' : file.type,
-              bytes: result,
-            ),
-          );
-        }
-        return;
-      }
-
-      final bytes = reader.result;
-      if (bytes is List<int>) {
-        if (!completer.isCompleted) {
-          completer.complete(
-            PickedProductImage(
-              fileName: file.name,
-              mimeType: file.type.isEmpty ? 'image/jpeg' : file.type,
-              bytes: Uint8List.fromList(bytes),
-            ),
-          );
-        }
-        return;
-      }
-
-      if (!completer.isCompleted) completer.complete(null);
-    });
-
-    reader.readAsArrayBuffer(file);
   });
 
-  input.click();
-  return completer.future;
+  reader.onLoad.first.then((_) {
+    final result = reader.result;
+    if (result is ByteBuffer) {
+      completer.complete(Uint8List.view(result));
+      return;
+    }
+    if (result is Uint8List) {
+      completer.complete(result);
+      return;
+    }
+    completer.completeError(Exception('Could not read selected image.'));
+  });
+
+  reader.readAsArrayBuffer(file);
+  final bytes = await completer.future;
+
+  return PickedProductImage(
+    fileName: file.name,
+    mimeType: file.type,
+    bytes: bytes,
+  );
 }

@@ -2,18 +2,16 @@ library harvest_place_app;
 
 import 'dart:async';
 import 'dart:ui';
+
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'browser_notifications.dart' as browser_notifications;
 import 'product_image_picker.dart';
 import 'share_launcher.dart';
-
-// Supabase migration for product local origin:
-// alter table products
-// add column if not exists is_local boolean not null default true;
 
 part 'app/app_config.dart';
 part 'app/harvest_place_app.dart';
@@ -37,4 +35,3 @@ Future<void> main() async {
 
   runApp(const FamilyFarmApp());
 }
-

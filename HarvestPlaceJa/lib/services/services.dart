@@ -863,7 +863,8 @@ Future<List<Product>> _fetchProductsUncached() async {
     final response = await supabase
         .from('products')
         .select(selectFields)
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        .limit(120);
 
     return (response as List)
         .map((item) => Product.fromSupabase(Map<String, dynamic>.from(item)))

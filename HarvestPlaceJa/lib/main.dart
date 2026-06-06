@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'browser_notifications.dart' as browser_notifications;
+import 'product_image_picker.dart';
+import 'share_launcher.dart';
 
 // Supabase migration for product local origin:
 // alter table products
@@ -13,14 +15,18 @@ import 'browser_notifications.dart' as browser_notifications;
 
 class AppConfig {
   static const appName = 'The Harvest Place Ja';
+
+  // Set this after deployment to your public app link.
+  // Leave empty during preview testing so invite links use the current preview URL.
+  static const publicShareUrl = '';
   static const supabaseUrl = 'https://zvgvvsgjzfygbsqwawoh.supabase.co';
   static const supabaseAnonKey =
       'sb_publishable_fBvBBFqJMlIOm1I3d5Oy-w_AbBGuJKH';
 
-  // Auth links must go to the FlutLab PREVIEW app, not the editor
+  // Auth links must go to the preview app, not the editor
   // and not localhost. Add this preview URL to Supabase Auth URL Configuration.
-    // Auth links should use the current running web URL.
-  // This prevents expired FlutLab preview links from causing 404 errors.
+  // Auth links should use the current running web URL.
+  // This prevents expired preview links from causing 404 errors.
   static String get webBaseUrl {
     if (!kIsWeb) return '';
 
@@ -35,8 +41,18 @@ class AppConfig {
     ).toString();
   }
 
+  static String get shareableAppLink {
+    final liveUrl = publicShareUrl.trim();
+    if (liveUrl.isNotEmpty) return liveUrl;
+
+    final currentWebUrl = webBaseUrl.trim();
+    if (currentWebUrl.isNotEmpty) return currentWebUrl;
+
+    return appName;
+  }
+
   // Kept for compatibility if used elsewhere in the app.
-  static String get flutLabPreviewUrl => webBaseUrl;
+  static String get previewCompatibleBaseUrl => webBaseUrl;
 
   static const mobileAuthCallbackUrl = 'farm://auth-callback/';
   static const mobilePasswordResetUrl = 'farm://reset-password/';
@@ -54,7 +70,8 @@ class AppConfig {
 
   static String get passwordResetUrl => '${webBaseUrl}?resetPassword=true';
 
-  static String get emailConfirmationUrl => '${webBaseUrl}?emailConfirmation=true';
+  static String get emailConfirmationUrl =>
+      '${webBaseUrl}?emailConfirmation=true';
 
   static String? get passwordResetRedirectTo {
     if (kIsWeb) return passwordResetUrl;
@@ -250,7 +267,7 @@ void _syncKeyboardStateSafely() {
   } catch (_) {}
 }
 
-bool _isFlutLabKeyboardAssertion(Object error, StackTrace? stack) {
+bool _isBrowserPreviewKeyboardAssertion(Object error, StackTrace? stack) {
   final errorText = error.toString();
   final stackText = stack?.toString() ?? '';
 
@@ -274,12 +291,12 @@ bool _isFlutLabKeyboardAssertion(Object error, StackTrace? stack) {
       errorText.contains('Unexpected null value');
 }
 
-void _installFlutLabKeyboardWorkaround() {
+void _installBrowserPreviewKeyboardWorkaround() {
   if (!kIsWeb) return;
 
   final previousErrorWidgetBuilder = ErrorWidget.builder;
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    if (_isFlutLabKeyboardAssertion(details.exception, details.stack)) {
+    if (_isBrowserPreviewKeyboardAssertion(details.exception, details.stack)) {
       _syncKeyboardStateSafely();
       return const SizedBox.shrink();
     }
@@ -288,7 +305,7 @@ void _installFlutLabKeyboardWorkaround() {
 
   final previousFlutterErrorHandler = FlutterError.onError;
   FlutterError.onError = (FlutterErrorDetails details) {
-    if (_isFlutLabKeyboardAssertion(details.exception, details.stack)) {
+    if (_isBrowserPreviewKeyboardAssertion(details.exception, details.stack)) {
       _syncKeyboardStateSafely();
       return;
     }
@@ -302,7 +319,7 @@ void _installFlutLabKeyboardWorkaround() {
 
   final previousPlatformErrorHandler = PlatformDispatcher.instance.onError;
   PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-    if (_isFlutLabKeyboardAssertion(error, stack)) {
+    if (_isBrowserPreviewKeyboardAssertion(error, stack)) {
       _syncKeyboardStateSafely();
       return true;
     }
@@ -317,7 +334,7 @@ void _installFlutLabKeyboardWorkaround() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  _installFlutLabKeyboardWorkaround();
+  _installBrowserPreviewKeyboardWorkaround();
   _syncKeyboardStateSafely();
 
   await Supabase.initialize(
@@ -521,10 +538,10 @@ class FarmColors {
   static const background = Color(0xFFF4F9F2);
   static const card = Color(0xFFFFFFFF);
   static const cardSoft = Color(0xFFFFFEFC);
-  static const primary = Color(0xFF2F6B45);
-  static const primaryDark = Color(0xFF214B31);
+  static const primary = Color(0xFF2D6741);
+  static const primaryDark = Color(0xFF183B28);
   static const primarySoft = Color(0xFFEAF5E7);
-  static const olive = Color(0xFF72835D);
+  static const olive = Color(0xFF5F7651);
   static const accent = Color(0xFFDFA75A);
   static const accentSoft = Color(0xFFFFF3D9);
   static const text = Color(0xFF1E2A21);
@@ -768,6 +785,273 @@ String? cleanHostedImageUrl(String? value) {
   return isValidHostedImageUrl(clean) ? clean : null;
 }
 
+const String productImageStorageBucket = 'product-images';
+
+String _safeProductImageFileName(String fileName) {
+  final clean = fileName.trim().toLowerCase();
+  final sanitized = clean
+      .replaceAll(RegExp(r'[^a-z0-9._-]+'), '-')
+      .replaceAll(RegExp(r'-+'), '-')
+      .replaceAll(RegExp(r'^[-.]+|[-.]+$'), '');
+
+  if (sanitized.isEmpty) return 'product-image.jpg';
+  return sanitized.length > 90
+      ? sanitized.substring(sanitized.length - 90)
+      : sanitized;
+}
+
+String _contentTypeForImage(PickedProductImage image) {
+  final cleanType = image.mimeType.trim();
+  if (cleanType.startsWith('image/')) return cleanType;
+
+  final lowerName = image.fileName.toLowerCase();
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.webp')) return 'image/webp';
+  if (lowerName.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
+
+Future<String> uploadProductImageToStorage(PickedProductImage image) async {
+  await requireAdminAccess();
+
+  if (image.bytes.isEmpty) {
+    throw Exception('Choose a valid image file.');
+  }
+
+  const maxBytes = 6 * 1024 * 1024;
+  if (image.bytes.length > maxBytes) {
+    throw Exception('Image is too large. Please upload an image under 6 MB.');
+  }
+
+  final userId = supabase.auth.currentUser?.id ?? 'admin';
+  final timestamp = DateTime.now().millisecondsSinceEpoch;
+  final safeName = _safeProductImageFileName(image.fileName);
+  final path = 'products/$userId/$timestamp-$safeName';
+  final contentType = _contentTypeForImage(image);
+
+  try {
+    await supabase.storage.from(productImageStorageBucket).uploadBinary(
+          path,
+          image.bytes,
+          fileOptions: FileOptions(
+            contentType: contentType,
+            upsert: true,
+          ),
+        );
+
+    return supabase.storage.from(productImageStorageBucket).getPublicUrl(path);
+  } catch (error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('bucket') || message.contains('not found')) {
+      throw Exception(
+        'Image storage is not ready. Please finish the image upload setup.',
+      );
+    }
+    if (message.contains('permission') ||
+        message.contains('policy') ||
+        message.contains('403') ||
+        message.contains('401')) {
+      throw Exception(
+        'Image upload permission is not ready. Please review the admin upload setup.',
+      );
+    }
+    throw Exception('Could not upload image: ${friendlyAppError(error)}');
+  }
+}
+
+const List<String> _defaultHomeHeroImageUrls = [
+  'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=900&q=80',
+];
+
+class HomeHeroSlide {
+  final String id;
+  final int position;
+  final String imageUrl;
+  final String? title;
+  final String? subtitle;
+  final bool isActive;
+  final DateTime? updatedAt;
+
+  const HomeHeroSlide({
+    required this.id,
+    required this.position,
+    required this.imageUrl,
+    this.title,
+    this.subtitle,
+    this.isActive = true,
+    this.updatedAt,
+  });
+
+  factory HomeHeroSlide.fromSupabase(Map<String, dynamic> data) {
+    return HomeHeroSlide(
+      id: (data['id'] ?? '').toString(),
+      position: Product._toInt(data['position'] ?? 1),
+      imageUrl: (data['image_url'] ?? '').toString(),
+      title: data['title']?.toString(),
+      subtitle: data['subtitle']?.toString(),
+      isActive: data['is_active'] == null ? true : data['is_active'] == true,
+      updatedAt: parseProductDate(data['updated_at']),
+    );
+  }
+}
+
+List<HomeHeroSlide> defaultHomeHeroSlides() {
+  return List<HomeHeroSlide>.generate(_defaultHomeHeroImageUrls.length,
+      (index) {
+    return HomeHeroSlide(
+      id: 'default-${index + 1}',
+      position: index + 1,
+      imageUrl: _defaultHomeHeroImageUrls[index],
+      isActive: true,
+    );
+  });
+}
+
+List<HomeHeroSlide> _cleanHomeHeroSlides(List<HomeHeroSlide> slides) {
+  final clean = slides
+      .where((slide) => cleanHostedImageUrl(slide.imageUrl) != null)
+      .toList()
+    ..sort((a, b) => a.position.compareTo(b.position));
+
+  if (clean.isEmpty) return defaultHomeHeroSlides();
+  return clean.take(3).toList();
+}
+
+Future<List<HomeHeroSlide>> fetchHomeHeroSlides() async {
+  try {
+    final response = await supabase
+        .from('home_hero_slides')
+        .select(
+            'id, position, image_url, title, subtitle, is_active, updated_at')
+        .eq('is_active', true)
+        .order('position', ascending: true)
+        .limit(3);
+
+    final slides = (response as List)
+        .map(
+            (row) => HomeHeroSlide.fromSupabase(Map<String, dynamic>.from(row)))
+        .toList();
+
+    return _cleanHomeHeroSlides(slides);
+  } catch (error) {
+    debugPrintOnce('home-hero-slides-fallback',
+        'Home hero slides table unavailable, using default images: $error');
+    return defaultHomeHeroSlides();
+  }
+}
+
+Future<List<HomeHeroSlide>> fetchAdminHomeHeroSlides() async {
+  await requireAdminAccess();
+
+  try {
+    final response = await supabase
+        .from('home_hero_slides')
+        .select(
+            'id, position, image_url, title, subtitle, is_active, updated_at')
+        .order('position', ascending: true);
+
+    final byPosition = <int, HomeHeroSlide>{};
+    for (final row in response as List) {
+      final slide = HomeHeroSlide.fromSupabase(Map<String, dynamic>.from(row));
+      if (slide.position >= 1 && slide.position <= 3) {
+        byPosition[slide.position] = slide;
+      }
+    }
+
+    final defaults = defaultHomeHeroSlides();
+    return List<HomeHeroSlide>.generate(3, (index) {
+      final position = index + 1;
+      return byPosition[position] ?? defaults[index];
+    });
+  } catch (error) {
+    farmDebugLog('Admin hero slides unavailable: $error');
+    return defaultHomeHeroSlides();
+  }
+}
+
+Future<String> uploadHomeHeroImageToStorage({
+  required int position,
+  required PickedProductImage image,
+}) async {
+  await requireAdminAccess();
+
+  if (image.bytes.isEmpty) {
+    throw Exception('Choose a valid image file.');
+  }
+
+  const maxBytes = 6 * 1024 * 1024;
+  if (image.bytes.length > maxBytes) {
+    throw Exception('Image is too large. Please upload an image under 6 MB.');
+  }
+
+  final userId = supabase.auth.currentUser?.id ?? 'admin';
+  final timestamp = DateTime.now().millisecondsSinceEpoch;
+  final safeName = _safeProductImageFileName(image.fileName);
+  final path = 'home-hero/slide-$position/$userId/$timestamp-$safeName';
+  final contentType = _contentTypeForImage(image);
+
+  try {
+    await supabase.storage.from(productImageStorageBucket).uploadBinary(
+          path,
+          image.bytes,
+          fileOptions: FileOptions(
+            contentType: contentType,
+            upsert: true,
+          ),
+        );
+
+    return supabase.storage.from(productImageStorageBucket).getPublicUrl(path);
+  } catch (error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('bucket') || message.contains('not found')) {
+      throw Exception(
+        'Image storage is not ready. Please finish the image upload setup.',
+      );
+    }
+    if (message.contains('permission') ||
+        message.contains('policy') ||
+        message.contains('403') ||
+        message.contains('401')) {
+      throw Exception(
+        'Hero image upload permission is not ready. Please review the admin upload setup.',
+      );
+    }
+    throw Exception('Could not upload hero image: ${friendlyAppError(error)}');
+  }
+}
+
+Future<void> saveHomeHeroSlideImage({
+  required int position,
+  required String imageUrl,
+}) async {
+  await requireAdminAccess();
+
+  final cleanUrl = cleanHostedImageUrl(imageUrl);
+  if (cleanUrl == null) {
+    throw Exception('Upload or paste a valid image URL.');
+  }
+
+  final payload = {
+    'position': position,
+    'image_url': cleanUrl,
+    'is_active': true,
+    'updated_at': DateTime.now().toIso8601String(),
+  };
+
+  try {
+    await supabase.from('home_hero_slides').upsert(
+          payload,
+          onConflict: 'position',
+        );
+  } catch (error) {
+    throw Exception(
+      'Hero slideshow is not ready. Please complete the hero image setup before saving.',
+    );
+  }
+}
+
 DateTime startOfCurrentHarvestWeek([DateTime? date]) {
   final now = date ?? DateTime.now();
   final localDateOnly = DateTime(now.year, now.month, now.day);
@@ -913,7 +1197,7 @@ String productFreshnessDescription(Product product) {
   final score = productFreshnessScore(product);
   if (score >= 85) return 'Fresh pick with strong freshness quality.';
   if (score >= 70) return 'Good quality item. Use soon for best flavor.';
-  return 'Still available, but best checked before buying if it is a delicate item.';
+  return 'Best used soon. Check freshness before adding delicate items.';
 }
 
 Color productFreshnessColor(Product product) {
@@ -927,14 +1211,16 @@ Future<bool> requestBrowserNotifications() async {
   final granted = await browser_notifications.requestBrowserNotifications();
 
   if (granted) {
-    debugPrint('Browser notifications granted');
+    farmDebugLog('Browser notifications granted');
     await saveNotificationPreference(enabled: true);
   } else {
-    debugPrint('Browser notifications denied');
+    farmDebugLog('Browser notifications denied');
   }
 
   return granted;
 }
+
+final Set<String> _shownBrowserNotificationTags = <String>{};
 
 String browserNotificationTag({
   required String title,
@@ -942,13 +1228,17 @@ String browserNotificationTag({
   String? orderId,
   String? type,
 }) {
+  final cleanType = (type ?? 'farm').trim().toLowerCase();
   final cleanOrderId = orderId?.trim() ?? '';
-  final source = [
-    (type ?? 'farm').trim().toLowerCase(),
-    cleanOrderId,
-    title.trim().toLowerCase(),
-    body.trim().toLowerCase(),
-  ].join('|');
+  final cleanTitle = title.trim().toLowerCase();
+  final cleanBody = body.trim().toLowerCase();
+
+  // Order notifications can be emitted by both the immediate checkout flow and
+  // the realtime notification listener. Use a stable tag that ignores small body
+  // wording differences so the same order/title only alerts the customer once.
+  final source = cleanOrderId.isNotEmpty
+      ? [cleanType, cleanOrderId, cleanTitle].join('|')
+      : [cleanType, cleanTitle, cleanBody].join('|');
 
   return 'harvest_${source.hashCode.abs()}';
 }
@@ -963,19 +1253,26 @@ void showBrowserNotification({
   final cleanBody = body.trim();
 
   if (cleanTitle.isEmpty && cleanBody.isEmpty) {
-    debugPrint('Browser notification skipped');
+    farmDebugLog('Browser notification skipped');
+    return;
+  }
+
+  final tag = browserNotificationTag(
+    title: cleanTitle,
+    body: cleanBody,
+    orderId: orderId,
+    type: type,
+  );
+
+  if (!_shownBrowserNotificationTags.add(tag)) {
+    farmDebugLog('Browser notification skipped');
     return;
   }
 
   browser_notifications.showBrowserNotification(
     title: cleanTitle.isEmpty ? AppConfig.appName : cleanTitle,
     body: cleanBody,
-    tag: browserNotificationTag(
-      title: cleanTitle,
-      body: cleanBody,
-      orderId: orderId,
-      type: type,
-    ),
+    tag: tag,
   );
 }
 
@@ -1043,7 +1340,7 @@ void showBrowserNotificationForTarget({
     userId: userId,
     userEmail: userEmail,
   )) {
-    debugPrint('Browser notification skipped');
+    farmDebugLog('Browser notification skipped');
     return;
   }
 
@@ -1052,7 +1349,7 @@ void showBrowserNotificationForTarget({
     message: message,
     type: type,
   )) {
-    debugPrint('Browser notification skipped');
+    farmDebugLog('Browser notification skipped');
     return;
   }
 
@@ -1071,6 +1368,46 @@ bool notificationRowTargetsCurrentUser(Map<String, dynamic> row) {
   );
 }
 
+Future<bool> farmNotificationAlreadyExists({
+  required String title,
+  required String type,
+  String? userId,
+  String? userEmail,
+  String? orderId,
+}) async {
+  final cleanOrderId = orderId?.trim();
+  if (cleanOrderId == null || cleanOrderId.isEmpty) return false;
+
+  final cleanUserId = userId?.trim();
+  final cleanEmail = userEmail?.trim().toLowerCase();
+
+  try {
+    var query = supabase
+        .from('notifications')
+        .select('id')
+        .eq('order_id', cleanOrderId)
+        .eq('type', type)
+        .eq('title', title);
+
+    if (cleanUserId != null && cleanUserId.isNotEmpty) {
+      query = query.eq('user_id', cleanUserId);
+    } else if (cleanEmail != null && cleanEmail.isNotEmpty) {
+      query = query.eq('user_email', cleanEmail);
+    }
+
+    final existing = await query.limit(1);
+    return (existing as List).isNotEmpty;
+  } catch (error) {
+    // Older notification tables may not have order_id/user_id. In that case,
+    // keep the existing compatibility path and let the insert/fallback run.
+    debugPrintOnce(
+      'notification_duplicate_lookup_unavailable',
+      'Notification duplicate lookup skipped. Continuing with normal insert.',
+    );
+    return false;
+  }
+}
+
 Future<void> saveNotificationPreference({required bool enabled}) async {
   if (!isLoggedIn) return;
 
@@ -1085,7 +1422,7 @@ Future<void> saveNotificationPreference({required bool enabled}) async {
       'updated_at': DateTime.now().toIso8601String(),
     }, onConflict: 'user_id');
   } catch (error) {
-    debugPrint('Notification preference save skipped: $error');
+    farmDebugLog('Notification preference save skipped: $error');
   }
 }
 
@@ -1157,7 +1494,6 @@ Future<SecureCartQuote> fetchSecureCartQuote(List<CartLine> lines) async {
     }
 
     final serverProduct = Product.fromSupabase(row);
-    final isAvailable = serverProduct.canAddToCart;
     final stock = serverProduct.stockQuantity;
     final serverPrice = serverProduct.effectivePrice;
 
@@ -1166,7 +1502,7 @@ Future<SecureCartQuote> fetchSecureCartQuote(List<CartLine> lines) async {
           '${line.product.name} is not available for checkout yet.');
     }
 
-    if (serverProduct.isHidden || !serverProduct.isAvailable) {
+    if (serverProduct.isHidden) {
       throw Exception(
           '${line.product.name} is no longer available in the shop.');
     }
@@ -1176,13 +1512,16 @@ Future<SecureCartQuote> fetchSecureCartQuote(List<CartLine> lines) async {
           '${line.product.name} is harvesting soon and cannot be checked out yet.');
     }
 
-    if (stock <= 0) {
-      throw Exception('${line.product.name} is out of stock.');
+    if (!serverProduct.isAvailable || stock <= 0) {
+      throw Exception(
+          '${line.product.name} is out of stock. Please remove it from your box before checkout.');
     }
+
+    final isAvailable = serverProduct.canAddToCart;
 
     if (line.quantity > stock) {
       throw Exception(
-        'Only $stock ${line.product.name} available. Please reduce quantity.',
+        'Only $stock ${line.product.name} available. Please reduce the quantity before checkout.',
       );
     }
 
@@ -1256,7 +1595,7 @@ Future<LoyaltySummary> fetchLoyaltySummary() async {
       );
     }
   } catch (error) {
-    debugPrint('Loyalty table unavailable, using paid order estimate: $error');
+    farmDebugLog('Loyalty table unavailable, using paid order estimate: $error');
   }
 
   try {
@@ -1295,7 +1634,7 @@ Future<void> awardLoyaltyPointsForOrder({
       'p_reason': 'order',
     });
   } catch (rpcError) {
-    debugPrint(
+    farmDebugLog(
         'Loyalty RPC unavailable, using safe client fallback: $rpcError');
 
     // Loyalty points should not block checkout. Stock is already reduced
@@ -1308,7 +1647,7 @@ Future<void> awardLoyaltyPointsForOrder({
         'reason': 'order',
       });
     } catch (error) {
-      debugPrint('Loyalty award skipped: $error');
+      farmDebugLog('Loyalty award skipped: $error');
     }
   }
 }
@@ -1378,7 +1717,7 @@ Future<ProductTraceRecord?> fetchTraceRecordByCode(String code) async {
 
     return record;
   } catch (error) {
-    debugPrint('Trace lookup failed: $error');
+    farmDebugLog('Trace lookup failed: $error');
     return null;
   }
 }
@@ -1402,7 +1741,7 @@ Future<List<ProductTraceRecord>> fetchTraceRecordsForProductName(
             ProductTraceRecord.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Product trace lookup failed: $error');
+    farmDebugLog('Product trace lookup failed: $error');
     return [];
   }
 }
@@ -1426,7 +1765,7 @@ Future<List<ProductTraceRecord>> fetchAllProductTraceRecords() async {
             ProductTraceRecord.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('All product trace lookup failed: $error');
+    farmDebugLog('All product trace lookup failed: $error');
     return [];
   }
 }
@@ -1634,8 +1973,12 @@ class Product {
   bool get isReadySoon =>
       readySoon || productStatus.trim().toLowerCase() == 'ready_soon';
   bool get isHidden => productStatus.trim().toLowerCase() == 'hidden';
+  bool get isApproved => approvalStatus.trim().toLowerCase() == 'approved';
+  bool get isCustomerVisible => isApproved && !isHidden && !isReadySoon;
+  bool get isOutOfStock =>
+      isCustomerVisible && (!isAvailable || stockQuantity <= 0);
   bool get canAddToCart =>
-      !isReadySoon && !isHidden && isAvailable && stockQuantity > 0;
+      isCustomerVisible && isAvailable && stockQuantity > 0;
 
   bool get isLowStock =>
       canAddToCart && stockQuantity > 0 && stockQuantity <= 5;
@@ -1968,9 +2311,15 @@ class LocalProductSelector extends StatelessWidget {
 }
 
 bool isVisibleCustomerProduct(Product product) {
-  return product.approvalStatus == 'approved' &&
-      !product.isHidden &&
-      product.canAddToCart;
+  return product.isCustomerVisible;
+}
+
+int compareCustomerProductAvailabilityThenName(Product a, Product b) {
+  if (a.canAddToCart != b.canAddToCart) {
+    return a.canAddToCart ? -1 : 1;
+  }
+
+  return a.name.toLowerCase().compareTo(b.name.toLowerCase());
 }
 
 List<Product> uniqueVisibleProducts(
@@ -1997,6 +2346,26 @@ List<Product> uniqueVisibleProducts(
 
 List<Product> cleanRecentlyViewedProducts(List<Product> products) {
   return uniqueVisibleProducts(products, limit: 10);
+}
+
+List<Product> refreshProductSnapshotsFromLatestProducts({
+  required List<Product> savedProducts,
+  required List<Product> latestProducts,
+  int limit = 10,
+}) {
+  if (savedProducts.isEmpty) return const <Product>[];
+
+  final latestById = <String, Product>{
+    for (final product in latestProducts)
+      if (product.id.trim().isNotEmpty) product.id.trim(): product,
+  };
+
+  final refreshed = savedProducts.map((product) {
+    final id = product.id.trim();
+    return latestById[id] ?? product;
+  }).toList();
+
+  return uniqueVisibleProducts(refreshed, limit: limit);
 }
 
 bool areSameProductLists(List<Product> a, List<Product> b) {
@@ -2079,7 +2448,7 @@ class ProductTrustBadges extends StatelessWidget {
       if (product.hasSubscribeSave)
         badge(
           icon: Icons.repeat_outlined,
-          label: 'Subscribe & Save',
+          label: 'Fresh Box Plan',
           color: FarmColors.success,
         ),
       badge(
@@ -2192,13 +2561,331 @@ class FreshnessScoreCard extends StatelessWidget {
   }
 }
 
+class ProductTraceStoryCard extends StatelessWidget {
+  final Product product;
+
+  const ProductTraceStoryCard({super.key, required this.product});
+
+  String get farmSource {
+    final parts = <String>[
+      if ((product.farmName ?? '').trim().isNotEmpty) product.farmName!.trim(),
+      if ((product.parish ?? '').trim().isNotEmpty) product.parish!.trim(),
+    ];
+    return parts.isEmpty
+        ? 'The Harvest Place Ja partner farm'
+        : parts.join(' • ');
+  }
+
+  Widget _pill({
+    required IconData icon,
+    required String label,
+    Color color = FarmColors.green,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.14)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _traceLine({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 32,
+          width: 32,
+          decoration: BoxDecoration(
+            color: FarmColors.lightGreen,
+            shape: BoxShape.circle,
+            border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+          ),
+          child: Icon(icon, size: 17, color: FarmColors.green),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value.trim().isEmpty ? 'Not provided yet' : value.trim(),
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontWeight: FontWeight.w900,
+                  height: 1.25,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _fallbackStory() {
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 42,
+                width: 42,
+                decoration: const BoxDecoration(
+                  color: FarmColors.lightGreen,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.verified_user_outlined,
+                    color: FarmColors.green),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Farm story',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Source details for this item are shown below. Batch trace records will appear here when the farm uploads them.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.32,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _pill(icon: Icons.storefront_outlined, label: farmSource),
+              _pill(icon: Icons.category_outlined, label: product.category),
+              _pill(
+                  icon: productOriginIcon(product), label: product.originLabel),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _verifiedStory(BuildContext context, ProductTraceRecord record) {
+    final harvestText = [
+      if (record.harvestDate.trim().isNotEmpty) record.harvestDate.trim(),
+      if (record.harvestTime.trim().isNotEmpty) record.harvestTime.trim(),
+    ].join(' • ');
+
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 48,
+                width: 48,
+                decoration: BoxDecoration(
+                  color: FarmColors.green,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: FarmColors.green.withOpacity(0.18),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.verified_outlined, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Verified farm trace',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      record.traceCode.trim().isEmpty
+                          ? 'Batch record connected to this harvest.'
+                          : 'Batch code ${record.traceCode.trim()} • scanned ${record.qrScanCount} time${record.qrScanCount == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.28,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: FarmColors.background,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: Column(
+              children: [
+                _traceLine(
+                  icon: Icons.location_on_outlined,
+                  title: 'Farm location',
+                  value: record.farmLocation.isNotEmpty
+                      ? record.farmLocation
+                      : farmSource,
+                ),
+                const SizedBox(height: 12),
+                _traceLine(
+                  icon: Icons.calendar_month_outlined,
+                  title: 'Harvested',
+                  value: harvestText.isEmpty
+                      ? 'Harvest date not provided yet'
+                      : harvestText,
+                ),
+                const SizedBox(height: 12),
+                _traceLine(
+                  icon: Icons.eco_outlined,
+                  title: 'Growing method',
+                  value: record.farmingMethod,
+                ),
+                if (record.batchNotes.trim().isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _traceLine(
+                    icon: Icons.notes_outlined,
+                    title: 'Batch notes',
+                    value: record.batchNotes,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (record.traceCode.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(
+                      ClipboardData(text: record.traceCode.trim()));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Trace code copied.')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.copy_outlined, size: 18),
+                label: const Text('Copy trace code'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ProductTraceRecord>>(
+      future: traceRecordsForProduct(product),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return FarmCard(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: const [
+                SizedBox(
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Checking farm trace details...',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final records = snapshot.data ?? const <ProductTraceRecord>[];
+        if (records.isEmpty) return _fallbackStory();
+        return _verifiedStory(context, records.first);
+      },
+    );
+  }
+}
+
 final supabase = Supabase.instance.client;
 
 final Set<String> _debugLogOnceKeys = <String>{};
 
+void farmDebugLog(String? message, {int? wrapWidth}) {
+  if (kDebugMode) {
+    debugPrint(message, wrapWidth: wrapWidth);
+  }
+}
+
 void debugPrintOnce(String key, String message) {
   if (_debugLogOnceKeys.add(key)) {
-    debugPrint(message);
+    farmDebugLog(message);
   }
 }
 
@@ -2210,19 +2897,42 @@ bool isNotificationsPermissionError(Object error) {
 
 String friendlyAppError(Object error) {
   final text = error.toString();
-  if (text.contains('over_email_send_rate_limit')) {
+  final lower = text.toLowerCase();
+  if (lower.contains('over_email_send_rate_limit')) {
     return 'Too many reset emails were sent. Please wait a few minutes and try again.';
   }
-  if (text.contains('Failed host lookup') || text.contains('SocketException')) {
+  if (lower.contains('failed host lookup') ||
+      lower.contains('socketexception') ||
+      lower.contains('network')) {
     return 'Connection problem. Please check your internet and try again.';
   }
-  if (text.contains('JWT') || text.contains('Auth')) {
-    return 'Your session needs to be refreshed. Please sign in again.';
+  if (lower.contains('jwt') ||
+      lower.contains('auth') ||
+      lower.contains('session')) {
+    return 'Your session may have expired. Please sign in again.';
   }
-  if (text.contains('permission') || text.contains('policy')) {
+  if (lower.contains('permission') ||
+      lower.contains('policy') ||
+      lower.contains('42501') ||
+      lower.contains('row level security')) {
     return 'This action is not available for your account yet.';
   }
-  return text.replaceAll('Exception: ', '').trim();
+  if (lower.contains('rpc') ||
+      lower.contains('postgrest') ||
+      lower.contains('supabase') ||
+      lower.contains('storage') ||
+      lower.contains('bucket') ||
+      lower.contains('null') ||
+      lower.contains('exception') ||
+      lower.contains('unsupported operation') ||
+      lower.contains('not found')) {
+    return 'Something went wrong. Please try again.';
+  }
+
+  final clean = text.replaceAll('Exception: ', '').trim();
+  if (clean.isEmpty) return 'Something went wrong. Please try again.';
+  if (clean.length > 140) return 'Something went wrong. Please try again.';
+  return clean;
 }
 
 String friendlyAuthErrorMessage(
@@ -2255,7 +2965,11 @@ String friendlyAuthErrorMessage(
     return 'Connection problem. Please check your internet and try again.';
   }
 
-  if (message.isNotEmpty) {
+  if (message.isNotEmpty &&
+      message.length <= 120 &&
+      !lower.contains('supabase') &&
+      !lower.contains('postgrest') &&
+      !lower.contains('exception')) {
     return isRegister
         ? 'Could not create account: $message'
         : 'Could not sign in: $message';
@@ -2416,7 +3130,7 @@ Future<void> clearPrivateSessionStateForGuestBrowsing() async {
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      debugPrint('Supabase sign out skipped while entering guest mode: $error');
+      farmDebugLog('Supabase sign out skipped while entering guest mode: $error');
     }
   }
 
@@ -2450,8 +3164,6 @@ Future<List<Product>> _fetchProductsUncached() async {
     final response = await supabase
         .from('products')
         .select(selectFields)
-        .eq('is_available', true)
-        .gt('stock_quantity', 0)
         .order('created_at', ascending: false);
 
     return (response as List)
@@ -2464,13 +3176,13 @@ Future<List<Product>> _fetchProductsUncached() async {
     final products = await runQuery(extendedSelect);
     return products;
   } catch (error) {
-    debugPrint(
+    farmDebugLog(
         'Extended product fetch unavailable, using compatible fetch: $error');
     try {
       final products = await runQuery(compatibleSelect);
       return products;
     } catch (compatibleError) {
-      debugPrint('Failed to fetch products: $compatibleError');
+      farmDebugLog('Failed to fetch products: $compatibleError');
       return const <Product>[];
     }
   }
@@ -2582,7 +3294,7 @@ Future<List<Product>> _fetchReadySoonProductsUncached() async {
             product.isReadySoon)
         .toList();
   } catch (error) {
-    debugPrint(
+    farmDebugLog(
         'Ready soon product lookup unavailable, retrying without local origin: $error');
     try {
       final response = await supabase
@@ -2599,7 +3311,7 @@ Future<List<Product>> _fetchReadySoonProductsUncached() async {
               product.isReadySoon)
           .toList();
     } catch (fallbackError) {
-      debugPrint('Ready soon fallback lookup failed: $fallbackError');
+      farmDebugLog('Ready soon fallback lookup failed: $fallbackError');
       return [];
     }
   }
@@ -2619,7 +3331,7 @@ Future<Product?> fetchProductById(String productId) async {
     if (response == null) return null;
     return Product.fromSupabase(Map<String, dynamic>.from(response));
   } catch (error) {
-    debugPrint(
+    farmDebugLog(
         'Product lookup by id unavailable, retrying without local origin: $error');
     try {
       final response = await supabase
@@ -2630,7 +3342,7 @@ Future<Product?> fetchProductById(String productId) async {
       if (response == null) return null;
       return Product.fromSupabase(Map<String, dynamic>.from(response));
     } catch (fallbackError) {
-      debugPrint('Product lookup by id fallback failed: $fallbackError');
+      farmDebugLog('Product lookup by id fallback failed: $fallbackError');
       return null;
     }
   }
@@ -2656,8 +3368,6 @@ Future<List<Product>> _fetchDealOfTheDayProductsUncached() async {
         .from('products')
         .select(selectFields)
         .or('is_deal_of_day.eq.true,is_discount_active.eq.true')
-        .eq('is_available', true)
-        .gt('stock_quantity', 0)
         .order('deal_rank', ascending: true)
         .limit(12);
 
@@ -2669,21 +3379,24 @@ Future<List<Product>> _fetchDealOfTheDayProductsUncached() async {
         .toList();
 
     products.sort((a, b) {
+      if (a.canAddToCart != b.canAddToCart) return a.canAddToCart ? -1 : 1;
       final rank = a.dealRank.compareTo(b.dealRank);
       if (rank != 0) return rank;
       return b.discountPercentDisplay.compareTo(a.discountPercentDisplay);
     });
     return products;
   } catch (error) {
-    debugPrint('Deal of the day lookup unavailable: $error');
+    farmDebugLog('Deal of the day lookup unavailable: $error');
     try {
       final products = await fetchProducts();
       final deals = products
           .where(
               (product) => product.hasActiveDiscount || product.showAsDealOfDay)
           .toList();
-      deals.sort((a, b) =>
-          b.discountPercentDisplay.compareTo(a.discountPercentDisplay));
+      deals.sort((a, b) {
+        if (a.canAddToCart != b.canAddToCart) return a.canAddToCart ? -1 : 1;
+        return b.discountPercentDisplay.compareTo(a.discountPercentDisplay);
+      });
       return deals.take(8).toList();
     } catch (_) {
       return [];
@@ -2779,7 +3492,7 @@ Future<List<FarmOrder>> _fetchOrdersUncached() async {
         .map((item) => FarmOrder.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (userIdError) {
-    debugPrint(
+    farmDebugLog(
         'Order lookup by user_id unavailable, using customer_id fallback: $userIdError');
   }
 
@@ -2798,7 +3511,7 @@ Future<List<FarmOrder>> _fetchOrdersUncached() async {
         .map((item) => FarmOrder.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Failed to fetch only this customer orders: $error');
+    farmDebugLog('Failed to fetch only this customer orders: $error');
     return [];
   }
 }
@@ -2837,7 +3550,7 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
   } catch (error) {
-    debugPrint('Buy Again product_id lookup unavailable: $error');
+    farmDebugLog('Buy Again product_id lookup unavailable: $error');
     try {
       final response = await supabase
           .from('order_items')
@@ -2848,7 +3561,7 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
           .map((item) => Map<String, dynamic>.from(item as Map))
           .toList();
     } catch (fallbackError) {
-      debugPrint('Buy Again order item lookup failed: $fallbackError');
+      farmDebugLog('Buy Again order item lookup failed: $fallbackError');
       return const [];
     }
   }
@@ -2908,7 +3621,7 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
         }
       }
     } catch (error) {
-      debugPrint('Buy Again product lookup by id failed: $error');
+      farmDebugLog('Buy Again product lookup by id failed: $error');
     }
   }
 
@@ -2916,12 +3629,8 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
 
   if (orderedNames.isNotEmpty) {
     try {
-      final response = await supabase
-          .from('products')
-          .select(selectFields)
-          .eq('is_available', true)
-          .gt('stock_quantity', 0)
-          .limit(250);
+      final response =
+          await supabase.from('products').select(selectFields).limit(250);
 
       for (final item in response as List) {
         final product = Product.fromSupabase(Map<String, dynamic>.from(item));
@@ -2930,7 +3639,7 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
         }
       }
     } catch (error) {
-      debugPrint('Buy Again product lookup by name failed: $error');
+      farmDebugLog('Buy Again product lookup by name failed: $error');
     }
   }
 
@@ -3039,6 +3748,31 @@ Future<String?> findOrderIdForNotification(
     }
   }
 
+  // Admin notifications can point to orders that are not in the current
+  // customer's My Orders list. Older notification rows may also only contain
+  // the short #ABC123 label in the message. If this signed-in user is an admin,
+  // resolve that short label directly against the orders table.
+  try {
+    if (await isCurrentUserAdminFromDatabase()) {
+      final response = await supabase
+          .from('orders')
+          .select('id')
+          .ilike('id', '${shortId.toLowerCase()}%')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      final rows = response as List;
+      if (rows.isNotEmpty) {
+        return (rows.first['id'] ?? '').toString();
+      }
+    }
+  } catch (error) {
+    debugPrintOnce(
+      'admin_notification_order_lookup_skipped',
+      'Admin notification order lookup skipped safely.',
+    );
+  }
+
   return null;
 }
 
@@ -3079,6 +3813,24 @@ Future<void> createFarmNotification({
     if (cleanOrderId != null && cleanOrderId.isNotEmpty)
       'order_id': cleanOrderId,
   };
+
+  if (await farmNotificationAlreadyExists(
+    title: title,
+    type: type,
+    userId: targetUserId,
+    userEmail: targetEmail,
+    orderId: cleanOrderId,
+  )) {
+    showBrowserNotificationForTarget(
+      title: title,
+      message: message,
+      type: type,
+      userId: targetUserId,
+      userEmail: targetEmail,
+      orderId: cleanOrderId,
+    );
+    return;
+  }
 
   try {
     await supabase.from('notifications').insert(notificationPayload);
@@ -3161,7 +3913,7 @@ Future<List<NotificationTarget>> fetchAdminNotificationTargets() async {
       try {
         await readAdmins('email');
       } catch (thirdError) {
-        debugPrint(
+        farmDebugLog(
           'Admin notification target lookup skipped: $firstError / $secondError / $thirdError',
         );
       }
@@ -3180,7 +3932,7 @@ Future<void> createAdminNotification({
   try {
     final targets = await fetchAdminNotificationTargets();
     if (targets.isEmpty) {
-      debugPrint(
+      farmDebugLog(
           'Admin notification skipped because no admin target was found.');
       return;
     }
@@ -3196,7 +3948,7 @@ Future<void> createAdminNotification({
       );
     }
   } catch (error) {
-    debugPrint('Admin notification skipped: $error');
+    farmDebugLog('Admin notification skipped: $error');
   }
 }
 
@@ -3440,7 +4192,7 @@ Future<void> createOrderConfirmationSupport({
     try {
       await supabase.from('order_confirmations').insert(payload);
     } catch (legacyError) {
-      debugPrint(
+      farmDebugLog(
           'Order confirmation support skipped: $userIdError / $legacyError');
     }
   }
@@ -3484,7 +4236,7 @@ Future<List<FarmNotification>> _fetchFarmNotificationsUncached() async {
     final response = await supabase
         .from('notifications')
         .select(
-            'id, user_id, user_email, title, message, type, is_read, created_at')
+            'id, user_id, user_email, title, message, type, is_read, created_at, order_id')
         .eq('user_id', user.id)
         .order('created_at', ascending: false)
         .limit(50);
@@ -3508,7 +4260,8 @@ Future<List<FarmNotification>> _fetchFarmNotificationsUncached() async {
 
     final response = await supabase
         .from('notifications')
-        .select('id, user_email, title, message, type, is_read, created_at')
+        .select(
+            'id, user_email, title, message, type, is_read, created_at, order_id')
         .eq('user_email', userEmail)
         .order('created_at', ascending: false)
         .limit(50);
@@ -3587,7 +4340,7 @@ Future<bool> subscribeToProductReadyAlert(Product product) async {
     });
     return true;
   } catch (error) {
-    debugPrint('Product ready subscription skipped: $error');
+    farmDebugLog('Product ready subscription skipped: $error');
     throw Exception(
         'Ready alerts are not set up yet. Please run the Supabase SQL migration first.');
   }
@@ -3635,7 +4388,7 @@ Future<void> notifySubscribedCustomersProductReady(Product product) async {
               (email != null && email.trim().isNotEmpty);
 
       if (!hasSubscriptionTarget) {
-        debugPrint(
+        farmDebugLog(
             'Skipped product-ready notification with no customer target for ${product.id}.');
         continue;
       }
@@ -3675,7 +4428,7 @@ Future<void> notifySubscribedCustomersProductReady(Product product) async {
       );
     }
   } catch (error) {
-    debugPrint('Product ready notifications skipped: $error');
+    farmDebugLog('Product ready notifications skipped: $error');
   }
 }
 
@@ -3691,11 +4444,11 @@ Future<bool> subscribeToSaveProduct(
 }) async {
   final user = supabase.auth.currentUser;
   if (user == null) {
-    throw Exception('Please sign in to start Subscribe & Save.');
+    throw Exception('Please sign in to start a Fresh Box Plan.');
   }
 
   if (!product.hasSubscribeSave) {
-    throw Exception('Subscribe & Save is not available for this item yet.');
+    throw Exception('Fresh Box Plan is not available for this item yet.');
   }
 
   final safeInterval = intervalDays <= 0 ? 7 : intervalDays;
@@ -3725,10 +4478,245 @@ Future<bool> subscribeToSaveProduct(
     });
     return true;
   } catch (error) {
-    debugPrint('Subscribe & Save setup skipped: $error');
+    farmDebugLog('Fresh Box Plan setup skipped: $error');
     throw Exception(
-        'Subscribe & Save is not set up yet. Please run the Supabase SQL migration first.');
+        'Fresh Box Plan is not set up yet. Please run the Supabase SQL migration first.');
   }
+}
+
+String repeatIntervalLabel(int days) {
+  if (days <= 7) return 'Every week';
+  if (days <= 14) return 'Every 2 weeks';
+  if (days <= 30) return 'Every month';
+  return 'Every $days days';
+}
+
+String formatPlanDate(DateTime? value) {
+  if (value == null) return 'To be confirmed';
+  return formatCustomerDateTime(value).split(' • ').first;
+}
+
+class CustomerProductSubscription {
+  final String id;
+  final String userId;
+  final String userEmail;
+  final String productId;
+  final String productName;
+  final int intervalDays;
+  final double discountPercent;
+  final DateTime? nextOrderDate;
+  final String status;
+  final DateTime? createdAt;
+
+  const CustomerProductSubscription({
+    required this.id,
+    required this.userId,
+    required this.userEmail,
+    required this.productId,
+    required this.productName,
+    required this.intervalDays,
+    required this.discountPercent,
+    required this.nextOrderDate,
+    required this.status,
+    this.createdAt,
+  });
+
+  bool get isActive => status.trim().toLowerCase() == 'active';
+  bool get isPaused => status.trim().toLowerCase() == 'paused';
+  String get repeatLabel => repeatIntervalLabel(intervalDays);
+  String get savingsLabel => '${discountPercent.toStringAsFixed(0)}% savings';
+  String get nextOrderLabel => formatPlanDate(nextOrderDate);
+
+  factory CustomerProductSubscription.fromSupabase(Map<String, dynamic> data) {
+    return CustomerProductSubscription(
+      id: (data['id'] ?? '').toString(),
+      userId: (data['user_id'] ?? '').toString(),
+      userEmail: (data['user_email'] ?? '').toString(),
+      productId: (data['product_id'] ?? '').toString(),
+      productName: (data['product_name'] ?? 'Product').toString(),
+      intervalDays: Product._toInt(data['interval_days'] ?? 7),
+      discountPercent: parseNullableDouble(data['discount_percent']) ?? 0,
+      nextOrderDate: parseProductDate(data['next_order_date']),
+      status: (data['status'] ?? 'active').toString(),
+      createdAt: parseProductDate(data['created_at']),
+    );
+  }
+}
+
+Future<CustomerProductSubscription?> fetchActiveSubscriptionForProduct(
+  Product product,
+) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return null;
+
+  try {
+    final response = await supabase
+        .from('customer_product_subscriptions')
+        .select(
+            'id, user_id, user_email, product_id, product_name, interval_days, discount_percent, next_order_date, status, created_at')
+        .eq('product_id', product.id)
+        .eq('user_id', user.id)
+        .inFilter('status', ['active', 'paused'])
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (response == null) return null;
+    return CustomerProductSubscription.fromSupabase(
+      Map<String, dynamic>.from(response),
+    );
+  } catch (error) {
+    debugPrintOnce(
+      'customer-subscription-lookup-unavailable',
+      'Fresh Box Plan lookup skipped: $error',
+    );
+    return null;
+  }
+}
+
+Future<List<CustomerProductSubscription>> fetchCustomerProductSubscriptions({
+  bool includeCancelled = false,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return [];
+
+  try {
+    var query = supabase
+        .from('customer_product_subscriptions')
+        .select(
+            'id, user_id, user_email, product_id, product_name, interval_days, discount_percent, next_order_date, status, created_at')
+        .eq('user_id', user.id);
+
+    if (!includeCancelled) {
+      query = query.neq('status', 'cancelled');
+    }
+
+    final response = await query.order('next_order_date', ascending: true);
+
+    return (response as List)
+        .map((row) => CustomerProductSubscription.fromSupabase(
+              Map<String, dynamic>.from(row),
+            ))
+        .toList();
+  } catch (error) {
+    debugPrintOnce(
+      'customer-subscriptions-table-unavailable',
+      'Weekly Box plans are unavailable: $error',
+    );
+    return [];
+  }
+}
+
+Future<void> updateCustomerSubscriptionStatus({
+  required CustomerProductSubscription subscription,
+  required String status,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) throw Exception('Please sign in first.');
+
+  await supabase
+      .from('customer_product_subscriptions')
+      .update({'status': status})
+      .eq('id', subscription.id)
+      .eq('user_id', user.id);
+}
+
+Future<void> updateCustomerSubscriptionSchedule({
+  required CustomerProductSubscription subscription,
+  required int intervalDays,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) throw Exception('Please sign in first.');
+
+  final safeInterval = intervalDays <= 0 ? 7 : intervalDays;
+  final nextOrderDate = DateTime.now().add(Duration(days: safeInterval));
+
+  await supabase
+      .from('customer_product_subscriptions')
+      .update({
+        'interval_days': safeInterval,
+        'next_order_date': todayIsoDateFrom(nextOrderDate),
+        'status': 'active',
+      })
+      .eq('id', subscription.id)
+      .eq('user_id', user.id);
+}
+
+bool canAddToWeeklyBox(Product product) {
+  return product.canAddToCart;
+}
+
+double weeklyBoxDiscountForProduct(Product product) {
+  if (!product.subscribeSaveEnabled) return 0;
+  return product.subscribeSavePercentValue;
+}
+
+Future<int> saveWeeklyBoxPlanProducts({
+  required List<Product> products,
+  int intervalDays = 7,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    throw Exception('Please sign in to build your Weekly Box.');
+  }
+
+  final selectedProducts = products
+      .where((product) => product.id.trim().isNotEmpty)
+      .where(canAddToWeeklyBox)
+      .toList();
+
+  if (selectedProducts.isEmpty) {
+    throw Exception('Choose at least one available item for your Weekly Box.');
+  }
+
+  final safeInterval = intervalDays <= 0 ? 7 : intervalDays;
+  final nextOrderDate = DateTime.now().add(Duration(days: safeInterval));
+  final email = (user.email ?? '').trim().toLowerCase();
+  var savedCount = 0;
+
+  try {
+    for (final product in selectedProducts) {
+      final discountPercent = weeklyBoxDiscountForProduct(product);
+      final existing = await supabase
+          .from('customer_product_subscriptions')
+          .select('id')
+          .eq('product_id', product.id)
+          .eq('user_id', user.id)
+          .neq('status', 'cancelled')
+          .limit(1)
+          .maybeSingle();
+
+      final payload = {
+        'user_id': user.id,
+        'user_email': email,
+        'product_id': product.id,
+        'product_name': product.name,
+        'interval_days': safeInterval,
+        'discount_percent': discountPercent,
+        'next_order_date': todayIsoDateFrom(nextOrderDate),
+        'status': 'active',
+      };
+
+      if (existing != null) {
+        await supabase
+            .from('customer_product_subscriptions')
+            .update(payload)
+            .eq('id', (existing['id'] ?? '').toString())
+            .eq('user_id', user.id);
+      } else {
+        await supabase.from('customer_product_subscriptions').insert(payload);
+      }
+
+      savedCount++;
+    }
+  } catch (error) {
+    farmDebugLog('Weekly Box save skipped: $error');
+    throw Exception(
+      'Weekly Box is not set up yet. Please check the Fresh Box Plan table and policies.',
+    );
+  }
+
+  return savedCount;
 }
 
 class OrderDetailsItem {
@@ -3898,7 +4886,7 @@ Future<OrderDetails?> fetchOrderDetails(String orderId) async {
         return OrderDetails.fromSupabase(Map<String, dynamic>.from(response));
       }
     } catch (userIdError) {
-      debugPrint('Order detail lookup by user_id unavailable: $userIdError');
+      farmDebugLog('Order detail lookup by user_id unavailable: $userIdError');
     }
 
     final profile = await fetchCurrentCustomerProfile();
@@ -3915,7 +4903,7 @@ Future<OrderDetails?> fetchOrderDetails(String orderId) async {
         ? null
         : OrderDetails.fromSupabase(Map<String, dynamic>.from(response));
   } catch (error) {
-    debugPrint('Failed to fetch private order details: $error');
+    farmDebugLog('Failed to fetch private order details: $error');
     return null;
   }
 }
@@ -4153,7 +5141,7 @@ Future<List<AdminOrder>> fetchAdminOrders() async {
         .map((item) => AdminOrder.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Failed to fetch admin orders: $error');
+    farmDebugLog('Failed to fetch admin orders: $error');
     return [];
   }
 }
@@ -4260,12 +5248,12 @@ Future<List<Product>> fetchAllProducts() async {
   try {
     return await runQuery(extendedSelect);
   } catch (error) {
-    debugPrint(
+    farmDebugLog(
         'Extended all-products fetch unavailable, using compatible fetch: $error');
     try {
       return await runQuery(compatibleSelect);
     } catch (compatibleError) {
-      debugPrint('Failed to fetch all products: $compatibleError');
+      farmDebugLog('Failed to fetch all products: $compatibleError');
       return const <Product>[];
     }
   }
@@ -4349,7 +5337,7 @@ Future<Map<String, dynamic>?> adminUpdateProduct({
             .from('products')
             .update({'is_local': isLocal}).eq('id', productId);
       } catch (localUpdateError) {
-        debugPrint('Local origin update skipped: $localUpdateError');
+        farmDebugLog('Local origin update skipped: $localUpdateError');
       }
     }
 
@@ -4360,7 +5348,7 @@ Future<Map<String, dynamic>?> adminUpdateProduct({
     return null;
   } catch (error) {
     final cleanMessage = friendlyAppError(error);
-    debugPrint('Admin product RPC failed: $cleanMessage');
+    farmDebugLog('Admin product RPC failed: $cleanMessage');
     throw Exception(cleanMessage);
   }
 }
@@ -4448,7 +5436,7 @@ Future<void> createProduct({
         errorText.contains('pgrst204') ||
         errorText.contains('column');
     if (!missingNewColumns) rethrow;
-    debugPrint(
+    farmDebugLog(
         'Discount/ready-soon columns unavailable, using compatible insert: $error');
     await supabase.from('products').insert({
       'name': name,
@@ -4591,7 +5579,7 @@ Future<void> reduceStockForOrder(String orderId) async {
     );
   } catch (error) {
     final cleanMessage = error.toString().replaceFirst('Exception: ', '');
-    debugPrint('Server-side stock reduction failed: $cleanMessage');
+    farmDebugLog('Server-side stock reduction failed: $cleanMessage');
     throw Exception(cleanMessage);
   }
 }
@@ -4638,7 +5626,7 @@ Future<void> ensureStockReducedAfterCheckout({
     await reduceStockForOrder(orderId);
     FarmDataCache.clearProducts();
   } catch (error) {
-    debugPrint('Post-checkout stock sync failed: $error');
+    farmDebugLog('Post-checkout stock sync failed: $error');
     throw Exception(
       'Your order was created, but stock could not be updated. Please contact support before placing this order again.',
     );
@@ -4670,7 +5658,7 @@ Future<void> notifyAdminsAboutLowStockAfterCheckout(
         type: 'stock',
       );
     } catch (error) {
-      debugPrint('Low stock admin notification skipped for $productId: $error');
+      farmDebugLog('Low stock admin notification skipped for $productId: $error');
     }
   }
 }
@@ -4735,7 +5723,7 @@ String get currentUserRole {
 
   // Security note: admin access is never granted from user metadata or
   // hardcoded emails. Admin privileges are checked against the database by
-  // isCurrentUserAdminFromDatabase(), and must also be enforced with Supabase RLS.
+  // isCurrentUserAdminFromDatabase(), and must also be enforced with backend security rules.
   if (role == 'farmer') return 'farmer';
   return 'customer';
 }
@@ -4795,7 +5783,7 @@ Future<bool> isCurrentUserAdminFromDatabase() async {
     }
   }
 
-  debugPrint(
+  farmDebugLog(
     'Admin check failed for ${user.email ?? user.id}: '
     '$userIdCheckError / $idCheckError / $emailCheckError',
   );
@@ -4817,7 +5805,7 @@ Future<bool> isCurrentUserFarmerFromDatabase() async {
     final status = (response['verification_status'] ?? '').toString();
     return status == 'approved' || status == 'pending';
   } catch (error) {
-    debugPrint('Farmer role check failed: $error');
+    farmDebugLog('Farmer role check failed: $error');
     return currentUserRole == 'farmer';
   }
 }
@@ -4844,7 +5832,7 @@ Future<String?> currentCustomerIdForSignedInUser() async {
 
     return response == null ? null : (response['id'] ?? '').toString();
   } catch (error) {
-    debugPrint('Secure customer id lookup failed: $error');
+    farmDebugLog('Secure customer id lookup failed: $error');
     return null;
   }
 }
@@ -4873,7 +5861,7 @@ Future<String?> secureSaveCurrentCustomerAndGetId({
         .single();
     return (response['id'] ?? '').toString();
   } catch (upsertError) {
-    debugPrint(
+    farmDebugLog(
         'Customer upsert by user_id failed, using safe fallback: $upsertError');
     final existingId = await currentCustomerIdForSignedInUser();
     if (existingId != null && existingId.isNotEmpty) {
@@ -4928,7 +5916,7 @@ Future<CustomerProfile?> fetchCurrentCustomerProfile() async {
     if (response == null) return null;
     return CustomerProfile.fromSupabase(Map<String, dynamic>.from(response));
   } catch (error) {
-    debugPrint('Failed to fetch current user customer profile: $error');
+    farmDebugLog('Failed to fetch current user customer profile: $error');
     return null;
   }
 }
@@ -5134,7 +6122,7 @@ Future<List<FarmerOrderSummary>> fetchFarmerOrderSummaries(
             FarmerOrderSummary.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Farmer order summaries unavailable: $error');
+    farmDebugLog('Farmer order summaries unavailable: $error');
     return [];
   }
 }
@@ -5152,7 +6140,7 @@ Future<FarmerProfile?> fetchCurrentFarmerProfile() async {
     if (response == null) return null;
     return FarmerProfile.fromSupabase(Map<String, dynamic>.from(response));
   } catch (error) {
-    debugPrint('Farmer profile unavailable: $error');
+    farmDebugLog('Farmer profile unavailable: $error');
     return null;
   }
 }
@@ -5171,7 +6159,7 @@ Future<List<FarmerProfile>> fetchFarmerProfiles() async {
             FarmerProfile.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Farmer profiles unavailable: $error');
+    farmDebugLog('Farmer profiles unavailable: $error');
     return [];
   }
 }
@@ -5238,7 +6226,7 @@ Future<List<Product>> fetchFarmerProducts(String farmerId) async {
         .map((item) => Product.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint(
+    farmDebugLog(
         'Farmer products unavailable, retrying without local origin: $error');
     try {
       final response = await supabase
@@ -5251,7 +6239,7 @@ Future<List<Product>> fetchFarmerProducts(String farmerId) async {
           .map((item) => Product.fromSupabase(Map<String, dynamic>.from(item)))
           .toList();
     } catch (fallbackError) {
-      debugPrint('Farmer products fallback unavailable: $fallbackError');
+      farmDebugLog('Farmer products fallback unavailable: $fallbackError');
       return [];
     }
   }
@@ -5340,12 +6328,12 @@ Future<void> createFarmerProduct({
         errorText.contains('pgrst204');
 
     if (!looksLikeMissingMarketplaceColumn) {
-      debugPrint('Farmer product insert failed: $error');
+      farmDebugLog('Farmer product insert failed: $error');
       throw Exception(
           'Could not submit product. Please make sure your farmer profile is approved and linked to this account.');
     }
 
-    debugPrint(
+    farmDebugLog(
       'Marketplace columns unavailable, using compatible product insert: $error',
     );
 
@@ -5364,7 +6352,7 @@ Future<void> createFarmerProduct({
         imageUrl: imageUrl?.trim().isEmpty == true ? null : imageUrl?.trim(),
       );
     } catch (fallbackError) {
-      debugPrint('Compatible farmer product insert failed: $fallbackError');
+      farmDebugLog('Compatible farmer product insert failed: $fallbackError');
       throw Exception(
           'Could not submit product. Please make sure your account has permission to add products.');
     }
@@ -5401,7 +6389,7 @@ Future<List<FarmerPayout>> fetchFarmerPayouts({String? farmerId}) async {
             FarmerPayout.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Farmer payouts unavailable: $error');
+    farmDebugLog('Farmer payouts unavailable: $error');
     return [];
   }
 }
@@ -5560,7 +6548,7 @@ Future<Coupon?> fetchActiveCoupon(String code) async {
     if (response == null) return null;
     return Coupon.fromSupabase(Map<String, dynamic>.from(response));
   } catch (error) {
-    debugPrint('Coupon lookup failed: $error');
+    farmDebugLog('Coupon lookup failed: $error');
     return null;
   }
 }
@@ -5580,7 +6568,7 @@ Future<List<Coupon>> fetchCoupons() async {
         .map((item) => Coupon.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Failed to fetch coupons: $error');
+    farmDebugLog('Failed to fetch coupons: $error');
     return [];
   }
 }
@@ -5705,7 +6693,7 @@ Future<List<SupportTicket>> fetchMySupportTickets() async {
             SupportTicket.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Failed to fetch this user support tickets: $error');
+    farmDebugLog('Failed to fetch this user support tickets: $error');
     return [];
   }
 }
@@ -5726,7 +6714,7 @@ Future<List<SupportTicket>> fetchAdminSupportTickets() async {
             SupportTicket.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Failed to fetch admin support tickets: $error');
+    farmDebugLog('Failed to fetch admin support tickets: $error');
     return [];
   }
 }
@@ -5821,7 +6809,7 @@ Future<List<ProductReview>> fetchProductReviews() async {
             ProductReview.fromSupabase(Map<String, dynamic>.from(item)))
         .toList();
   } catch (error) {
-    debugPrint('Failed to fetch product reviews: $error');
+    farmDebugLog('Failed to fetch product reviews: $error');
     return [];
   }
 }
@@ -5906,11 +6894,11 @@ class _AuthGateState extends State<AuthGate> {
       _deepLinkSubscription = _appLinks.uriLinkStream.listen(
         _handleIncomingAuthLink,
         onError: (error) {
-          debugPrint('Deep link error: $error');
+          farmDebugLog('Deep link error: $error');
         },
       );
     } catch (error) {
-      debugPrint('Deep link init skipped: $error');
+      farmDebugLog('Deep link init skipped: $error');
     }
   }
 
@@ -6143,22 +7131,41 @@ class PublicLandingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(24),
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(20, 18, 20, 28 + bottomPadding),
           children: [
-            const SizedBox(height: 18),
+            const SizedBox(height: 4),
             Center(
-              child: Image.asset(
-                'lib/assets/images/logo.png',
-                height: 106,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.eco_outlined,
-                  size: 76,
-                  color: FarmColors.primary,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: FarmColors.line),
+                  boxShadow: [
+                    BoxShadow(
+                      color: FarmColors.shadow.withOpacity(0.08),
+                      blurRadius: 22,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: Image.asset(
+                  'lib/assets/images/logo.png',
+                  height: 78,
+                  width: 78,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.eco_outlined,
+                    size: 58,
+                    color: FarmColors.primary,
+                  ),
                 ),
               ),
             ),
@@ -6166,51 +7173,66 @@ class PublicLandingScreen extends StatelessWidget {
             const Text(
               'The Harvest Place Ja',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 31,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.8,
+                height: 1.05,
+              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 9),
             Text(
-              'Fresh natural food, local harvests, and easy ordering.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: FarmColors.mutedText),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Browse freely. Sign in only when you’re ready to checkout.',
+              'Fresh local food, simple ordering, and farm updates you can trust.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 15.5,
                 color: FarmColors.mutedText,
                 fontWeight: FontWeight.w700,
+                height: 1.35,
               ),
             ),
-            const SizedBox(height: 26),
-            FarmCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    'What you can do',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 12),
-                  TraceRow(
-                    icon: Icons.storefront_outlined,
-                    title: 'Shop fresh food',
-                    value: 'Browse available harvests and natural products.',
-                  ),
-                  TraceRow(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'Pickup or delivery',
-                    value: 'Choose a convenient schedule and delivery option.',
-                  ),
-                  TraceRow(
-                    icon: Icons.receipt_long_outlined,
-                    title: 'Track your order',
-                    value: 'Follow order, payment, and delivery status.',
-                  ),
-                ],
-              ),
+            const SizedBox(height: 18),
+            _LandingHeroCard(onEnterMarket: onEnterMarket),
+            const SizedBox(height: 16),
+            const Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _LandingTrustPill(
+                  icon: Icons.visibility_outlined,
+                  label: 'Browse first',
+                ),
+                _LandingTrustPill(
+                  icon: Icons.lock_outline,
+                  label: 'Secure checkout',
+                ),
+                _LandingTrustPill(
+                  icon: Icons.receipt_long_outlined,
+                  label: 'Track orders',
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const _LandingFeatureTile(
+              icon: Icons.storefront_outlined,
+              title: 'Shop fresh harvests',
+              subtitle:
+                  'See what is available, low stock, or currently unavailable before you order.',
+            ),
+            const SizedBox(height: 10),
+            const _LandingFeatureTile(
+              icon: Icons.local_shipping_outlined,
+              title: 'Pickup or delivery',
+              subtitle:
+                  'Choose the fulfillment option that works best for your schedule.',
+            ),
+            const SizedBox(height: 10),
+            const _LandingFeatureTile(
+              icon: Icons.repeat_outlined,
+              title: 'Build your weekly box',
+              subtitle:
+                  'Save favorite repeat items and confirm them when you are ready.',
             ),
             const SizedBox(height: 22),
             PrimaryFarmButton(
@@ -6220,19 +7242,21 @@ class PublicLandingScreen extends StatelessWidget {
             const SizedBox(height: 10),
             OutlinedButton.icon(
               icon: const Icon(Icons.person_outline),
-              label: const Text('Login or Create Account'),
+              label: const Text('Log in or Create Account'),
               onPressed: onAuth,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
-              'No account needed to browse.',
+              'No account needed to browse. Sign in only when you are ready to checkout or manage orders.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: FarmColors.mutedText,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+                height: 1.35,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             TextButton.icon(
               icon: const Icon(Icons.lock_reset_outlined),
               label: const Text('Forgot password?'),
@@ -6245,50 +7269,281 @@ class PublicLandingScreen extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Wrap(
               alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
+              spacing: 4,
+              runSpacing: 0,
               children: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const TermsOfServiceScreen(),
-                      ),
-                    );
-                  },
-                  child: const Text('Terms'),
+                _LandingPolicyLink(
+                  label: 'Terms',
+                  builder: (_) => const TermsOfServiceScreen(),
                 ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const PrivacyPolicyScreen(),
-                      ),
-                    );
-                  },
-                  child: const Text('Privacy'),
+                _LandingPolicyLink(
+                  label: 'Privacy',
+                  builder: (_) => const PrivacyPolicyScreen(),
                 ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const RefundPolicyScreen(),
-                      ),
-                    );
-                  },
-                  child: const Text('Refund Policy'),
+                _LandingPolicyLink(
+                  label: 'Refund Policy',
+                  builder: (_) => const RefundPolicyScreen(),
                 ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _LandingHeroCard extends StatelessWidget {
+  final VoidCallback onEnterMarket;
+
+  const _LandingHeroCard({required this.onEnterMarket});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onEnterMarket,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(30),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              FarmColors.primaryDark,
+              FarmColors.primary,
+              FarmColors.olive,
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: FarmColors.primary.withOpacity(0.20),
+              blurRadius: 26,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white.withOpacity(0.18)),
+                  ),
+                  child: const Icon(
+                    Icons.shopping_basket_outlined,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Your farm market in your pocket',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          height: 1.08,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Browse fresh picks, build your box, and get clear updates from order to pickup or delivery.',
+                        style: TextStyle(
+                          color: Color(0xFFEAF5E7),
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withOpacity(0.16)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.touch_app_outlined, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tap Enter Market to start browsing now.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12.8,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_rounded,
+                      color: Colors.white, size: 18),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LandingTrustPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _LandingTrustPill({
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: FarmColors.green),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontWeight: FontWeight.w900,
+              fontSize: 11.8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LandingFeatureTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _LandingFeatureTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: FarmColors.line),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.045),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: BoxDecoration(
+              color: FarmColors.lightGreen,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: FarmColors.green, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14.2,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.2,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LandingPolicyLink extends StatelessWidget {
+  final String label;
+  final WidgetBuilder builder;
+
+  const _LandingPolicyLink({
+    required this.label,
+    required this.builder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        minimumSize: const Size(0, 34),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: builder),
+        );
+      },
+      child: Text(label),
     );
   }
 }
@@ -6389,7 +7644,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 filled: true,
                 fillColor: Colors.white,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -6990,7 +8245,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } on AuthException catch (error) {
       if (!mounted) return;
 
-      debugPrint('Supabase auth error: ${error.message}');
+      farmDebugLog('Supabase auth error: ${error.message}');
 
       final message = friendlyAuthErrorMessage(
         error,
@@ -7003,7 +8258,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
 
-      debugPrint('Unexpected auth error: $error');
+      farmDebugLog('Unexpected auth error: $error');
 
       final message = isRegister
           ? 'Could not create account. Please check your details and try again.'
@@ -7151,6 +8406,10 @@ class AccountScreen extends StatelessWidget {
     this.onSignedOut,
   });
 
+  void _open(BuildContext context, Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = supabase.auth.currentUser;
@@ -7174,125 +8433,137 @@ class AccountScreen extends StatelessWidget {
 
     return FarmPage(
       child: ListView(
-        padding: const EdgeInsets.all(18),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
         children: [
-          const Header(title: 'Account', subtitle: 'Profile, rewards & tools'),
+          const Header(
+            title: 'Account',
+            subtitle: 'Your farm shopping hub',
+          ),
           const SizedBox(height: 18),
-          FarmCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: const TextStyle(
-                        fontSize: 22, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                Text(user.email ?? ''),
-                const SizedBox(height: 6),
-                Chip(label: Text(roleLabel)),
-              ],
-            ),
+          EliteAccountHeroCard(
+            name: name,
+            email: user.email ?? '',
+            roleLabel: roleLabel,
+            favoriteCount: favoriteProducts.length,
+            recentCount: recentlyViewedProducts.length,
+            showAdmin: showAdmin,
           ),
           const SizedBox(height: 18),
           const LoyaltySummaryCard(),
-          // Browser notification UI is hidden until browser notifications are fully implemented.
           const SizedBox(height: 18),
           FarmCard(
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Smart Shopping Tools',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                const AccountSectionHeading(
+                  title: 'Quick actions',
+                  subtitle: 'Everything you use most often.',
                 ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.favorite_outline),
-                      label: Text('Favorites (${favoriteProducts.length})'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => FavoritesScreen(
-                              products: favoriteProducts,
-                              onShopTap: onShopTap,
-                            ),
-                          ),
-                        );
-                      },
+                const SizedBox(height: 14),
+                AccountActionGrid(
+                  actions: [
+                    AccountActionItem(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'Orders',
+                      subtitle: 'Track purchases',
+                      onTap: () => _open(context, const OrdersScreen()),
                     ),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.history),
-                      label: Text(
-                          'Recently Viewed (${recentlyViewedProducts.length})'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => RecentlyViewedScreen(
-                              products: recentlyViewedProducts,
-                              onShopTap: onShopTap,
-                            ),
-                          ),
-                        );
-                      },
+                    AccountActionItem(
+                      icon: Icons.inventory_2_outlined,
+                      title: 'Weekly Box',
+                      subtitle: 'Manage repeats',
+                      onTap: () => _open(
+                        context,
+                        const CustomerSubscriptionsScreen(),
+                      ),
                     ),
-                    // AI Assistant entry point hidden until it provides full production value.
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.card_giftcard),
-                      label: const Text('Rewards'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const LoyaltyRewardsScreen(),
-                          ),
-                        );
-                      },
+                    AccountActionItem(
+                      icon: Icons.favorite_outline,
+                      title: 'Favorites',
+                      subtitle: '${favoriteProducts.length} saved',
+                      onTap: () => _open(
+                        context,
+                        FavoritesScreen(
+                          products: favoriteProducts,
+                          onShopTap: onShopTap,
+                        ),
+                      ),
                     ),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.notifications_none_outlined),
-                      label: const Text('App Alerts'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationsScreen(),
-                          ),
-                        );
-                      },
+                    AccountActionItem(
+                      icon: Icons.history,
+                      title: 'Recent',
+                      subtitle: '${recentlyViewedProducts.length} viewed',
+                      onTap: () => _open(
+                        context,
+                        RecentlyViewedScreen(
+                          products: recentlyViewedProducts,
+                          onShopTap: onShopTap,
+                        ),
+                      ),
                     ),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.notifications_active_outlined),
-                      label: const Text('Chrome Alerts'),
-                      onPressed: () async {
-                        final granted = await requestBrowserNotifications();
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(granted
-                                ? 'Chrome alerts are enabled for this browser.'
-                                : 'Chrome alerts were not enabled. Check the site notification permission in Chrome.'),
-                          ),
-                        );
-                      },
+                    AccountActionItem(
+                      icon: Icons.notifications_none_outlined,
+                      title: 'Alerts',
+                      subtitle: 'Order updates',
+                      onTap: () => _open(
+                        context,
+                        const NotificationsScreen(),
+                      ),
                     ),
-                    // Vegan Ingredient Book entry point hidden to keep the account tools focused.
+                    AccountActionItem(
+                      icon: Icons.card_giftcard,
+                      title: 'Rewards',
+                      subtitle: 'Points & perks',
+                      onTap: () => _open(
+                        context,
+                        const LoyaltyRewardsScreen(),
+                      ),
+                    ),
+                    AccountActionItem(
+                      icon: Icons.ios_share_outlined,
+                      title: 'Invite',
+                      subtitle: 'Share market',
+                      onTap: () => _open(
+                        context,
+                        const InviteFarmMarketScreen(),
+                      ),
+                    ),
+                    AccountActionItem(
+                      icon: Icons.add_to_home_screen,
+                      title: 'Install',
+                      subtitle: 'Home screen',
+                      onTap: () => _open(
+                        context,
+                        const InstallAppGuideScreen(),
+                      ),
+                    ),
+                    AccountActionItem(
+                      icon: Icons.person_outline,
+                      title: 'Profile',
+                      subtitle: 'Saved details',
+                      onTap: () => _open(
+                        context,
+                        const CustomerProfileScreen(),
+                      ),
+                    ),
+                    AccountActionItem(
+                      icon: Icons.support_agent_outlined,
+                      title: 'Support',
+                      subtitle: 'Get help fast',
+                      onTap: () => _open(context, const SupportScreen()),
+                    ),
                     if (showAdmin)
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.admin_panel_settings_outlined),
-                        label: const Text('Admin Dashboard'),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AdminDashboardScreen(),
-                            ),
-                          );
-                        },
+                      AccountActionItem(
+                        icon: Icons.admin_panel_settings_outlined,
+                        title: 'Admin',
+                        subtitle: 'Dashboard',
+                        accentColor: FarmColors.warning,
+                        onTap: () => _open(
+                          context,
+                          const AdminDashboardScreen(),
+                        ),
                       ),
                   ],
                 ),
@@ -7300,96 +8571,64 @@ class AccountScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          PrimaryFarmButton(
-            label: 'Edit Customer Profile',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const CustomerProfileScreen(),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          PrimaryFarmButton(
-            label: 'Contact Farm Support',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SupportScreen()),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.rate_review_outlined),
-            label: const Text('Reviews & Feedback'),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ReviewScreen()),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
           FarmCard(
+            padding: EdgeInsets.zero,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Policies & Legal',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 18, 18, 8),
+                  child: AccountSectionHeading(
+                    title: 'Trust & support',
+                    subtitle: 'Help, feedback, and customer policies.',
+                  ),
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.description_outlined),
-                      label: const Text('Terms of Service'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const TermsOfServiceScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.privacy_tip_outlined),
-                      label: const Text('Privacy Policy'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const PrivacyPolicyScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.replay_circle_filled_outlined),
-                      label: const Text('Refund Policy'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RefundPolicyScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                AccountListTile(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Trust Center',
+                  subtitle: 'How orders, freshness, privacy, and support work.',
+                  onTap: () => _open(context, const TrustCenterScreen()),
+                ),
+                AccountListTile(
+                  icon: Icons.rate_review_outlined,
+                  title: 'Reviews & Feedback',
+                  subtitle: 'Share your experience.',
+                  onTap: () => _open(context, const ReviewScreen()),
+                ),
+                AccountListTile(
+                  icon: Icons.description_outlined,
+                  title: 'Terms of Service',
+                  subtitle: 'How the marketplace works.',
+                  onTap: () => _open(context, const TermsOfServiceScreen()),
+                ),
+                AccountListTile(
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Privacy Policy',
+                  subtitle: 'How your account and order data are protected.',
+                  onTap: () => _open(context, const PrivacyPolicyScreen()),
+                ),
+                AccountListTile(
+                  icon: Icons.replay_circle_filled_outlined,
+                  title: 'Refund Policy',
+                  subtitle: 'Freshness, cancellations, and support rules.',
+                  isLast: true,
+                  onTap: () => _open(context, const RefundPolicyScreen()),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 18),
-          PrimaryFarmButton(
-            label: 'Sign Out',
+          OutlinedButton.icon(
+            icon: const Icon(Icons.logout_outlined),
+            label: const Text('Sign Out'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: FarmColors.danger,
+              side: BorderSide(color: FarmColors.danger.withOpacity(0.32)),
+              padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
             onPressed: () async {
               await clearPrivateSessionStateForGuestBrowsing();
               onSignedOut?.call();
@@ -7404,6 +8643,1046 @@ class AccountScreen extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class InviteFarmMarketScreen extends StatelessWidget {
+  const InviteFarmMarketScreen({super.key});
+
+  String get _marketLink => AppConfig.shareableAppLink.trim();
+
+  String get _inviteText {
+    return 'I found a fresh local farm market app you may like: ${AppConfig.appName}. Browse fresh produce, build your weekly box, and track farm orders here: $_marketLink';
+  }
+
+  String get _whatsAppShareUrl {
+    return 'https://wa.me/?text=${Uri.encodeComponent(_inviteText)}';
+  }
+
+  Future<void> _copyInvite(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: _inviteText));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invite message copied.')),
+      );
+    }
+  }
+
+  Future<void> _shareOnWhatsApp(BuildContext context) async {
+    final opened = await openExternalShareUrl(_whatsAppShareUrl);
+
+    if (!context.mounted) return;
+
+    if (opened) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Opening WhatsApp share...')),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: _inviteText));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Invite copied. Open WhatsApp and paste it into a chat.'),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Invite Friends')),
+      body: FarmPage(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          children: [
+            const Header(
+              title: 'Share the harvest',
+              subtitle: 'Send a clean invite link by WhatsApp or copy it.',
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    FarmColors.primaryDark,
+                    FarmColors.primary,
+                    FarmColors.olive.withOpacity(0.94),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: FarmColors.primaryDark.withOpacity(0.22),
+                    blurRadius: 24,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.16),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.30),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.ios_share_outlined,
+                          color: Colors.white,
+                          size: 27,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.22),
+                          ),
+                        ),
+                        child: const Text(
+                          'Shareable link',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Fresh food is better when it is shared.',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.55,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Send your market link directly through WhatsApp, or copy the invite message for any group chat.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.86),
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FarmCard(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Invite link',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: FarmColors.cardSoft,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: FarmColors.line),
+                    ),
+                    child: Text(
+                      _marketLink,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.green,
+                        fontWeight: FontWeight.w900,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Send on WhatsApp'),
+                      onPressed: () => _shareOnWhatsApp(context),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.copy_outlined),
+                      label: const Text('Copy Invite Message'),
+                      onPressed: () => _copyInvite(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FarmCard(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Invite message',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: FarmColors.primarySoft.withOpacity(0.56),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: FarmColors.line),
+                    ),
+                    child: Text(
+                      _inviteText,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FarmCard(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  AccountSectionHeading(
+                    title: 'Why people will join',
+                    subtitle: 'A simple reason to share the app confidently.',
+                  ),
+                  SizedBox(height: 14),
+                  _InviteBenefitRow(
+                    icon: Icons.shopping_basket_outlined,
+                    title: 'Fresh local shopping',
+                    subtitle: 'Browse available harvests and build a farm box.',
+                  ),
+                  _InviteBenefitRow(
+                    icon: Icons.local_shipping_outlined,
+                    title: 'Pickup or delivery',
+                    subtitle:
+                        'Customers choose the fulfillment option that works for them.',
+                  ),
+                  _InviteBenefitRow(
+                    icon: Icons.notifications_active_outlined,
+                    title: 'Order updates',
+                    subtitle:
+                        'Friendly updates help customers track each order.',
+                    isLast: true,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Share this link when you are ready for customers to browse the farm market.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: FarmColors.mutedText.withOpacity(0.86),
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class InstallAppGuideScreen extends StatelessWidget {
+  const InstallAppGuideScreen({super.key});
+
+  String get _marketLink => AppConfig.shareableAppLink.trim();
+
+  Future<void> _copyLink(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: _marketLink));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('App link copied.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(title: const Text('Install App')),
+      body: SafeArea(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [FarmColors.primaryDark, FarmColors.primary],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: FarmColors.shadow.withOpacity(0.14),
+                    blurRadius: 24,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.16),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.26),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.add_to_home_screen,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.22),
+                          ),
+                        ),
+                        child: const Text(
+                          'Faster access',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Save the market to your home screen.',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.55,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Open the farm market like an app for quicker shopping, order tracking, weekly boxes, and support.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.86),
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FarmCard(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  AccountSectionHeading(
+                    title: 'Install steps',
+                    subtitle:
+                        'Choose the steps for your phone or browser.',
+                  ),
+                  SizedBox(height: 14),
+                  _InstallStepRow(
+                    icon: Icons.android_outlined,
+                    title: 'Android phone',
+                    subtitle:
+                        'Open the app link in your browser, tap the menu, then choose Add to Home screen or Install app.',
+                  ),
+                  _InstallStepRow(
+                    icon: Icons.phone_iphone_outlined,
+                    title: 'iPhone / Safari',
+                    subtitle:
+                        'Open the app link in Safari, tap Share, then tap Add to Home Screen.',
+                  ),
+                  _InstallStepRow(
+                    icon: Icons.desktop_windows_outlined,
+                    title: 'Computer browser',
+                    subtitle:
+                        'Open the app link in your browser and use the install or save option when available.',
+                    isLast: true,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FarmCard(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'App link',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: FarmColors.cardSoft,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: FarmColors.line),
+                    ),
+                    child: Text(
+                      _marketLink,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.green,
+                        fontWeight: FontWeight.w900,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.copy_outlined),
+                      label: const Text('Copy App Link'),
+                      onPressed: () => _copyLink(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Copy your market link and share it with customers whenever you are ready.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: FarmColors.mutedText.withOpacity(0.86),
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InstallStepRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isLast;
+
+  const _InstallStepRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft,
+              shape: BoxShape.circle,
+              border: Border.all(color: FarmColors.primary.withOpacity(0.12)),
+            ),
+            child: Icon(icon, color: FarmColors.primary, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InviteBenefitRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isLast;
+
+  const _InviteBenefitRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft,
+              shape: BoxShape.circle,
+              border: Border.all(color: FarmColors.primary.withOpacity(0.12)),
+            ),
+            child: Icon(icon, color: FarmColors.primary, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class EliteAccountHeroCard extends StatelessWidget {
+  final String name;
+  final String email;
+  final String roleLabel;
+  final int favoriteCount;
+  final int recentCount;
+  final bool showAdmin;
+
+  const EliteAccountHeroCard({
+    super.key,
+    required this.name,
+    required this.email,
+    required this.roleLabel,
+    required this.favoriteCount,
+    required this.recentCount,
+    required this.showAdmin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.trim().isEmpty ? 'F' : name.trim()[0].toUpperCase();
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.primaryDark,
+            FarmColors.primary,
+            FarmColors.olive.withOpacity(0.94),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.primaryDark.withOpacity(0.24),
+            blurRadius: 26,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 62,
+                height: 62,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.34)),
+                ),
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.25,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 9,
+            runSpacing: 9,
+            children: [
+              AccountHeroPill(
+                icon: showAdmin
+                    ? Icons.admin_panel_settings_outlined
+                    : Icons.verified_user_outlined,
+                label: roleLabel,
+              ),
+              AccountHeroPill(
+                icon: Icons.favorite_outline,
+                label: '$favoriteCount favorites',
+              ),
+              AccountHeroPill(
+                icon: Icons.history,
+                label: '$recentCount recent',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AccountHeroPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const AccountHeroPill({
+    super.key,
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.22)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 15),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AccountSectionHeading extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const AccountSectionHeading({
+    super.key,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: FarmColors.ink,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.1,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            color: FarmColors.mutedText,
+            fontWeight: FontWeight.w700,
+            height: 1.25,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class AccountActionItem {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color accentColor;
+
+  const AccountActionItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.accentColor = FarmColors.primary,
+  });
+}
+
+class AccountActionGrid extends StatelessWidget {
+  final List<AccountActionItem> actions;
+
+  const AccountActionGrid({
+    super.key,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final columns = availableWidth >= 560 ? 3 : 2;
+        final spacing = 10.0;
+        final tileWidth = (availableWidth - spacing * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: actions
+              .map(
+                (action) => SizedBox(
+                  width: tileWidth,
+                  child: AccountActionTile(action: action),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class AccountActionTile extends StatelessWidget {
+  final AccountActionItem action;
+
+  const AccountActionTile({
+    super.key,
+    required this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: action.onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 112),
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            color: FarmColors.cardSoft,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: FarmColors.line.withOpacity(0.92)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: action.accentColor.withOpacity(0.11),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      action.icon,
+                      color: action.accentColor,
+                      size: 19,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: FarmColors.mutedText.withOpacity(0.44),
+                    size: 13,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                action.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14.5,
+                  letterSpacing: -0.1,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                action.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11.7,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AccountListTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool isLast;
+
+  const AccountListTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          decoration: BoxDecoration(
+            border: isLast
+                ? null
+                : Border(
+                    bottom: BorderSide(
+                      color: FarmColors.line.withOpacity(0.62),
+                    ),
+                  ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: FarmColors.primary, size: 19),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.2,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: FarmColors.mutedText.withOpacity(0.45),
+                size: 14,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -7644,6 +9923,17 @@ class FarmerDashboardScreen extends StatelessWidget {
   const FarmerDashboardScreen(
       {super.key, required this.profile, required this.refreshKey});
 
+  Color _statusColor(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'approved':
+        return FarmColors.green;
+      case 'rejected':
+        return FarmColors.danger;
+      default:
+        return FarmColors.warning;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FarmPage(
@@ -7651,52 +9941,384 @@ class FarmerDashboardScreen extends StatelessWidget {
         key: ValueKey('farmer-dashboard-$refreshKey'),
         future: fetchFarmerProducts(profile.id),
         builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SizedBox.expand(child: SkeletonList(count: 3));
+          }
+
           final products = snapshot.data ?? [];
+          final approvedProducts = products.where((p) => p.isApproved).length;
+          final liveProducts = products.where((p) => p.canAddToCart).length;
+          final lowStockProducts = products.where((p) => p.isLowStock).length;
+          final outOfStockProducts =
+              products.where((p) => p.isOutOfStock).length;
+          final stockUnits = products.fold<int>(0, (sum, item) {
+            final stock = item.stockQuantity < 0 ? 0 : item.stockQuantity;
+            return sum + stock;
+          });
+          final statusColor = _statusColor(profile.verificationStatus);
+          final profileReady = profile.farmName.trim().isNotEmpty &&
+              profile.farmerName.trim().isNotEmpty &&
+              profile.phone.trim().isNotEmpty &&
+              profile.parish.trim().isNotEmpty &&
+              profile.payoutMethod.trim().isNotEmpty;
+
           return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
             children: [
               Header(
-                  title: profile.farmName,
-                  subtitle: 'Farmer marketplace dashboard'),
-              const SizedBox(height: 16),
-              FarmerStatusCard(profile: profile),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  MarketplaceStatCard(
-                      icon: Icons.eco,
-                      label: 'Products',
-                      value: products.length.toString()),
-                  MarketplaceStatCard(
-                      icon: Icons.inventory_2_outlined,
-                      label: 'Stock units',
-                      value: products
-                          .fold<int>(0, (sum, item) => sum + item.stockQuantity)
-                          .toString()),
-                  MarketplaceStatCard(
-                      icon: Icons.verified_outlined,
-                      label: 'Approved',
-                      value: products
-                          .where((p) => p.approvalStatus == 'approved')
-                          .length
-                          .toString()),
-                ],
+                title: profile.farmName,
+                subtitle: 'Partner dashboard',
               ),
               const SizedBox(height: 16),
               FarmCard(
-                child: Text(
-                  profile.isApproved
-                      ? 'You are approved to list products. Add fresh produce and keep stock updated.'
-                      : 'Your farm is ${profile.statusLabel}. Admin approval is required before your listings can go live.',
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
+                padding: const EdgeInsets.all(18),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        FarmColors.deepGreen,
+                        FarmColors.green,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            height: 48,
+                            width: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.16),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: Colors.white.withOpacity(0.26)),
+                            ),
+                            child: const Icon(Icons.agriculture_outlined,
+                                color: Colors.white),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  profile.isApproved
+                                      ? 'Ready to sell fresh harvests'
+                                      : 'Approval status: ${profile.statusLabel}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  profile.isApproved
+                                      ? 'Keep listings stocked, clear, and updated so customers can buy with confidence.'
+                                      : 'Complete your profile and wait for admin review before products can go live.',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.86),
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _FarmerHeroPill(
+                            icon: Icons.verified_outlined,
+                            label: profile.statusLabel,
+                          ),
+                          _FarmerHeroPill(
+                            icon: Icons.storefront_outlined,
+                            label: '$liveProducts live',
+                          ),
+                          _FarmerHeroPill(
+                            icon: Icons.inventory_2_outlined,
+                            label: '$stockUnits units',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
+              ),
+              const SizedBox(height: 14),
+              FarmerStatusCard(profile: profile),
+              const SizedBox(height: 16),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.25,
+                children: [
+                  _FarmerMetricCard(
+                    icon: Icons.eco_outlined,
+                    label: 'Listings',
+                    value: products.length.toString(),
+                    color: FarmColors.green,
+                  ),
+                  _FarmerMetricCard(
+                    icon: Icons.check_circle_outline,
+                    label: 'Approved',
+                    value: approvedProducts.toString(),
+                    color: FarmColors.green,
+                  ),
+                  _FarmerMetricCard(
+                    icon: Icons.warning_amber_outlined,
+                    label: 'Low stock',
+                    value: lowStockProducts.toString(),
+                    color: FarmColors.warning,
+                  ),
+                  _FarmerMetricCard(
+                    icon: Icons.remove_shopping_cart_outlined,
+                    label: 'Out of stock',
+                    value: outOfStockProducts.toString(),
+                    color: FarmColors.danger,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _FarmerActionPlanCard(
+                approved: profile.isApproved,
+                profileReady: profileReady,
+                productCount: products.length,
+                lowStockCount: lowStockProducts,
+                outOfStockCount: outOfStockProducts,
+                statusColor: statusColor,
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _FarmerHeroPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _FarmerHeroPill({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.20)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FarmerMetricCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  const _FarmerMetricCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 36,
+            width: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: color.withOpacity(0.16)),
+            ),
+            child: Icon(icon, color: color, size: 19),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FarmerActionPlanCard extends StatelessWidget {
+  final bool approved;
+  final bool profileReady;
+  final int productCount;
+  final int lowStockCount;
+  final int outOfStockCount;
+  final Color statusColor;
+  const _FarmerActionPlanCard({
+    required this.approved,
+    required this.profileReady,
+    required this.productCount,
+    required this.lowStockCount,
+    required this.outOfStockCount,
+    required this.statusColor,
+  });
+
+  Widget _step({
+    required IconData icon,
+    required String title,
+    required String message,
+    required bool done,
+  }) {
+    final color = done ? FarmColors.green : statusColor;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 34,
+            width: 34,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.10),
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withOpacity(0.18)),
+            ),
+            child: Icon(done ? Icons.check : icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Partner action plan',
+            style: TextStyle(
+              color: FarmColors.ink,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _step(
+            icon: Icons.person_outline,
+            title: 'Complete farm profile',
+            message: profileReady
+                ? 'Profile, parish, phone, and payout method are present.'
+                : 'Add phone, parish, and payout details so admin can verify your farm.',
+            done: profileReady,
+          ),
+          _step(
+            icon: Icons.verified_user_outlined,
+            title: 'Get admin approval',
+            message: approved
+                ? 'Your farm can submit products to the marketplace.'
+                : 'Admin approval is required before listings go live.',
+            done: approved,
+          ),
+          _step(
+            icon: Icons.add_business_outlined,
+            title: 'Keep listings fresh',
+            message: productCount > 0
+                ? '$productCount product listing${productCount == 1 ? '' : 's'} created for review or sale.'
+                : 'Add your first product with clear photos, price, unit, and stock.',
+            done: productCount > 0,
+          ),
+          _step(
+            icon: Icons.inventory_2_outlined,
+            title: 'Protect stock quality',
+            message: lowStockCount + outOfStockCount == 0
+                ? 'No low-stock or out-of-stock listings need attention right now.'
+                : '$lowStockCount low-stock and $outOfStockCount out-of-stock listing${lowStockCount + outOfStockCount == 1 ? '' : 's'} need review.',
+            done: lowStockCount + outOfStockCount == 0,
+          ),
+        ],
       ),
     );
   }
@@ -7857,7 +10479,7 @@ class FarmerProductsScreen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(child: stockField),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 9),
                               Expanded(child: originSelector),
                             ],
                           );
@@ -8681,7 +11303,7 @@ class _MainNavigationState extends State<MainNavigation> {
           )
           .subscribe();
     } catch (error) {
-      debugPrint('Realtime inventory unavailable: $error');
+      farmDebugLog('Realtime inventory unavailable: $error');
     }
   }
 
@@ -8702,7 +11324,7 @@ class _MainNavigationState extends State<MainNavigation> {
               final row = Map<String, dynamic>.from(payload.newRecord);
 
               if (!notificationRowTargetsCurrentUser(row)) {
-                debugPrint('Browser notification skipped');
+                farmDebugLog('Browser notification skipped');
                 return;
               }
 
@@ -8717,7 +11339,7 @@ class _MainNavigationState extends State<MainNavigation> {
                     );
 
               if (!seenRealtimeNotificationIds.add(noticeKey)) {
-                debugPrint('Browser notification skipped');
+                farmDebugLog('Browser notification skipped');
                 return;
               }
 
@@ -8818,7 +11440,7 @@ class _MainNavigationState extends State<MainNavigation> {
         authViewVersion++;
       });
     } catch (error) {
-      debugPrint('Cart stock reconciliation skipped: $error');
+      farmDebugLog('Cart stock reconciliation skipped: $error');
     }
   }
 
@@ -8849,9 +11471,9 @@ class _MainNavigationState extends State<MainNavigation> {
           .where((id) => id.isNotEmpty)
           .take(10)
           .join(',');
-      debugPrint('Recently viewed saved in memory for this session.');
+      farmDebugLog('Recently viewed saved in memory for this session.');
     } catch (error) {
-      debugPrint('Recently viewed save skipped: $error');
+      farmDebugLog('Recently viewed save skipped: $error');
     }
   }
 
@@ -8881,7 +11503,7 @@ class _MainNavigationState extends State<MainNavigation> {
           ..addAll(cleanRecentlyViewedProducts(loaded));
       });
     } catch (error) {
-      debugPrint('Recently viewed load skipped: $error');
+      farmDebugLog('Recently viewed load skipped: $error');
     }
   }
 
@@ -9426,9 +12048,10 @@ String personalizedHeroMessage({
   required List<Product> recentlyViewedProducts,
 }) {
   final firstName = personalizedFirstName(profile);
+  // Keep the hero stable when a customer taps Favorite. Favorites should change
+  // the heart state, not rewrite the hero message and shift the page.
   final categories = <String>[
     ...buyAgainProducts.map((product) => product.category),
-    ...favoriteProducts.map((product) => product.category),
     ...recentlyViewedProducts.map((product) => product.category),
   ].map((value) => value.trim()).where((value) => value.isNotEmpty).toList();
 
@@ -9438,7 +12061,7 @@ String personalizedHeroMessage({
         (favoriteCategory == null || product.category == favoriteCategory);
   }).toList();
 
-  if (buyAgainProducts.isEmpty && favoriteProducts.isEmpty) {
+  if (buyAgainProducts.isEmpty && recentlyViewedProducts.isEmpty) {
     return 'Welcome, $firstName — fresh local picks are ready for your first farm box.';
   }
   if (loyalty.tier == 'Platinum') {
@@ -9449,9 +12072,6 @@ String personalizedHeroMessage({
   }
   if (buyAgainProducts.isNotEmpty) {
     return '${buyAgainProducts.first.name} and more favorites are ready to buy again.';
-  }
-  if (favoriteProducts.isNotEmpty) {
-    return 'Your favorite farm products are waiting, $firstName.';
   }
   return 'Fresh local produce picked for you today, $firstName.';
 }
@@ -9481,22 +12101,24 @@ List<Product> sortProductsForPersonalization({
 }) {
   final boughtIds = buyAgainProducts.map((product) => product.id).toSet();
   final viewedIds = recentlyViewedProducts.map((product) => product.id).toSet();
-  final favoriteIds = favoriteProducts.map((product) => product.id).toSet();
+
+  // Favorites should update the heart icon without immediately reordering the
+  // shop/home grids. Keeping favorites out of the live sort prevents cards from
+  // jumping around when a customer taps the heart.
   final signalCategories = <String>{
     ...buyAgainProducts.map((product) => product.category.toLowerCase()),
     ...recentlyViewedProducts.map((product) => product.category.toLowerCase()),
-    ...favoriteProducts.map((product) => product.category.toLowerCase()),
   }..removeWhere((category) => category.trim().isEmpty);
 
   int score(Product product) {
     var value = 0;
     if (boughtIds.contains(product.id)) value += 80;
-    if (favoriteIds.contains(product.id)) value += 70;
     if (viewedIds.contains(product.id)) value += 55;
     if (signalCategories.contains(product.category.toLowerCase())) value += 35;
     if (product.showAsDealOfDay || product.hasActiveDiscount) value += 25;
     if (isProductHarvestedThisWeek(product)) value += 20;
     if (product.isLowStock) value += 8;
+    if (!product.canAddToCart) value -= 100;
     return value;
   }
 
@@ -9590,105 +12212,189 @@ class PersonalizedHomeHeroCard extends StatelessWidget {
         ]) ??
         'vegetables';
 
-    const heroImageUrl =
-        'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=900&q=80';
-
     return InkWell(
       borderRadius: BorderRadius.circular(22),
       onTap: onShopTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          height: 128,
-          decoration: BoxDecoration(
-            color: FarmColors.primarySoft,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: FarmColors.line),
-            boxShadow: [
-              BoxShadow(
-                color: FarmColors.shadow.withOpacity(0.06),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.network(
-                heroImageUrl,
-                fit: BoxFit.cover,
-                alignment: Alignment.centerRight,
-                cacheWidth: 900,
-                errorBuilder: (_, __, ___) => Container(
-                  color: FarmColors.primarySoft,
+      child: HomeHeroImageSlideshow(category: category),
+    );
+  }
+}
+
+class HomeHeroImageSlideshow extends StatefulWidget {
+  final String category;
+
+  const HomeHeroImageSlideshow({
+    super.key,
+    required this.category,
+  });
+
+  @override
+  State<HomeHeroImageSlideshow> createState() => _HomeHeroImageSlideshowState();
+}
+
+class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
+  final PageController _controller = PageController();
+  late Future<List<HomeHeroSlide>> _slidesFuture;
+  Timer? _timer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _slidesFuture = fetchHomeHeroSlides();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_controller.hasClients) return;
+      final pageCount = _lastSlideCount;
+      if (pageCount <= 1) return;
+      final next = (_index + 1) % pageCount;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 430),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  int _lastSlideCount = 1;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String _titleForSlide(HomeHeroSlide slide) {
+    final custom = slide.title?.trim() ?? '';
+    if (custom.isNotEmpty) return custom;
+    return 'Fresh ${widget.category.toLowerCase()}\npicked for you today!';
+  }
+
+  String _subtitleForSlide(HomeHeroSlide slide) {
+    final custom = slide.subtitle?.trim() ?? '';
+    if (custom.isNotEmpty) return custom;
+    return 'Hand-picked. Farm fresh. Just for you.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<HomeHeroSlide>>(
+      future: _slidesFuture,
+      builder: (context, snapshot) {
+        final slides =
+            _cleanHomeHeroSlides(snapshot.data ?? defaultHomeHeroSlides());
+        _lastSlideCount = slides.length;
+        if (_index >= slides.length) _index = 0;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            height: 128,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: FarmColors.line),
+              boxShadow: [
+                BoxShadow(
+                  color: FarmColors.shadow.withOpacity(0.06),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
                 ),
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      const Color(0xFFE5F3DF).withOpacity(0.98),
-                      const Color(0xFFE5F3DF).withOpacity(0.88),
-                      const Color(0xFFE5F3DF).withOpacity(0.35),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.48, 0.72, 1.0],
+              ],
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                PageView.builder(
+                  controller: _controller,
+                  itemCount: slides.length,
+                  onPageChanged: (value) {
+                    if (mounted) setState(() => _index = value);
+                  },
+                  itemBuilder: (context, pageIndex) {
+                    final slide = slides[pageIndex];
+                    return Image.network(
+                      slide.imageUrl,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.centerRight,
+                      cacheWidth: 900,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: FarmColors.primarySoft,
+                      ),
+                    );
+                  },
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        const Color(0xFFE5F3DF).withOpacity(0.98),
+                        const Color(0xFFE5F3DF).withOpacity(0.88),
+                        const Color(0xFFE5F3DF).withOpacity(0.35),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.48, 0.72, 1.0],
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                right: 58,
-                top: 16,
-                child: Icon(
-                  Icons.eco_outlined,
-                  color: FarmColors.green.withOpacity(0.22),
-                  size: 22,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 13, 108, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Fresh ${category.toLowerCase()}\npicked for you today!',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.deepGreen,
-                        fontSize: 16,
-                        height: 1.08,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.25,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 13, 108, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _titleForSlide(slides[_index]),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.deepGreen,
+                          fontSize: 16,
+                          height: 1.08,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.25,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Hand-picked. Farm fresh. Just for you.',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: FarmColors.deepGreen.withOpacity(0.72),
-                        fontSize: 11.5,
-                        height: 1.18,
-                        fontWeight: FontWeight.w700,
+                      Text(
+                        _subtitleForSlide(slides[_index]),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: FarmColors.deepGreen.withOpacity(0.72),
+                          fontSize: 11.5,
+                          height: 1.18,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                    Icon(
-                      Icons.spa_outlined,
-                      color: FarmColors.green.withOpacity(0.72),
-                      size: 15,
-                    ),
-                  ],
+                      Row(
+                        children: [
+                          ...List.generate(slides.length, (dotIndex) {
+                            final active = dotIndex == _index;
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              margin: const EdgeInsets.only(right: 4),
+                              height: 5,
+                              width: active ? 14 : 5,
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? FarmColors.green
+                                    : FarmColors.green.withOpacity(0.30),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -9871,7 +12577,7 @@ class PersonalizedLoyaltyCard extends StatelessWidget {
                         size: 19,
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 9),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -10096,6 +12802,9 @@ class PopularCategorySummary {
 IconData categoryIconForName(String category) {
   final lower = category.trim().toLowerCase();
 
+  if (lower.contains('favorite') || lower.contains('favourite')) {
+    return Icons.favorite_outline;
+  }
   if (lower.contains('vegetable')) return Icons.eco_outlined;
   if (lower.contains('fruit')) return Icons.spa_outlined;
   if (lower.contains('ground')) return Icons.grass_outlined;
@@ -10212,22 +12921,34 @@ class _HomeScreenState extends State<HomeScreen> {
     final products = await fetchProducts(forceRefresh: true);
     final visible = products;
 
-    visible.sort(
-      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    );
+    visible.sort(compareCustomerProductAvailabilityThenName);
 
     cachedHomeProducts = visible;
     return cachedHomeProducts;
   }
 
-  void refreshHomeProducts() {
+  Future<void> refreshHomeProducts() async {
+    FarmDataCache.clearProducts();
     if (!mounted) return;
+
+    final nextHomeProducts = loadHomeProducts();
+    final nextBuyAgainProducts = fetchBuyAgainProducts();
+    final nextCustomerProfile = fetchCurrentCustomerProfile();
+    final nextLoyaltySummary = fetchLoyaltySummary();
+
     setState(() {
-      homeProductsFuture = loadHomeProducts();
-      buyAgainProductsFuture = fetchBuyAgainProducts();
-      customerProfileFuture = fetchCurrentCustomerProfile();
-      loyaltySummaryFuture = fetchLoyaltySummary();
+      homeProductsFuture = nextHomeProducts;
+      buyAgainProductsFuture = nextBuyAgainProducts;
+      customerProfileFuture = nextCustomerProfile;
+      loyaltySummaryFuture = nextLoyaltySummary;
     });
+
+    await Future.wait<dynamic>([
+      nextHomeProducts,
+      nextBuyAgainProducts,
+      nextCustomerProfile,
+      nextLoyaltySummary,
+    ]);
   }
 
   void openProduct(Product product) {
@@ -10265,7 +12986,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return SizedBox(
-      height: 228,
+      height: 224,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         cacheExtent: AppPerformanceConfig.productRailCacheExtent,
@@ -10278,74 +12999,47 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(24),
             onTap: () => openProduct(product),
             child: SizedBox(
-              width: 168,
-              child: FarmCard(
-                padding: const EdgeInsets.fromLTRB(9, 8, 9, 9),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      height: 104,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Center(
-                            child: ProductVisual(product: product, size: 86),
-                          ),
-                          if (product.isOrganic)
-                            const Positioned(
-                              top: 2,
-                              left: 2,
-                              child: OrganicImageStamp(compact: true),
+              width: 166,
+              child: Opacity(
+                opacity: product.isOutOfStock ? 0.72 : 1,
+                child: FarmCard(
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        height: 96,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Center(
+                              child: ProductVisual(product: product, size: 82),
                             ),
-                          if (product.hasActiveDiscount)
-                            Positioned(
-                              top: 2,
-                              right: 2,
-                              child: DiscountBadge(
-                                product: product,
-                                compact: true,
+                            if (product.isOrganic)
+                              const Positioned(
+                                top: 2,
+                                left: 2,
+                                child: OrganicImageStamp(compact: true),
                               ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _HomeProductName(product: product),
-                          const SizedBox(height: 5),
-                          _HomePricePanel(product: product),
-                          if (product.isLowStock) ...[
-                            const SizedBox(height: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: FarmColors.dangerSoft,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                product.lowStockLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: FarmColors.danger,
-                                  fontSize: 10.5,
-                                  height: 1,
-                                  fontWeight: FontWeight.w900,
+                            if (product.hasActiveDiscount)
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: DiscountBadge(
+                                  product: product,
+                                  compact: true,
                                 ),
                               ),
-                            ),
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 7),
+                      _HomeProductName(product: product),
+                      const SizedBox(height: 6),
+                      _HomePricePanel(product: product),
+                      ProductAvailabilityChip(product: product, compact: true),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -10356,23 +13050,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget loadingRail() {
-    return SizedBox(
-      height: 256,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        cacheExtent: AppPerformanceConfig.productRailCacheExtent,
-        itemCount: 3,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, __) {
-          return Container(
-            width: 136,
-            child: const FarmCard(
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          );
-        },
-      ),
-    );
+    return const ProductRailSkeleton();
   }
 
   @override
@@ -10389,8 +13067,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ? harvestThisWeekProducts
               : products.take(8).toList();
 
-          final cleanRecentlyViewed =
-              cleanRecentlyViewedProducts(widget.recentlyViewedProducts);
+          final cleanRecentlyViewed = refreshProductSnapshotsFromLatestProducts(
+            savedProducts: widget.recentlyViewedProducts,
+            latestProducts: products,
+          );
+          final cleanFavoriteProducts =
+              refreshProductSnapshotsFromLatestProducts(
+            savedProducts: widget.favoriteProducts,
+            latestProducts: products,
+            limit: 20,
+          );
 
           return FutureBuilder<List<Product>>(
             future: buyAgainProductsFuture,
@@ -10399,168 +13085,209 @@ class _HomeScreenState extends State<HomeScreen> {
                   buyAgainSnapshot.data ?? const <Product>[];
               final buyAgainProducts =
                   uniqueVisibleProducts(rawBuyAgainProducts, limit: 10);
-              final showBuyAgain = buyAgainProducts.isNotEmpty &&
-                  !areSameProductLists(buyAgainProducts, cleanRecentlyViewed);
-              final showRecentlyViewed = cleanRecentlyViewed.isNotEmpty;
               final recommendedProducts = buildRecommendedForYouProducts(
                 allProducts: products,
                 recentlyViewedProducts: cleanRecentlyViewed,
                 buyAgainProducts: buyAgainProducts,
-                favoriteProducts: widget.favoriteProducts,
+                favoriteProducts: cleanFavoriteProducts,
               );
+
+              final recommendedIds =
+                  recommendedProducts.map((product) => product.id).toSet();
+              final freshProductsForHome = uniqueVisibleProducts(
+                weeklyHarvestProducts,
+                limit: 8,
+                excludeIds: recommendedIds,
+              );
+              final freshIds =
+                  freshProductsForHome.map((product) => product.id).toSet();
+              final buyAgainForHome = uniqueVisibleProducts(
+                buyAgainProducts,
+                limit: 8,
+                excludeIds: {...recommendedIds, ...freshIds},
+              );
+              final buyAgainIds =
+                  buyAgainForHome.map((product) => product.id).toSet();
+              final recentlyViewedForHome = uniqueVisibleProducts(
+                cleanRecentlyViewed,
+                limit: 8,
+                excludeIds: {...recommendedIds, ...freshIds, ...buyAgainIds},
+              );
+              final favoritesForHome = uniqueVisibleProducts(
+                cleanFavoriteProducts,
+                limit: 8,
+              );
+              final showFavorites = favoritesForHome.isNotEmpty;
+              final showBuyAgain = buyAgainForHome.isNotEmpty;
+              final showRecentlyViewed = recentlyViewedForHome.isNotEmpty;
               final popularCategories = buildPopularCategorySummaries(products);
+              final categoryCards = <PopularCategorySummary>[
+                if (showFavorites)
+                  PopularCategorySummary(
+                    name: 'Favorites',
+                    previewProduct: favoritesForHome.first,
+                    availableItemCount: favoritesForHome.length,
+                  ),
+                ...popularCategories,
+              ];
 
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 128),
-                children: [
-                  PersonalizedHomeHeader(
-                    profileFuture: customerProfileFuture,
-                    loyaltyFuture: loyaltySummaryFuture,
-                    onCartTap: widget.onCartTap,
-                    cartItemCount: widget.cartItemCount,
-                  ),
-
-                  const SizedBox(height: 14),
-                  PersonalizedHomeHeroLoader(
-                    profileFuture: customerProfileFuture,
-                    loyaltyFuture: loyaltySummaryFuture,
-                    allProducts: products,
-                    buyAgainProducts: buyAgainProducts,
-                    favoriteProducts: widget.favoriteProducts,
-                    recentlyViewedProducts: cleanRecentlyViewed,
-                    onShopTap: widget.onShopTap,
-                  ),
-                  const SizedBox(height: 18),
-                  PersonalizedLoyaltyCard(
-                    loyaltyFuture: loyaltySummaryFuture,
-                  ),
-                  if (!snapshot.hasError && recommendedProducts.isNotEmpty) ...[
+              return RefreshIndicator(
+                onRefresh: refreshHomeProducts,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 128),
+                  children: [
+                    PersonalizedHomeHeader(
+                      profileFuture: customerProfileFuture,
+                      loyaltyFuture: loyaltySummaryFuture,
+                      onCartTap: widget.onCartTap,
+                      cartItemCount: widget.cartItemCount,
+                    ),
+                    const SizedBox(height: 14),
+                    PersonalizedHomeHeroLoader(
+                      profileFuture: customerProfileFuture,
+                      loyaltyFuture: loyaltySummaryFuture,
+                      allProducts: products,
+                      buyAgainProducts: buyAgainProducts,
+                      favoriteProducts: cleanFavoriteProducts,
+                      recentlyViewedProducts: cleanRecentlyViewed,
+                      onShopTap: widget.onShopTap,
+                    ),
                     const SizedBox(height: 18),
-                    SectionHeader(
-                      title: 'Recommended For You',
-                      subtitle: 'Fresh picks selected for your basket',
-                      actionLabel: 'See all',
-                      onAction: widget.onShopTap,
+                    PersonalizedLoyaltyCard(
+                      loyaltyFuture: loyaltySummaryFuture,
                     ),
-                    const SizedBox(height: 12),
-                    ProductMiniRail(
-                      products: recommendedProducts,
-                      onProductTap: openProduct,
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  DealOfTheDaySection(
-                    onViewed: widget.onViewed,
-                    onAddProduct: widget.onAddToCart,
-                    onViewMyBox: widget.onViewMyBox,
-                    onCheckout: widget.onCheckout,
-                  ),
-                  ReadySoonHomeSection(onViewed: widget.onViewed),
-                  // Vegan Ingredient Book entry point hidden to keep the home page shopping-focused.
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SectionTitle('Fresh Products'),
+                    if (!snapshot.hasError &&
+                        recommendedProducts.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      SectionHeader(
+                        title: 'Recommended For You',
+                        subtitle: 'Fresh picks selected for your basket',
+                        actionLabel: 'Shop all',
+                        onAction: widget.onShopTap,
                       ),
-                      TextButton(
-                        onPressed: widget.onShopTap,
-                        child: const Text('Shop all'),
+                      const SizedBox(height: 12),
+                      ProductMiniRail(
+                        products: recommendedProducts,
+                        onProductTap: openProduct,
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  snapshot.connectionState == ConnectionState.waiting
-                      ? loadingRail()
-                      : productRail(
-                          products: weeklyHarvestProducts, maxItems: 8),
-                  if (showBuyAgain) ...[
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
+                    DealOfTheDaySection(
+                      onViewed: widget.onViewed,
+                      onAddProduct: widget.onAddToCart,
+                      onViewMyBox: widget.onViewMyBox,
+                      onCheckout: widget.onCheckout,
+                    ),
+                    const SizedBox(height: 18),
                     SectionHeader(
-                      title: 'Buy Again',
-                      subtitle: 'Items from your past orders',
-                      actionLabel: 'View shop',
+                      title: 'Fresh Products',
+                      subtitle: 'Fresh items available now',
+                      actionLabel: 'Shop all',
                       onAction: widget.onShopTap,
                     ),
                     const SizedBox(height: 12),
-                    buyAgainSnapshot.connectionState == ConnectionState.waiting
+                    snapshot.connectionState == ConnectionState.waiting
                         ? loadingRail()
-                        : productRail(products: buyAgainProducts, maxItems: 8),
-                  ],
-                  if (buyAgainProducts.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    SectionHeader(
-                      title:
-                          'Because You Bought ${buyAgainProducts.first.name}',
-                      subtitle: 'Helpful pairings for your next farm box',
-                      actionLabel: 'Shop',
-                      onAction: widget.onShopTap,
-                    ),
-                    const SizedBox(height: 12),
-                    ProductMiniRail(
-                      products: buildFrequentlyBoughtTogetherProducts(
-                        product: buyAgainProducts.first,
-                        products: products,
+                        : productRail(
+                            products: freshProductsForHome.isNotEmpty
+                                ? freshProductsForHome
+                                : weeklyHarvestProducts,
+                            maxItems: 8,
+                          ),
+                    if (showFavorites) ...[
+                      const SizedBox(height: 20),
+                      SectionHeader(
+                        title: 'Favorites',
+                        subtitle: 'Saved picks you can shop quickly',
+                        actionLabel: 'View all',
+                        onAction: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => FavoritesScreen(
+                                products: favoritesForHome,
+                                onShopTap: widget.onShopTap,
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                      onProductTap: openProduct,
-                    ),
-                  ],
-                  if (showRecentlyViewed) ...[
-                    const SizedBox(height: 20),
-                    SectionHeader(
-                      title: 'Recently Viewed',
-                      subtitle: 'Items you looked at recently',
-                      actionLabel: 'Shop',
-                      onAction: widget.onShopTap,
-                    ),
-                    const SizedBox(height: 12),
-                    ProductMiniRail(
-                      products: cleanRecentlyViewed,
-                      onProductTap: openProduct,
-                    ),
-                  ],
-                  if (widget.favoriteProducts.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        const Expanded(child: SectionTitle('Favorites')),
-                        TextButton(
-                          onPressed: widget.onShopTap,
-                          child: const Text('View'),
+                      const SizedBox(height: 12),
+                      ProductMiniRail(
+                        products: favoritesForHome,
+                        onProductTap: openProduct,
+                      ),
+                    ],
+                    if (showBuyAgain) ...[
+                      const SizedBox(height: 20),
+                      SectionHeader(
+                        title: 'Buy Again',
+                        subtitle: 'Items from your past orders',
+                        actionLabel: 'View shop',
+                        onAction: widget.onShopTap,
+                      ),
+                      const SizedBox(height: 12),
+                      buyAgainSnapshot.connectionState ==
+                              ConnectionState.waiting
+                          ? loadingRail()
+                          : productRail(products: buyAgainForHome, maxItems: 8),
+                    ],
+                    if (showRecentlyViewed) ...[
+                      const SizedBox(height: 20),
+                      SectionHeader(
+                        title: 'Recently Viewed',
+                        subtitle: 'Items you looked at recently',
+                        actionLabel: 'Shop',
+                        onAction: widget.onShopTap,
+                      ),
+                      const SizedBox(height: 12),
+                      ProductMiniRail(
+                        products: recentlyViewedForHome,
+                        onProductTap: openProduct,
+                      ),
+                    ],
+                    if (categoryCards.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      SectionHeader(
+                        title: 'Shop by Category',
+                        subtitle: 'Find fresh picks by type',
+                        actionLabel: 'View all',
+                        onAction: widget.onShopTap,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 76,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.only(right: 4),
+                          itemCount: categoryCards.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: 10),
+                          itemBuilder: (context, index) {
+                            final category = categoryCards[index];
+                            return SizedBox(
+                              // Wider landscape cards keep names like
+                              // “Vegetables” on one line while the row
+                              // still uses much less vertical space.
+                              width: categoryCards.length == 1 ? 272 : 218,
+                              child: CategoryPill(
+                                previewProduct: category.previewProduct,
+                                fallbackIcon:
+                                    categoryIconForName(category.name),
+                                label: category.name,
+                                count: category.availableItemCount,
+                                onTap: () =>
+                                    widget.onCategoryTap(category.name),
+                              ),
+                            );
+                          },
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    ProductMiniRail(
-                      products: widget.favoriteProducts,
-                      onTap: widget.onShopTap,
-                    ),
+                      ),
+                    ],
                   ],
-                  if (popularCategories.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    SectionHeader(
-                      title: 'Popular Categories',
-                      subtitle:
-                          'Shop categories with fresh items available now',
-                      actionLabel: 'View shop',
-                      onAction: widget.onShopTap,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: popularCategories.map((category) {
-                        return CategoryPill(
-                          previewProduct: category.previewProduct,
-                          fallbackIcon: categoryIconForName(category.name),
-                          label: category.name,
-                          count: category.availableItemCount,
-                          onTap: () => widget.onCategoryTap(category.name),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
+                ),
               );
             },
           );
@@ -10629,17 +13356,25 @@ class _HomePricePanel extends StatelessWidget {
             .toDouble();
         final priceFontSize = (compact ? 13.6 : 14.2) * scale;
         final originalFontSize = (compact ? 9.8 : 10.4) * scale;
+        final priceColor =
+            product.isOutOfStock ? FarmColors.mutedText : FarmColors.green;
 
         return Container(
           width: double.infinity,
           padding: EdgeInsets.symmetric(
             horizontal: compact ? 8 : 9,
-            vertical: compact ? 5 : 5,
+            vertical: compact ? 5 : 7,
           ),
           decoration: BoxDecoration(
-            color: FarmColors.lightGreen,
+            color: product.isOutOfStock
+                ? FarmColors.cardSoft
+                : FarmColors.lightGreen,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: FarmColors.green.withOpacity(0.10)),
+            border: Border.all(
+              color: product.isOutOfStock
+                  ? FarmColors.line.withOpacity(0.85)
+                  : FarmColors.green.withOpacity(0.10),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -10650,14 +13385,14 @@ class _HomePricePanel extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: FarmColors.green,
+                  color: priceColor,
                   fontSize: priceFontSize,
                   height: 1.0,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.15,
                 ),
               ),
-              if (product.hasActiveDiscount) ...[
+              if (product.hasActiveDiscount && !product.isOutOfStock) ...[
                 const SizedBox(height: 2),
                 Text(
                   product.formattedOriginalPrice,
@@ -11203,6 +13938,8 @@ class _ShopScreenState extends State<ShopScreen> {
   List<Product> buyAgainProducts = const [];
   bool loadingProducts = true;
   String? productLoadMessage;
+  String selectedShopFilter = 'All items';
+  String selectedSort = 'Featured';
   Timer? searchDebounce;
 
   @override
@@ -11227,6 +13964,7 @@ class _ShopScreenState extends State<ShopScreen> {
       if (selectedCategory != nextCategory) {
         setState(() {
           selectedCategory = nextCategory;
+          selectedShopFilter = 'All items';
           searchController.clear();
         });
       }
@@ -11260,9 +13998,7 @@ class _ShopScreenState extends State<ShopScreen> {
       final cleanProducts = fetchedProducts.where((product) {
         return product.name.trim().isNotEmpty && product.price >= 0;
       }).toList()
-        ..sort(
-          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-        );
+        ..sort(compareCustomerProductAvailabilityThenName);
       final cleanReadySoon = fetchedReadySoon.where((product) {
         return product.name.trim().isNotEmpty;
       }).toList();
@@ -11275,7 +14011,7 @@ class _ShopScreenState extends State<ShopScreen> {
         loadingProducts = false;
       });
     } catch (error) {
-      debugPrint('Shop product load failed: $error');
+      farmDebugLog('Shop product load failed: $error');
       if (!mounted) return;
       setState(() {
         products = const <Product>[];
@@ -11289,6 +14025,10 @@ class _ShopScreenState extends State<ShopScreen> {
   List<String> get categories {
     final values = <String>{'All'};
 
+    if (products.any(widget.isFavorite)) {
+      values.add('Favorites');
+    }
+
     for (final product in products) {
       final category = product.category.trim();
       if (category.isNotEmpty) values.add(category);
@@ -11298,51 +14038,362 @@ class _ShopScreenState extends State<ShopScreen> {
     list.sort((a, b) {
       if (a == 'All') return -1;
       if (b == 'All') return 1;
+      if (a == 'Favorites') return -1;
+      if (b == 'Favorites') return 1;
       return a.toLowerCase().compareTo(b.toLowerCase());
     });
 
     return list;
   }
 
+  List<String> get shopFilterOptions => const [
+        'All items',
+        'In stock',
+        'Low stock',
+        'Deals',
+        'Organic',
+        'Out of stock',
+      ];
+
+  List<String> get shopSortOptions => const [
+        'Featured',
+        'Newest',
+        'Price: Low',
+        'Price: High',
+        'A-Z',
+      ];
+
   List<Product> filteredProducts(String activeCategory) {
     final query = searchController.text.trim().toLowerCase();
     final activeCategoryLower = activeCategory.toLowerCase();
+    final showingFavorites = activeCategoryLower == 'favorites';
+    final cleanFilter = selectedShopFilter.trim().toLowerCase();
 
     return products.where((product) {
       final category = product.category.trim().toLowerCase();
       final name = product.name.trim().toLowerCase();
       final description = (product.description ?? '').trim().toLowerCase();
       final unit = (product.unit ?? '').trim().toLowerCase();
+      final farmName =
+          (product.farmName ?? product.farmerName ?? '').trim().toLowerCase();
 
-      final matchesCategory = activeCategory == 'All' ||
-          category == activeCategoryLower ||
-          name.contains(activeCategoryLower);
+      final matchesCategory = showingFavorites
+          ? widget.isFavorite(product)
+          : activeCategory == 'All' ||
+              category == activeCategoryLower ||
+              name.contains(activeCategoryLower);
 
       final matchesSearch = query.isEmpty ||
           name.contains(query) ||
           category.contains(query) ||
           description.contains(query) ||
-          unit.contains(query);
+          unit.contains(query) ||
+          farmName.contains(query);
+
+      final matchesFilter = cleanFilter == 'all items' ||
+          (cleanFilter == 'in stock' && product.canAddToCart) ||
+          (cleanFilter == 'low stock' && product.isLowStock) ||
+          (cleanFilter == 'deals' && product.hasActiveDiscount) ||
+          (cleanFilter == 'organic' && product.isOrganic) ||
+          (cleanFilter == 'out of stock' && product.isOutOfStock);
 
       // When the customer types in the search box, search the whole shop.
       // This prevents a selected category chip from hiding valid search results.
-      if (query.isNotEmpty) return matchesSearch;
+      if (query.isNotEmpty) {
+        return matchesSearch &&
+            matchesFilter &&
+            (!showingFavorites || widget.isFavorite(product));
+      }
 
-      return matchesCategory;
+      return matchesCategory && matchesFilter;
     }).toList();
+  }
+
+  List<Product> sortedShopProducts(List<Product> source) {
+    final output = List<Product>.from(source);
+
+    switch (selectedSort) {
+      case 'Newest':
+        output.sort((a, b) {
+          final availability = compareCustomerProductAvailabilityThenName(a, b);
+          if (a.canAddToCart != b.canAddToCart) return availability;
+          final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+        break;
+      case 'Price: Low':
+        output.sort((a, b) {
+          if (a.canAddToCart != b.canAddToCart) {
+            return a.canAddToCart ? -1 : 1;
+          }
+          final compare = a.effectivePrice.compareTo(b.effectivePrice);
+          if (compare != 0) return compare;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+        break;
+      case 'Price: High':
+        output.sort((a, b) {
+          if (a.canAddToCart != b.canAddToCart) {
+            return a.canAddToCart ? -1 : 1;
+          }
+          final compare = b.effectivePrice.compareTo(a.effectivePrice);
+          if (compare != 0) return compare;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+        break;
+      case 'A-Z':
+        output.sort(compareCustomerProductAvailabilityThenName);
+        break;
+      case 'Featured':
+      default:
+        output.sort(compareCustomerProductAvailabilityThenName);
+        break;
+    }
+
+    return output;
+  }
+
+  String get activeShopSummaryLabel {
+    final parts = <String>[];
+    if (selectedCategory != 'All') parts.add(selectedCategory);
+    if (selectedShopFilter != 'All items') parts.add(selectedShopFilter);
+    if (selectedSort != 'Featured') parts.add(selectedSort);
+    return parts.isEmpty ? 'All fresh items' : parts.join(' • ');
+  }
+
+  Future<void> _showShopFilterSheet(
+    List<String> availableCategories,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, sheetSetState) {
+            Widget sheetChoice({
+              required String label,
+              required bool selected,
+              required VoidCallback onTap,
+              Color color = FarmColors.green,
+            }) {
+              return ChoiceChip(
+                label: Text(label),
+                selected: selected,
+                onSelected: (_) {
+                  onTap();
+                  sheetSetState(() {});
+                },
+                selectedColor: color,
+                backgroundColor: color.withOpacity(0.10),
+                labelStyle: TextStyle(
+                  color: selected ? Colors.white : color,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  side: BorderSide(
+                    color: selected ? color : color.withOpacity(0.12),
+                  ),
+                ),
+              );
+            }
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 12,
+                  right: 12,
+                  bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.78,
+                  ),
+                  decoration: BoxDecoration(
+                    color: FarmColors.card,
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: FarmColors.line),
+                    boxShadow: [
+                      BoxShadow(
+                        color: FarmColors.shadow.withOpacity(0.16),
+                        blurRadius: 28,
+                        offset: const Offset(0, 16),
+                      ),
+                    ],
+                  ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: FarmColors.line,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Header(
+                              title: 'Shop filters',
+                              subtitle: 'Choose category, stock, and sorting',
+                            ),
+                          ),
+                          IconButton.filledTonal(
+                            tooltip: 'Close filters',
+                            onPressed: () => Navigator.pop(sheetContext),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Category',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                          color: FarmColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: availableCategories.map((category) {
+                          return sheetChoice(
+                            label: category,
+                            selected: selectedCategory == category,
+                            onTap: () {
+                              setState(() {
+                                selectedCategory = category;
+                                selectedShopFilter = 'All items';
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Show',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                          color: FarmColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: shopFilterOptions.map((filter) {
+                          final isOutOfStock = filter == 'Out of stock';
+                          final isDeal = filter == 'Deals';
+                          final color = isOutOfStock
+                              ? FarmColors.danger
+                              : isDeal
+                                  ? FarmColors.warning
+                                  : FarmColors.green;
+                          return sheetChoice(
+                            label: filter,
+                            selected: selectedShopFilter == filter,
+                            color: color,
+                            onTap: () {
+                              setState(() => selectedShopFilter = filter);
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Sort',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                          color: FarmColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: shopSortOptions.map((sort) {
+                          return sheetChoice(
+                            label: sort,
+                            selected: selectedSort == sort,
+                            onTap: () {
+                              setState(() => selectedSort = sort);
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  selectedCategory = 'All';
+                                  selectedShopFilter = 'All items';
+                                  selectedSort = 'Featured';
+                                });
+                                sheetSetState(() {});
+                              },
+                              icon: const Icon(Icons.restart_alt_rounded),
+                              label: const Text('Reset'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              icon: const Icon(Icons.check_rounded),
+                              label: const Text('Apply'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildStickySearchAndFilters(
     List<String> availableCategories,
     String activeCategory,
   ) {
+    final resultCount = filteredProducts(activeCategory).length;
+    final activeSortLabel = selectedSort == 'Featured'
+        ? 'Featured'
+        : selectedSort.replaceAll('Price: ', 'Price ');
+    final hasActiveShopControls = activeCategory != 'All' ||
+        selectedShopFilter != 'All items' ||
+        selectedSort != 'Featured';
+
     return Container(
       color: FarmColors.background,
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.96),
+          color: Colors.white.withOpacity(0.98),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: FarmColors.line.withOpacity(0.7)),
           boxShadow: [
@@ -11354,68 +14405,139 @@ class _ShopScreenState extends State<ShopScreen> {
           ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              controller: searchController,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) {
-                if (mounted) setState(() {});
-              },
-              decoration: InputDecoration(
-                hintText: 'Search fresh produce...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Clear search',
-                        icon: const Icon(Icons.close),
-                        onPressed: searchController.clear,
-                      ),
-                filled: true,
-                fillColor: FarmColors.cream,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 13,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 40,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: availableCategories.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
-                  final category = availableCategories[index];
-                  final selected = activeCategory == category;
-
-                  return ChoiceChip(
-                    label: Text(category),
-                    selected: selected,
-                    onSelected: (_) {
-                      setState(() => selectedCategory = category);
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: searchController,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) {
+                      if (mounted) setState(() {});
                     },
-                    selectedColor: FarmColors.green,
-                    backgroundColor: FarmColors.lightGreen,
-                    labelStyle: TextStyle(
-                      color: selected ? Colors.white : FarmColors.green,
+                    decoration: InputDecoration(
+                      hintText: 'Search produce, farms, units...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: searchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              icon: const Icon(Icons.close),
+                              onPressed: searchController.clear,
+                            ),
+                      filled: true,
+                      fillColor: FarmColors.cream,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 13,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Filters and sorting',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => _showShopFilterSheet(availableCategories),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      height: 48,
+                      width: 48,
+                      decoration: BoxDecoration(
+                        color: hasActiveShopControls
+                            ? FarmColors.green
+                            : FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: hasActiveShopControls
+                              ? FarmColors.green.withOpacity(0.22)
+                              : FarmColors.green.withOpacity(0.16),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: FarmColors.shadow.withOpacity(
+                              hasActiveShopControls ? 0.12 : 0.05,
+                            ),
+                            blurRadius: hasActiveShopControls ? 14 : 10,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            Icons.tune_rounded,
+                            color: hasActiveShopControls
+                                ? Colors.white
+                                : FarmColors.green,
+                            size: 20,
+                          ),
+                          if (hasActiveShopControls)
+                            Positioned(
+                              top: 10,
+                              right: 10,
+                              child: Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: FarmColors.gold,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 1.2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$resultCount ${resultCount == 1 ? 'item' : 'items'} • $activeSortLabel • $activeShopSummaryLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(999),
-                      side: BorderSide(
-                        color: selected ? FarmColors.green : Colors.transparent,
-                      ),
+                  ),
+                ),
+                if (selectedCategory != 'All' ||
+                    selectedShopFilter != 'All items' ||
+                    selectedSort != 'Featured' ||
+                    searchController.text.trim().isNotEmpty)
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        selectedCategory = 'All';
+                        selectedShopFilter = 'All items';
+                        selectedSort = 'Featured';
+                        searchController.clear();
+                      });
+                    },
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                     ),
-                  );
-                },
-              ),
+                    child: const Text('Clear'),
+                  ),
+              ],
             ),
           ],
         ),
@@ -11430,18 +14552,24 @@ class _ShopScreenState extends State<ShopScreen> {
         ? selectedCategory
         : 'All';
     final visibleProducts = filteredProducts(activeCategory);
-    final cleanRecentlyViewed =
-        cleanRecentlyViewedProducts(widget.recentlyViewedProducts);
+    final cleanRecentlyViewed = refreshProductSnapshotsFromLatestProducts(
+      savedProducts: widget.recentlyViewedProducts,
+      latestProducts: products,
+    );
     final favoriteProducts =
         products.where((product) => widget.isFavorite(product)).toList();
-    final availableNowProducts = sortProductsForPersonalization(
-      products: visibleProducts
-          .where((product) => isVisibleCustomerProduct(product))
-          .toList(),
-      recentlyViewedProducts: cleanRecentlyViewed,
-      buyAgainProducts: buyAgainProducts,
-      favoriteProducts: favoriteProducts,
-    );
+    final visibleCustomerProducts = visibleProducts
+        .where((product) => isVisibleCustomerProduct(product))
+        .toList();
+    final availableNowProducts = selectedSort == 'Featured'
+        ? sortProductsForPersonalization(
+            products: visibleCustomerProducts
+              ..sort(compareCustomerProductAvailabilityThenName),
+            recentlyViewedProducts: cleanRecentlyViewed,
+            buyAgainProducts: buyAgainProducts,
+            favoriteProducts: favoriteProducts,
+          )
+        : sortedShopProducts(visibleCustomerProducts);
     final suggestedForYouProducts = buildRecommendedForYouProducts(
       allProducts: products,
       recentlyViewedProducts: cleanRecentlyViewed,
@@ -11454,7 +14582,7 @@ class _ShopScreenState extends State<ShopScreen> {
       if (!loadingProducts && suggestedForYouProducts.isNotEmpty) ...[
         SectionHeader(
           title: 'Suggested for You',
-          subtitle: 'Personalized using your views, favorites, and orders',
+          subtitle: 'Personalized using your views and past orders',
         ),
         const SizedBox(height: 12),
         ProductMiniRail(
@@ -11480,20 +14608,12 @@ class _ShopScreenState extends State<ShopScreen> {
         ),
         const SizedBox(height: 18),
       ],
-      if (!loadingProducts) ...[
-        DealOfTheDaySection(
-          onViewed: widget.onViewed,
-          onAddProduct: widget.onAddToCart,
-          onViewMyBox: widget.onViewMyBox,
-          onCheckout: widget.onCheckout,
-          compact: true,
-        ),
-        const SizedBox(height: 18),
-      ],
       if (!loadingProducts && availableNowProducts.isNotEmpty) ...[
-        const SectionHeader(
-          title: 'Availability',
-          subtitle: 'Fresh items currently ready for your box',
+        SectionHeader(
+          title: activeCategory == 'All' ? 'Fresh shop' : activeCategory,
+          subtitle: selectedShopFilter == 'All items'
+              ? 'Browse available and out-of-stock items clearly marked'
+              : selectedShopFilter,
         ),
         const SizedBox(height: 12),
       ],
@@ -11502,7 +14622,7 @@ class _ShopScreenState extends State<ShopScreen> {
           child: Row(
             children: [
               const Icon(Icons.info_outline, color: FarmColors.green),
-              const SizedBox(width: 10),
+              const SizedBox(width: 9),
               Expanded(child: Text(productLoadMessage!)),
             ],
           ),
@@ -11515,28 +14635,19 @@ class _ShopScreenState extends State<ShopScreen> {
         const FarmSkeletonCard(height: 180),
       ] else if (availableNowProducts.isEmpty) ...[
         Padding(
-          padding: const EdgeInsets.only(top: 40),
-          child: FarmCard(
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.eco_outlined,
-                  size: 42,
-                  color: FarmColors.green,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  activeCategory == 'All'
-                      ? 'No products match your search. Try another category or clear the search.'
-                      : 'No items are currently available in $activeCategory. Try another category or refresh the shop.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
+          padding: const EdgeInsets.only(top: 30),
+          child: FarmEmptyState(
+            icon: activeCategory == 'Favorites'
+                ? Icons.favorite_border_rounded
+                : Icons.storefront_outlined,
+            title: activeCategory == 'Favorites'
+                ? 'No favorites here yet'
+                : 'No products found',
+            message: activeCategory == 'All'
+                ? 'No products match your search. Try another category or clear the search.'
+                : activeCategory == 'Favorites'
+                    ? 'Tap the heart on products you love to save them here.'
+                    : 'No items are listed in $activeCategory right now. Try another category or clear the search.',
           ),
         ),
       ] else ...[
@@ -11587,11 +14698,6 @@ class _ShopScreenState extends State<ShopScreen> {
                     title: 'Shop',
                     subtitle: 'Fresh natural produce',
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Refresh shop',
-                  onPressed: loadProducts,
-                  icon: const Icon(Icons.refresh),
                 ),
               ],
             ),
@@ -11707,168 +14813,280 @@ class SafeShopProductTile extends StatelessWidget {
     final description = (product.description ?? '').trim().isEmpty
         ? 'Fresh natural harvest from the farm.'
         : product.description!.trim();
-    final unit = (product.unit ?? '').trim();
     final inStock = product.canAddToCart;
+    final muted = product.isOutOfStock;
 
-    return FarmCard(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: onOpenDetails,
-        child: Padding(
-          padding: const EdgeInsets.all(2),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ProductVisual(
-                product: product,
-                size: 76,
-                showOrganicBadge: product.isOrganic,
+    Widget favoriteButton() {
+      return SizedBox(
+        width: 38,
+        height: 38,
+        child: Material(
+          color: isFavorite
+              ? FarmColors.dangerSoft
+              : FarmColors.lightGreen.withOpacity(0.72),
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onFavorite,
+            child: Icon(
+              isFavorite ? Icons.favorite : Icons.favorite_border,
+              size: 19,
+              color: isFavorite ? FarmColors.danger : FarmColors.green,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget quantityControl({required bool fullWidth}) {
+      Widget stepButton({
+        required IconData icon,
+        required VoidCallback? onPressed,
+        required bool filled,
+      }) {
+        return SizedBox(
+          height: 30,
+          width: 30,
+          child: Material(
+            color: filled ? FarmColors.green : Colors.white,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onPressed,
+              child: Icon(
+                icon,
+                size: 17,
+                color: filled ? Colors.white : FarmColors.green,
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 16.2,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          onPressed: onFavorite,
-                          icon: Icon(
-                            isFavorite ? Icons.favorite : Icons.favorite_border,
-                            color: isFavorite
-                                ? FarmColors.danger
-                                : FarmColors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 12.6,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        if (product.isLowStock)
-                          _SmallShopChip(label: product.lowStockLabel),
-                        ProductUnitOriginChip(product: product),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isNarrow = constraints.maxWidth < 210;
+            ),
+          ),
+        );
+      }
 
-                        Widget actionButton({required bool fullWidth}) {
-                          if (quantity <= 0) {
-                            return SizedBox(
-                              width: fullWidth ? double.infinity : 104,
-                              child: inStock
-                                  ? ElevatedButton.icon(
-                                      onPressed: onAdd,
-                                      icon: const Icon(Icons.add, size: 17),
-                                      label: const Text('Add'),
-                                      style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 10,
-                                        ),
-                                        minimumSize: Size.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    )
-                                  : NotifyMeWhenReadyButton(
-                                      product: product,
-                                      compact: true,
-                                    ),
-                            );
-                          }
-
-                          return Container(
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: FarmColors.lightGreen,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: onRemove,
-                                  icon: const Icon(Icons.remove),
-                                  color: FarmColors.green,
-                                ),
-                                Text(
-                                  '$quantity',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: FarmColors.green,
-                                  ),
-                                ),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: inStock ? onAdd : null,
-                                  icon: const Icon(Icons.add),
-                                  color: FarmColors.green,
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        final price = DiscountPriceText(
-                          product: product,
-                          compact: true,
-                        );
-
-                        if (isNarrow) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              price,
-                              const SizedBox(height: 8),
-                              actionButton(fullWidth: true),
-                            ],
-                          );
-                        }
-
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(child: price),
-                            const SizedBox(width: 8),
-                            actionButton(fullWidth: false),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
+      return SizedBox(
+        width: fullWidth ? double.infinity : 118,
+        height: 38,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: FarmColors.green.withOpacity(0.18)),
+            boxShadow: [
+              BoxShadow(
+                color: FarmColors.shadow.withOpacity(0.035),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
             ],
+          ),
+          child: Row(
+            children: [
+              stepButton(
+                icon: Icons.remove_rounded,
+                onPressed: onRemove,
+                filled: false,
+              ),
+              Expanded(
+                child: Text(
+                  fullWidth ? '$quantity in box' : '$quantity',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: FarmColors.green,
+                    fontSize: 13.2,
+                    letterSpacing: -0.05,
+                  ),
+                ),
+              ),
+              stepButton(
+                icon: Icons.add_rounded,
+                onPressed: inStock ? onAdd : null,
+                filled: true,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget primaryAction({required bool fullWidth}) {
+      if (quantity > 0) return quantityControl(fullWidth: fullWidth);
+
+      if (!inStock) {
+        return SizedBox(
+          width: fullWidth ? double.infinity : 126,
+          child: NotifyMeWhenReadyButton(product: product, compact: true),
+        );
+      }
+
+      return SizedBox(
+        width: fullWidth ? double.infinity : 112,
+        height: 40,
+        child: ElevatedButton.icon(
+          onPressed: onAdd,
+          icon: const Icon(Icons.add, size: 17),
+          label: const Text('Add'),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: muted ? FarmColors.cardSoft : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: muted
+              ? FarmColors.danger.withOpacity(0.13)
+              : FarmColors.line.withOpacity(0.84),
+          width: 1.05,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(muted ? 0.025 : 0.055),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: onOpenDetails,
+          child: Opacity(
+            opacity: muted ? 0.82 : 1,
+            child: Padding(
+              padding: const EdgeInsets.all(13),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      SizedBox(
+                        height: 92,
+                        width: 92,
+                        child: Center(
+                          child: ProductVisual(
+                            product: product,
+                            size: 72,
+                            // Keep product-list imagery clean. Organic is shown
+                            // as a text chip below so it never clashes with
+                            // discount badges on the image.
+                            showOrganicBadge: false,
+                          ),
+                        ),
+                      ),
+                      if (product.hasActiveDiscount && !product.isOutOfStock)
+                        Positioned(
+                          top: -3,
+                          left: -3,
+                          child: DiscountBadge(product: product, compact: true),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 16.4,
+                                  height: 1.08,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.18,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            favoriteButton(),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 12.6,
+                            height: 1.25,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            if (product.isOrganic)
+                              const _SmallShopChip(label: 'Organic'),
+                            ProductOriginBadge(
+                              product: product,
+                              compact: true,
+                              includeIcon: false,
+                            ),
+                            ProductUnitChip(product: product, compact: true),
+                            ProductAvailabilityChip(
+                                product: product, compact: true),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isNarrow = constraints.maxWidth < 224;
+                            final price = DiscountPriceText(
+                              product: product,
+                              compact: true,
+                            );
+
+                            if (isNarrow) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  price,
+                                  const SizedBox(height: 8),
+                                  primaryAction(fullWidth: true),
+                                ],
+                              );
+                            }
+
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(child: price),
+                                const SizedBox(width: 9),
+                                primaryAction(fullWidth: false),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -11878,23 +15096,135 @@ class SafeShopProductTile extends StatelessWidget {
 
 class _SmallShopChip extends StatelessWidget {
   final String label;
+  final Color color;
+  final Color backgroundColor;
 
-  const _SmallShopChip({required this.label});
+  const _SmallShopChip({
+    required this.label,
+    this.color = FarmColors.green,
+    this.backgroundColor = FarmColors.lightGreen,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: FarmColors.lightGreen,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(
-          color: FarmColors.green,
+        style: TextStyle(
+          color: color,
           fontSize: 11.5,
           fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class ProductAvailabilityChip extends StatelessWidget {
+  final Product product;
+  final bool compact;
+
+  const ProductAvailabilityChip({
+    super.key,
+    required this.product,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    String? label;
+    IconData icon = Icons.check_circle_outline;
+    Color color = FarmColors.green;
+    Color background = FarmColors.lightGreen;
+
+    if (product.isOutOfStock) {
+      label = 'Out of stock';
+      icon = Icons.block_outlined;
+      color = FarmColors.danger;
+      background = FarmColors.dangerSoft;
+    } else if (product.isLowStock) {
+      label = product.lowStockLabel;
+      icon = Icons.local_fire_department_outlined;
+      color = FarmColors.warning;
+      background = FarmColors.warningSoft;
+    }
+
+    if (label == null || label.trim().isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: EdgeInsets.only(top: compact ? 3 : 7),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 7 : 10,
+          vertical: compact ? 4 : 6,
+        ),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withOpacity(0.12)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: compact ? 11 : 13, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: compact ? 10.0 : 11.3,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ProductUnitChip extends StatelessWidget {
+  final Product product;
+  final bool compact;
+
+  const ProductUnitChip({
+    super.key,
+    required this.product,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final unit = (product.unit ?? '').trim();
+    if (unit.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 4 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: FarmColors.lightGreen,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+      ),
+      child: Text(
+        unit,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: FarmColors.green,
+          fontSize: compact ? 10.8 : 12,
+          fontWeight: FontWeight.w900,
+          height: 1,
         ),
       ),
     );
@@ -11926,9 +15256,10 @@ List<Product> buildRecommendedForYouProducts({
     output.add(product);
   }
 
+  // Do not use favorites as an instant recommendation signal. Tapping the
+  // heart should only update the heart state, not reshuffle product rails.
   final signalCategories = <String>{
     ...recentlyViewedProducts.map((product) => product.category.toLowerCase()),
-    ...favoriteProducts.map((product) => product.category.toLowerCase()),
     ...buyAgainProducts.map((product) => product.category.toLowerCase()),
   }..removeWhere((category) => category.trim().isEmpty);
 
@@ -11993,100 +15324,105 @@ class ProductMiniRail extends StatelessWidget {
     if (visible.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 194,
+      height: 228,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         cacheExtent: AppPerformanceConfig.productRailCacheExtent,
         itemCount: visible.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final product = visible[index];
+          final muted = product.isOutOfStock;
 
-          return InkWell(
-            borderRadius: BorderRadius.circular(22),
-            onTap: () {
-              if (onProductTap != null) {
-                onProductTap!(product);
-              } else {
-                onTap?.call();
-              }
-            },
-            child: Container(
-              width: 156,
-              padding: const EdgeInsets.fromLTRB(9, 8, 9, 9),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: FarmColors.line.withOpacity(0.9)),
-                boxShadow: [
-                  BoxShadow(
-                    color: FarmColors.shadow.withOpacity(0.055),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 84,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Center(
-                          child: ProductVisual(product: product, size: 70),
-                        ),
-                        if (product.isOrganic)
-                          const Positioned(
-                            top: 1,
-                            left: 1,
-                            child: OrganicImageStamp(compact: true),
-                          ),
-                        if (product.hasActiveDiscount)
-                          Positioned(
-                            top: 1,
-                            right: 1,
-                            child: DiscountBadge(
-                              product: product,
-                              compact: true,
-                            ),
-                          ),
-                      ],
+          return SizedBox(
+            width: 164,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onTap: () {
+                  if (onProductTap != null) {
+                    onProductTap!(product);
+                  } else {
+                    onTap?.call();
+                  }
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                  decoration: BoxDecoration(
+                    color: muted ? FarmColors.cardSoft : Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: muted
+                          ? FarmColors.danger.withOpacity(0.13)
+                          : FarmColors.line.withOpacity(0.88),
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: FarmColors.shadow
+                            .withOpacity(muted ? 0.025 : 0.055),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Expanded(
+                  child: Opacity(
+                    opacity: muted ? 0.82 : 1,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _HomeProductName(product: product, compact: true),
-                        const SizedBox(height: 4),
-                        ProductOriginBadge(
-                          product: product,
-                          compact: true,
-                          includeIcon: false,
-                        ),
-                        const SizedBox(height: 4),
-                        _HomePricePanel(product: product, compact: true),
-                        if (product.isLowStock) ...[
-                          const SizedBox(height: 5),
-                          Text(
-                            product.lowStockLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: FarmColors.danger,
-                              fontSize: 10.8,
-                              height: 1,
-                              fontWeight: FontWeight.w900,
-                            ),
+                        SizedBox(
+                          height: 88,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Center(
+                                child: SizedBox(
+                                  height: 86,
+                                  width: double.infinity,
+                                  child: Center(
+                                    child: ProductVisual(
+                                        product: product, size: 72),
+                                  ),
+                                ),
+                              ),
+                              if (product.hasActiveDiscount &&
+                                  !product.isOutOfStock)
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: DiscountBadge(
+                                    product: product,
+                                    compact: true,
+                                  ),
+                                ),
+                            ],
                           ),
-                        ],
+                        ),
+                        const SizedBox(height: 8),
+                        _HomeProductName(product: product, compact: true),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ProductOriginBadge(
+                                product: product,
+                                compact: true,
+                                includeIcon: false,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        _HomePricePanel(product: product, compact: true),
+                        ProductAvailabilityChip(
+                            product: product, compact: true),
+                        const Spacer(),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           );
@@ -12135,6 +15471,566 @@ class FarmBoxScreen extends StatelessWidget {
     );
   }
 
+  double get originalSubtotal {
+    return groupedCart.values.fold(
+      0,
+      (total, line) =>
+          total + (line.product.originalPriceValue * line.quantity),
+    );
+  }
+
+  double get totalSavings {
+    final savings = originalSubtotal - subtotal;
+    return savings <= 0 ? 0 : savings;
+  }
+
+  int get totalItems {
+    return groupedCart.values.fold(0, (total, line) => total + line.quantity);
+  }
+
+  int get unavailableItems {
+    return groupedCart.values
+        .where((line) => !line.product.canAddToCart)
+        .length;
+  }
+
+  Widget _miniStat({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color color = FarmColors.green,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withOpacity(0.15)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.78),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _boxHeroCard(List<CartLine> lines) {
+    final hasItems = lines.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: FarmColors.green,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.green.withOpacity(0.22),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.shopping_basket_outlined,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'My Farm Box',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 23,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      hasItems
+                          ? 'Review your fresh picks before checkout.'
+                          : 'Build your box with fresh local produce.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              _miniStat(
+                icon: Icons.inventory_2_outlined,
+                label: 'Items',
+                value: '$totalItems',
+              ),
+              const SizedBox(width: 10),
+              _miniStat(
+                icon: totalSavings > 0
+                    ? Icons.savings_outlined
+                    : Icons.receipt_long_outlined,
+                label: totalSavings > 0 ? 'Saved' : 'Subtotal',
+                value: totalSavings > 0
+                    ? formatJmd(totalSavings)
+                    : formatJmd(subtotal),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _linePill({
+    required String label,
+    required Color color,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10.6,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quantityButton({
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool filled = false,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onPressed,
+      child: AnimatedOpacity(
+        opacity: onPressed == null ? 0.42 : 1,
+        duration: const Duration(milliseconds: 140),
+        child: Container(
+          height: 34,
+          width: 34,
+          decoration: BoxDecoration(
+            color: filled ? FarmColors.green : Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: filled
+                  ? FarmColors.green
+                  : FarmColors.green.withOpacity(0.24),
+            ),
+            boxShadow: filled
+                ? [
+                    BoxShadow(
+                      color: FarmColors.green.withOpacity(0.18),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : const [],
+          ),
+          child: Icon(
+            icon,
+            size: 17,
+            color: filled ? Colors.white : FarmColors.green,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _quantityControl(CartLine line) {
+    final product = line.product;
+    final canIncrease =
+        product.canAddToCart && line.quantity < product.stockQuantity;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: FarmColors.line.withOpacity(0.86)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _quantityButton(
+            icon: Icons.remove,
+            onPressed: () => onRemoveFromCart(product),
+          ),
+          Container(
+            constraints: const BoxConstraints(minWidth: 54),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '${line.quantity}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          _quantityButton(
+            icon: Icons.add,
+            filled: true,
+            onPressed: canIncrease ? () => onAddToCart(product) : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cartLineCard(CartLine line) {
+    final product = line.product;
+    final lineTotal = product.effectivePrice * line.quantity;
+    final lineSavings =
+        ((product.originalPriceValue - product.effectivePrice) * line.quantity)
+            .clamp(0, double.infinity)
+            .toDouble();
+    final farmName = (product.farmName ?? product.farmerName ?? '').trim();
+    final unit = (product.unit ?? '').trim();
+
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: ProductVisual(product: product, size: 66),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.15,
+                      ),
+                    ),
+                    if (farmName.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        farmName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.green,
+                          fontSize: 12.2,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 9),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _linePill(
+                          label: product.canAddToCart
+                              ? product.originLabel
+                              : 'Unavailable',
+                          color: product.canAddToCart
+                              ? productOriginColor(product)
+                              : FarmColors.danger,
+                          icon: product.canAddToCart
+                              ? productOriginIcon(product)
+                              : Icons.block_outlined,
+                        ),
+                        if (unit.isNotEmpty)
+                          _linePill(
+                            label: unit,
+                            color: FarmColors.mutedText,
+                            icon: Icons.straighten_outlined,
+                          ),
+                        if (product.isLowStock)
+                          _linePill(
+                            label: product.lowStockLabel,
+                            color: FarmColors.warning,
+                            icon: Icons.local_fire_department_outlined,
+                          ),
+                        if (product.isOutOfStock)
+                          _linePill(
+                            label: 'Out of stock',
+                            color: FarmColors.danger,
+                            icon: Icons.block_outlined,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: FarmColors.background,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: FarmColors.line.withOpacity(0.72)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            formatJmd(lineTotal),
+                            style: const TextStyle(
+                              color: FarmColors.green,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${formatJmd(product.effectivePrice)} each',
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (lineSavings > 0) ...[
+                            const SizedBox(height: 5),
+                            Text(
+                              'You save ${formatJmd(lineSavings)}',
+                              style: const TextStyle(
+                                color: FarmColors.warning,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    _quantityControl(line),
+                  ],
+                ),
+                if (!product.canAddToCart) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: const [
+                      Icon(Icons.info_outline,
+                          size: 16, color: FarmColors.danger),
+                      SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          'Remove this item before checkout. It is not available right now.',
+                          style: TextStyle(
+                            color: FarmColors.danger,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            height: 1.25,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: bold ? FarmColors.ink : FarmColors.mutedText,
+                fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: bold ? FarmColors.green : FarmColors.ink,
+              fontSize: bold ? 18 : 14,
+              fontWeight: bold ? FontWeight.w900 : FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _checkoutBar(BuildContext context, List<CartLine> lines) {
+    final hasUnavailable = unavailableItems > 0;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: FarmColors.line.withOpacity(0.86)),
+          boxShadow: [
+            BoxShadow(
+              color: FarmColors.shadow.withOpacity(0.08),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _summaryRow('Items', '$totalItems'),
+            if (totalSavings > 0)
+              _summaryRow('Savings', formatJmd(totalSavings)),
+            _summaryRow('Subtotal', formatJmd(subtotal), bold: true),
+            if (hasUnavailable) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: FarmColors.dangerSoft,
+                  borderRadius: BorderRadius.circular(16),
+                  border:
+                      Border.all(color: FarmColors.danger.withOpacity(0.14)),
+                ),
+                child: const Text(
+                  'Remove unavailable items before checkout.',
+                  style: TextStyle(
+                    color: FarmColors.danger,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: PrimaryFarmButton(
+                label: 'Secure Checkout',
+                icon: Icons.lock_outline,
+                onPressed: lines.isEmpty || hasUnavailable
+                    ? null
+                    : () async {
+                        final allowed = await requireLoginForCheckout(context);
+                        if (!context.mounted || !allowed) return;
+
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CheckoutScreen(
+                              cartLines: lines,
+                              subtotal: subtotal,
+                              onOrderPlaced: onOrderPlaced,
+                              onInventoryChanged: onInventoryChanged,
+                            ),
+                          ),
+                        );
+                      },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lines = groupedCart.values.toList();
@@ -12144,162 +16040,48 @@ class FarmBoxScreen extends StatelessWidget {
         children: [
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(18),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
               children: [
-                const Header(
-                  title: 'My Farm Box',
-                  subtitle: 'Your fresh cart',
-                ),
+                _boxHeroCard(lines),
                 const SizedBox(height: 16),
-                FarmCard(
-                  child: Row(
+                if (lines.isEmpty)
+                  const FarmEmptyState(
+                    icon: Icons.shopping_basket_outlined,
+                    title: 'Your farm box is empty',
+                    message:
+                        'Go to Shop and add fresh items. Your box will stay ready here for checkout.',
+                  )
+                else ...[
+                  Row(
                     children: const [
-                      Icon(
-                        Icons.shopping_basket_outlined,
-                        size: 54,
-                        color: FarmColors.green,
-                      ),
-                      SizedBox(width: 14),
                       Expanded(
                         child: Text(
-                          'Browse fresh produce and add your favorites to your box.',
+                          'Selected items',
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.25,
                           ),
+                        ),
+                      ),
+                      Text(
+                        'Tap + / - to adjust',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                if (lines.isEmpty)
-                  const FarmCard(
-                    child: Text(
-                      'Your farm box is empty. Browse fresh produce and add your favorites.',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  )
-                else
-                  ...lines.map((line) {
-                    final product = line.product;
-                    return FarmCard(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        children: [
-                          ProductVisual(product: product, size: 46),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  product.name,
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                DiscountPriceText(
-                                    product: product, compact: true),
-                                Text('Quantity: ${line.quantity}'),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: FarmColors.lightGreen,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Remove one',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 40,
-                                    minHeight: 40,
-                                  ),
-                                  onPressed: () => onRemoveFromCart(product),
-                                  icon: const Icon(Icons.remove),
-                                  color: FarmColors.green,
-                                ),
-                                Text(
-                                  '${line.quantity}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: FarmColors.green,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Add one more',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 40,
-                                    minHeight: 40,
-                                  ),
-                                  onPressed: product.canAddToCart
-                                      ? () => onAddToCart(product)
-                                      : null,
-                                  icon: const Icon(Icons.add),
-                                  color: FarmColors.green,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
+                  const SizedBox(height: 12),
+                  ...lines.map(_cartLineCard),
+                ],
               ],
             ),
           ),
-          Container(
-            margin: const EdgeInsets.all(18),
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: FarmColors.green,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Subtotal: J\$${subtotal.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: lines.isEmpty
-                      ? null
-                      : () async {
-                          final allowed =
-                              await requireLoginForCheckout(context);
-                          if (!context.mounted || !allowed) return;
-
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => CheckoutScreen(
-                                cartLines: lines,
-                                subtotal: subtotal,
-                                onOrderPlaced: onOrderPlaced,
-                                onInventoryChanged: onInventoryChanged,
-                              ),
-                            ),
-                          );
-                        },
-                  child: const Text('Checkout'),
-                ),
-              ],
-            ),
-          ),
+          if (lines.isNotEmpty) _checkoutBar(context, lines),
         ],
       ),
     );
@@ -12329,16 +16111,28 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   StreamSubscription<AuthState>? _authSubscription;
+  late Future<List<FarmOrder>> _ordersFuture;
 
   @override
   void initState() {
     super.initState();
+    _ordersFuture = fetchOrders(forceRefresh: true);
     _authSubscription = supabase.auth.onAuthStateChange.listen((_) {
       if (mounted) {
-        FarmDataCache.clearOrders();
-        setState(() {});
+        _refreshOrders();
       }
     });
+  }
+
+  Future<void> _refreshOrders() async {
+    FarmDataCache.clearOrders();
+    final future = fetchOrders(forceRefresh: true);
+    if (mounted) {
+      setState(() {
+        _ordersFuture = future;
+      });
+    }
+    await future;
   }
 
   @override
@@ -12359,58 +16153,89 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
 
     return FarmPage(
-      child: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          const Header(title: 'My Orders', subtitle: 'Track your farm orders'),
-          const SizedBox(height: 16),
-          FutureBuilder<List<FarmOrder>>(
-            future: fetchOrders(forceRefresh: true),
-            builder: (context, snapshot) {
-              final orders = snapshot.data ?? [];
+      child: RefreshIndicator(
+        onRefresh: _refreshOrders,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(18),
+          children: [
+            const Header(
+                title: 'My Orders', subtitle: 'Track your farm orders'),
+            const SizedBox(height: 16),
+            FutureBuilder<List<FarmOrder>>(
+              future: _ordersFuture,
+              builder: (context, snapshot) {
+                final orders = snapshot.data ?? [];
 
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SkeletonList();
-              }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SkeletonList();
+                }
 
-              if (orders.isEmpty) {
-                return const FarmCard(
-                  child: Text(
-                      'No orders yet. When you place an order, it will appear here.'),
-                );
-              }
-
-              return Column(
-                children: orders.map((order) {
-                  return OrderCard(
-                    order: '#${order.shortId}',
-                    status: _titleCase(order.status),
-                    type:
-                        '${order.formattedType} • ${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}',
-                    total: order.formattedTotal,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => OrderDetailsScreen(orderId: order.id),
-                        ),
-                      );
-                    },
+                if (orders.isEmpty) {
+                  return const FarmEmptyState(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'No orders yet',
+                    message:
+                        'When you place an order, your receipt, status, and pickup or delivery details will appear here.',
                   );
-                }).toList(),
-              );
-            },
-          ),
-        ],
+                }
+
+                return Column(
+                  children: orders.map((order) {
+                    return OrderCard(
+                      order: '#${order.shortId}',
+                      status: _titleCase(order.status),
+                      type:
+                          '${order.formattedType} • ${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}',
+                      total: order.formattedTotal,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                OrderDetailsScreen(orderId: order.id),
+                          ),
+                        );
+                      },
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class OrderDetailsScreen extends StatelessWidget {
+class OrderDetailsScreen extends StatefulWidget {
   final String orderId;
 
   const OrderDetailsScreen({super.key, required this.orderId});
+
+  @override
+  State<OrderDetailsScreen> createState() => _OrderDetailsScreenState();
+}
+
+class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
+  late Future<OrderDetails?> _orderFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _orderFuture = fetchOrderDetails(widget.orderId);
+  }
+
+  Future<void> _refreshOrderDetails() async {
+    final future = fetchOrderDetails(widget.orderId);
+    if (mounted) {
+      setState(() {
+        _orderFuture = future;
+      });
+    }
+    await future;
+  }
 
   int _statusIndex(String status) {
     switch (status) {
@@ -12472,160 +16297,440 @@ class OrderDetailsScreen extends StatelessWidget {
         title: const Text('Order Details'),
         backgroundColor: FarmColors.background,
       ),
-      body: FutureBuilder<OrderDetails?>(
-        future: fetchOrderDetails(orderId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const SkeletonList();
-          }
+      body: RefreshIndicator(
+        onRefresh: _refreshOrderDetails,
+        child: FutureBuilder<OrderDetails?>(
+          future: _orderFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const SkeletonList();
+            }
 
-          final order = snapshot.data;
-          if (order == null) {
-            return const Center(child: Text('Order details not found.'));
-          }
+            final order = snapshot.data;
+            if (order == null) {
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                children: const [
+                  FarmEmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: 'Order unavailable',
+                    message:
+                        'We could not open this order right now. Please go back to Orders and try again.',
+                  ),
+                ],
+              );
+            }
 
-          final isDelivery = order.fulfillmentType == 'delivery';
+            final isDelivery = order.fulfillmentType == 'delivery';
 
-          return ListView(
-            padding: const EdgeInsets.all(18),
-            children: [
-              Header(
-                title: 'Receipt',
-                subtitle: 'Order #${order.shortId}',
+            final bottomSafePadding = MediaQuery.of(context).viewPadding.bottom;
+
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                18,
+                18,
+                18,
+                56 + bottomSafePadding,
               ),
-              const SizedBox(height: 16),
-              FarmCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      order.formattedOrderStatus,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(order.formattedType),
-                    Text('Scheduled: ${order.scheduleText}'),
-                    if (isDelivery && (order.deliveryZone ?? '').isNotEmpty)
-                      Text('Zone: ${order.deliveryZone}'),
-                    if (isDelivery && (order.deliveryAddress ?? '').isNotEmpty)
-                      Text('Address: ${order.deliveryAddress}'),
-                    const SizedBox(height: 8),
-                    Chip(
-                      label: Text(
-                          '${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}'),
-                      backgroundColor: FarmColors.lightGreen,
-                    ),
-                  ],
+              children: [
+                EliteOrderStatusCard(order: order),
+                const SizedBox(height: 14),
+                EliteOrderQuickActions(
+                  order: order,
+                  onRefresh: _refreshOrderDetails,
                 ),
-              ),
-              const SizedBox(height: 14),
-              PremiumOrderTracker(
-                status: order.status,
-                isDelivery: isDelivery,
-                paymentStatus: order.paymentStatus,
-              ),
-              const SizedBox(height: 14),
-              FarmCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Items',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 12),
-                    if (order.items.isEmpty)
-                      const Text('No item details found.')
-                    else
-                      ...order.items.map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${item.productName} x ${item.quantity}',
-                                ),
-                              ),
-                              Text('J\$${item.lineTotal.toStringAsFixed(2)}'),
-                            ],
-                          ),
-                        ),
-                      ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Subtotal'),
-                        Text(order.formattedSubtotal),
-                      ],
-                    ),
-                    if (isDelivery || order.deliveryFee > 0) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Delivery fee'),
-                          Text(order.formattedDeliveryFee),
-                        ],
-                      ),
-                    ],
-                    if (order.discountAmount > 0) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Discount'),
-                          Text('-${order.formattedDiscountAmount}'),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Total',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          order.formattedTotal,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                const SizedBox(height: 14),
+                PremiumOrderTracker(
+                  status: order.status,
+                  isDelivery: isDelivery,
+                  paymentStatus: order.paymentStatus,
                 ),
-              ),
-              if ((order.notes ?? '').isNotEmpty) ...[
                 const SizedBox(height: 14),
                 FarmCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Order Notes',
+                        'Items',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold),
                       ),
+                      const SizedBox(height: 12),
+                      if (order.items.isEmpty)
+                        const Text('No item details found.')
+                      else
+                        ...order.items.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${item.productName} x ${item.quantity}',
+                                  ),
+                                ),
+                                Text('J\$${item.lineTotal.toStringAsFixed(2)}'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Subtotal'),
+                          Text(order.formattedSubtotal),
+                        ],
+                      ),
+                      if (isDelivery || order.deliveryFee > 0) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Delivery fee'),
+                            Text(order.formattedDeliveryFee),
+                          ],
+                        ),
+                      ],
+                      if (order.discountAmount > 0) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Discount'),
+                            Text('-${order.formattedDiscountAmount}'),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 8),
-                      Text(order.notes!),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Total',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            order.formattedTotal,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
+                if ((order.notes ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  FarmCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Order Notes',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(order.notes!),
+                      ],
+                    ),
+                  ),
+                ],
               ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class EliteOrderStatusCard extends StatelessWidget {
+  final OrderDetails order;
+
+  const EliteOrderStatusCard({super.key, required this.order});
+
+  Color get _statusColor {
+    final status = order.status.trim().toLowerCase();
+    if (status == 'delivered' || status == 'completed') {
+      return FarmColors.green;
+    }
+    if (status == 'cancelled' || status == 'canceled') {
+      return FarmColors.danger;
+    }
+    if (status == 'ready' ||
+        status == 'ready_for_pickup' ||
+        status == 'out_for_delivery') {
+      return FarmColors.warning;
+    }
+    return FarmColors.green;
+  }
+
+  IconData get _statusIcon {
+    final status = order.status.trim().toLowerCase();
+    if (status == 'delivered' || status == 'completed') {
+      return Icons.check_circle_outline;
+    }
+    if (status == 'preparing') return Icons.shopping_basket_outlined;
+    if (status == 'ready' || status == 'ready_for_pickup') {
+      return Icons.storefront_outlined;
+    }
+    if (status == 'out_for_delivery') return Icons.local_shipping_outlined;
+    if (status == 'cancelled' || status == 'canceled') {
+      return Icons.cancel_outlined;
+    }
+    return Icons.receipt_long_outlined;
+  }
+
+  String get _friendlyMessage {
+    final delivery = order.fulfillmentType == 'delivery';
+    switch (order.status.trim().toLowerCase()) {
+      case 'preparing':
+        return 'The farm is preparing your fresh items.';
+      case 'ready':
+      case 'ready_for_pickup':
+        return 'Your order is ready for pickup.';
+      case 'out_for_delivery':
+        return 'Your order is on the way.';
+      case 'delivered':
+      case 'completed':
+        return delivery
+            ? 'Your delivery is complete. Thank you for shopping local.'
+            : 'Your pickup is complete. Thank you for shopping local.';
+      case 'cancelled':
+      case 'canceled':
+        return 'This order was cancelled.';
+      default:
+        return 'Your order was received and is waiting for farm confirmation.';
+    }
+  }
+
+  Widget _statusPill({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.20)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDelivery = order.fulfillmentType == 'delivery';
+    final statusColor = _statusColor;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF214B31),
+            Color(0xFF2F6B45),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.16),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(color: Colors.white.withOpacity(0.22)),
+                ),
+                child: Icon(_statusIcon, color: Colors.white, size: 25),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Order #${order.shortId}',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.78),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      order.formattedOrderStatus,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 24,
+                        height: 1.05,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _friendlyMessage,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.86),
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _statusPill(
+                icon: isDelivery
+                    ? Icons.local_shipping_outlined
+                    : Icons.storefront_outlined,
+                label: order.formattedType,
+                color: Colors.white,
+              ),
+              _statusPill(
+                icon: Icons.event_available_outlined,
+                label: order.scheduleText,
+                color: Colors.white,
+              ),
+              _statusPill(
+                icon: Icons.payments_outlined,
+                label: order.formattedPaymentStatus,
+                color: order.paymentStatus.trim().toLowerCase() == 'paid'
+                    ? FarmColors.green
+                    : FarmColors.warning,
+              ),
+            ],
+          ),
+          if (isDelivery &&
+              ((order.deliveryZone ?? '').isNotEmpty ||
+                  (order.deliveryAddress ?? '').isNotEmpty)) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withOpacity(0.16)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if ((order.deliveryZone ?? '').isNotEmpty)
+                    Text(
+                      'Zone: ${order.deliveryZone}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  if ((order.deliveryAddress ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      order.deliveryAddress!,
+                      style: TextStyle(color: Colors.white.withOpacity(0.84)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class EliteOrderQuickActions extends StatelessWidget {
+  final OrderDetails order;
+  final Future<void> Function() onRefresh;
+
+  const EliteOrderQuickActions({
+    super.key,
+    required this.order,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () {
+                onRefresh();
+              },
+              icon: const Icon(Icons.restart_alt_rounded, size: 18),
+              label: const Text('Refresh'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SupportScreen()),
+                );
+              },
+              icon: const Icon(Icons.support_agent_rounded, size: 18),
+              label: const Text('Need help'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -13160,7 +17265,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         return FarmPage(
           child: DefaultTabController(
-            length: 10,
+            length: 13,
             initialIndex: 0,
             child: Column(
               children: [
@@ -13168,7 +17273,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
                   child: Header(
                     title: 'Farmer Admin',
-                    subtitle: 'Manage orders, delivery, products & sales',
+                    subtitle:
+                        'Manage launch health, orders, delivery, products & sales',
                   ),
                 ),
                 Padding(
@@ -13190,6 +17296,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     labelColor: FarmColors.green,
                     indicatorColor: FarmColors.green,
                     tabs: [
+                      Tab(
+                          icon: Icon(Icons.rocket_launch_outlined),
+                          text: 'Launch'),
+                      Tab(
+                          icon: Icon(Icons.health_and_safety_outlined),
+                          text: 'Health'),
                       Tab(icon: Icon(Icons.receipt_long), text: 'Orders'),
                       Tab(
                           icon: Icon(Icons.local_shipping_outlined),
@@ -13198,6 +17310,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           icon: Icon(Icons.analytics_outlined),
                           text: 'Analytics'),
                       Tab(icon: Icon(Icons.eco), text: 'Products'),
+                      Tab(
+                          icon: Icon(Icons.photo_library_outlined),
+                          text: 'Hero'),
                       Tab(
                           icon: Icon(Icons.support_agent_outlined),
                           text: 'Support'),
@@ -13220,6 +17335,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Expanded(
                   child: TabBarView(
                     children: [
+                      AdminLaunchChecklistTab(
+                          refreshKey: refreshKey, onChanged: refresh),
+                      AdminAppHealthTab(refreshKey: refreshKey),
                       AdminOrdersTab(
                           refreshKey: refreshKey, onChanged: refresh),
                       AdminDeliveryTab(
@@ -13227,99 +17345,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       AdminAnalyticsTab(refreshKey: refreshKey),
                       AdminProductsTab(
                           refreshKey: refreshKey, onChanged: refresh),
+                      AdminHeroSlidesTab(
+                          refreshKey: refreshKey, onChanged: refresh),
                       AdminSupportTab(
                           refreshKey: refreshKey, onChanged: refresh),
                       AdminFarmerManagementTab(
                           refreshKey: refreshKey, onChanged: refresh),
                       AdminPayoutsTab(
                           refreshKey: refreshKey, onChanged: refresh),
-                      ListView(
-                        padding: const EdgeInsets.all(18),
-                        children: [
-                          FarmCard(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Reports Export',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                const Text(
-                                  'Generate CSV or report-ready text for sales records.',
-                                ),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  children: [
-                                    OutlinedButton.icon(
-                                      icon: const Icon(
-                                          Icons.table_chart_outlined),
-                                      label: const Text('CSV'),
-                                      onPressed: () async {
-                                        final orders = await fetchAdminOrders();
-                                        final csv = buildSalesCsv(orders);
-                                        if (!context.mounted) return;
-                                        showDialog(
-                                          context: context,
-                                          builder: (_) => AlertDialog(
-                                            title: const Text('CSV Export'),
-                                            content: SingleChildScrollView(
-                                              child: SelectableText(csv),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(context),
-                                                child: const Text('Close'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    ElevatedButton.icon(
-                                      icon: const Icon(Icons.article_outlined),
-                                      label: const Text('Report Text'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: FarmColors.primary,
-                                        foregroundColor: Colors.white,
-                                      ),
-                                      onPressed: () async {
-                                        final orders = await fetchAdminOrders();
-                                        final report =
-                                            buildSalesReportText(orders);
-                                        if (!context.mounted) return;
-                                        showDialog(
-                                          context: context,
-                                          builder: (_) => AlertDialog(
-                                            title:
-                                                const Text('Sales Report Text'),
-                                            content: SingleChildScrollView(
-                                              child: SelectableText(report),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(context),
-                                                child: const Text('Close'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                      AdminReportsTab(refreshKey: refreshKey),
                       AdminReviewsTab(refreshKey: refreshKey),
                       AdminCouponsTab(
                           refreshKey: refreshKey, onChanged: refresh),
@@ -13328,6 +17362,2531 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ],
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class AdminReportsTab extends StatefulWidget {
+  final int refreshKey;
+
+  const AdminReportsTab({super.key, required this.refreshKey});
+
+  @override
+  State<AdminReportsTab> createState() => _AdminReportsTabState();
+}
+
+class _AdminReportsTabState extends State<AdminReportsTab> {
+  late Future<List<AdminOrder>> _ordersFuture;
+  int _rangeDays = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ordersFuture = fetchAdminOrders();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminReportsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _reload();
+    }
+  }
+
+  Future<void> _reload() async {
+    final future = fetchAdminOrders();
+    setState(() => _ordersFuture = future);
+    await future;
+  }
+
+  String _money(double value) => 'J\$${value.toStringAsFixed(2)}';
+
+  String _rangeName() {
+    if (_rangeDays == 1) return 'Today';
+    if (_rangeDays == 7) return 'Last 7 days';
+    if (_rangeDays == 30) return 'Last 30 days';
+    return 'All orders';
+  }
+
+  List<AdminOrder> _filteredOrders(List<AdminOrder> orders) {
+    if (_rangeDays <= 0) return List<AdminOrder>.from(orders);
+    final now = DateTime.now();
+    final start = _rangeDays == 1
+        ? DateTime(now.year, now.month, now.day)
+        : now.subtract(Duration(days: _rangeDays));
+    return orders.where((order) {
+      final created = order.createdAt;
+      if (created == null) return false;
+      return !created.isBefore(start);
+    }).toList();
+  }
+
+  Map<String, int> _countByStatus(List<AdminOrder> orders) {
+    final output = <String, int>{};
+    for (final order in orders) {
+      final key = order.status.trim().isEmpty ? 'pending' : order.status.trim();
+      output[key] = (output[key] ?? 0) + 1;
+    }
+    return output;
+  }
+
+  Map<String, int> _countByPaymentMethod(List<AdminOrder> orders) {
+    final output = <String, int>{};
+    for (final order in orders) {
+      final key = order.paymentMethod.trim().isEmpty
+          ? 'cash_on_pickup'
+          : order.paymentMethod.trim();
+      output[key] = (output[key] ?? 0) + 1;
+    }
+    return output;
+  }
+
+  List<MapEntry<String, int>> _topProducts(List<AdminOrder> orders) {
+    final itemCounts = <String, int>{};
+    for (final order in orders) {
+      for (final item in order.items) {
+        final name = item.productName.trim().isEmpty
+            ? 'Product'
+            : item.productName.trim();
+        itemCounts[name] = (itemCounts[name] ?? 0) + item.quantity;
+      }
+    }
+
+    final entries = itemCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries;
+  }
+
+  String _reportSummary(List<AdminOrder> orders) {
+    final paidOrders =
+        orders.where((order) => order.paymentStatus == 'paid').toList();
+    final unpaidOrders =
+        orders.where((order) => order.paymentStatus != 'paid').toList();
+    final deliveryOrders =
+        orders.where((order) => order.fulfillmentType == 'delivery').length;
+    final pickupOrders =
+        orders.where((order) => order.fulfillmentType != 'delivery').length;
+    final totalRevenue =
+        paidOrders.fold<double>(0, (sum, order) => sum + order.total);
+    final openBalance =
+        unpaidOrders.fold<double>(0, (sum, order) => sum + order.total);
+    final averageOrder = orders.isEmpty
+        ? 0.0
+        : orders.fold<double>(0, (sum, order) => sum + order.total) /
+            orders.length;
+    final topItems = _topProducts(orders).take(5).toList();
+
+    return '''
+The Harvest Place Ja Business Report
+Range: ${_rangeName()}
+
+Orders: ${orders.length}
+Paid Orders: ${paidOrders.length}
+Unpaid / Pending Payment: ${unpaidOrders.length}
+Paid Revenue: ${_money(totalRevenue)}
+Open Balance: ${_money(openBalance)}
+Average Order Value: ${_money(averageOrder)}
+Pickup Orders: $pickupOrders
+Delivery Orders: $deliveryOrders
+
+Top Products:
+${topItems.isEmpty ? 'No product sales yet.' : topItems.map((entry) => '- ${entry.key}: ${entry.value} sold').join('\n')}
+
+Generated from Admin Reports.
+''';
+  }
+
+  Future<void> _copyText(BuildContext context, String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied to clipboard')),
+    );
+  }
+
+  void _showReportDialog({
+    required BuildContext context,
+    required String title,
+    required String content,
+  }) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(child: SelectableText(content)),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copy'),
+            onPressed: () => _copyText(context, content),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _rangeSelector() {
+    Widget chip(String label, int value) {
+      final selected = _rangeDays == value;
+      return ChoiceChip(
+        selected: selected,
+        label: Text(label),
+        onSelected: (_) => setState(() => _rangeDays = value),
+        selectedColor: FarmColors.lightGreen,
+        labelStyle: TextStyle(
+          color: selected ? FarmColors.green : FarmColors.mutedText,
+          fontWeight: FontWeight.w900,
+        ),
+        side: BorderSide(
+          color:
+              selected ? FarmColors.green.withOpacity(0.30) : FarmColors.line,
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          chip('All', 0),
+          const SizedBox(width: 8),
+          chip('Today', 1),
+          const SizedBox(width: 8),
+          chip('7 days', 7),
+          const SizedBox(width: 8),
+          chip('30 days', 30),
+        ],
+      ),
+    );
+  }
+
+  Widget _hero({
+    required List<AdminOrder> orders,
+    required double revenue,
+    required double openBalance,
+    required double averageOrder,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+            Color(0xFF4F8A5B),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.green.withOpacity(0.18),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'REPORTING CENTER',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.78),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _money(revenue),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 30,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.8,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${_rangeName()} • ${orders.length} order${orders.length == 1 ? '' : 's'} reviewed',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.86),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _heroStat('Avg order', _money(averageOrder)),
+              const SizedBox(width: 10),
+              _heroStat('Open', _money(openBalance)),
+              const SizedBox(width: 10),
+              _heroStat('Orders', '${orders.length}'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroStat(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withOpacity(0.18)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.76),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metricGrid(List<Widget> children) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final cardWidth = width < 390 ? (width - 10) / 2 : (width - 20) / 3;
+
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: children
+              .map((child) => SizedBox(width: cardWidth, child: child))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _metricCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    Color color = FarmColors.green,
+    String? note,
+  }) {
+    return FarmCard(
+      padding: const EdgeInsets.all(12),
+      child: SizedBox(
+        height: 108,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  height: 36,
+                  width: 36,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.11),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 19),
+                ),
+                const Spacer(),
+                if (note != null && note.trim().isNotEmpty)
+                  Text(
+                    note,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 11.5,
+                height: 1.15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title, String subtitle) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, left: 2, right: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _breakdownCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Widget> children,
+    String emptyText = 'No data yet.',
+  }) {
+    return FarmCard(
+      padding: const EdgeInsets.all(15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 38,
+                width: 38,
+                decoration: BoxDecoration(
+                  color: FarmColors.lightGreen,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: FarmColors.green, size: 19),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (children.isEmpty)
+            Text(
+              emptyText,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _breakdownRow({
+    required String title,
+    required String value,
+    IconData icon = Icons.circle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: FarmColors.green),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            value,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _exportPanel(List<AdminOrder> orders) {
+    final csv = buildSalesCsv(orders);
+    final report = _reportSummary(orders);
+
+    return FarmCard(
+      padding: const EdgeInsets.all(15),
+      color: FarmColors.cardSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Export and share',
+            style: TextStyle(
+              color: FarmColors.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Copy clean CSV or a manager-ready sales summary.',
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 13),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.article_outlined),
+                label: const Text('Summary'),
+                onPressed: () => _showReportDialog(
+                  context: context,
+                  title: 'Business Summary',
+                  content: report,
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.copy_outlined),
+                label: const Text('Copy summary'),
+                onPressed: () => _copyText(context, report),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.table_chart_outlined),
+                label: const Text('CSV'),
+                onPressed: () => _showReportDialog(
+                  context: context,
+                  title: 'CSV Export',
+                  content: csv,
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.file_copy_outlined),
+                label: const Text('Copy CSV'),
+                onPressed: () => _copyText(context, csv),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _recentOrderRow(AdminOrder order) {
+    final paid = order.paymentStatus == 'paid';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Container(
+            height: 36,
+            width: 36,
+            decoration: BoxDecoration(
+              color: paid ? FarmColors.lightGreen : FarmColors.warningSoft,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              paid ? Icons.check_rounded : Icons.schedule_rounded,
+              color: paid ? FarmColors.green : FarmColors.warning,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '#${order.shortId} • ${order.customerName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 13.2,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${order.formattedType} • ${order.formattedPaymentStatus}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.4,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            order.formattedTotal,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 12.8,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<AdminOrder>>(
+      future: _ordersFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SkeletonList(count: 4, height: 104);
+        }
+
+        final allOrders = snapshot.data ?? <AdminOrder>[];
+        final orders = _filteredOrders(allOrders);
+        final paidOrders =
+            orders.where((order) => order.paymentStatus == 'paid').toList();
+        final unpaidOrders =
+            orders.where((order) => order.paymentStatus != 'paid').toList();
+        final deliveryOrders = orders
+            .where((order) => order.fulfillmentType == 'delivery')
+            .toList();
+        final pickupOrders = orders
+            .where((order) => order.fulfillmentType != 'delivery')
+            .toList();
+        final revenue =
+            paidOrders.fold<double>(0, (sum, order) => sum + order.total);
+        final openBalance =
+            unpaidOrders.fold<double>(0, (sum, order) => sum + order.total);
+        final averageOrder = orders.isEmpty
+            ? 0.0
+            : orders.fold<double>(0, (sum, order) => sum + order.total) /
+                orders.length;
+        final totalDiscount =
+            orders.fold<double>(0, (sum, order) => sum + order.discountAmount);
+        final deliveryFees =
+            orders.fold<double>(0, (sum, order) => sum + order.deliveryFee);
+        final statusCounts = _countByStatus(orders);
+        final paymentMethodCounts = _countByPaymentMethod(orders);
+        final topProducts = _topProducts(orders);
+
+        return RefreshIndicator(
+          onRefresh: _reload,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              const Header(
+                title: 'Reports',
+                subtitle: 'Sales clarity for smarter farm decisions',
+              ),
+              const SizedBox(height: 14),
+              _rangeSelector(),
+              const SizedBox(height: 14),
+              _hero(
+                orders: orders,
+                revenue: revenue,
+                openBalance: openBalance,
+                averageOrder: averageOrder,
+              ),
+              const SizedBox(height: 18),
+              _sectionHeader(
+                  'Financial snapshot', 'Quick numbers for this range'),
+              _metricGrid([
+                _metricCard(
+                  title: 'Paid revenue',
+                  value: _money(revenue),
+                  icon: Icons.payments_rounded,
+                  note: '${paidOrders.length} paid',
+                ),
+                _metricCard(
+                  title: 'Open balance',
+                  value: _money(openBalance),
+                  icon: Icons.pending_actions_rounded,
+                  color: openBalance > 0 ? FarmColors.gold : FarmColors.green,
+                  note: '${unpaidOrders.length} open',
+                ),
+                _metricCard(
+                  title: 'Average order',
+                  value: _money(averageOrder),
+                  icon: Icons.trending_up_rounded,
+                ),
+                _metricCard(
+                  title: 'Discounts given',
+                  value: _money(totalDiscount),
+                  icon: Icons.local_offer_rounded,
+                  color: FarmColors.gold,
+                ),
+                _metricCard(
+                  title: 'Delivery fees',
+                  value: _money(deliveryFees),
+                  icon: Icons.local_shipping_rounded,
+                ),
+                _metricCard(
+                  title: 'Orders reviewed',
+                  value: '${orders.length}',
+                  icon: Icons.receipt_long_rounded,
+                ),
+              ]),
+              const SizedBox(height: 18),
+              _exportPanel(orders),
+              const SizedBox(height: 18),
+              _sectionHeader('Order mix', 'How customers are buying'),
+              _breakdownCard(
+                title: 'Fulfillment split',
+                subtitle: 'Pickup compared with delivery demand',
+                icon: Icons.route_rounded,
+                children: [
+                  _breakdownRow(
+                    title: 'Farm Pickup',
+                    value: '${pickupOrders.length}',
+                    icon: Icons.storefront_rounded,
+                  ),
+                  _breakdownRow(
+                    title: 'Home Delivery',
+                    value: '${deliveryOrders.length}',
+                    icon: Icons.local_shipping_rounded,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _breakdownCard(
+                title: 'Payment methods',
+                subtitle: 'Payment preferences from recent orders',
+                icon: Icons.payments_rounded,
+                children: paymentMethodCounts.entries
+                    .map(
+                      (entry) => _breakdownRow(
+                        title: formatPaymentMethod(entry.key),
+                        value: '${entry.value}',
+                        icon: Icons.credit_card_rounded,
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 14),
+              _breakdownCard(
+                title: 'Order status',
+                subtitle: 'Operational status across this report range',
+                icon: Icons.checklist_rounded,
+                children: statusCounts.entries
+                    .map(
+                      (entry) => _breakdownRow(
+                        title: _friendlyStatus(entry.key),
+                        value: '${entry.value}',
+                        icon: Icons.circle,
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              _sectionHeader(
+                  'Product intelligence', 'What customers are choosing'),
+              _breakdownCard(
+                title: 'Top products',
+                subtitle: 'Use this to plan harvest and stock',
+                icon: Icons.local_fire_department_rounded,
+                children: topProducts
+                    .take(6)
+                    .map(
+                      (entry) => _breakdownRow(
+                        title: entry.key,
+                        value: '${entry.value} sold',
+                        icon: Icons.eco_rounded,
+                      ),
+                    )
+                    .toList(),
+                emptyText: 'No product sales yet.',
+              ),
+              const SizedBox(height: 14),
+              _breakdownCard(
+                title: 'Recent orders',
+                subtitle: 'Latest report entries for quick review',
+                icon: Icons.history_rounded,
+                children: orders.take(5).map(_recentOrderRow).toList(),
+                emptyText: 'No orders in this range yet.',
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class LaunchChecklistSnapshot {
+  final List<LaunchCheckItem> checks;
+  final int visibleProductCount;
+  final int activeProductCount;
+  final int productImageCount;
+  final int heroSlideCount;
+  final int orderCount;
+
+  const LaunchChecklistSnapshot({
+    required this.checks,
+    required this.visibleProductCount,
+    required this.activeProductCount,
+    required this.productImageCount,
+    required this.heroSlideCount,
+    required this.orderCount,
+  });
+
+  int get readyCount => checks.where((check) => check.isReady).length;
+  int get reviewCount => checks.where((check) => check.isReview).length;
+  int get actionCount => checks.where((check) => check.needsAction).length;
+  double get readinessScore {
+    if (checks.isEmpty) return 0;
+    final weighted = checks.fold<double>(0, (sum, check) {
+      if (check.isReady) return sum + 1;
+      if (check.isReview) return sum + 0.55;
+      return sum;
+    });
+    return (weighted / checks.length).clamp(0, 1).toDouble();
+  }
+}
+
+class LaunchCheckItem {
+  final String title;
+  final String status;
+  final String detail;
+  final IconData icon;
+  final Color color;
+
+  const LaunchCheckItem({
+    required this.title,
+    required this.status,
+    required this.detail,
+    required this.icon,
+    required this.color,
+  });
+
+  bool get isReady => status == 'Ready';
+  bool get isReview => status == 'Review';
+  bool get needsAction => status == 'Action';
+}
+
+Future<LaunchChecklistSnapshot> buildLaunchChecklistSnapshot() async {
+  await requireAdminAccess();
+
+  final products = await fetchProducts();
+  final visibleProducts = products.where(isVisibleCustomerProduct).toList();
+  final activeProducts =
+      visibleProducts.where((product) => product.canAddToCart).toList();
+  final productsWithImages = visibleProducts
+      .where((product) => cleanHostedImageUrl(product.imageUrl) != null)
+      .length;
+  final outOfStockVisible =
+      visibleProducts.where((product) => product.isOutOfStock).length;
+
+  List<HomeHeroSlide> heroSlides = <HomeHeroSlide>[];
+  try {
+    heroSlides = await fetchAdminHomeHeroSlides();
+  } catch (_) {
+    heroSlides = <HomeHeroSlide>[];
+  }
+
+  List<AdminOrder> orders = <AdminOrder>[];
+  try {
+    orders = await fetchAdminOrders();
+  } catch (_) {
+    orders = <AdminOrder>[];
+  }
+
+  final uploadedHeroSlides = heroSlides
+      .where((slide) =>
+          !slide.id.startsWith('default-') &&
+          cleanHostedImageUrl(slide.imageUrl) != null)
+      .length;
+
+  LaunchCheckItem ready({
+    required String title,
+    required String detail,
+    required IconData icon,
+  }) {
+    return LaunchCheckItem(
+      title: title,
+      status: 'Ready',
+      detail: detail,
+      icon: icon,
+      color: FarmColors.success,
+    );
+  }
+
+  LaunchCheckItem review({
+    required String title,
+    required String detail,
+    required IconData icon,
+  }) {
+    return LaunchCheckItem(
+      title: title,
+      status: 'Review',
+      detail: detail,
+      icon: icon,
+      color: FarmColors.warning,
+    );
+  }
+
+  LaunchCheckItem action({
+    required String title,
+    required String detail,
+    required IconData icon,
+  }) {
+    return LaunchCheckItem(
+      title: title,
+      status: 'Action',
+      detail: detail,
+      icon: icon,
+      color: FarmColors.danger,
+    );
+  }
+
+  final imageTarget = visibleProducts.length < 3 ? visibleProducts.length : 3;
+  final checks = <LaunchCheckItem>[
+    ready(
+      title: 'Admin access',
+      detail: 'Current user passed the admin access check.',
+      icon: Icons.admin_panel_settings_outlined,
+    ),
+    activeProducts.isNotEmpty
+        ? ready(
+            title: 'Customer products',
+            detail:
+                '${activeProducts.length} in-stock products are visible for shopping. ${visibleProducts.length} total products are customer-visible.',
+            icon: Icons.storefront_outlined,
+          )
+        : action(
+            title: 'Customer products',
+            detail:
+                'Add or restock at least one approved visible product before launch.',
+            icon: Icons.storefront_outlined,
+          ),
+    imageTarget == 0
+        ? review(
+            title: 'Product images',
+            detail:
+                'No visible products found yet. Add products, then upload clear images.',
+            icon: Icons.image_outlined,
+          )
+        : productsWithImages >= imageTarget
+            ? ready(
+                title: 'Product images',
+                detail:
+                    '$productsWithImages visible products have customer-facing images.',
+                icon: Icons.image_outlined,
+              )
+            : review(
+                title: 'Product images',
+                detail:
+                    '$productsWithImages visible products have images. Upload more product photos for a premium shop feel.',
+                icon: Icons.image_outlined,
+              ),
+    ready(
+      title: 'Stock display',
+      detail: outOfStockVisible == 0
+          ? 'Out-of-stock products are supported and will show a friendly unavailable state when needed.'
+          : '$outOfStockVisible out-of-stock products remain visible with friendly labels and disabled add buttons.',
+      icon: Icons.inventory_2_outlined,
+    ),
+    uploadedHeroSlides >= 3
+        ? ready(
+            title: 'Hero slideshow',
+            detail: 'All 3 home hero slides are uploaded from admin.',
+            icon: Icons.photo_library_outlined,
+          )
+        : uploadedHeroSlides > 0
+            ? review(
+                title: 'Hero slideshow',
+                detail:
+                    '$uploadedHeroSlides of 3 home hero slides are custom uploaded. Add the rest before launch.',
+                icon: Icons.photo_library_outlined,
+              )
+            : action(
+                title: 'Hero slideshow',
+                detail:
+                    'Upload 3 strong home banner images in Admin > Hero before launch.',
+                icon: Icons.photo_library_outlined,
+              ),
+    orders.isNotEmpty
+        ? ready(
+            title: 'Test order flow',
+            detail:
+                '${orders.length} orders exist. Open the newest order and confirm customer/admin views.',
+            icon: Icons.receipt_long_outlined,
+          )
+        : review(
+            title: 'Test order flow',
+            detail:
+                'Place at least one real test order, then verify order details, totals, and notifications.',
+            icon: Icons.receipt_long_outlined,
+          ),
+    review(
+      title: 'Notifications',
+      detail:
+          'After a test order, tap the admin notification and customer notification to confirm both open the correct order.',
+      icon: Icons.notifications_active_outlined,
+    ),
+    ready(
+      title: 'Checkout safety',
+      detail:
+          'Checkout rechecks product stock and blocks unavailable products before order placement.',
+      icon: Icons.verified_user_outlined,
+    ),
+    ready(
+      title: 'Terms & Privacy',
+      detail:
+          'Customer trust screens are present and ready for final phone testing.',
+      icon: Icons.policy_outlined,
+    ),
+    (productsWithImages > 0 || uploadedHeroSlides > 0)
+        ? ready(
+            title: 'Storage uploads',
+            detail:
+                'Supabase Storage image upload path appears to be in use for products or hero slides.',
+            icon: Icons.cloud_done_outlined,
+          )
+        : review(
+            title: 'Storage uploads',
+            detail:
+                'Upload a product image and hero image from admin to confirm Storage policies on the deployed app.',
+            icon: Icons.cloud_upload_outlined,
+          ),
+  ];
+
+  return LaunchChecklistSnapshot(
+    checks: checks,
+    visibleProductCount: visibleProducts.length,
+    activeProductCount: activeProducts.length,
+    productImageCount: productsWithImages,
+    heroSlideCount: uploadedHeroSlides,
+    orderCount: orders.length,
+  );
+}
+
+class AdminAppHealthSnapshot {
+  final int score;
+  final int liveProducts;
+  final int imageReadyProducts;
+  final int lowStockProducts;
+  final int outOfStockProducts;
+  final int activeOrders;
+  final int openSupportTickets;
+  final int heroSlidesReady;
+  final List<AdminHealthCheck> customerChecks;
+  final List<AdminHealthCheck> operationsChecks;
+  final List<AdminHealthCheck> launchChecks;
+
+  const AdminAppHealthSnapshot({
+    required this.score,
+    required this.liveProducts,
+    required this.imageReadyProducts,
+    required this.lowStockProducts,
+    required this.outOfStockProducts,
+    required this.activeOrders,
+    required this.openSupportTickets,
+    required this.heroSlidesReady,
+    required this.customerChecks,
+    required this.operationsChecks,
+    required this.launchChecks,
+  });
+}
+
+class AdminHealthCheck {
+  final String title;
+  final String detail;
+  final IconData icon;
+  final Color color;
+  final bool ready;
+
+  const AdminHealthCheck({
+    required this.title,
+    required this.detail,
+    required this.icon,
+    required this.color,
+    required this.ready,
+  });
+}
+
+Future<AdminAppHealthSnapshot> buildAdminAppHealthSnapshot() async {
+  await requireAdminAccess();
+
+  List<Product> products = const <Product>[];
+  List<AdminOrder> orders = const <AdminOrder>[];
+  List<HomeHeroSlide> heroSlides = const <HomeHeroSlide>[];
+  List<SupportTicket> supportTickets = const <SupportTicket>[];
+
+  try {
+    products = await fetchAllProducts();
+  } catch (error) {
+    farmDebugLog('Health products check skipped: $error');
+  }
+
+  try {
+    orders = await fetchAdminOrders();
+  } catch (error) {
+    farmDebugLog('Health orders check skipped: $error');
+  }
+
+  try {
+    heroSlides = await fetchAdminHomeHeroSlides();
+  } catch (error) {
+    farmDebugLog('Health hero check skipped: $error');
+  }
+
+  try {
+    supportTickets = await fetchAdminSupportTickets();
+  } catch (error) {
+    farmDebugLog('Health support check skipped: $error');
+  }
+
+  final liveProducts = products.where((p) => p.isCustomerVisible).length;
+  final imageReadyProducts = products
+      .where(
+          (p) => p.isCustomerVisible && cleanHostedImageUrl(p.imageUrl) != null)
+      .length;
+  final lowStockProducts = products.where((p) => p.isLowStock).length;
+  final outOfStockProducts = products.where((p) => p.isOutOfStock).length;
+  final activeOrders = orders
+      .where((order) => !{
+            'completed',
+            'delivered',
+            'cancelled',
+            'rejected',
+          }.contains(order.status.trim().toLowerCase()))
+      .length;
+  final openSupportTickets = supportTickets
+      .where((ticket) =>
+          !{'closed', 'resolved'}.contains(ticket.status.trim().toLowerCase()))
+      .length;
+  final heroSlidesReady = heroSlides
+      .where((slide) => cleanHostedImageUrl(slide.imageUrl) != null)
+      .take(3)
+      .length;
+
+  AdminHealthCheck ready({
+    required String title,
+    required String detail,
+    required IconData icon,
+  }) {
+    return AdminHealthCheck(
+      title: title,
+      detail: detail,
+      icon: icon,
+      color: FarmColors.green,
+      ready: true,
+    );
+  }
+
+  AdminHealthCheck review({
+    required String title,
+    required String detail,
+    required IconData icon,
+  }) {
+    return AdminHealthCheck(
+      title: title,
+      detail: detail,
+      icon: icon,
+      color: FarmColors.warning,
+      ready: false,
+    );
+  }
+
+  final customerChecks = <AdminHealthCheck>[
+    liveProducts > 0
+        ? ready(
+            title: 'Shop has live products',
+            detail: '$liveProducts customer-visible items are ready to browse.',
+            icon: Icons.storefront_outlined,
+          )
+        : review(
+            title: 'No live products',
+            detail: 'Add at least one approved visible product before launch.',
+            icon: Icons.storefront_outlined,
+          ),
+    imageReadyProducts >= (liveProducts * 0.70).ceil() || liveProducts <= 2
+        ? ready(
+            title: 'Product images look ready',
+            detail:
+                '$imageReadyProducts of $liveProducts visible products have images.',
+            icon: Icons.image_outlined,
+          )
+        : review(
+            title: 'Improve image coverage',
+            detail:
+                '$imageReadyProducts of $liveProducts visible products have images. Aim for 70%+.',
+            icon: Icons.image_outlined,
+          ),
+    heroSlidesReady >= 3
+        ? ready(
+            title: 'Hero slideshow ready',
+            detail: 'All 3 home hero slides have valid images.',
+            icon: Icons.photo_library_outlined,
+          )
+        : review(
+            title: 'Hero slideshow needs review',
+            detail: '$heroSlidesReady of 3 hero slides have valid images.',
+            icon: Icons.photo_library_outlined,
+          ),
+  ];
+
+  final operationsChecks = <AdminHealthCheck>[
+    activeOrders == 0
+        ? ready(
+            title: 'No active orders waiting',
+            detail: 'Fulfillment is clear right now.',
+            icon: Icons.task_alt_outlined,
+          )
+        : review(
+            title: '$activeOrders active orders',
+            detail:
+                'Review fulfillment before going public or closing the day.',
+            icon: Icons.local_shipping_outlined,
+          ),
+    lowStockProducts == 0
+        ? ready(
+            title: 'No low-stock warnings',
+            detail: 'Inventory does not have urgent low-stock flags.',
+            icon: Icons.inventory_2_outlined,
+          )
+        : review(
+            title: '$lowStockProducts low-stock products',
+            detail: 'Restock or let them sell through intentionally.',
+            icon: Icons.inventory_2_outlined,
+          ),
+    openSupportTickets == 0
+        ? ready(
+            title: 'Support inbox clear',
+            detail: 'No open customer support tickets need attention.',
+            icon: Icons.support_agent_outlined,
+          )
+        : review(
+            title: '$openSupportTickets support tickets',
+            detail: 'Reply before launch-day promotion if possible.',
+            icon: Icons.support_agent_outlined,
+          ),
+  ];
+
+  final launchChecks = <AdminHealthCheck>[
+    outOfStockProducts <= liveProducts
+        ? ready(
+            title: 'Out-of-stock display protected',
+            detail:
+                '$outOfStockProducts unavailable items can show without checkout risk.',
+            icon: Icons.block_outlined,
+          )
+        : review(
+            title: 'Review stock visibility',
+            detail: 'Some products need visibility and stock review.',
+            icon: Icons.block_outlined,
+          ),
+    ready(
+      title: 'Checkout stock recheck active',
+      detail: 'Products are verified again before order placement.',
+      icon: Icons.verified_user_outlined,
+    ),
+    ready(
+      title: 'Admin gate active',
+      detail: 'Admin screens still verify admin access before loading tools.',
+      icon: Icons.admin_panel_settings_outlined,
+    ),
+  ];
+
+  final allChecks = [...customerChecks, ...operationsChecks, ...launchChecks];
+  final readyCount = allChecks.where((check) => check.ready).length;
+  final score = allChecks.isEmpty
+      ? 0
+      : ((readyCount / allChecks.length) * 100).round().clamp(0, 100).toInt();
+
+  return AdminAppHealthSnapshot(
+    score: score,
+    liveProducts: liveProducts,
+    imageReadyProducts: imageReadyProducts,
+    lowStockProducts: lowStockProducts,
+    outOfStockProducts: outOfStockProducts,
+    activeOrders: activeOrders,
+    openSupportTickets: openSupportTickets,
+    heroSlidesReady: heroSlidesReady,
+    customerChecks: customerChecks,
+    operationsChecks: operationsChecks,
+    launchChecks: launchChecks,
+  );
+}
+
+class AdminAppHealthTab extends StatefulWidget {
+  final int refreshKey;
+
+  const AdminAppHealthTab({super.key, required this.refreshKey});
+
+  @override
+  State<AdminAppHealthTab> createState() => _AdminAppHealthTabState();
+}
+
+class _AdminAppHealthTabState extends State<AdminAppHealthTab> {
+  late Future<AdminAppHealthSnapshot> snapshotFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    snapshotFuture = buildAdminAppHealthSnapshot();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminAppHealthTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      snapshotFuture = buildAdminAppHealthSnapshot();
+    }
+  }
+
+  Future<void> refresh() async {
+    final future = buildAdminAppHealthSnapshot();
+    setState(() => snapshotFuture = future);
+    await future;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AdminAppHealthSnapshot>(
+      future: snapshotFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            itemCount: 5,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (_, __) => const FarmSkeletonCard(height: 118),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              FarmEmptyState(
+                icon: Icons.health_and_safety_outlined,
+                title: 'Health check unavailable',
+                message:
+                    'Pull down to try again. If it continues, confirm your admin access and Supabase connection.',
+                actionLabel: 'Retry',
+                onAction: refresh,
+              ),
+            ],
+          );
+        }
+
+        final data = snapshot.data!;
+
+        return RefreshIndicator(
+          onRefresh: refresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              SectionHeader(
+                title: 'App Health Center',
+                subtitle: 'A quick operating check before launch-day traffic.',
+                actionLabel: 'Refresh',
+                onAction: refresh,
+              ),
+              const SizedBox(height: 14),
+              _AdminHealthHero(snapshot: data),
+              const SizedBox(height: 14),
+              _AdminHealthMetricGrid(snapshot: data),
+              const SizedBox(height: 18),
+              _AdminHealthSection(
+                title: 'Customer experience',
+                checks: data.customerChecks,
+              ),
+              const SizedBox(height: 14),
+              _AdminHealthSection(
+                title: 'Operations readiness',
+                checks: data.operationsChecks,
+              ),
+              const SizedBox(height: 14),
+              _AdminHealthSection(
+                title: 'Launch guardrails',
+                checks: data.launchChecks,
+              ),
+              const SizedBox(height: 18),
+              const _AdminHealthPlaybookCard(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AdminHealthHero extends StatelessWidget {
+  final AdminAppHealthSnapshot snapshot;
+
+  const _AdminHealthHero({required this.snapshot});
+
+  @override
+  Widget build(BuildContext context) {
+    final isExcellent = snapshot.score >= 90;
+    final title =
+        isExcellent ? 'Operating beautifully' : 'A few items need review';
+    final message = isExcellent
+        ? 'Your storefront, operations, and launch guardrails are in strong shape.'
+        : 'Review the yellow items below to make the app feel smoother before promoting it.';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.green.withOpacity(0.20),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 72,
+            width: 72,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withOpacity(0.18)),
+            ),
+            child: Center(
+              child: Text(
+                '${snapshot.score}%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.86),
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminHealthMetricGrid extends StatelessWidget {
+  final AdminAppHealthSnapshot snapshot;
+
+  const _AdminHealthMetricGrid({required this.snapshot});
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = [
+      _AdminHealthMetric('Live products', snapshot.liveProducts.toString(),
+          Icons.storefront_outlined),
+      _AdminHealthMetric('Images ready', '${snapshot.imageReadyProducts}',
+          Icons.image_outlined),
+      _AdminHealthMetric('Active orders', '${snapshot.activeOrders}',
+          Icons.local_shipping_outlined),
+      _AdminHealthMetric('Support open', '${snapshot.openSupportTickets}',
+          Icons.support_agent_outlined),
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: metrics.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 1.62,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemBuilder: (context, index) =>
+          _AdminHealthMetricCard(metric: metrics[index]),
+    );
+  }
+}
+
+class _AdminHealthMetric {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _AdminHealthMetric(this.label, this.value, this.icon);
+}
+
+class _AdminHealthMetricCard extends StatelessWidget {
+  final _AdminHealthMetric metric;
+
+  const _AdminHealthMetricCard({required this.metric});
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Container(
+            height: 40,
+            width: 40,
+            decoration: BoxDecoration(
+              color: FarmColors.lightGreen,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(metric.icon, color: FarmColors.green, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  metric.value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  metric.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminHealthSection extends StatelessWidget {
+  final String title;
+  final List<AdminHealthCheck> checks;
+
+  const _AdminHealthSection({required this.title, required this.checks});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: FarmColors.ink,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ...checks.map(
+          (check) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _AdminHealthCheckTile(check: check),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AdminHealthCheckTile extends StatelessWidget {
+  final AdminHealthCheck check;
+
+  const _AdminHealthCheckTile({required this.check});
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(14),
+      color: check.ready ? Colors.white : FarmColors.warningSoft,
+      child: Row(
+        children: [
+          Container(
+            height: 44,
+            width: 44,
+            decoration: BoxDecoration(
+              color: check.color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(check.icon, color: check.color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  check.title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  check.detail,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Icon(
+            check.ready ? Icons.check_circle : Icons.info_outline,
+            color: check.color,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminHealthPlaybookCard extends StatelessWidget {
+  const _AdminHealthPlaybookCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Row(
+            children: [
+              Icon(Icons.tips_and_updates_outlined, color: FarmColors.gold),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Daily elite habit',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Before sharing the app link each day: refresh Health, clear active orders, review low stock, and test one customer-facing action on your phone.',
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AdminLaunchChecklistTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminLaunchChecklistTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminLaunchChecklistTab> createState() =>
+      _AdminLaunchChecklistTabState();
+}
+
+class _AdminLaunchChecklistTabState extends State<AdminLaunchChecklistTab> {
+  int localRefreshKey = 0;
+
+  void refreshChecklist() {
+    setState(() => localRefreshKey++);
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<LaunchChecklistSnapshot>(
+      key: ValueKey('${widget.refreshKey}-$localRefreshKey'),
+      future: buildLaunchChecklistSnapshot(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SkeletonList(count: 4, height: 128);
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
+            children: [
+              const Header(
+                title: 'Launch Checklist',
+                subtitle: 'Final readiness before real customers',
+              ),
+              const SizedBox(height: 14),
+              FarmCard(
+                color: FarmColors.dangerSoft,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Could not load launch checks',
+                      style: TextStyle(
+                        color: FarmColors.danger,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      friendlyAppError(snapshot.error ?? 'Unknown error'),
+                      style: const TextStyle(color: FarmColors.danger),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: refreshChecklist,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Try again'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        final data = snapshot.data!;
+        final percent = (data.readinessScore * 100).round();
+        final scoreColor = data.actionCount > 0
+            ? FarmColors.warning
+            : percent >= 90
+                ? FarmColors.success
+                : FarmColors.warning;
+
+        return RefreshIndicator(
+          onRefresh: () async => refreshChecklist(),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
+            children: [
+              const Header(
+                title: 'Launch Checklist',
+                subtitle: 'Final readiness before real customers',
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [FarmColors.deepGreen, FarmColors.green],
+                  ),
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: FarmColors.green.withOpacity(0.18),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          height: 74,
+                          width: 74,
+                          child: CircularProgressIndicator(
+                            value: data.readinessScore,
+                            strokeWidth: 8,
+                            backgroundColor: Colors.white24,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '$percent%',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Launch readiness',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            data.actionCount == 0
+                                ? 'You are close. Review the yellow items, then run a real phone test.'
+                                : '${data.actionCount} item${data.actionCount == 1 ? '' : 's'} need action before sharing widely.',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              height: 1.25,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _LaunchMetricChip(
+                    label: 'Ready',
+                    value: '${data.readyCount}',
+                    color: FarmColors.success,
+                  ),
+                  _LaunchMetricChip(
+                    label: 'Review',
+                    value: '${data.reviewCount}',
+                    color: FarmColors.warning,
+                  ),
+                  _LaunchMetricChip(
+                    label: 'Action',
+                    value: '${data.actionCount}',
+                    color: FarmColors.danger,
+                  ),
+                  _LaunchMetricChip(
+                    label: 'Products',
+                    value: '${data.activeProductCount}',
+                    color: FarmColors.green,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              ...data.checks.map(
+                (check) => LaunchCheckTile(check: check),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: refreshChecklist,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh checklist'),
+              ),
+              const SizedBox(height: 14),
+              const LaunchPlaybookSection(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class LaunchPlaybookSection extends StatelessWidget {
+  const LaunchPlaybookSection({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Header(
+          title: 'Launch playbook',
+          subtitle: 'Final checks for a smooth first customer day',
+        ),
+        SizedBox(height: 12),
+        _LaunchPlaybookHero(),
+        SizedBox(height: 12),
+        _LaunchPlaybookGrid(),
+      ],
+    );
+  }
+}
+
+class _LaunchPlaybookHero extends StatelessWidget {
+  const _LaunchPlaybookHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: FarmColors.card,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: FarmColors.line),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.045),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  color: FarmColors.green.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.verified_user_outlined,
+                  color: FarmColors.green,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ready to open confidently',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Use this short playbook right before sharing the app with customers.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.25,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              _LaunchPill(
+                  label: 'Test order', icon: Icons.receipt_long_outlined),
+              _LaunchPill(
+                  label: 'Stock verified', icon: Icons.inventory_2_outlined),
+              _LaunchPill(
+                  label: 'Admin only',
+                  icon: Icons.admin_panel_settings_outlined),
+              _LaunchPill(
+                  label: 'Phone QA', icon: Icons.phone_android_outlined),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LaunchPill extends StatelessWidget {
+  final String label;
+  final IconData icon;
+
+  const _LaunchPill({required this.label, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: FarmColors.primarySoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: FarmColors.green),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LaunchPlaybookGrid extends StatelessWidget {
+  const _LaunchPlaybookGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const [
+        _LaunchPlaybookCard(
+          icon: Icons.shopping_bag_outlined,
+          title: 'Run one real customer order',
+          detail:
+              'Add an item, checkout, confirm customer order details, then verify the admin order card.',
+        ),
+        _LaunchPlaybookCard(
+          icon: Icons.notifications_active_outlined,
+          title: 'Tap both notifications',
+          detail:
+              'Admin New order and customer Order placed alerts should open the exact order, not a blank page.',
+        ),
+        _LaunchPlaybookCard(
+          icon: Icons.lock_outline,
+          title: 'Protect admin access',
+          detail:
+              'Only approved admin accounts should keep admin access before public sharing.',
+        ),
+        _LaunchPlaybookCard(
+          icon: Icons.speed_outlined,
+          title: 'Real phone smoothness test',
+          detail:
+              'Open Home, Shop, Product Details, My Box, Checkout, Orders, and Account on an Android phone.',
+        ),
+      ],
+    );
+  }
+}
+
+class _LaunchPlaybookCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String detail;
+
+  const _LaunchPlaybookCard({
+    required this.icon,
+    required this.title,
+    required this.detail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: BoxDecoration(
+              color: FarmColors.accentSoft,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: FarmColors.warning, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LaunchMetricChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _LaunchMetricChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LaunchCheckTile extends StatelessWidget {
+  final LaunchCheckItem check;
+
+  const LaunchCheckTile({super.key, required this.check});
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 44,
+            width: 44,
+            decoration: BoxDecoration(
+              color: check.color.withOpacity(0.11),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(check.icon, color: check.color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        check.title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: check.color.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        check.status,
+                        style: TextStyle(
+                          color: check.color,
+                          fontSize: 11,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  check.detail,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    height: 1.28,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AdminHeroSlidesTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminHeroSlidesTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminHeroSlidesTab> createState() => _AdminHeroSlidesTabState();
+}
+
+class _AdminHeroSlidesTabState extends State<AdminHeroSlidesTab> {
+  int localRefreshKey = 0;
+  final Map<int, bool> uploading = <int, bool>{};
+
+  void refreshSlides() {
+    setState(() => localRefreshKey++);
+    widget.onChanged();
+  }
+
+  Future<void> uploadSlideImage(int position) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final pickedImage = await pickProductImageFromDevice();
+      if (pickedImage == null) return;
+
+      setState(() => uploading[position] = true);
+
+      final imageUrl = await uploadHomeHeroImageToStorage(
+        position: position,
+        image: pickedImage,
+      );
+      await saveHomeHeroSlideImage(position: position, imageUrl: imageUrl);
+
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Hero slide $position uploaded.')),
+      );
+      refreshSlides();
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => uploading[position] = false);
+      }
+    }
+  }
+
+  Widget slideCard(HomeHeroSlide slide) {
+    final isUploading = uploading[slide.position] == true;
+    final cleanUrl = cleanHostedImageUrl(slide.imageUrl);
+
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Home hero slide ${slide.position}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Chip(
+                label: Text(slide.isActive ? 'Active' : 'Inactive'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              height: 128,
+              width: double.infinity,
+              color: FarmColors.primarySoft,
+              child: cleanUrl == null
+                  ? const Center(
+                      child: Icon(
+                        Icons.photo_outlined,
+                        color: FarmColors.mutedText,
+                        size: 42,
+                      ),
+                    )
+                  : Image.network(
+                      cleanUrl,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.centerRight,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: FarmColors.mutedText,
+                          size: 42,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Upload a wide image for the home screen banner. A 3:1 or 4:1 crop works best.',
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: isUploading
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.upload_file_outlined),
+                  label: Text(
+                      isUploading ? 'Uploading...' : 'Upload from computer'),
+                  onPressed: isUploading
+                      ? null
+                      : () => uploadSlideImage(slide.position),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<HomeHeroSlide>>(
+      key: ValueKey('${widget.refreshKey}-$localRefreshKey'),
+      future: fetchAdminHomeHeroSlides(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SkeletonList();
+        }
+
+        final slides = snapshot.data ?? defaultHomeHeroSlides();
+
+        return RefreshIndicator(
+          onRefresh: () async => refreshSlides(),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              FarmCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Home Hero Slideshow',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Upload 3 banner images from your computer. Customers will see them rotate automatically on the home screen.',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              ...slides.map((slide) => Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: slideCard(slide),
+                  )),
+            ],
           ),
         );
       },
@@ -13783,31 +20342,105 @@ class AdminAnalyticsTab extends StatelessWidget {
 
   String formatMoney(double value) => 'J\$${value.toStringAsFixed(2)}';
 
-  Widget statCard(String title, String value, IconData icon, {Color? color}) {
+  Color _attentionColor(int count) {
+    if (count <= 0) return FarmColors.green;
+    if (count <= 3) return FarmColors.gold;
+    return FarmColors.danger;
+  }
+
+  Widget _metricGrid(List<Widget> children) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final cardWidth = width < 390 ? (width - 10) / 2 : (width - 20) / 3;
+
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: children
+              .map((child) => SizedBox(width: cardWidth, child: child))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _metricCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    Color? color,
+    String? note,
+  }) {
     final activeColor = color ?? FarmColors.green;
 
-    return Expanded(
-      child: FarmCard(
-        padding: const EdgeInsets.all(14),
+    return FarmCard(
+      padding: const EdgeInsets.all(12),
+      child: SizedBox(
+        height: 116,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              backgroundColor: activeColor.withOpacity(0.12),
-              foregroundColor: activeColor,
-              child: Icon(icon),
+            Row(
+              children: [
+                Container(
+                  height: 38,
+                  width: 38,
+                  decoration: BoxDecoration(
+                    color: activeColor.withOpacity(0.11),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: activeColor.withOpacity(0.16)),
+                  ),
+                  child: Icon(icon, color: activeColor, size: 20),
+                ),
+                const Spacer(),
+                if (note != null && note.trim().isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: activeColor.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      note,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: activeColor,
+                        fontSize: 10.4,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 10),
+            const Spacer(),
             Text(
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.35,
+              ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 11.5,
+                height: 1.16,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
         ),
@@ -13815,21 +20448,436 @@ class AdminAnalyticsTab extends StatelessWidget {
     );
   }
 
-  Widget miniListCard({
-    required String title,
-    required List<Widget> children,
-    String emptyText = 'Nothing to show yet.',
+  Widget _summaryHero({
+    required double totalSales,
+    required int orderCount,
+    required int attentionCount,
   }) {
-    return FarmCard(
+    final color = _attentionColor(attentionCount);
+    final readyText = attentionCount == 0
+        ? 'Operations look smooth today.'
+        : '$attentionCount item${attentionCount == 1 ? '' : 's'} need review.';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+            FarmColors.green.withOpacity(0.88),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.green.withOpacity(0.18),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Today\'s command view',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      formatMoney(totalSales),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$orderCount orders tracked • $readyText',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.86),
+                        fontSize: 13,
+                        height: 1.25,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                height: 54,
+                width: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.22)),
+                ),
+                child: Icon(
+                  attentionCount == 0
+                      ? Icons.verified_rounded
+                      : Icons.priority_high_rounded,
+                  color: attentionCount == 0 ? Colors.white : color,
+                  size: 28,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          if (children.isEmpty) Text(emptyText) else ...children,
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _heroMiniStat('Revenue', formatMoney(totalSales)),
+              const SizedBox(width: 10),
+              _heroMiniStat('Orders', '$orderCount'),
+              const SizedBox(width: 10),
+              _heroMiniStat('Review', '$attentionCount'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroMiniStat(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withOpacity(0.16)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.76),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _attentionTile({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required int count,
+    Color? color,
+  }) {
+    final activeColor = color ?? _attentionColor(count);
+    final isReady = count <= 0;
+
+    return FarmCard(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+      color: isReady ? Colors.white : activeColor.withOpacity(0.055),
+      child: Row(
+        children: [
+          Container(
+            height: 38,
+            width: 38,
+            decoration: BoxDecoration(
+              color: activeColor.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: activeColor, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 13.6,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.5,
+                    height: 1.2,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: isReady
+                  ? FarmColors.primarySoft
+                  : activeColor.withOpacity(0.13),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              isReady ? 'Ready' : '$count',
+              style: TextStyle(
+                color: isReady ? FarmColors.green : activeColor,
+                fontSize: 11.2,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title, String subtitle) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.25,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 12.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _insightListCard({
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+    required IconData icon,
+    Color color = FarmColors.green,
+    String emptyText = 'Nothing to show yet.',
+  }) {
+    return FarmCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 36,
+                width: 36,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.11),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 19),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11.6,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (children.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                emptyText,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          else
+            ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _productInsightRow(Product product, String trailingText) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          ProductVisual(product: product, size: 34),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  product.category,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: FarmColors.warningSoft,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              trailingText,
+              style: const TextStyle(
+                color: FarmColors.warning,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _textInsightRow({
+    required String title,
+    required String value,
+    IconData icon = Icons.trending_up_rounded,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            height: 34,
+            width: 34,
+            decoration: const BoxDecoration(
+              color: FarmColors.primarySoft,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: FarmColors.green, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ],
       ),
     );
@@ -13848,7 +20896,7 @@ class AdminAnalyticsTab extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
-          return const SkeletonList();
+          return const SkeletonList(count: 3, height: 108);
         }
 
         final orders = snapshot.data == null
@@ -13881,12 +20929,18 @@ class AdminAnalyticsTab extends StatelessWidget {
             : orders.fold<double>(0, (sum, order) => sum + order.total) /
                 orders.length;
         final lowStock = products
-            .where(
-                (product) => product.isAvailable && product.stockQuantity <= 5)
+            .where((product) =>
+                product.isCustomerVisible &&
+                product.isAvailable &&
+                product.stockQuantity <= 5)
             .toList();
+        final outOfStock =
+            products.where((product) => product.isOutOfStock).toList();
         final pendingProducts = products
             .where((product) => product.approvalStatus == 'pending')
             .toList();
+        final activeProducts =
+            products.where((product) => product.canAddToCart).length;
         final approvedFarmers = farmers
             .where((farmer) => farmer.verificationStatus == 'approved')
             .length;
@@ -13910,118 +20964,178 @@ class AdminAnalyticsTab extends StatelessWidget {
         final bestSellers = itemSales.entries.toList()
           ..sort((a, b) => b.value.compareTo(a.value));
 
-        return ListView(
-          padding: const EdgeInsets.all(18),
-          children: [
-            const Header(
-              title: 'Elite Admin Dashboard',
-              subtitle: 'Revenue, orders, stock, farmers and payouts',
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                statCard(
-                    'Paid Revenue', formatMoney(totalSales), Icons.payments),
-                const SizedBox(width: 10),
-                statCard('Orders', '${orders.length}', Icons.receipt_long),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                statCard('Avg Order', formatMoney(avgOrder), Icons.trending_up),
-                const SizedBox(width: 10),
-                statCard(
-                  'Unpaid',
-                  formatMoney(unpaidAmount),
-                  Icons.pending_actions,
+        final attentionCount = pendingOrders.length +
+            lowStock.length +
+            pendingProducts.length +
+            pendingFarmers +
+            pendingPayouts.length;
+
+        return RefreshIndicator(
+          onRefresh: () async {},
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              const Header(
+                title: 'Business dashboard',
+                subtitle: 'A clean view of sales, stock and farm operations',
+              ),
+              const SizedBox(height: 14),
+              _summaryHero(
+                totalSales: totalSales,
+                orderCount: orders.length,
+                attentionCount: attentionCount,
+              ),
+              const SizedBox(height: 18),
+              _sectionHeader('At a glance', 'The numbers that matter most'),
+              _metricGrid([
+                _metricCard(
+                  title: 'Paid revenue',
+                  value: formatMoney(totalSales),
+                  icon: Icons.payments_rounded,
+                  note: 'Paid',
+                ),
+                _metricCard(
+                  title: 'Orders',
+                  value: '${orders.length}',
+                  icon: Icons.receipt_long_rounded,
+                  note: '${pendingOrders.length} pending',
+                ),
+                _metricCard(
+                  title: 'Average order',
+                  value: formatMoney(avgOrder),
+                  icon: Icons.trending_up_rounded,
+                ),
+                _metricCard(
+                  title: 'Unpaid balance',
+                  value: formatMoney(unpaidAmount),
+                  icon: Icons.pending_actions_rounded,
                   color: FarmColors.gold,
+                  note: '${unpaidOrders.length}',
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                statCard('Pending Orders', '${pendingOrders.length}',
-                    Icons.hourglass_top),
-                const SizedBox(width: 10),
-                statCard('Preparing', '${preparingOrders.length}',
-                    Icons.restaurant_menu),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                statCard('Approved Farmers', '$approvedFarmers',
-                    Icons.verified_user_outlined),
-                const SizedBox(width: 10),
-                statCard(
-                  'Pending Farmers',
-                  '$pendingFarmers',
-                  Icons.agriculture_outlined,
-                  color: FarmColors.gold,
+                _metricCard(
+                  title: 'Active products',
+                  value: '$activeProducts',
+                  icon: Icons.storefront_rounded,
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                statCard(
-                  'Pending Products',
-                  '${pendingProducts.length}',
-                  Icons.inventory_2_outlined,
-                  color: FarmColors.gold,
+                _metricCard(
+                  title: 'Payouts due',
+                  value: formatMoney(payoutAmount),
+                  icon: Icons.account_balance_wallet_rounded,
+                  color: payoutAmount > 0 ? FarmColors.gold : FarmColors.green,
                 ),
-                const SizedBox(width: 10),
-                statCard(
-                  'Payouts Due',
-                  formatMoney(payoutAmount),
-                  Icons.account_balance_wallet_outlined,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            miniListCard(
-              title: 'Low Stock Alerts',
-              children: lowStock.take(6).map((product) {
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: ProductVisual(product: product, size: 28),
-                  title: Text(product.name),
-                  subtitle: Text('Stock: ${product.stockQuantity}'),
-                  trailing:
-                      const Icon(Icons.warning_amber, color: FarmColors.gold),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-            miniListCard(
-              title: 'Best Sellers',
-              children: bestSellers.take(6).map((entry) {
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading:
-                      const Icon(Icons.trending_up, color: FarmColors.green),
-                  title: Text(entry.key),
-                  trailing: Text('${entry.value} sold'),
-                );
-              }).toList(),
-              emptyText: 'No sales data yet.',
-            ),
-            const SizedBox(height: 16),
-            miniListCard(
-              title: 'Pending Product Approvals',
-              children: pendingProducts.take(6).map((product) {
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: ProductVisual(product: product, size: 28),
-                  title: Text(product.name),
-                  subtitle: Text(product.category),
-                  trailing: const Icon(Icons.approval_outlined),
-                );
-              }).toList(),
-            ),
-          ],
+              ]),
+              const SizedBox(height: 18),
+              _sectionHeader(
+                  'Needs attention', 'Quick checks before customers notice'),
+              _attentionTile(
+                title: 'Pending orders',
+                subtitle: pendingOrders.isEmpty
+                    ? 'No waiting orders right now.'
+                    : 'Review and move orders into preparation.',
+                icon: Icons.hourglass_top_rounded,
+                count: pendingOrders.length,
+              ),
+              const SizedBox(height: 10),
+              _attentionTile(
+                title: 'Low stock',
+                subtitle: lowStock.isEmpty
+                    ? 'Stock levels look healthy.'
+                    : 'Restock or mark items clearly before checkout.',
+                icon: Icons.inventory_2_rounded,
+                count: lowStock.length,
+                color: FarmColors.gold,
+              ),
+              const SizedBox(height: 10),
+              _attentionTile(
+                title: 'Product approvals',
+                subtitle: pendingProducts.isEmpty
+                    ? 'No products waiting for approval.'
+                    : 'Approve ready items or request changes.',
+                icon: Icons.approval_rounded,
+                count: pendingProducts.length,
+                color: FarmColors.gold,
+              ),
+              const SizedBox(height: 10),
+              _attentionTile(
+                title: 'Farmer payouts',
+                subtitle: pendingPayouts.isEmpty
+                    ? 'No payout action needed.'
+                    : 'Confirm pending payout records.',
+                icon: Icons.account_balance_rounded,
+                count: pendingPayouts.length,
+                color: FarmColors.gold,
+              ),
+              const SizedBox(height: 18),
+              _insightListCard(
+                title: 'Stock watch',
+                subtitle: 'Items customers may need clarity on',
+                icon: Icons.warning_amber_rounded,
+                color: FarmColors.gold,
+                children: [
+                  ...lowStock.take(4).map(
+                        (product) => _productInsightRow(
+                          product,
+                          '${product.stockQuantity} left',
+                        ),
+                      ),
+                  ...outOfStock.take(lowStock.isEmpty ? 4 : 2).map(
+                        (product) => _productInsightRow(
+                          product,
+                          'Out',
+                        ),
+                      ),
+                ],
+                emptyText: 'No low-stock or out-of-stock items needing review.',
+              ),
+              const SizedBox(height: 14),
+              _insightListCard(
+                title: 'Best sellers',
+                subtitle: 'Use this to plan harvest and restock',
+                icon: Icons.local_fire_department_rounded,
+                color: FarmColors.green,
+                children: bestSellers
+                    .take(5)
+                    .map(
+                      (entry) => _textInsightRow(
+                        title: entry.key,
+                        value: '${entry.value} sold',
+                      ),
+                    )
+                    .toList(),
+                emptyText: 'No sales data yet.',
+              ),
+              const SizedBox(height: 14),
+              _insightListCard(
+                title: 'Farm network',
+                subtitle: 'Farmer and product approvals',
+                icon: Icons.agriculture_rounded,
+                color: FarmColors.green,
+                children: [
+                  _textInsightRow(
+                    title: 'Approved farmers',
+                    value: '$approvedFarmers',
+                    icon: Icons.verified_user_rounded,
+                  ),
+                  _textInsightRow(
+                    title: 'Pending farmers',
+                    value: '$pendingFarmers',
+                    icon: Icons.person_search_rounded,
+                  ),
+                  _textInsightRow(
+                    title: 'Pending products',
+                    value: '${pendingProducts.length}',
+                    icon: Icons.inventory_rounded,
+                  ),
+                  _textInsightRow(
+                    title: 'Preparing orders',
+                    value: '${preparingOrders.length}',
+                    icon: Icons.restaurant_menu_rounded,
+                  ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -14046,6 +21160,50 @@ class AdminDeliveryTab extends StatelessWidget {
     'delivered',
   ];
 
+  bool _isDone(AdminOrder order) {
+    final status = order.status.trim().toLowerCase();
+    final delivery = (order.deliveryStatus ?? '').trim().toLowerCase();
+    return status == 'cancelled' ||
+        status == 'completed' ||
+        status == 'delivered' ||
+        delivery == 'delivered';
+  }
+
+  String _currentStatus(AdminOrder order) {
+    final raw = (order.deliveryStatus ?? '').trim();
+    if (deliveryStatuses.contains(raw)) return raw;
+    if (order.fulfillmentType == 'delivery') return 'pending';
+    return 'ready_for_pickup';
+  }
+
+  int _stageIndex(String status, bool isDelivery) {
+    final steps = isDelivery
+        ? const ['pending', 'preparing', 'out_for_delivery', 'delivered']
+        : const ['pending', 'preparing', 'ready_for_pickup', 'delivered'];
+    final index = steps.indexOf(status);
+    return index < 0 ? 0 : index;
+  }
+
+  Color _statusColor(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'delivered':
+      case 'completed':
+        return FarmColors.success;
+      case 'out_for_delivery':
+      case 'ready_for_pickup':
+        return FarmColors.green;
+      case 'preparing':
+        return FarmColors.warning;
+      default:
+        return FarmColors.mutedText;
+    }
+  }
+
+  Future<void> _setStatus(AdminOrder order, String status) async {
+    await updateDeliveryStatus(order.id, status);
+    onChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<AdminOrder>>(
@@ -14057,165 +21215,651 @@ class AdminDeliveryTab extends StatelessWidget {
           return const SkeletonList();
         }
 
-        final orders = (snapshot.data ?? [])
-            .where((order) => order.status != 'cancelled')
-            .toList();
-        final deliveryOrders = orders
+        final allOrders = (snapshot.data ?? []).toList();
+        final activeOrders = allOrders
+            .where((order) => !_isDone(order))
+            .toList()
+          ..sort((a, b) {
+            final statusCompare =
+                _stageIndex(_currentStatus(a), a.fulfillmentType == 'delivery')
+                    .compareTo(_stageIndex(
+                        _currentStatus(b), b.fulfillmentType == 'delivery'));
+            if (statusCompare != 0) return statusCompare;
+            return (b.createdAt ?? DateTime(2000))
+                .compareTo(a.createdAt ?? DateTime(2000));
+          });
+        final completedOrders = allOrders.where(_isDone).take(4).toList();
+        final deliveryOrders = activeOrders
             .where((order) => order.fulfillmentType == 'delivery')
             .toList();
-        final pickupOrders = orders
+        final pickupOrders = activeOrders
             .where((order) => order.fulfillmentType != 'delivery')
             .toList();
+        final preparingOrders = activeOrders
+            .where((order) => _currentStatus(order) == 'preparing')
+            .toList();
+        final readyOrders = activeOrders.where((order) {
+          final status = _currentStatus(order);
+          return status == 'ready_for_pickup' || status == 'out_for_delivery';
+        }).toList();
 
-        return ListView(
-          padding: const EdgeInsets.all(18),
-          children: [
-            const Header(
-              title: 'Delivery',
-              subtitle: 'Pickup and delivery workflow',
-            ),
-            const SizedBox(height: 16),
-            FarmCard(
-              child: Row(
+        return RefreshIndicator(
+          onRefresh: () async => onChanged(),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.local_shipping_outlined,
-                            color: FarmColors.green),
-                        const SizedBox(height: 8),
-                        Text('${deliveryOrders.length}',
-                            style: const TextStyle(
-                                fontSize: 22, fontWeight: FontWeight.bold)),
-                        const Text('Delivery orders'),
-                      ],
+                  const Expanded(
+                    child: Header(
+                      title: 'Fulfillment',
+                      subtitle:
+                          'Prepare pickups and deliveries with confidence',
                     ),
                   ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.store_mall_directory_outlined,
-                            color: FarmColors.green),
-                        const SizedBox(height: 8),
-                        Text('${pickupOrders.length}',
-                            style: const TextStyle(
-                                fontSize: 22, fontWeight: FontWeight.bold)),
-                        const Text('Pickup orders'),
-                      ],
-                    ),
+                  IconButton.filledTonal(
+                    tooltip: 'Refresh',
+                    onPressed: onChanged,
+                    icon: const Icon(Icons.restart_alt_rounded),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 14),
-            if (orders.isEmpty)
-              const FarmCard(
-                  child: Text('No active delivery or pickup orders.'))
-            else
-              ...orders.map((order) {
-                final currentDeliveryStatus =
-                    deliveryStatuses.contains(order.deliveryStatus)
-                        ? order.deliveryStatus!
-                        : order.fulfillmentType == 'delivery'
-                            ? 'pending'
-                            : 'ready_for_pickup';
-
-                return FarmCard(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Order #${order.shortId}',
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
+              const SizedBox(height: 14),
+              FarmCard(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          height: 46,
+                          width: 46,
+                          decoration: BoxDecoration(
+                            color: FarmColors.primarySoft,
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          Chip(
-                            label: Text(order.formattedType),
-                            backgroundColor: FarmColors.lightGreen,
+                          child: const Icon(
+                            Icons.route_rounded,
+                            color: FarmColors.green,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${order.customerName} • ${order.customerPhone}'),
-                      Text('Schedule: ${order.scheduleText}'),
-                      if ((order.deliveryZone ?? '').isNotEmpty)
-                        Text('Zone: ${order.deliveryZone}'),
-                      if ((order.deliveryAddress ?? '').isNotEmpty)
-                        Text('Address: ${order.deliveryAddress}'),
-                      const SizedBox(height: 8),
-                      Text('Current: ${_friendlyStatus(currentDeliveryStatus)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ActionChip(
-                            avatar: const Icon(Icons.restaurant_menu, size: 18),
-                            label: const Text('Preparing'),
-                            onPressed: () async {
-                              await updateDeliveryStatus(order.id, 'preparing');
-                              onChanged();
-                            },
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                activeOrders.isEmpty
+                                    ? 'All clear for now'
+                                    : '${activeOrders.length} active orders',
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                activeOrders.isEmpty
+                                    ? 'New pickups and deliveries will appear here.'
+                                    : 'Prioritize pending, preparing, and ready orders.',
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.25,
+                                ),
+                              ),
+                            ],
                           ),
-                          ActionChip(
-                            avatar: const Icon(Icons.inventory_2_outlined,
-                                size: 18),
-                            label: Text(order.fulfillmentType == 'delivery'
-                                ? 'Out for Delivery'
-                                : 'Ready Pickup'),
-                            onPressed: () async {
-                              await updateDeliveryStatus(
-                                order.id,
-                                order.fulfillmentType == 'delivery'
-                                    ? 'out_for_delivery'
-                                    : 'ready_for_pickup',
-                              );
-                              onChanged();
-                            },
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.done_all, size: 18),
-                            label: const Text('Delivered'),
-                            onPressed: () async {
-                              await updateDeliveryStatus(order.id, 'delivered');
-                              onChanged();
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: currentDeliveryStatus,
-                        decoration: const InputDecoration(
-                            labelText: 'Delivery / pickup status'),
-                        items: deliveryStatuses
-                            .map((status) => DropdownMenuItem(
-                                  value: status,
-                                  child: Text(_friendlyStatus(status)),
-                                ))
-                            .toList(),
-                        onChanged: (status) async {
-                          if (status == null) return;
-                          await updateDeliveryStatus(order.id, status);
-                          onChanged();
-                        },
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _FulfillmentMetricPill(
+                          label: 'Delivery',
+                          value: '${deliveryOrders.length}',
+                          icon: Icons.local_shipping_outlined,
+                        ),
+                        _FulfillmentMetricPill(
+                          label: 'Pickup',
+                          value: '${pickupOrders.length}',
+                          icon: Icons.storefront_outlined,
+                        ),
+                        _FulfillmentMetricPill(
+                          label: 'Preparing',
+                          value: '${preparingOrders.length}',
+                          icon: Icons.restaurant_menu_rounded,
+                        ),
+                        _FulfillmentMetricPill(
+                          label: 'Ready',
+                          value: '${readyOrders.length}',
+                          icon: Icons.done_outline_rounded,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const _FulfillmentSectionHeader(
+                title: 'Active workflow',
+                subtitle: 'Tap a stage to update the customer order status',
+              ),
+              const SizedBox(height: 10),
+              if (activeOrders.isEmpty)
+                const FarmEmptyState(
+                  icon: Icons.task_alt_rounded,
+                  title: 'No active fulfillment tasks',
+                  message:
+                      'When a customer places an order, pickup and delivery steps will show here.',
+                )
+              else
+                ...activeOrders.map(
+                  (order) => _FulfillmentOrderCard(
+                    order: order,
+                    status: _currentStatus(order),
+                    statusColor: _statusColor(_currentStatus(order)),
+                    onPreparing: () => _setStatus(order, 'preparing'),
+                    onReady: () => _setStatus(
+                      order,
+                      order.fulfillmentType == 'delivery'
+                          ? 'out_for_delivery'
+                          : 'ready_for_pickup',
+                    ),
+                    onComplete: () => _setStatus(order, 'delivered'),
+                    onStatusChanged: (status) => _setStatus(order, status),
                   ),
-                );
-              }),
-          ],
+                ),
+              if (completedOrders.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                const _FulfillmentSectionHeader(
+                  title: 'Recently completed',
+                  subtitle: 'Latest fulfilled orders for quick reference',
+                ),
+                const SizedBox(height: 10),
+                ...completedOrders.map(
+                  (order) => _CompletedFulfillmentTile(order: order),
+                ),
+              ],
+            ],
+          ),
         );
       },
+    );
+  }
+}
+
+class _FulfillmentMetricPill extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _FulfillmentMetricPill({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17, color: FarmColors.green),
+          const SizedBox(width: 7),
+          Text(
+            value,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FulfillmentSectionHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const _FulfillmentSectionHeader({
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: FarmColors.ink,
+            fontSize: 19,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            color: FarmColors.mutedText,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FulfillmentOrderCard extends StatelessWidget {
+  final AdminOrder order;
+  final String status;
+  final Color statusColor;
+  final Future<void> Function() onPreparing;
+  final Future<void> Function() onReady;
+  final Future<void> Function() onComplete;
+  final Future<void> Function(String status) onStatusChanged;
+
+  const _FulfillmentOrderCard({
+    required this.order,
+    required this.status,
+    required this.statusColor,
+    required this.onPreparing,
+    required this.onReady,
+    required this.onComplete,
+    required this.onStatusChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDelivery = order.fulfillmentType == 'delivery';
+    final address = (order.deliveryAddress ?? order.customerAddress).trim();
+    final zone = (order.deliveryZone ?? '').trim();
+    final readyLabel = isDelivery ? 'Out for delivery' : 'Ready pickup';
+
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.11),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  isDelivery
+                      ? Icons.local_shipping_outlined
+                      : Icons.storefront_outlined,
+                  color: statusColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Order #${order.shortId}',
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${order.customerName} • ${order.formattedTotal}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _FulfillmentStatusChip(
+                label: _friendlyStatus(status),
+                color: statusColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _InfoMiniChip(
+                icon: Icons.shopping_basket_outlined,
+                label:
+                    '${order.items.length} item${order.items.length == 1 ? '' : 's'}',
+              ),
+              _InfoMiniChip(
+                icon: Icons.calendar_today_outlined,
+                label: order.scheduleText,
+              ),
+              _InfoMiniChip(
+                icon: isDelivery
+                    ? Icons.local_shipping_outlined
+                    : Icons.storefront_outlined,
+                label: order.formattedType,
+              ),
+              _InfoMiniChip(
+                icon: Icons.payment_outlined,
+                label: order.formattedPaymentStatus,
+              ),
+            ],
+          ),
+          if (zone.isNotEmpty || address.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: FarmColors.green.withOpacity(0.10)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (zone.isNotEmpty)
+                    Text(
+                      zone,
+                      style: const TextStyle(
+                        color: FarmColors.green,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  if (address.isNotEmpty) ...[
+                    if (zone.isNotEmpty) const SizedBox(height: 3),
+                    Text(
+                      address,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        height: 1.25,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _StageButton(
+                  label: 'Preparing',
+                  icon: Icons.restaurant_menu_rounded,
+                  onTap: onPreparing,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StageButton(
+                  label: readyLabel,
+                  icon: isDelivery
+                      ? Icons.delivery_dining_rounded
+                      : Icons.inventory_2_outlined,
+                  onTap: onReady,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onComplete,
+                  icon: const Icon(Icons.done_all_rounded, size: 18),
+                  label: Text(isDelivery ? 'Delivered' : 'Completed'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: AdminDeliveryTab.deliveryStatuses.contains(status)
+                      ? status
+                      : 'pending',
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  ),
+                  items: AdminDeliveryTab.deliveryStatuses
+                      .map((item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(_friendlyStatus(item)),
+                          ))
+                      .toList(),
+                  onChanged: (value) async {
+                    if (value == null) return;
+                    await onStatusChanged(value);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FulfillmentStatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _FulfillmentStatusChip({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoMiniChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _InfoMiniChip({
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final clean = label.trim().isEmpty ? 'Not set' : label.trim();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: FarmColors.green),
+          const SizedBox(width: 5),
+          Text(
+            clean,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StageButton extends StatefulWidget {
+  final String label;
+  final IconData icon;
+  final Future<void> Function() onTap;
+
+  const _StageButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  State<_StageButton> createState() => _StageButtonState();
+}
+
+class _StageButtonState extends State<_StageButton> {
+  bool busy = false;
+
+  Future<void> run() async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      await widget.onTap();
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      onPressed: busy ? null : run,
+      icon: busy
+          ? const SizedBox(
+              height: 16,
+              width: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(widget.icon, size: 18),
+      label: Text(
+        widget.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _CompletedFulfillmentTile extends StatelessWidget {
+  final AdminOrder order;
+
+  const _CompletedFulfillmentTile({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Container(
+            height: 40,
+            width: 40,
+            decoration: BoxDecoration(
+              color: FarmColors.successSoft,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.check_circle_outline_rounded,
+                color: FarmColors.success),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Order #${order.shortId}',
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${order.customerName} • ${order.formattedType}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            order.formattedTotal,
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -14236,6 +21880,17 @@ class AdminProductsTab extends StatefulWidget {
 
 class _AdminProductsTabState extends State<AdminProductsTab> {
   int localRefreshKey = 0;
+  final TextEditingController inventorySearchController =
+      TextEditingController();
+  String inventoryQuery = '';
+  String inventoryFilter = 'needs_attention';
+  String inventorySort = 'priority';
+
+  @override
+  void dispose() {
+    inventorySearchController.dispose();
+    super.dispose();
+  }
 
   void refreshProducts() {
     setState(() => localRefreshKey++);
@@ -14319,6 +21974,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
     bool isDealOfDay = product?.isDealOfDay ?? false;
     bool subscribeSaveEnabled = product?.subscribeSaveEnabled ?? false;
     bool saving = false;
+    bool uploadingImage = false;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -14465,6 +22121,44 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
               }
             }
 
+            Future<void> uploadImageFromComputer() async {
+              final messenger = ScaffoldMessenger.of(this.context);
+
+              try {
+                final pickedImage = await pickProductImageFromDevice();
+                if (pickedImage == null) {
+                  return;
+                }
+
+                if (dialogContext.mounted) {
+                  setDialogState(() => uploadingImage = true);
+                }
+
+                final imageUrl = await uploadProductImageToStorage(pickedImage);
+                imageUrlController.text = imageUrl;
+
+                if (dialogContext.mounted) {
+                  setDialogState(() {});
+                }
+
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Product image uploaded.')),
+                );
+              } catch (error) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      error.toString().replaceFirst('Exception: ', ''),
+                    ),
+                  ),
+                );
+              } finally {
+                if (dialogContext.mounted) {
+                  setDialogState(() => uploadingImage = false);
+                }
+              }
+            }
+
             return Padding(
               padding: EdgeInsets.only(
                 left: 12,
@@ -14581,7 +22275,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Expanded(child: stockField),
-                                          const SizedBox(width: 10),
+                                          const SizedBox(width: 9),
                                           Expanded(child: originSelector),
                                         ],
                                       );
@@ -14847,7 +22541,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                                           decoration: const InputDecoration(
                                             labelText: 'Image URL',
                                             helperText:
-                                                'Paste a hosted image URL from Supabase Storage or another trusted source.',
+                                                'Upload from your computer, or paste a hosted image URL.',
                                           ),
                                         ),
                                         const SizedBox(height: 8),
@@ -14855,13 +22549,38 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                                           spacing: 8,
                                           runSpacing: 8,
                                           children: [
+                                            ElevatedButton.icon(
+                                              icon: uploadingImage
+                                                  ? const SizedBox(
+                                                      height: 16,
+                                                      width: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                    )
+                                                  : const Icon(
+                                                      Icons.upload_file),
+                                              label: Text(uploadingImage
+                                                  ? 'Uploading...'
+                                                  : 'Upload from computer'),
+                                              onPressed:
+                                                  saving || uploadingImage
+                                                      ? null
+                                                      : uploadImageFromComputer,
+                                            ),
                                             TextButton.icon(
                                               icon: const Icon(Icons.clear),
                                               label: const Text('Clear Image'),
-                                              onPressed: () {
-                                                imageUrlController.clear();
-                                                setDialogState(() {});
-                                              },
+                                              onPressed:
+                                                  saving || uploadingImage
+                                                      ? null
+                                                      : () {
+                                                          imageUrlController
+                                                              .clear();
+                                                          setDialogState(() {});
+                                                        },
                                             ),
                                           ],
                                         ),
@@ -15130,6 +22849,491 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
     }
   }
 
+  List<Product> _applyInventoryFilters(List<Product> products) {
+    final query = inventoryQuery.trim().toLowerCase();
+    final filtered = products.where((product) {
+      final searchable = [
+        product.name,
+        product.category,
+        product.unit ?? '',
+        product.description ?? '',
+        product.farmName ?? '',
+        product.farmerName ?? '',
+        product.parish ?? '',
+        product.approvalStatus,
+        product.productStatus,
+      ].join(' ').toLowerCase();
+
+      if (query.isNotEmpty && !searchable.contains(query)) {
+        return false;
+      }
+
+      switch (inventoryFilter) {
+        case 'needs_attention':
+          return product.stockQuantity <= 5 ||
+              product.isOutOfStock ||
+              product.isHidden ||
+              product.approvalStatus.trim().toLowerCase() != 'approved' ||
+              product.isReadySoon;
+        case 'in_stock':
+          return product.canAddToCart;
+        case 'low_stock':
+          return product.isLowStock;
+        case 'out_of_stock':
+          return product.isOutOfStock || product.stockQuantity <= 0;
+        case 'hidden':
+          return product.isHidden || !product.isAvailable;
+        case 'deals':
+          return product.hasActiveDiscount || product.showAsDealOfDay;
+        case 'organic':
+          return product.isOrganic;
+        default:
+          return true;
+      }
+    }).toList();
+
+    int priority(Product product) {
+      var score = 0;
+      if (product.approvalStatus.trim().toLowerCase() != 'approved')
+        score -= 80;
+      if (product.isOutOfStock || product.stockQuantity <= 0) score -= 60;
+      if (product.isLowStock) score -= 40;
+      if (product.isHidden || !product.isAvailable) score -= 30;
+      if (product.isReadySoon) score -= 20;
+      if (product.hasActiveDiscount || product.showAsDealOfDay) score += 12;
+      if (isProductHarvestedThisWeek(product)) score += 8;
+      return score;
+    }
+
+    switch (inventorySort) {
+      case 'name':
+        filtered.sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        break;
+      case 'stock_low':
+        filtered.sort((a, b) => a.stockQuantity.compareTo(b.stockQuantity));
+        break;
+      case 'stock_high':
+        filtered.sort((a, b) => b.stockQuantity.compareTo(a.stockQuantity));
+        break;
+      case 'price_high':
+        filtered.sort((a, b) => b.effectivePrice.compareTo(a.effectivePrice));
+        break;
+      case 'newest':
+        filtered.sort((a, b) {
+          final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+        break;
+      default:
+        filtered.sort((a, b) => priority(a).compareTo(priority(b)));
+    }
+
+    return filtered;
+  }
+
+  String _inventoryStatusLabel(Product product) {
+    if (product.approvalStatus.trim().toLowerCase() != 'approved') {
+      return _friendlyStatus(product.approvalStatus);
+    }
+    if (product.isHidden || !product.isAvailable) return 'Hidden';
+    if (product.isReadySoon) return 'Ready soon';
+    if (product.isOutOfStock || product.stockQuantity <= 0)
+      return 'Out of stock';
+    if (product.isLowStock) return product.lowStockLabel;
+    return 'Live';
+  }
+
+  Color _inventoryStatusColor(Product product) {
+    if (product.approvalStatus.trim().toLowerCase() != 'approved') {
+      return FarmColors.warning;
+    }
+    if (product.isHidden || !product.isAvailable) return FarmColors.mutedText;
+    if (product.isReadySoon) return FarmColors.warning;
+    if (product.isOutOfStock || product.stockQuantity <= 0)
+      return FarmColors.danger;
+    if (product.isLowStock) return FarmColors.warning;
+    return FarmColors.success;
+  }
+
+  Widget _inventoryPill({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) {
+    return ChoiceChip(
+      selected: selected,
+      onSelected: (_) => onTap(),
+      avatar: icon == null
+          ? null
+          : Icon(
+              icon,
+              size: 16,
+              color: selected ? Colors.white : FarmColors.green,
+            ),
+      label: Text(label),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : FarmColors.ink,
+        fontWeight: FontWeight.w900,
+      ),
+      selectedColor: FarmColors.primary,
+      backgroundColor: FarmColors.card,
+      side: BorderSide(
+        color: selected ? FarmColors.primary : FarmColors.line,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    );
+  }
+
+  Widget _inventoryStatCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    Color color = FarmColors.green,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.11),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withOpacity(0.17)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(height: 10),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.82),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _inventorySummaryCard(List<Product> products) {
+    final live = products.where((product) => product.canAddToCart).length;
+    final lowStock = products.where((product) => product.isLowStock).length;
+    final outOfStock = products
+        .where((product) => product.isOutOfStock || product.stockQuantity <= 0)
+        .length;
+    final hidden = products
+        .where((product) => product.isHidden || !product.isAvailable)
+        .length;
+    final review = products
+        .where((product) =>
+            product.approvalStatus.trim().toLowerCase() != 'approved')
+        .length;
+    final needsAttention = lowStock + outOfStock + hidden + review;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [FarmColors.primaryDark, FarmColors.primary],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.13),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.13),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child:
+                    const Icon(Icons.inventory_2_outlined, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Inventory command center',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      needsAttention == 0
+                          ? 'All products look ready for customers.'
+                          : '$needsAttention item${needsAttention == 1 ? '' : 's'} need attention before peak shopping.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _inventoryStatCard(
+                label: 'Live',
+                value: '$live',
+                icon: Icons.storefront_outlined,
+              ),
+              const SizedBox(width: 10),
+              _inventoryStatCard(
+                label: 'Low',
+                value: '$lowStock',
+                icon: Icons.local_fire_department_outlined,
+              ),
+              const SizedBox(width: 10),
+              _inventoryStatCard(
+                label: 'Out',
+                value: '$outOfStock',
+                icon: Icons.remove_shopping_cart_outlined,
+              ),
+              const SizedBox(width: 10),
+              _inventoryStatCard(
+                label: 'Hidden',
+                value: '$hidden',
+                icon: Icons.visibility_off_outlined,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _productOpsCard(Product product) {
+    final statusColor = _inventoryStatusColor(product);
+    final unit = (product.unit ?? '').trim();
+    final farm = (product.farmName ?? product.farmerName ?? '').trim();
+
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ProductVisual(product: product, size: 58),
+                  if (product.showAsDealOfDay || product.hasActiveDiscount)
+                    Positioned(
+                      right: -4,
+                      top: -6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: FarmColors.warning,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'Deal',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.11),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                                color: statusColor.withOpacity(0.22)),
+                          ),
+                          child: Text(
+                            _inventoryStatusLabel(product),
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      farm.isEmpty ? shortDescription(product) : farm,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: [
+                        _MiniInfoPill(
+                          label: product.formattedEffectivePrice,
+                          icon: Icons.sell_outlined,
+                          color: FarmColors.green,
+                        ),
+                        _MiniInfoPill(
+                          label: '${product.stockQuantity} in stock',
+                          icon: Icons.inventory_2_outlined,
+                          color: product.stockQuantity <= 0
+                              ? FarmColors.danger
+                              : product.isLowStock
+                                  ? FarmColors.warning
+                                  : FarmColors.green,
+                        ),
+                        _MiniInfoPill(
+                          label: product.category,
+                          icon: Icons.category_outlined,
+                          color: FarmColors.mutedText,
+                        ),
+                        if (unit.isNotEmpty)
+                          _MiniInfoPill(
+                            label: unit,
+                            icon: Icons.straighten_outlined,
+                            color: FarmColors.mutedText,
+                          ),
+                        _MiniInfoPill(
+                          label: product.originLabel,
+                          icon: productOriginIcon(product),
+                          color: productOriginColor(product),
+                        ),
+                        if (product.isOrganic)
+                          const _MiniInfoPill(
+                            label: 'Organic',
+                            icon: Icons.eco_outlined,
+                            color: FarmColors.green,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: FarmColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => openProductEditor(context, product: product),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.inventory_2_outlined),
+                label: const Text('Restock'),
+                onPressed: () => openRestockDialog(context, product),
+              ),
+              OutlinedButton.icon(
+                icon: Icon(product.isAvailable
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined),
+                label: Text(product.isAvailable ? 'Hide' : 'Show'),
+                onPressed: () => toggleAvailability(product),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.event_repeat_outlined),
+                label: const Text('Harvested'),
+                onPressed: () => openReuseThisWeekDialog(context, product),
+              ),
+              if (product.approvalStatus != 'approved')
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Approve'),
+                  onPressed: () async {
+                    await updateProductApproval(product.id, 'approved');
+                    refreshProducts();
+                  },
+                ),
+              if (product.approvalStatus != 'rejected')
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Reject'),
+                  onPressed: () async {
+                    await updateProductApproval(product.id, 'rejected');
+                    refreshProducts();
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Product>>(
@@ -15142,215 +23346,315 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
         }
 
         final products = snapshot.data ?? [];
+        final visibleProducts = _applyInventoryFilters(products);
 
-        return ListView(
-          padding: const EdgeInsets.all(18),
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Header(
-                    title: 'Product Management',
-                    subtitle: 'Add, edit, hide & restock products',
+        Future<void> refreshNow() async {
+          refreshProducts();
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+
+        return RefreshIndicator(
+          onRefresh: refreshNow,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 128),
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Header(
+                      title: 'Inventory',
+                      subtitle: 'Keep products launch-ready and easy to shop',
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: FarmColors.primary,
-                    foregroundColor: Colors.white,
+                  const SizedBox(width: 9),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: FarmColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => openProductEditor(context),
                   ),
-                  onPressed: () => openProductEditor(context),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _inventorySummaryCard(products),
+              const SizedBox(height: 14),
+              FarmCard(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: inventorySearchController,
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        labelText: 'Search inventory',
+                        hintText: 'Name, category, unit, farm or parish',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: inventoryQuery.trim().isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  inventorySearchController.clear();
+                                  setState(() => inventoryQuery = '');
+                                },
+                              ),
+                      ),
+                      onChanged: (value) =>
+                          setState(() => inventoryQuery = value),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _inventoryPill(
+                            label: 'Needs attention',
+                            icon: Icons.priority_high_outlined,
+                            selected: inventoryFilter == 'needs_attention',
+                            onTap: () => setState(
+                                () => inventoryFilter = 'needs_attention'),
+                          ),
+                          const SizedBox(width: 8),
+                          _inventoryPill(
+                            label: 'All',
+                            icon: Icons.grid_view_outlined,
+                            selected: inventoryFilter == 'all',
+                            onTap: () =>
+                                setState(() => inventoryFilter = 'all'),
+                          ),
+                          const SizedBox(width: 8),
+                          _inventoryPill(
+                            label: 'In stock',
+                            icon: Icons.check_circle_outline,
+                            selected: inventoryFilter == 'in_stock',
+                            onTap: () =>
+                                setState(() => inventoryFilter = 'in_stock'),
+                          ),
+                          const SizedBox(width: 8),
+                          _inventoryPill(
+                            label: 'Low stock',
+                            icon: Icons.local_fire_department_outlined,
+                            selected: inventoryFilter == 'low_stock',
+                            onTap: () =>
+                                setState(() => inventoryFilter = 'low_stock'),
+                          ),
+                          const SizedBox(width: 8),
+                          _inventoryPill(
+                            label: 'Out',
+                            icon: Icons.remove_shopping_cart_outlined,
+                            selected: inventoryFilter == 'out_of_stock',
+                            onTap: () => setState(
+                                () => inventoryFilter = 'out_of_stock'),
+                          ),
+                          const SizedBox(width: 8),
+                          _inventoryPill(
+                            label: 'Hidden',
+                            icon: Icons.visibility_off_outlined,
+                            selected: inventoryFilter == 'hidden',
+                            onTap: () =>
+                                setState(() => inventoryFilter = 'hidden'),
+                          ),
+                          const SizedBox(width: 8),
+                          _inventoryPill(
+                            label: 'Deals',
+                            icon: Icons.local_offer_outlined,
+                            selected: inventoryFilter == 'deals',
+                            onTap: () =>
+                                setState(() => inventoryFilter = 'deals'),
+                          ),
+                          const SizedBox(width: 8),
+                          _inventoryPill(
+                            label: 'Organic',
+                            icon: Icons.eco_outlined,
+                            selected: inventoryFilter == 'organic',
+                            onTap: () =>
+                                setState(() => inventoryFilter = 'organic'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${visibleProducts.length} of ${products.length} products',
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 156,
+                          child: DropdownButtonFormField<String>(
+                            value: inventorySort,
+                            decoration: const InputDecoration(
+                              labelText: 'Sort',
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'priority', child: Text('Priority')),
+                              DropdownMenuItem(
+                                  value: 'name', child: Text('A-Z')),
+                              DropdownMenuItem(
+                                  value: 'stock_low', child: Text('Stock low')),
+                              DropdownMenuItem(
+                                  value: 'stock_high',
+                                  child: Text('Stock high')),
+                              DropdownMenuItem(
+                                  value: 'price_high',
+                                  child: Text('Price high')),
+                              DropdownMenuItem(
+                                  value: 'newest', child: Text('Newest')),
+                            ],
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() => inventorySort = value);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (products.isEmpty)
-              const FarmCard(
-                child: Text(
-                    'No products found. Tap Add to create your first product.'),
-              )
-            else
-              ...products.map((product) {
-                final unit = (product.unit ?? '').trim();
-                return FarmCard(
-                  margin: const EdgeInsets.only(bottom: 14),
+              ),
+              const SizedBox(height: 14),
+              if (products.isEmpty)
+                FarmCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ProductVisual(product: product, size: 44),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        product.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ),
-                                    Chip(
-                                      label: Text(product.isAvailable
-                                          ? 'Active'
-                                          : 'Hidden'),
-                                      backgroundColor: product.isAvailable
-                                          ? FarmColors.lightGreen
-                                          : FarmColors.border,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  shortDescription(product),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: FarmColors.mutedText),
-                                ),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    Chip(
-                                        label: DiscountPriceText(
-                                            product: product, compact: true)),
-                                    Chip(
-                                        label: Text(
-                                            'Stock: ${product.stockQuantity}')),
-                                    if (unit.isNotEmpty)
-                                      Chip(label: Text('Unit: $unit')),
-                                    Chip(
-                                      avatar: Icon(
-                                        productOriginIcon(product),
-                                        size: 16,
-                                        color: productOriginColor(product),
-                                      ),
-                                      label: Text(product.originLabel),
-                                      backgroundColor:
-                                          productOriginBackground(product),
-                                    ),
-                                    Chip(label: Text(product.category)),
-                                    Chip(
-                                      label: Text(
-                                        isProductHarvestedThisWeek(product)
-                                            ? 'Recently harvested'
-                                            : 'Harvest record',
-                                      ),
-                                    ),
-                                    if (product.isOrganic)
-                                      const Chip(label: Text('Organic')),
-                                    if ((product.farmName ?? '')
-                                        .trim()
-                                        .isNotEmpty)
-                                      Chip(
-                                          label:
-                                              Text(product.farmName!.trim())),
-                                    if ((product.parish ?? '')
-                                        .trim()
-                                        .isNotEmpty)
-                                      Chip(label: Text(product.parish!.trim())),
-                                    Chip(
-                                        label: Text(_friendlyStatus(
-                                            product.approvalStatus))),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                      const Icon(Icons.inventory_2_outlined,
+                          size: 38, color: FarmColors.green),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'No products yet',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Add your first farm product and it will appear here for admin review.',
+                        style: TextStyle(color: FarmColors.mutedText),
                       ),
                       const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.edit_outlined),
-                            label: const Text('Edit'),
-                            onPressed: () =>
-                                openProductEditor(context, product: product),
-                          ),
-                          OutlinedButton.icon(
-                            icon: Icon(product.isAvailable
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined),
-                            label: Text(product.isAvailable ? 'Hide' : 'Show'),
-                            onPressed: () => toggleAvailability(product),
-                          ),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.inventory_2_outlined),
-                            label: const Text('Restock'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: FarmColors.primary,
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () =>
-                                openRestockDialog(context, product),
-                          ),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.event_repeat_outlined),
-                            label: const Text('Mark Recently Harvested'),
-                            onPressed: () => openReuseThisWeekDialog(
-                              context,
-                              product,
-                            ),
-                          ),
-                          if (product.approvalStatus != 'approved')
-                            OutlinedButton.icon(
-                              icon: const Icon(Icons.check_circle_outline),
-                              label: const Text('Approve'),
-                              onPressed: () async {
-                                await updateProductApproval(
-                                    product.id, 'approved');
-                                refreshProducts();
-                              },
-                            ),
-                          if (product.approvalStatus != 'rejected')
-                            OutlinedButton.icon(
-                              icon: const Icon(Icons.cancel_outlined),
-                              label: const Text('Reject'),
-                              onPressed: () async {
-                                await updateProductApproval(
-                                    product.id, 'rejected');
-                                refreshProducts();
-                              },
-                            ),
-                        ],
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add product'),
+                        onPressed: () => openProductEditor(context),
                       ),
                     ],
                   ),
-                );
-              }),
-          ],
+                )
+              else if (visibleProducts.isEmpty)
+                FarmCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.search_off_outlined,
+                          size: 38, color: FarmColors.mutedText),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'No matching products',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Try another search term or clear the current filter.',
+                        style: TextStyle(color: FarmColors.mutedText),
+                      ),
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.refresh_outlined),
+                        label: const Text('Show all products'),
+                        onPressed: () {
+                          inventorySearchController.clear();
+                          setState(() {
+                            inventoryQuery = '';
+                            inventoryFilter = 'all';
+                            inventorySort = 'priority';
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...visibleProducts.map(_productOpsCard),
+            ],
+          ),
         );
       },
     );
   }
 }
 
-// Hidden from navigation until this becomes a production-ready shopping helper.
-class AIShoppingAssistantScreen extends StatefulWidget {
-  const AIShoppingAssistantScreen({super.key});
+class _MiniInfoPill extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _MiniInfoPill({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
 
   @override
-  State<AIShoppingAssistantScreen> createState() =>
-      _AIShoppingAssistantScreenState();
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.09),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _AIShoppingAssistantScreenState extends State<AIShoppingAssistantScreen> {
+// Kept outside main navigation until the farm helper is intentionally enabled.
+class FarmBoxHelperScreen extends StatefulWidget {
+  const FarmBoxHelperScreen({super.key});
+
+  @override
+  State<FarmBoxHelperScreen> createState() =>
+      _FarmBoxHelperScreenState();
+}
+
+class _FarmBoxHelperScreenState extends State<FarmBoxHelperScreen> {
   final messageController = TextEditingController();
   final List<String> messages = [
     'Hi! Ask me about fresh produce, vegan ingredients, recipes, delivery, checkout, storage, budget boxes, or what to add to your farm box.',
@@ -15367,12 +23671,12 @@ class _AIShoppingAssistantScreenState extends State<AIShoppingAssistantScreen> {
     if (text.isEmpty) return;
     setState(() {
       messages.add(text);
-      messages.add(_localAssistantReply(text));
+      messages.add(_localFarmHelperReply(text));
       messageController.clear();
     });
   }
 
-  String _localAssistantReply(String text) {
+  String _localFarmHelperReply(String text) {
     final lower = text.toLowerCase();
 
     if (lower.contains('delivery') || lower.contains('deliver')) {
@@ -15458,7 +23762,7 @@ class _AIShoppingAssistantScreenState extends State<AIShoppingAssistantScreen> {
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
-        title: const Text('AI Shopping Assistant'),
+        title: const Text('Farm Box Helper'),
         backgroundColor: FarmColors.background,
       ),
       body: Column(
@@ -15583,6 +23887,38 @@ class _AIShoppingAssistantScreenState extends State<AIShoppingAssistantScreen> {
   }
 }
 
+double loyaltyProgressValue(LoyaltySummary summary) {
+  final lifetime = summary.lifetimePoints < 0 ? 0 : summary.lifetimePoints;
+  if (lifetime >= 1000) return 1;
+  if (lifetime >= 500) return ((lifetime - 500) / 500).clamp(0, 1).toDouble();
+  return (lifetime / 500).clamp(0, 1).toDouble();
+}
+
+int loyaltyPointsToNextTier(LoyaltySummary summary) {
+  final lifetime = summary.lifetimePoints < 0 ? 0 : summary.lifetimePoints;
+  if (lifetime >= 1000) return 0;
+  if (lifetime >= 500) return 1000 - lifetime;
+  return 500 - lifetime;
+}
+
+String loyaltyNextTierName(LoyaltySummary summary) {
+  final lifetime = summary.lifetimePoints < 0 ? 0 : summary.lifetimePoints;
+  if (lifetime >= 1000) return 'Platinum';
+  if (lifetime >= 500) return 'Platinum';
+  return 'Gold';
+}
+
+Color loyaltyTierColor(String tier) {
+  switch (tier.trim().toLowerCase()) {
+    case 'platinum':
+      return FarmColors.primaryDark;
+    case 'gold':
+      return FarmColors.gold;
+    default:
+      return FarmColors.green;
+  }
+}
+
 class LoyaltySummaryCard extends StatelessWidget {
   const LoyaltySummaryCard({super.key});
 
@@ -15593,45 +23929,137 @@ class LoyaltySummaryCard extends StatelessWidget {
       builder: (context, snapshot) {
         final summary = snapshot.data ??
             const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
+        final progress = loyaltyProgressValue(summary);
+        final pointsToNext = loyaltyPointsToNextTier(summary);
+        final nextTier = loyaltyNextTierName(summary);
+        final tierColor = loyaltyTierColor(summary.tier);
 
-        return FarmCard(
+        return Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                FarmColors.primaryDark,
+                FarmColors.primary,
+                FarmColors.olive.withOpacity(0.96),
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: FarmColors.primaryDark.withOpacity(0.22),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Farm Rewards',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: FarmColors.lightGreen,
-                    foregroundColor: FarmColors.primary,
-                    child: const Icon(Icons.card_giftcard, size: 28),
+                  Container(
+                    height: 46,
+                    width: 46,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.20)),
+                    ),
+                    child: const Icon(
+                      Icons.workspace_premium_rounded,
+                      color: Colors.white,
+                    ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${summary.points} points',
-                          style: const TextStyle(
-                            fontSize: 26,
+                        const Text(
+                          'Harvest Rewards',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
                             fontWeight: FontWeight.w900,
-                            color: FarmColors.green,
                           ),
                         ),
+                        const SizedBox(height: 2),
                         Text(
-                          '${summary.tier} tier • ${summary.nextTierLabel}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          '${summary.tier} member • Earn as you shop',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.82),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white.withOpacity(0.18)),
+                    ),
+                    child: Text(
+                      summary.tier,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ],
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '${summary.points}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 42,
+                  height: 0.95,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1.2,
+                ),
+              ),
+              Text(
+                'points available',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.82),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 8,
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    tierColor == FarmColors.gold
+                        ? FarmColors.gold
+                        : Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                pointsToNext <= 0
+                    ? 'Top tier unlocked. Thank you for supporting the farm.'
+                    : '$pointsToNext points to $nextTier',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                ),
               ),
             ],
           ),
@@ -15649,7 +24077,7 @@ class LoyaltyRewardsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
-        title: const Text('Loyalty Rewards'),
+        title: const Text('Harvest Rewards'),
         backgroundColor: FarmColors.background,
       ),
       body: FutureBuilder<LoyaltySummary>(
@@ -15657,61 +24085,517 @@ class LoyaltyRewardsScreen extends StatelessWidget {
         builder: (context, snapshot) {
           final summary = snapshot.data ??
               const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
+          final progress = loyaltyProgressValue(summary);
+          final pointsToNext = loyaltyPointsToNextTier(summary);
+          final nextTier = loyaltyNextTierName(summary);
 
           return ListView(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
             children: [
+              _RewardsHeroCard(
+                summary: summary,
+                progress: progress,
+                pointsToNext: pointsToNext,
+                nextTier: nextTier,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _RewardMetricCard(
+                      icon: Icons.savings_outlined,
+                      label: 'Available',
+                      value: '${summary.points}',
+                      helper: 'points',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _RewardMetricCard(
+                      icon: Icons.trending_up_rounded,
+                      label: 'Lifetime',
+                      value: '${summary.lifetimePoints}',
+                      helper: 'earned',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
               FarmCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Farm Rewards',
-                      style:
-                          TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '${summary.points} points',
-                      style: const TextStyle(
-                        fontSize: 40,
+                      'How rewards work',
+                      style: TextStyle(
+                        fontSize: 18,
                         fontWeight: FontWeight.w900,
-                        color: FarmColors.green,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${summary.tier} tier • ${summary.nextTierLabel}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    const SizedBox(height: 12),
+                    _RewardInfoRow(
+                      icon: Icons.shopping_basket_outlined,
+                      title: 'Earn while shopping',
+                      message:
+                          'Get 1 point for every J\$100 in completed farm orders.',
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Earn 1 point for every J\$100 in completed farm orders.',
+                    _RewardInfoRow(
+                      icon: Icons.verified_outlined,
+                      title: 'Use after orders are completed',
+                      message:
+                          'Points are counted from paid or completed orders so rewards stay accurate.',
+                    ),
+                    _RewardInfoRow(
+                      icon: Icons.favorite_border_rounded,
+                      title: 'Support local harvests',
+                      message:
+                          'The more you shop fresh, the faster your tier grows.',
+                      isLast: true,
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 14),
-              const FarmCard(
-                child: Column(
+              const SectionHeader(
+                title: 'Reward milestones',
+                subtitle: 'Clear goals that make shopping feel worthwhile',
+              ),
+              const SizedBox(height: 10),
+              _RewardMilestoneCard(
+                points: 100,
+                title: 'Small thank-you discount',
+                description: 'A simple reward for your next farm order.',
+                currentLifetimePoints: summary.lifetimePoints,
+              ),
+              _RewardMilestoneCard(
+                points: 250,
+                title: 'Free herbs add-on',
+                description: 'A fresh extra when seasonal herbs are available.',
+                currentLifetimePoints: summary.lifetimePoints,
+              ),
+              _RewardMilestoneCard(
+                points: 500,
+                title: 'Gold customer tier',
+                description: 'Unlock stronger recognition and priority offers.',
+                currentLifetimePoints: summary.lifetimePoints,
+              ),
+              _RewardMilestoneCard(
+                points: 1000,
+                title: 'Platinum customer tier',
+                description: 'Top-tier status for loyal farm supporters.',
+                currentLifetimePoints: summary.lifetimePoints,
+              ),
+              const SizedBox(height: 14),
+              FarmCard(
+                color: FarmColors.accentSoft,
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Reward Ideas',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    Container(
+                      height: 42,
+                      width: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: const Icon(
+                        Icons.campaign_outlined,
+                        color: FarmColors.warning,
+                      ),
                     ),
-                    SizedBox(height: 8),
-                    Text('• 100 points = small discount'),
-                    Text('• 250 points = free herbs add-on'),
-                    Text('• 500 points = premium harvest box reward'),
-                    Text('• 1000 points = Platinum customer tier'),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Rewards note',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Rewards help customers track appreciation points. Redemptions can be confirmed by the farm before use.',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              height: 1.25,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: () {
+                  Clipboard.setData(
+                    ClipboardData(
+                      text:
+                          'I have ${summary.points} Harvest Rewards points at The Harvest Place Ja.',
+                    ),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Rewards summary copied')),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded),
+                label: const Text('Copy rewards summary'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: FarmColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _RewardsHeroCard extends StatelessWidget {
+  final LoyaltySummary summary;
+  final double progress;
+  final int pointsToNext;
+  final String nextTier;
+
+  const _RewardsHeroCard({
+    required this.summary,
+    required this.progress,
+    required this.pointsToNext,
+    required this.nextTier,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.primaryDark,
+            FarmColors.primary,
+            FarmColors.olive.withOpacity(0.95),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.primaryDark.withOpacity(0.24),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withOpacity(0.18)),
+                ),
+                child: const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Harvest Rewards',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Your loyalty, grown fresh.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          Text(
+            '${summary.points}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 54,
+              height: 0.92,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -1.8,
+            ),
+          ),
+          Text(
+            'available points',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.82),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 18),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 9,
+              backgroundColor: Colors.white.withOpacity(0.18),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  pointsToNext <= 0
+                      ? 'Platinum unlocked'
+                      : '$pointsToNext points to $nextTier',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white.withOpacity(0.18)),
+                ),
+                child: Text(
+                  summary.tier,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RewardMetricCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final String helper;
+
+  const _RewardMetricCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.helper,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: FarmColors.green),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              color: FarmColors.ink,
+            ),
+          ),
+          Text(
+            '$label • $helper',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RewardInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+  final bool isLast;
+
+  const _RewardInfoRow({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 13),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 36,
+            width: 36,
+            decoration: BoxDecoration(
+              color: FarmColors.lightGreen,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(icon, color: FarmColors.green, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: FarmColors.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w600,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RewardMilestoneCard extends StatelessWidget {
+  final int points;
+  final String title;
+  final String description;
+  final int currentLifetimePoints;
+
+  const _RewardMilestoneCard({
+    required this.points,
+    required this.title,
+    required this.description,
+    required this.currentLifetimePoints,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final unlocked = currentLifetimePoints >= points;
+
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      color: unlocked ? FarmColors.lightGreen : FarmColors.surface,
+      child: Row(
+        children: [
+          Container(
+            height: 44,
+            width: 44,
+            decoration: BoxDecoration(
+              color: unlocked ? FarmColors.green : FarmColors.cardSoft,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: unlocked ? FarmColors.green : FarmColors.line,
+              ),
+            ),
+            child: Icon(
+              unlocked ? Icons.check_rounded : Icons.lock_outline_rounded,
+              color: unlocked ? Colors.white : FarmColors.mutedText,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: unlocked ? Colors.white : FarmColors.primarySoft,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '$points pts',
+              style: TextStyle(
+                color: unlocked ? FarmColors.green : FarmColors.primaryDark,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -15790,25 +24674,20 @@ class ProductCollectionScreen extends StatelessWidget {
           Header(title: title, subtitle: subtitle),
           const SizedBox(height: 18),
           if (products.isEmpty)
-            FarmCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(emptyText),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      onShopTap();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: FarmColors.primary,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Go to Shop'),
-                  ),
-                ],
-              ),
+            FarmEmptyState(
+              icon: title.toLowerCase().contains('favorite')
+                  ? Icons.favorite_border_rounded
+                  : Icons.history_rounded,
+              title: title.toLowerCase().contains('favorite')
+                  ? 'No favorites yet'
+                  : 'Nothing viewed yet',
+              message: emptyText,
+              actionLabel: 'Go to Shop',
+              actionIcon: Icons.storefront_outlined,
+              onAction: () {
+                Navigator.pop(context);
+                onShopTap();
+              },
             )
           else
             ...products.map((product) => FarmCard(
@@ -16035,11 +24914,19 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   int refreshKey = 0;
+  String selectedFilter = 'all';
+  bool markingRead = false;
 
   Future<void> markReadAndRefresh() async {
-    await markNotificationsRead();
-    FarmDataCache.notifications = null;
-    if (mounted) setState(() => refreshKey++);
+    if (markingRead) return;
+    setState(() => markingRead = true);
+    try {
+      await markNotificationsRead();
+      FarmDataCache.notifications = null;
+      if (mounted) setState(() => refreshKey++);
+    } finally {
+      if (mounted) setState(() => markingRead = false);
+    }
   }
 
   Future<void> refreshNotifications() async {
@@ -16047,22 +24934,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (mounted) setState(() => refreshKey++);
   }
 
+  bool _matchesFilter(FarmNotification notice) {
+    switch (selectedFilter) {
+      case 'unread':
+        return !notice.isRead;
+      case 'orders':
+        return notice.hasOrderLink ||
+            notice.type == 'order' ||
+            notice.type == 'payment' ||
+            notice.type == 'delivery';
+      case 'support':
+        return notice.type == 'support' || notice.type == 'review';
+      case 'stock':
+        return notice.type == 'stock' || notice.type == 'product_ready';
+      default:
+        return true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: const Text('Updates'),
         backgroundColor: FarmColors.background,
         actions: [
           IconButton(
             tooltip: 'Refresh',
             onPressed: refreshNotifications,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-          TextButton(
-            onPressed: markReadAndRefresh,
-            child: const Text('Mark read'),
+            icon: const Icon(Icons.restart_alt_rounded),
           ),
         ],
       ),
@@ -16073,57 +24974,80 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting &&
                 !snapshot.hasData) {
-              return const SkeletonList();
+              return const SkeletonList(count: 3, height: 104);
             }
 
             final notifications = snapshot.data ?? const <FarmNotification>[];
             final unreadCount =
                 notifications.where((notice) => !notice.isRead).length;
+            final orderCount = notifications
+                .where((notice) =>
+                    notice.hasOrderLink ||
+                    notice.type == 'order' ||
+                    notice.type == 'payment' ||
+                    notice.type == 'delivery')
+                .length;
+            final supportCount = notifications
+                .where((notice) =>
+                    notice.type == 'support' || notice.type == 'review')
+                .length;
+            final stockCount = notifications
+                .where((notice) =>
+                    notice.type == 'stock' || notice.type == 'product_ready')
+                .length;
+
+            final filtered = notifications.where(_matchesFilter).toList()
+              ..sort((a, b) {
+                if (a.isRead != b.isRead) return a.isRead ? 1 : -1;
+                final aDate =
+                    a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                final bDate =
+                    b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                return bDate.compareTo(aDate);
+              });
 
             return RefreshIndicator(
-              onRefresh: () async => refreshNotifications(),
+              onRefresh: refreshNotifications,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
                 children: [
-                  Header(
-                    title: 'Notifications',
-                    subtitle: unreadCount == 0
-                        ? 'All caught up'
-                        : '$unreadCount unread update${unreadCount == 1 ? '' : 's'}',
+                  NotificationCenterHero(
+                    unreadCount: unreadCount,
+                    totalCount: notifications.length,
+                    markingRead: markingRead,
+                    onMarkRead: unreadCount == 0 ? null : markReadAndRefresh,
                   ),
                   const SizedBox(height: 16),
-                  FarmCard(
-                    color: Colors.white,
-                    child: Row(
-                      children: [
-                        const FarmNotificationButton(
-                          size: 42,
-                          showBadge: false,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            unreadCount == 0
-                                ? 'You are all caught up.'
-                                : '$unreadCount unread update${unreadCount == 1 ? '' : 's'} waiting.',
-                            style: const TextStyle(
-                              color: FarmColors.deepGreen,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  NotificationFilterBar(
+                    selected: selectedFilter,
+                    unreadCount: unreadCount,
+                    orderCount: orderCount,
+                    supportCount: supportCount,
+                    stockCount: stockCount,
+                    onSelected: (value) =>
+                        setState(() => selectedFilter = value),
                   ),
                   const SizedBox(height: 16),
                   if (notifications.isEmpty)
-                    const FarmCard(
-                      child: Text(
-                        'No alerts yet. Product-ready alerts, order updates, and delivery updates will appear here.',
-                      ),
+                    const FarmEmptyState(
+                      icon: Icons.notifications_none_rounded,
+                      title: 'No updates yet',
+                      message:
+                          'Order updates, farm replies, and back-in-stock alerts will appear here.',
+                    )
+                  else if (filtered.isEmpty)
+                    FarmEmptyState(
+                      icon: Icons.filter_alt_off_rounded,
+                      title: 'Nothing in this view',
+                      message:
+                          'Try All updates to see everything from the farm.',
+                      actionLabel: 'Show all',
+                      actionIcon: Icons.notifications_active_outlined,
+                      onAction: () => setState(() => selectedFilter = 'all'),
                     )
                   else
-                    ...notifications.map(
+                    ...filtered.map(
                       (notice) => FarmNotificationTile(
                         notice: notice,
                         onTap: notice.hasOrderLink
@@ -16137,8 +25061,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                     matchedOrderId.trim().isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content:
-                                          Text('Order could not be found.'),
+                                      content: Text(
+                                          'Order could not be found. Pull down to refresh and try again.'),
                                     ),
                                   );
                                   return;
@@ -16166,6 +25090,256 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 }
 
+class NotificationCenterHero extends StatelessWidget {
+  final int unreadCount;
+  final int totalCount;
+  final bool markingRead;
+  final VoidCallback? onMarkRead;
+
+  const NotificationCenterHero({
+    super.key,
+    required this.unreadCount,
+    required this.totalCount,
+    required this.markingRead,
+    this.onMarkRead,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasUnread = unreadCount > 0;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF173526),
+            Color(0xFF2F6B45),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 58,
+            width: 58,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.22)),
+            ),
+            child: Icon(
+              hasUnread
+                  ? Icons.notifications_active_outlined
+                  : Icons.mark_email_read_outlined,
+              color: Colors.white,
+              size: 29,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasUnread
+                      ? '$unreadCount unread update${unreadCount == 1 ? '' : 's'}'
+                      : 'All caught up',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  totalCount == 0
+                      ? 'Your farm updates will appear here.'
+                      : 'Orders, support replies, stock alerts, and farm messages in one place.',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.82),
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (onMarkRead != null) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: markingRead ? null : onMarkRead,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.white.withOpacity(0.12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                    ),
+                    icon: Icon(
+                      markingRead
+                          ? Icons.hourglass_top_rounded
+                          : Icons.done_all_rounded,
+                      size: 18,
+                    ),
+                    label: Text(markingRead ? 'Updating...' : 'Mark all read'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class NotificationFilterBar extends StatelessWidget {
+  final String selected;
+  final int unreadCount;
+  final int orderCount;
+  final int supportCount;
+  final int stockCount;
+  final ValueChanged<String> onSelected;
+
+  const NotificationFilterBar({
+    super.key,
+    required this.selected,
+    required this.unreadCount,
+    required this.orderCount,
+    required this.supportCount,
+    required this.stockCount,
+    required this.onSelected,
+  });
+
+  Widget _chip({
+    required String value,
+    required String label,
+    required int count,
+    required IconData icon,
+  }) {
+    final active = selected == value;
+    final display = count > 0 ? '$label $count' : label;
+
+    return ChoiceChip(
+      selected: active,
+      onSelected: (_) => onSelected(value),
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: active ? Colors.white : FarmColors.green,
+      ),
+      label: Text(display),
+      labelStyle: TextStyle(
+        color: active ? Colors.white : FarmColors.deepGreen,
+        fontWeight: FontWeight.w900,
+        fontSize: 12.2,
+      ),
+      selectedColor: FarmColors.green,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: active ? FarmColors.green : FarmColors.line,
+      ),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          _chip(
+            value: 'all',
+            label: 'All',
+            count: 0,
+            icon: Icons.all_inbox_rounded,
+          ),
+          const SizedBox(width: 8),
+          _chip(
+            value: 'unread',
+            label: 'Unread',
+            count: unreadCount,
+            icon: Icons.markunread_outlined,
+          ),
+          const SizedBox(width: 8),
+          _chip(
+            value: 'orders',
+            label: 'Orders',
+            count: orderCount,
+            icon: Icons.receipt_long_outlined,
+          ),
+          const SizedBox(width: 8),
+          _chip(
+            value: 'stock',
+            label: 'Stock',
+            count: stockCount,
+            icon: Icons.inventory_2_outlined,
+          ),
+          const SizedBox(width: 8),
+          _chip(
+            value: 'support',
+            label: 'Support',
+            count: supportCount,
+            icon: Icons.support_agent_outlined,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String farmNotificationTypeLabel(FarmNotification notice) {
+  switch (notice.type.trim().toLowerCase()) {
+    case 'payment':
+      return 'Payment';
+    case 'delivery':
+      return 'Delivery';
+    case 'product_ready':
+      return 'Ready';
+    case 'stock':
+      return 'Stock';
+    case 'support':
+      return 'Support';
+    case 'review':
+      return 'Review';
+    case 'admin':
+      return 'Admin';
+    case 'order':
+      return 'Order';
+    default:
+      return 'Update';
+  }
+}
+
+Color farmNotificationAccent(FarmNotification notice) {
+  switch (notice.type.trim().toLowerCase()) {
+    case 'payment':
+      return FarmColors.success;
+    case 'delivery':
+      return FarmColors.green;
+    case 'stock':
+      return FarmColors.warning;
+    case 'support':
+      return FarmColors.primaryDark;
+    case 'review':
+      return FarmColors.accent;
+    default:
+      return FarmColors.green;
+  }
+}
+
 class FarmNotificationTile extends StatelessWidget {
   final FarmNotification notice;
   final VoidCallback? onTap;
@@ -16178,28 +25352,31 @@ class FarmNotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = farmNotificationAccent(notice);
+    final unread = !notice.isRead;
+
     return InkWell(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(24),
       onTap: onTap,
       child: FarmCard(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
-        color: Colors.white,
+        color: unread ? FarmColors.primarySoft.withOpacity(0.72) : Colors.white,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              height: 40,
-              width: 40,
+              height: 44,
+              width: 44,
               decoration: BoxDecoration(
-                color: FarmColors.primarySoft,
+                color: accent.withOpacity(0.12),
                 shape: BoxShape.circle,
-                border: Border.all(color: FarmColors.line),
+                border: Border.all(color: accent.withOpacity(0.22)),
               ),
               child: Icon(
                 notice.icon,
-                color: FarmColors.deepGreen,
-                size: 20,
+                color: accent,
+                size: 22,
               ),
             ),
             const SizedBox(width: 12),
@@ -16208,64 +25385,112 @@ class FarmNotificationTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Text(
                           notice.title,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: FarmColors.deepGreen,
-                            fontSize: 15.5,
+                            fontSize: 15.8,
+                            height: 1.12,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
-                      if (!notice.isRead)
+                      if (unread)
                         Container(
-                          height: 9,
-                          width: 9,
-                          margin: const EdgeInsets.only(left: 8),
-                          decoration: const BoxDecoration(
-                            color: FarmColors.success,
+                          height: 10,
+                          width: 10,
+                          margin: const EdgeInsets.only(left: 8, top: 4),
+                          decoration: BoxDecoration(
+                            color: accent,
                             shape: BoxShape.circle,
                           ),
                         ),
                       if (notice.hasOrderLink)
-                        const Icon(
-                          Icons.chevron_right_rounded,
-                          color: FarmColors.green,
-                          size: 22,
+                        Container(
+                          height: 28,
+                          width: 28,
+                          margin: const EdgeInsets.only(left: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.8),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: FarmColors.line),
+                          ),
+                          child: const Icon(
+                            Icons.chevron_right_rounded,
+                            color: FarmColors.green,
+                            size: 21,
+                          ),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 6),
                   Text(
                     notice.message,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: FarmColors.mutedText,
-                      fontSize: 12.5,
-                      height: 1.25,
+                      fontSize: 12.8,
+                      height: 1.28,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
                     children: [
-                      Icon(
-                        Icons.schedule_rounded,
-                        size: 13,
-                        color: FarmColors.mutedText,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: accent.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          farmNotificationTypeLabel(notice),
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        notice.timeLabel,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: FarmColors.mutedText,
-                          fontWeight: FontWeight.w600,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(unread ? 0.72 : 0.0),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.schedule_rounded,
+                              size: 12,
+                              color: FarmColors.mutedText,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              notice.timeLabel,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: FarmColors.mutedText,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -16300,6 +25525,13 @@ class _SupportScreenState extends State<SupportScreen> {
     super.dispose();
   }
 
+  void useQuickSubject(String subject) {
+    subjectController.text = subject;
+    if (messageController.text.trim().isEmpty) {
+      messageController.text = '';
+    }
+  }
+
   Future<void> sendTicket() async {
     final subject = subjectController.text.trim();
     final message = messageController.text.trim();
@@ -16325,7 +25557,9 @@ class _SupportScreenState extends State<SupportScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send support message: $error')),
+          SnackBar(
+              content: Text(
+                  'Could not send support message: ${friendlyAppError(error)}')),
         );
       }
     } finally {
@@ -16333,103 +25567,387 @@ class _SupportScreenState extends State<SupportScreen> {
     }
   }
 
+  Future<void> refreshTickets() async {
+    if (mounted) setState(() => refreshKey++);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
-        title: const Text('Farm Support'),
+        title: const Text('Support'),
         backgroundColor: FarmColors.background,
       ),
       body: FarmPage(
-        child: ListView(
-          padding: const EdgeInsets.all(18),
-          children: [
-            const Header(title: 'Support', subtitle: 'Message the farm'),
-            const SizedBox(height: 16),
-            FarmCard(
+        child: RefreshIndicator(
+          onRefresh: refreshTickets,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              const SupportHeroCard(),
+              const SizedBox(height: 16),
+              FarmCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Send a message',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Choose a topic or write your own. The farm team will reply here.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        SupportQuickChip(
+                          label: 'Order question',
+                          onTap: () => useQuickSubject('Order question'),
+                        ),
+                        SupportQuickChip(
+                          label: 'Delivery help',
+                          onTap: () => useQuickSubject('Delivery help'),
+                        ),
+                        SupportQuickChip(
+                          label: 'Product request',
+                          onTap: () => useQuickSubject('Product request'),
+                        ),
+                        SupportQuickChip(
+                          label: 'Payment help',
+                          onTap: () => useQuickSubject('Payment help'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: subjectController,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Subject',
+                        prefixIcon: Icon(Icons.subject_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: messageController,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.newline,
+                      decoration: const InputDecoration(
+                        labelText: 'Message',
+                        hintText: 'Tell us what you need help with...',
+                        prefixIcon: Icon(Icons.message_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    PrimaryFarmButton(
+                      label: sending ? 'Sending...' : 'Send Message',
+                      icon: Icons.send_rounded,
+                      onPressed: sending ? null : sendTicket,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              const SectionHeader(
+                title: 'Support history',
+                subtitle: 'Your messages and farm replies',
+              ),
+              const SizedBox(height: 12),
+              FutureBuilder<List<SupportTicket>>(
+                key: ValueKey(refreshKey),
+                future: fetchMySupportTickets(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const SkeletonList(count: 2, height: 100);
+                  }
+                  final tickets = snapshot.data ?? [];
+                  if (tickets.isEmpty) {
+                    return const FarmEmptyState(
+                      icon: Icons.support_agent_outlined,
+                      title: 'No support messages yet',
+                      message:
+                          'When you message the farm, your conversation history will appear here.',
+                      compact: true,
+                    );
+                  }
+                  return Column(
+                    children: tickets
+                        .map((ticket) => SupportTicketCard(ticket: ticket))
+                        .toList(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SupportHeroCard extends StatelessWidget {
+  const SupportHeroCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        color: FarmColors.card,
+        border: Border.all(color: FarmColors.line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 58,
+            width: 58,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft,
+              shape: BoxShape.circle,
+              border: Border.all(color: FarmColors.green.withOpacity(0.16)),
+            ),
+            child: const Icon(
+              Icons.support_agent_rounded,
+              color: FarmColors.green,
+              size: 30,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Farm support',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Ask about orders, delivery, products, or weekly boxes. Replies stay saved here.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    height: 1.28,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SupportQuickChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const SupportQuickChip({
+    super.key,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      onPressed: onTap,
+      label: Text(label),
+      avatar: const Icon(Icons.add_rounded, size: 16),
+      labelStyle: const TextStyle(
+        color: FarmColors.deepGreen,
+        fontWeight: FontWeight.w900,
+        fontSize: 12,
+      ),
+      backgroundColor: FarmColors.primarySoft,
+      side: BorderSide(color: FarmColors.green.withOpacity(0.12)),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class SupportTicketCard extends StatelessWidget {
+  final SupportTicket ticket;
+
+  const SupportTicketCard({
+    super.key,
+    required this.ticket,
+  });
+
+  Color get statusColor {
+    final status = ticket.status.trim().toLowerCase();
+    if (status == 'closed' || status == 'resolved') return FarmColors.success;
+    if (status == 'pending') return FarmColors.warning;
+    return FarmColors.green;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasReply = (ticket.adminReply ?? '').trim().isNotEmpty;
+
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  ticket.subject,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15.8,
+                    height: 1.16,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  ticket.formattedStatus,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            ticket.message,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              height: 1.32,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(
+                Icons.confirmation_number_outlined,
+                size: 14,
+                color: FarmColors.mutedText,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                '#${ticket.shortId}',
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(
+                Icons.schedule_rounded,
+                size: 14,
+                color: FarmColors.mutedText,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  formatCustomerDateTime(ticket.createdAt),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (hasReply) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+              ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
-                    controller: subjectController,
-                    decoration: const InputDecoration(
-                      labelText: 'Subject',
-                      prefixIcon: Icon(Icons.subject),
-                    ),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.storefront_outlined,
+                        size: 16,
+                        color: FarmColors.green,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'Farm reply',
+                        style: TextStyle(
+                          color: FarmColors.green,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: messageController,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Message',
-                      prefixIcon: Icon(Icons.message_outlined),
+                  const SizedBox(height: 6),
+                  Text(
+                    ticket.adminReply!.trim(),
+                    style: const TextStyle(
+                      color: FarmColors.deepGreen,
+                      height: 1.3,
+                      fontWeight: FontWeight.w700,
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  PrimaryFarmButton(
-                    label: sending ? 'Sending...' : 'Send Message',
-                    onPressed: sending ? null : sendTicket,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 18),
-            const SectionTitle('My Support Messages'),
-            const SizedBox(height: 12),
-            FutureBuilder<List<SupportTicket>>(
-              key: ValueKey(refreshKey),
-              future: fetchMySupportTickets(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const SkeletonList();
-                }
-                final tickets = snapshot.data ?? [];
-                if (tickets.isEmpty) {
-                  return const FarmCard(
-                      child: Text('No support messages yet.'));
-                }
-                return Column(
-                  children: tickets
-                      .map((ticket) => FarmCard(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                        child: Text(ticket.subject,
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16))),
-                                    Chip(
-                                        label: Text(ticket.formattedStatus),
-                                        backgroundColor: FarmColors.lightGreen),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(ticket.message),
-                                if ((ticket.adminReply ?? '').isNotEmpty) ...[
-                                  const Divider(),
-                                  const Text('Farm reply',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 4),
-                                  Text(ticket.adminReply!),
-                                ],
-                              ],
-                            ),
-                          ))
-                      .toList(),
-                );
-              },
-            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -16455,14 +25973,32 @@ class _ReviewScreenState extends State<ReviewScreen> {
     super.dispose();
   }
 
+  void usePrompt(String text) {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+    final current = commentController.text.trim();
+    commentController.text = current.isEmpty ? clean : '$current $clean';
+    commentController.selection = TextSelection.fromPosition(
+      TextPosition(offset: commentController.text.length),
+    );
+  }
+
   Future<void> submitReview() async {
     final product = selectedProduct;
     final comment = commentController.text.trim();
 
-    if (product == null || comment.isEmpty) {
+    if (product == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose the product you want to review.')),
+      );
+      return;
+    }
+
+    if (comment.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please choose a product and enter feedback.')),
+          content: Text('Add a little more detail so your review is useful.'),
+        ),
       );
       return;
     }
@@ -16478,7 +26014,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       commentController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Thank you for your review.')),
+          const SnackBar(content: Text('Thanks — your review was shared.')),
         );
         setState(() {
           selectedProduct = null;
@@ -16489,12 +26025,23 @@ class _ReviewScreenState extends State<ReviewScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save review: $error')),
+          SnackBar(
+              content:
+                  Text('Could not save review: ${friendlyAppError(error)}')),
         );
       }
     } finally {
       if (mounted) setState(() => sending = false);
     }
+  }
+
+  Product? selectedProductFrom(List<Product> products) {
+    final id = selectedProduct?.id.trim() ?? '';
+    if (id.isEmpty) return null;
+    for (final product in products) {
+      if (product.id == id) return product;
+    }
+    return null;
   }
 
   @override
@@ -16506,81 +26053,382 @@ class _ReviewScreenState extends State<ReviewScreen> {
         backgroundColor: FarmColors.background,
       ),
       body: FarmPage(
-        child: ListView(
-          padding: const EdgeInsets.all(18),
-          children: [
-            const Header(title: 'Reviews', subtitle: 'Share feedback'),
-            const SizedBox(height: 16),
-            FarmCard(
-              child: FutureBuilder<List<Product>>(
-                future: fetchProducts(),
-                builder: (context, snapshot) {
-                  final products = snapshot.data ?? const <Product>[];
-                  return Column(
-                    children: [
-                      DropdownButtonFormField<Product>(
-                        value: products.contains(selectedProduct)
-                            ? selectedProduct
-                            : null,
-                        decoration: const InputDecoration(
-                          labelText: 'Product',
-                          prefixIcon: Icon(Icons.eco_outlined),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            setState(() => refreshKey++);
+            await fetchProductReviews();
+          },
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              const ReviewHeroCard(),
+              const SizedBox(height: 16),
+              FarmCard(
+                padding: const EdgeInsets.all(18),
+                child: FutureBuilder<List<Product>>(
+                  future: fetchProducts(),
+                  builder: (context, snapshot) {
+                    final products = (snapshot.data ?? const <Product>[])
+                        .where((product) => product.isCustomerVisible)
+                        .toList()
+                      ..sort((a, b) => a.name.compareTo(b.name));
+                    final selected = selectedProductFrom(products);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Share your experience',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.3,
+                          ),
                         ),
-                        items: products.map((product) {
-                          return DropdownMenuItem<Product>(
-                            value: product,
-                            child: Text(product.name),
-                          );
-                        }).toList(),
-                        onChanged: (Product? product) {
-                          if (product == null) return;
-                          setState(() {
-                            selectedProduct = product;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<int>(
-                        value: rating,
-                        decoration: const InputDecoration(
-                          labelText: 'Rating',
-                          prefixIcon: Icon(Icons.star_outline),
+                        const SizedBox(height: 5),
+                        Text(
+                          'Help other shoppers choose fresh picks with confidence.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        items: const [
-                          DropdownMenuItem(value: 5, child: Text('5 stars')),
-                          DropdownMenuItem(value: 4, child: Text('4 stars')),
-                          DropdownMenuItem(value: 3, child: Text('3 stars')),
-                          DropdownMenuItem(value: 2, child: Text('2 stars')),
-                          DropdownMenuItem(value: 1, child: Text('1 star')),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => rating = value ?? 5),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: commentController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Feedback',
-                          prefixIcon: Icon(Icons.rate_review_outlined),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<Product>(
+                          value: selected,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Product you tried',
+                            prefixIcon: Icon(Icons.shopping_basket_outlined),
+                          ),
+                          items: products.map((product) {
+                            return DropdownMenuItem<Product>(
+                              value: product,
+                              child: Text(
+                                product.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (Product? product) {
+                            if (product == null) return;
+                            setState(() => selectedProduct = product);
+                          },
                         ),
-                      ),
-                      const SizedBox(height: 14),
-                      PrimaryFarmButton(
-                        label: sending ? 'Submitting...' : 'Submit Review',
-                        onPressed: sending ? null : submitReview,
-                      ),
-                    ],
-                  );
-                },
+                        const SizedBox(height: 16),
+                        ReviewRatingSelector(
+                          value: rating,
+                          onChanged: (value) => setState(() => rating = value),
+                        ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ReviewPromptChip(
+                              label: 'Fresh quality',
+                              onTap: () =>
+                                  usePrompt('The freshness was great.'),
+                            ),
+                            ReviewPromptChip(
+                              label: 'Easy pickup',
+                              onTap: () =>
+                                  usePrompt('Pickup was easy and smooth.'),
+                            ),
+                            ReviewPromptChip(
+                              label: 'Good value',
+                              onTap: () =>
+                                  usePrompt('Good value for the quality.'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: commentController,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.newline,
+                          decoration: const InputDecoration(
+                            labelText: 'What should other customers know?',
+                            hintText:
+                                'Example: Fresh, well packed, and perfect for dinner.',
+                            prefixIcon: Icon(Icons.rate_review_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        PrimaryFarmButton(
+                          label: sending ? 'Sharing review...' : 'Share Review',
+                          icon: Icons.send_rounded,
+                          onPressed: sending ? null : submitReview,
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 18),
-            const SectionTitle('Recent Reviews'),
-            const SizedBox(height: 12),
-            ReviewsList(refreshKey: refreshKey),
-          ],
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Expanded(
+                    child: SectionTitle('Customer Reviews'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () async {
+                      final reviews = await fetchProductReviews();
+                      final summary = reviews.isEmpty
+                          ? 'No customer reviews yet.'
+                          : '${reviews.length} reviews • ${(reviews.fold<double>(0, (sum, review) => sum + review.rating) / reviews.length).toStringAsFixed(1)} average rating';
+                      await Clipboard.setData(ClipboardData(text: summary));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Review summary copied.')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.copy_rounded, size: 17),
+                    label: const Text('Copy'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ReviewsList(refreshKey: refreshKey),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class ReviewHeroCard extends StatelessWidget {
+  const ReviewHeroCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ProductReview>>(
+      future: fetchProductReviews(),
+      builder: (context, snapshot) {
+        final reviews = snapshot.data ?? const <ProductReview>[];
+        final count = reviews.length;
+        final average = count == 0
+            ? 0.0
+            : reviews.fold<double>(0, (sum, review) => sum + review.rating) /
+                count;
+
+        return Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF173526), Color(0xFF315B43)],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: FarmColors.shadow.withOpacity(0.18),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    height: 46,
+                    width: 46,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.14),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withOpacity(0.18)),
+                    ),
+                    child: const Icon(
+                      Icons.reviews_outlined,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Harvest Reviews',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Real feedback helps the market improve.',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.78),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ReviewHeroPill(
+                    icon: Icons.star_rounded,
+                    label: count == 0
+                        ? 'No ratings yet'
+                        : '${average.toStringAsFixed(1)} average',
+                  ),
+                  ReviewHeroPill(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    label: '$count reviews',
+                  ),
+                  const ReviewHeroPill(
+                    icon: Icons.verified_user_outlined,
+                    label: 'Customer feedback',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class ReviewHeroPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const ReviewHeroPill({
+    super.key,
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 12.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ReviewRatingSelector extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  const ReviewRatingSelector({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Rating',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: List.generate(5, (index) {
+            final starValue = index + 1;
+            final active = starValue <= value;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => onChanged(starValue),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  height: 42,
+                  width: 42,
+                  decoration: BoxDecoration(
+                    color: active ? FarmColors.accentSoft : FarmColors.cardSoft,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: active
+                          ? FarmColors.accent.withOpacity(0.42)
+                          : FarmColors.line,
+                    ),
+                  ),
+                  child: Icon(
+                    active ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: active ? FarmColors.accent : FarmColors.mutedText,
+                    size: 24,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+class ReviewPromptChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const ReviewPromptChip({
+    super.key,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      label: Text(label),
+      avatar: const Icon(Icons.add_rounded, size: 16),
+      onPressed: onTap,
+      backgroundColor: FarmColors.primarySoft,
+      side: BorderSide(color: FarmColors.green.withOpacity(0.16)),
+      labelStyle: const TextStyle(
+        color: FarmColors.green,
+        fontWeight: FontWeight.w900,
       ),
     );
   }
@@ -16598,46 +26446,306 @@ class ReviewsList extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
-          return const SkeletonList();
+          return const SkeletonList(count: 3, height: 116);
         }
         final reviews = snapshot.data ?? [];
         if (reviews.isEmpty) {
-          return const FarmCard(child: Text('No reviews yet.'));
+          return const FarmEmptyState(
+            icon: Icons.reviews_outlined,
+            title: 'No reviews yet',
+            message:
+                'After customers try products, their feedback will appear here.',
+            compact: true,
+          );
         }
         return Column(
           children: reviews
               .take(20)
-              .map((review) => FarmCard(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                                child: Text(review.productName,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16))),
-                            Text(
-                                '${'★' * review.rating}${'☆' * (5 - review.rating)}'),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(review.comment),
-                        if (review.email.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(review.email,
-                              style: TextStyle(
-                                  color: FarmColors.mutedText, fontSize: 12)),
-                        ],
-                      ],
-                    ),
-                  ))
+              .map((review) => ReviewCard(review: review))
               .toList(),
         );
       },
+    );
+  }
+}
+
+class ReviewCard extends StatelessWidget {
+  final ProductReview review;
+
+  const ReviewCard({super.key, required this.review});
+
+  String get displayName {
+    final email = review.email.trim();
+    if (email.isEmpty || !email.contains('@')) return 'Customer';
+    final name =
+        email.split('@').first.replaceAll('.', ' ').replaceAll('_', ' ');
+    return titleCaseWords(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 42,
+                width: 42,
+                decoration: const BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.person_outline_rounded,
+                  color: FarmColors.green,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      review.productName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: FarmColors.accentSoft,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star_rounded,
+                        color: FarmColors.accent, size: 16),
+                    const SizedBox(width: 3),
+                    Text(
+                      review.rating.toString(),
+                      style: const TextStyle(
+                        color: FarmColors.warning,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            review.comment,
+            style: const TextStyle(
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.verified_outlined,
+                  color: FarmColors.green.withOpacity(0.78), size: 16),
+              const SizedBox(width: 5),
+              Text(
+                'Shared by a customer',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AdminReviewsTab extends StatelessWidget {
+  final int refreshKey;
+  const AdminReviewsTab({super.key, required this.refreshKey});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ProductReview>>(
+      key: ValueKey('admin-reviews-$refreshKey'),
+      future: fetchProductReviews(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SkeletonList(count: 4, height: 112);
+        }
+        final reviews = snapshot.data ?? const <ProductReview>[];
+        final count = reviews.length;
+        final average = count == 0
+            ? 0.0
+            : reviews.fold<double>(0, (sum, review) => sum + review.rating) /
+                count;
+        final needsAttention =
+            reviews.where((review) => review.rating <= 3).length;
+
+        return ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          children: [
+            const Header(
+              title: 'Customer voice',
+              subtitle: 'Reviews & feedback',
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: FarmColors.deepGreen,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: FarmColors.shadow.withOpacity(0.16),
+                    blurRadius: 22,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Review health',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    count == 0
+                        ? 'Customer reviews will help improve products and trust.'
+                        : '${average.toStringAsFixed(1)} average rating across $count reviews.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.78),
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ReviewAdminMetric(
+                          label: 'Reviews',
+                          value: count.toString(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ReviewAdminMetric(
+                          label: 'Average',
+                          value: count == 0 ? '—' : average.toStringAsFixed(1),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ReviewAdminMetric(
+                          label: 'Review',
+                          value: needsAttention.toString(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            if (reviews.isEmpty)
+              const FarmEmptyState(
+                icon: Icons.reviews_outlined,
+                title: 'No customer reviews yet',
+                message:
+                    'Reviews will appear here after shoppers leave product feedback.',
+              )
+            else
+              ...reviews.take(50).map((review) => ReviewCard(review: review)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class ReviewAdminMetric extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const ReviewAdminMetric({
+    super.key,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.72),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -16798,23 +26906,6 @@ class AdminSupportTab extends StatelessWidget {
           },
         );
       },
-    );
-  }
-}
-
-class AdminReviewsTab extends StatelessWidget {
-  final int refreshKey;
-  const AdminReviewsTab({super.key, required this.refreshKey});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: [
-        const Header(title: 'Reviews', subtitle: 'Customer product feedback'),
-        const SizedBox(height: 16),
-        ReviewsList(refreshKey: refreshKey),
-      ],
     );
   }
 }
@@ -17033,7 +27124,7 @@ class _FarmSkeletonCardState extends State<FarmSkeletonCard>
     super.initState();
     controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 950),
     )..repeat(reverse: true);
   }
 
@@ -17043,21 +27134,86 @@ class _FarmSkeletonCardState extends State<FarmSkeletonCard>
     super.dispose();
   }
 
+  Widget _bar({double width = double.infinity, double height = 12}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: FarmColors.primarySoft.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(999),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isTall = widget.height >= 140;
+    final isCompact = widget.height < 126;
+    final showDetailBars = widget.height >= 160;
+    final padding = isCompact ? 10.0 : 12.0;
+    final imageSize = isTall ? 52.0 : (isCompact ? 30.0 : 38.0);
+    final bottomBarHeight = isCompact ? 12.0 : 16.0;
+
     return FadeTransition(
-      opacity: Tween<double>(begin: 0.45, end: 1).animate(controller),
+      opacity: Tween<double>(begin: 0.46, end: 1).animate(controller),
       child: Container(
         height: widget.height,
         margin: const EdgeInsets.only(bottom: 12),
+        padding: EdgeInsets.all(padding),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: FarmColors.line.withOpacity(0.72)),
           boxShadow: [
             BoxShadow(
-              color: FarmColors.shadow.withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
+              color: FarmColors.shadow.withOpacity(0.045),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: imageSize,
+                  width: imageSize,
+                  decoration: BoxDecoration(
+                    color: FarmColors.cardSoft,
+                    borderRadius: BorderRadius.circular(isCompact ? 14 : 18),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _bar(width: 118, height: isCompact ? 10 : 13),
+                      SizedBox(height: isCompact ? 6 : 9),
+                      _bar(width: 82, height: isCompact ? 8 : 10),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (showDetailBars) ...[
+              const SizedBox(height: 10),
+              _bar(width: double.infinity, height: 8),
+              const SizedBox(height: 6),
+              _bar(width: 140, height: 8),
+            ],
+            const Spacer(),
+            Row(
+              children: [
+                _bar(width: isCompact ? 66 : 82, height: bottomBarHeight),
+                const Spacer(),
+                _bar(width: isCompact ? 38 : 48, height: bottomBarHeight),
+              ],
             ),
           ],
         ),
@@ -17091,6 +27247,107 @@ class SkeletonList extends StatelessWidget {
   }
 }
 
+class ProductRailSkeleton extends StatelessWidget {
+  final int count;
+  final double height;
+  final double width;
+
+  const ProductRailSkeleton({
+    super.key,
+    this.count = 3,
+    this.height = 224,
+    this.width = 166,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        cacheExtent: AppPerformanceConfig.productRailCacheExtent,
+        itemCount: count,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (_, __) => SizedBox(
+          width: width,
+          child: FarmSkeletonCard(height: height),
+        ),
+      ),
+    );
+  }
+}
+
+class FarmErrorState extends StatelessWidget {
+  final String title;
+  final String message;
+  final VoidCallback? onRetry;
+
+  const FarmErrorState({
+    super.key,
+    this.title = 'Something went wrong',
+    required this.message,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      color: FarmColors.dangerSoft,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.75),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.wifi_off_rounded,
+                  color: FarmColors.danger,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.danger,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            style: const TextStyle(
+              color: FarmColors.danger,
+              height: 1.3,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (onRetry != null) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.restart_alt_rounded),
+              label: const Text('Try again'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class DiscountPriceText extends StatelessWidget {
   final Product product;
   final bool compact;
@@ -17110,7 +27367,7 @@ class DiscountPriceText extends StatelessWidget {
       style: TextStyle(
         fontSize: compact ? 14.8 : 26,
         fontWeight: FontWeight.w900,
-        color: FarmColors.green,
+        color: product.isOutOfStock ? FarmColors.mutedText : FarmColors.green,
       ),
     );
 
@@ -17398,16 +27655,11 @@ class ReadySoonProductTile extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                Container(
+                SizedBox(
                   height: 112,
                   width: 96,
-                  decoration: BoxDecoration(
-                    color: FarmColors.warningSoft.withOpacity(0.75),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: FarmColors.line),
-                  ),
-                  alignment: Alignment.center,
-                  child: ProductVisual(product: product, size: 58),
+                  child:
+                      Center(child: ProductVisual(product: product, size: 74)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -17675,16 +27927,10 @@ class _DealOfTheDaySectionState extends State<DealOfTheDaySection> {
                               ),
                             ),
                           ],
-                          if (featured.isLowStock) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              featured.lowStockLabel,
-                              style: const TextStyle(
-                                color: FarmColors.danger,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
+                          ProductAvailabilityChip(
+                            product: featured,
+                            compact: true,
+                          ),
                         ],
                       ),
                     ),
@@ -17723,8 +27969,25 @@ class SubscribeSaveButton extends StatefulWidget {
 
 class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
   bool loading = false;
-  bool subscribed = false;
+  bool checking = true;
+  CustomerProductSubscription? plan;
   int intervalDays = 7;
+
+  @override
+  void initState() {
+    super.initState();
+    loadPlan();
+  }
+
+  Future<void> loadPlan() async {
+    final existing = await fetchActiveSubscriptionForProduct(widget.product);
+    if (!mounted) return;
+    setState(() {
+      plan = existing;
+      intervalDays = existing?.intervalDays ?? 7;
+      checking = false;
+    });
+  }
 
   Future<void> subscribe() async {
     if (loading) return;
@@ -17734,14 +27997,40 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
         widget.product,
         intervalDays: intervalDays,
       );
+      final freshPlan = await fetchActiveSubscriptionForProduct(widget.product);
       if (!mounted) return;
-      setState(() => subscribed = true);
+      setState(() => plan = freshPlan);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(created
-              ? 'Subscribe & Save started for ${widget.product.name}.'
-              : 'You already have an active subscription for ${widget.product.name}.'),
+              ? 'Fresh Box Plan started for ${widget.product.name}.'
+              : 'You already have a Fresh Box Plan for ${widget.product.name}.'),
         ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> pausePlan() async {
+    final current = plan;
+    if (current == null || loading) return;
+    setState(() => loading = true);
+    try {
+      await updateCustomerSubscriptionStatus(
+        subscription: current,
+        status: 'paused',
+      );
+      await loadPlan();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fresh Box Plan paused.')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -17758,64 +28047,1078 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
   Widget build(BuildContext context) {
     if (!widget.product.hasSubscribeSave) return const SizedBox.shrink();
 
+    final activePlan = plan;
+    final isActive = activePlan?.isActive == true;
+    final isPaused = activePlan?.isPaused == true;
+    final discount =
+        widget.product.subscribeSavePercentValue.toStringAsFixed(0);
+
     return FarmCard(
       color: FarmColors.successSoft,
-      padding: EdgeInsets.all(widget.compact ? 10 : 14),
+      padding: EdgeInsets.all(widget.compact ? 12 : 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.repeat_outlined, color: FarmColors.success),
-              const SizedBox(width: 8),
+              Container(
+                height: 42,
+                width: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.event_repeat_outlined,
+                  color: FarmColors.success,
+                ),
+              ),
+              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Subscribe & Save ${widget.product.subscribeSavePercentValue.toStringAsFixed(0)}%',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isActive
+                          ? 'Fresh Box Plan active'
+                          : isPaused
+                              ? 'Fresh Box Plan paused'
+                              : 'Fresh Box Plan',
+                      style: const TextStyle(
+                        color: FarmColors.success,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isActive || isPaused
+                          ? '${activePlan!.repeatLabel} • ${activePlan.savingsLabel}'
+                          : 'Never miss your fresh picks. Save $discount% and repeat this item on your schedule.',
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (checking)
+            const LinearProgressIndicator(minHeight: 3)
+          else if (activePlan != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.72),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: FarmColors.success.withOpacity(0.12)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _PlanMetric(
+                      label: 'Next reminder',
+                      value: activePlan.nextOrderLabel,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: _PlanMetric(
+                      label: 'Repeat',
+                      value: activePlan.repeatLabel,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: loading || !isActive ? null : pausePlan,
+                    icon: const Icon(Icons.pause_circle_outline),
+                    label: const Text('Pause'),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: loading
+                        ? null
+                        : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const CustomerSubscriptionsScreen(),
+                              ),
+                            );
+                          },
+                    icon: const Icon(Icons.tune_outlined),
+                    label: const Text('Manage'),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              children: const [
+                _FreshPlanBenefit(
+                    icon: Icons.savings_outlined,
+                    label: 'Save on repeat orders'),
+                SizedBox(width: 8),
+                _FreshPlanBenefit(
+                    icon: Icons.pause_outlined, label: 'Pause anytime'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '${widget.product.formattedSubscribeSavePrice} per repeat order. You confirm before each order is placed.',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<int>(
+                    value: intervalDays,
+                    decoration:
+                        const InputDecoration(labelText: 'Repeat every'),
+                    items: const [
+                      DropdownMenuItem(value: 7, child: Text('Week')),
+                      DropdownMenuItem(value: 14, child: Text('2 weeks')),
+                      DropdownMenuItem(value: 30, child: Text('Month')),
+                    ],
+                    onChanged: loading
+                        ? null
+                        : (value) => setState(() => intervalDays = value ?? 7),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                ElevatedButton.icon(
+                  onPressed: loading ? null : subscribe,
+                  icon: loading
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.event_repeat_outlined),
+                  label: const Text('Start'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FreshPlanBenefit extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _FreshPlanBenefit({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.62),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: FarmColors.success, size: 15),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.success,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanMetric extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _PlanMetric({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: FarmColors.ink,
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class WeeklyBoxBuilderScreen extends StatefulWidget {
+  const WeeklyBoxBuilderScreen({super.key});
+
+  @override
+  State<WeeklyBoxBuilderScreen> createState() => _WeeklyBoxBuilderScreenState();
+}
+
+class _WeeklyBoxBuilderScreenState extends State<WeeklyBoxBuilderScreen> {
+  late Future<List<Product>> productsFuture;
+  final Set<String> selectedIds = <String>{};
+  int intervalDays = 7;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    productsFuture = fetchProducts(forceRefresh: true);
+  }
+
+  void toggleProduct(Product product) {
+    if (!canAddToWeeklyBox(product)) return;
+    final id = product.id.trim();
+    if (id.isEmpty) return;
+
+    setState(() {
+      if (!selectedIds.add(id)) {
+        selectedIds.remove(id);
+      }
+    });
+  }
+
+  Future<void> saveBox(List<Product> products) async {
+    if (saving) return;
+
+    final selectedProducts = products
+        .where((product) => selectedIds.contains(product.id))
+        .where(canAddToWeeklyBox)
+        .toList();
+
+    if (selectedProducts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose at least one available item.')),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      final count = await saveWeeklyBoxPlanProducts(
+        products: selectedProducts,
+        intervalDays: intervalDays,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Weekly Box saved with $count item${count == 1 ? '' : 's'}.')),
+      );
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('Build Weekly Box'),
+        backgroundColor: FarmColors.background,
+      ),
+      body: SafeArea(
+        top: false,
+        child: FutureBuilder<List<Product>>(
+          future: productsFuture,
+          builder: (context, snapshot) {
+            final products = (snapshot.data ?? const <Product>[])
+                .where(canAddToWeeklyBox)
+                .toList();
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return SkeletonList(count: 4, height: 132);
+            }
+
+            if (products.isEmpty) {
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 140),
+                children: const [
+                  FarmCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.inventory_2_outlined,
+                            size: 42, color: FarmColors.green),
+                        SizedBox(height: 12),
+                        Text(
+                          'No items ready for a Weekly Box',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Add available products in Admin first, then customers can build their weekly repeat box here.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+                    children: [
+                      FarmCard(
+                        color: FarmColors.successSoft,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  height: 44,
+                                  width: 44,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Icon(
+                                    Icons.inventory_2_outlined,
+                                    color: FarmColors.green,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Make your weekly box',
+                                        style: TextStyle(
+                                          color: FarmColors.ink,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'Pick the items you want repeated. You still confirm before each order.',
+                                        style: TextStyle(
+                                          color: FarmColors.mutedText,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.25,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            DropdownButtonFormField<int>(
+                              value: intervalDays,
+                              decoration: const InputDecoration(
+                                labelText: 'Repeat reminder',
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                    value: 7, child: Text('Every week')),
+                                DropdownMenuItem(
+                                    value: 14, child: Text('Every 2 weeks')),
+                                DropdownMenuItem(
+                                    value: 30, child: Text('Every month')),
+                              ],
+                              onChanged: saving
+                                  ? null
+                                  : (value) =>
+                                      setState(() => intervalDays = value ?? 7),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Choose items',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${products.length} available items can be added to your box.',
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: products.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.74,
+                        ),
+                        itemBuilder: (context, index) {
+                          final product = products[index];
+                          final selected = selectedIds.contains(product.id);
+                          return _WeeklyBoxProductTile(
+                            product: product,
+                            selected: selected,
+                            onTap: () => toggleProduct(product),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 110),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: FutureBuilder<List<Product>>(
+          future: productsFuture,
+          builder: (context, snapshot) {
+            final products = snapshot.data ?? const <Product>[];
+            final selectedProducts = products
+                .where((product) => selectedIds.contains(product.id))
+                .where(canAddToWeeklyBox)
+                .toList();
+            final selectedTotal = selectedProducts.fold<double>(
+              0,
+              (sum, product) => sum + product.effectivePrice,
+            );
+
+            return Container(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+              decoration: const BoxDecoration(
+                color: FarmColors.card,
+                border: Border(top: BorderSide(color: FarmColors.line)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${selectedProducts.length} selected',
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          formatJmd(selectedTotal),
+                          style: const TextStyle(
+                            color: FarmColors.green,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: saving || selectedProducts.isEmpty
+                        ? null
+                        : () => saveBox(products),
+                    icon: saving
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_circle_outline),
+                    label: Text(saving ? 'Saving' : 'Save Box'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _WeeklyBoxProductTile extends StatelessWidget {
+  final Product product;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _WeeklyBoxProductTile({
+    required this.product,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final discount = weeklyBoxDiscountForProduct(product);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: selected ? FarmColors.successSoft : FarmColors.card,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: selected
+                  ? FarmColors.green.withOpacity(0.55)
+                  : FarmColors.line,
+              width: selected ? 1.6 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: FarmColors.shadow.withOpacity(selected ? 0.10 : 0.045),
+                blurRadius: selected ? 18 : 12,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    height: 28,
+                    width: 28,
+                    decoration: BoxDecoration(
+                      color:
+                          selected ? FarmColors.green : FarmColors.lightGreen,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      selected ? Icons.check_rounded : Icons.add_rounded,
+                      size: 18,
+                      color: selected ? Colors.white : FarmColors.green,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (discount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: FarmColors.accentSoft,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${discount.toStringAsFixed(0)}% save',
+                        style: const TextStyle(
+                          color: FarmColors.warning,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Center(child: ProductVisual(product: product, size: 76)),
+              const SizedBox(height: 8),
+              Text(
+                product.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                product.formattedEffectivePrice,
+                style: const TextStyle(
+                  color: FarmColors.green,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                product.unit?.trim().isNotEmpty == true
+                    ? product.unit!.trim()
+                    : product.category,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class CustomerSubscriptionsScreen extends StatefulWidget {
+  const CustomerSubscriptionsScreen({super.key});
+
+  @override
+  State<CustomerSubscriptionsScreen> createState() =>
+      _CustomerSubscriptionsScreenState();
+}
+
+class _CustomerSubscriptionsScreenState
+    extends State<CustomerSubscriptionsScreen> {
+  late Future<List<CustomerProductSubscription>> plansFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    plansFuture = fetchCustomerProductSubscriptions();
+  }
+
+  Future<void> refreshPlans() async {
+    final future = fetchCustomerProductSubscriptions();
+    if (mounted) {
+      setState(() {
+        plansFuture = future;
+      });
+    }
+    await future;
+  }
+
+  Future<void> openWeeklyBoxBuilder() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const WeeklyBoxBuilderScreen()),
+    );
+
+    if (changed == true) {
+      await refreshPlans();
+    }
+  }
+
+  Widget buildWeeklyBoxBuilderCard({required bool hasPlans}) {
+    return FarmCard(
+      color: FarmColors.successSoft,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 46,
+            width: 46,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(17),
+            ),
+            child: const Icon(
+              Icons.inventory_2_outlined,
+              color: FarmColors.green,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasPlans ? 'Update your Weekly Box' : 'Build your Weekly Box',
                   style: const TextStyle(
-                    color: FarmColors.success,
+                    color: FarmColors.ink,
+                    fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${widget.product.formattedSubscribeSavePrice} per repeat order. Cancel anytime.',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: intervalDays,
-                  decoration: const InputDecoration(labelText: 'Repeat every'),
-                  items: const [
-                    DropdownMenuItem(value: 7, child: Text('Week')),
-                    DropdownMenuItem(value: 14, child: Text('2 weeks')),
-                    DropdownMenuItem(value: 30, child: Text('Month')),
-                  ],
-                  onChanged: loading || subscribed
-                      ? null
-                      : (value) => setState(() => intervalDays = value ?? 7),
+                const SizedBox(height: 4),
+                const Text(
+                  'Choose multiple fresh items and get a reminder before each repeat order.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton.icon(
-                onPressed: loading || subscribed ? null : subscribe,
-                icon: loading
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(subscribed ? Icons.check_circle : Icons.repeat),
-                label: Text(subscribed ? 'Active' : 'Start'),
-              ),
-            ],
+                const SizedBox(height: 10),
+                ElevatedButton.icon(
+                  onPressed: openWeeklyBoxBuilder,
+                  icon: const Icon(Icons.add_shopping_cart_outlined),
+                  label:
+                      Text(hasPlans ? 'Edit Weekly Box' : 'Start Weekly Box'),
+                ),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> updateStatus(
+    CustomerProductSubscription plan,
+    String status,
+  ) async {
+    try {
+      await updateCustomerSubscriptionStatus(
+          subscription: plan, status: status);
+      await refreshPlans();
+      if (!mounted) return;
+      final label = status == 'cancelled'
+          ? 'cancelled'
+          : status == 'paused'
+              ? 'paused'
+              : 'resumed';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Weekly Box item $label.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Future<void> changeSchedule(CustomerProductSubscription plan) async {
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: FarmColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Change repeat schedule',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: const Icon(Icons.calendar_view_week_outlined),
+                  title: const Text('Every week'),
+                  onTap: () => Navigator.pop(context, 7),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.calendar_view_month_outlined),
+                  title: const Text('Every 2 weeks'),
+                  onTap: () => Navigator.pop(context, 14),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.event_repeat_outlined),
+                  title: const Text('Every month'),
+                  onTap: () => Navigator.pop(context, 30),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null) return;
+
+    try {
+      await updateCustomerSubscriptionSchedule(
+        subscription: plan,
+        intervalDays: selected,
+      );
+      await refreshPlans();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Schedule changed to ${repeatIntervalLabel(selected).toLowerCase()}.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('Weekly Box'),
+        backgroundColor: FarmColors.background,
+        actions: [
+          IconButton(
+            tooltip: 'Build Weekly Box',
+            onPressed: openWeeklyBoxBuilder,
+            icon: const Icon(Icons.add_box_outlined),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        top: false,
+        child: RefreshIndicator(
+          onRefresh: refreshPlans,
+          child: FutureBuilder<List<CustomerProductSubscription>>(
+            future: plansFuture,
+            builder: (context, snapshot) {
+              final plans = snapshot.data ?? [];
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return SkeletonList(count: 3, height: 116);
+              }
+
+              if (plans.isEmpty) {
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                  children: [
+                    buildWeeklyBoxBuilderCard(hasPlans: false),
+                    const SizedBox(height: 12),
+                    const FarmCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.event_repeat_outlined,
+                              size: 42, color: FarmColors.green),
+                          SizedBox(height: 12),
+                          Text(
+                            'No weekly items yet',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'Pick the fresh items you want in your weekly box. You stay in control and confirm before each repeat order.',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                itemCount: plans.length + 1,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return buildWeeklyBoxBuilderCard(hasPlans: true);
+                  }
+                  final plan = plans[index - 1];
+                  final isActive = plan.isActive;
+                  final statusColor =
+                      isActive ? FarmColors.success : FarmColors.warning;
+
+                  return FarmCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              height: 44,
+                              width: 44,
+                              decoration: BoxDecoration(
+                                color: statusColor.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Icon(
+                                isActive
+                                    ? Icons.event_available_outlined
+                                    : Icons.pause_circle_outline,
+                                color: statusColor,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    plan.productName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '${plan.repeatLabel} • ${plan.savingsLabel}',
+                                    style: const TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Chip(
+                              label: Text(isActive
+                                  ? 'Active'
+                                  : friendlyLabel(plan.status)),
+                              backgroundColor: statusColor.withOpacity(0.10),
+                              labelStyle: TextStyle(
+                                color: statusColor,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: FarmColors.cardSoft,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: FarmColors.line),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _PlanMetric(
+                                  label: 'Next reminder',
+                                  value: plan.nextOrderLabel,
+                                ),
+                              ),
+                              Expanded(
+                                child: _PlanMetric(
+                                  label: 'Repeat',
+                                  value: plan.repeatLabel,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => changeSchedule(plan),
+                              icon: const Icon(Icons.tune_outlined),
+                              label: const Text('Change'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => updateStatus(
+                                plan,
+                                isActive ? 'paused' : 'active',
+                              ),
+                              icon: Icon(isActive
+                                  ? Icons.pause_circle_outline
+                                  : Icons.play_circle_outline),
+                              label: Text(isActive ? 'Pause' : 'Resume'),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => updateStatus(plan, 'cancelled'),
+                              icon: const Icon(Icons.cancel_outlined),
+                              label: const Text('Cancel'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -18161,76 +29464,9 @@ class ProductDetailScreen extends StatelessWidget {
         : parts.join(' • ');
   }
 
-  String get farmerLine {
-    final farmer = (product.farmerName ?? '').trim();
-    return farmer.isEmpty ? 'Verified The Harvest Place Ja seller' : farmer;
-  }
-
-  String storageTip() {
-    final text = '${product.name} ${product.category}'.toLowerCase();
-
-    if (text.contains('lettuce') ||
-        text.contains('callaloo') ||
-        text.contains('herb') ||
-        text.contains('leaf')) {
-      return 'Keep chilled, lightly wrapped, and use within a few days for best freshness.';
-    }
-
-    if (text.contains('egg')) {
-      return 'Keep refrigerated and store in the carton until ready to use.';
-    }
-
-    if (text.contains('yam') ||
-        text.contains('potato') ||
-        text.contains('pumpkin') ||
-        text.contains('plantain') ||
-        text.contains('banana')) {
-      return 'Store in a cool, dry place away from direct sunlight.';
-    }
-
-    if (text.contains('honey')) {
-      return 'Store sealed at room temperature. Natural crystallization is normal.';
-    }
-
-    return 'Store in a cool place and use while fresh for the best flavor.';
-  }
-
-  String recipeIdea() {
-    final text = '${product.name} ${product.category}'.toLowerCase();
-
-    if (text.contains('callaloo')) {
-      return 'Steam with onion, thyme, sweet pepper, and a little coconut oil.';
-    }
-
-    if (text.contains('lettuce')) {
-      return 'Use in fresh salads, wraps, sandwiches, or as a crisp side.';
-    }
-
-    if (text.contains('egg')) {
-      return 'Great for breakfast, baking, fried rice, or protein-rich meal prep.';
-    }
-
-    if (text.contains('pumpkin')) {
-      return 'Perfect for soup, roasted sides, porridge, or vegetable stews.';
-    }
-
-    if (text.contains('pepper')) {
-      return 'Add to soups, sauces, seasoning blends, or stir-fried vegetables.';
-    }
-
-    if (text.contains('fruit') ||
-        text.contains('banana') ||
-        text.contains('pineapple') ||
-        text.contains('mango')) {
-      return 'Enjoy fresh, blend into smoothies, or add to breakfast bowls.';
-    }
-
-    return 'Add it to your weekly farm box and pair with other fresh local items.';
-  }
-
   Widget badge({
-    required IconData icon,
     required String label,
+    IconData? icon,
     Color color = FarmColors.green,
   }) {
     return Container(
@@ -18238,62 +29474,21 @@ class ProductDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withOpacity(0.10),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.08)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: color),
-          const SizedBox(width: 6),
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+          ],
           Text(
             label,
             style: TextStyle(
               color: color,
               fontWeight: FontWeight.w900,
               fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget detailTile({
-    required IconData icon,
-    required String title,
-    required String value,
-  }) {
-    return FarmCard(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            backgroundColor: FarmColors.lightGreen,
-            foregroundColor: FarmColors.primary,
-            child: Icon(icon, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: FarmColors.muted,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    height: 1.25,
-                  ),
-                ),
-              ],
             ),
           ),
         ],
@@ -18408,10 +29603,11 @@ class ProductDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unit = (product.unit ?? '').trim();
     final inStock = product.canAddToCart;
+    final unit = (product.unit ?? '').trim();
+    final bottomSafePadding = MediaQuery.of(context).viewPadding.bottom;
     final screenWidth = MediaQuery.of(context).size.width;
-    final detailImageHeight = screenWidth < 380 ? 300.0 : 340.0;
+    final detailImageHeight = screenWidth < 380 ? 228.0 : 260.0;
 
     return Scaffold(
       backgroundColor: FarmColors.background,
@@ -18422,55 +29618,24 @@ class ProductDetailScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(18, 18, 18, 128 + bottomSafePadding),
           children: [
-            Container(
-              decoration: BoxDecoration(
+            ClipRRect(
+              borderRadius: BorderRadius.circular(30),
+              child: Container(
                 color: FarmColors.surface,
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(
-                    color: FarmColors.shadow.withOpacity(0.07),
-                    blurRadius: 24,
-                    offset: const Offset(0, 12),
+                padding: const EdgeInsets.all(14),
+                child: Hero(
+                  tag: 'product-${product.id}',
+                  child: productImagePreviewFromUrl(
+                    imageUrl: product.imageUrl,
+                    height: detailImageHeight,
                   ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
-                    child: Row(
-                      children: [
-                        badge(
-                          icon: Icons.eco_outlined,
-                          label: 'Farm Fresh',
-                          color: FarmColors.green,
-                        ),
-                        const SizedBox(width: 8),
-                        if (product.isOrganic)
-                          badge(
-                            icon: Icons.eco_outlined,
-                            label: 'Organic',
-                            color: FarmColors.green,
-                          ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 10, 18, 20),
-                    child: Hero(
-                      tag: 'product-${product.id}',
-                      child: productImagePreviewFromUrl(
-                        imageUrl: product.imageUrl,
-                        height: detailImageHeight,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             FarmCard(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -18495,34 +29660,48 @@ class ProductDetailScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(
                     description,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 15,
                       height: 1.42,
                       color: FarmColors.mutedText,
                     ),
                   ),
                   const SizedBox(height: 14),
-                  ProductTrustBadges(product: product, compact: false),
-                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
                       badge(
-                          icon: Icons.category_outlined,
-                          label: product.category),
-                      badge(
-                        icon: Icons.inventory_2_outlined,
-                        label: inStock
-                            ? '${product.stockQuantity} in stock'
-                            : 'Out of stock',
-                        color: inStock ? FarmColors.green : FarmColors.error,
+                        label: productFreshnessLabel(product),
+                        icon: Icons.speed_outlined,
+                        color: productFreshnessColor(product),
                       ),
+                      if (product.isOrganic)
+                        badge(
+                          label: 'Organic',
+                          icon: Icons.eco_outlined,
+                          color: FarmColors.green,
+                        ),
                       badge(
+                        label: product.originLabel,
                         icon: productOriginIcon(product),
-                        label: productUnitOriginLabel(product),
                         color: productOriginColor(product),
                       ),
+                      badge(
+                        label: product.category,
+                        icon: Icons.category_outlined,
+                      ),
+                      if (unit.isNotEmpty)
+                        badge(
+                          label: unit,
+                          icon: Icons.straighten_outlined,
+                        ),
+                      if (product.isOutOfStock)
+                        badge(
+                          label: 'Out of stock',
+                          icon: Icons.block_outlined,
+                          color: FarmColors.danger,
+                        ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -18532,20 +29711,58 @@ class ProductDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             FreshnessScoreCard(product: product),
-            if (product.isLowStock) ...[
+            const SizedBox(height: 14),
+            ProductTraceStoryCard(product: product),
+            if (product.isOutOfStock) ...[
               const SizedBox(height: 14),
               FarmCard(
                 color: FarmColors.dangerSoft,
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Icon(Icons.notifications_active_outlined,
+                        color: FarmColors.danger),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Currently unavailable',
+                            style: TextStyle(
+                              color: FarmColors.danger,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'We’ll let you know when this item is back in stock.',
+                            style: TextStyle(
+                              color: FarmColors.danger,
+                              fontWeight: FontWeight.w700,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (product.isLowStock) ...[
+              const SizedBox(height: 14),
+              FarmCard(
+                color: FarmColors.warningSoft,
+                child: Row(
                   children: [
                     const Icon(Icons.local_fire_department_outlined,
-                        color: FarmColors.danger),
-                    const SizedBox(width: 10),
+                        color: FarmColors.warning),
+                    const SizedBox(width: 9),
                     Expanded(
                       child: Text(
                         '${product.lowStockLabel} — order soon while this batch lasts.',
                         style: const TextStyle(
-                          color: FarmColors.danger,
+                          color: FarmColors.warning,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -18574,28 +29791,11 @@ class ProductDetailScreen extends StatelessWidget {
               onViewMyBox: onViewMyBox,
               onCheckout: onCheckout,
             ),
-            const SizedBox(height: 14),
-            detailTile(
-              icon: Icons.storefront_outlined,
-              title: 'Grown by',
-              value: '$farmerLine\n$farmLine',
-            ),
-            const SizedBox(height: 12),
-            detailTile(
-              icon: Icons.kitchen_outlined,
-              title: 'Storage tip',
-              value: storageTip(),
-            ),
-            const SizedBox(height: 12),
-            detailTile(
-              icon: Icons.restaurant_menu_outlined,
-              title: 'Recipe idea',
-              value: recipeIdea(),
-            ),
           ],
         ),
       ),
       bottomNavigationBar: SafeArea(
+        top: false,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -18681,206 +29881,180 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unit = (product.unit ?? '').trim();
     final inStock = product.canAddToCart;
+    final muted = product.isOutOfStock;
 
-    return InkWell(
-      onTap: () {
-        onViewed?.call();
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ProductDetailScreen(
-              product: product,
-              quantity: quantity,
-              onAdd: onIncrease ?? onAdd,
-              onRemove: onDecrease ?? onRemove,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          onViewed?.call();
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ProductDetailScreen(
+                product: product,
+                quantity: quantity,
+                onAdd: onIncrease ?? onAdd,
+                onRemove: onDecrease ?? onRemove,
+              ),
             ),
+          );
+        },
+        borderRadius: BorderRadius.circular(24),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: muted ? FarmColors.cardSoft : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: muted
+                  ? FarmColors.danger.withOpacity(0.13)
+                  : FarmColors.line.withOpacity(0.88),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: FarmColors.shadow.withOpacity(muted ? 0.025 : 0.055),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        );
-      },
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [
-            BoxShadow(
-              color: FarmColors.shadow.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Center(
-                    child: Hero(
-                      tag: 'product-${product.id}',
-                      child: ProductVisual(
-                        product: product,
-                        size: 58,
-                      ),
-                    ),
-                  ),
-                  if (onFavorite != null)
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: onFavorite,
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.9),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            isFavorite ? Icons.favorite : Icons.favorite_border,
-                            size: 18,
-                            color: isFavorite
-                                ? FarmColors.danger
-                                : FarmColors.green,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              product.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if ((product.farmName ?? '').trim().isNotEmpty ||
-                (product.parish ?? '').trim().isNotEmpty) ...[
-              const SizedBox(height: 3),
-              Text(
-                'Grown by ${[
-                  product.farmName,
-                  product.parish
-                ].where((item) => (item ?? '').trim().isNotEmpty).join(' • ')}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: FarmColors.green,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-            const SizedBox(height: 6),
-            if (product.isLowStock) ...[
-              const SizedBox(height: 6),
-              Text(
-                product.lowStockLabel,
-                style: const TextStyle(
-                  color: FarmColors.danger,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
+          child: Opacity(
+            opacity: muted ? 0.82 : 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color:
-                        inStock ? FarmColors.lightGreen : FarmColors.dangerSoft,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    inStock
-                        ? '${product.stockQuantity} in stock'
-                        : 'Out of stock',
-                    style: TextStyle(
-                      fontSize: 10.8,
-                      fontWeight: FontWeight.w900,
-                      color: inStock ? FarmColors.green : FarmColors.danger,
-                    ),
-                  ),
-                ),
-                ProductUnitOriginChip(product: product),
-              ],
-            ),
-            const SizedBox(height: 8),
-            DiscountPriceText(product: product, compact: true),
-            const SizedBox(height: 10),
-            if (quantity <= 0)
-              inStock
-                  ? SizedBox(
-                      height: 36,
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: onAdd,
-                        icon: const Icon(Icons.add, size: 16),
-                        label:
-                            const Text('Add', style: TextStyle(fontSize: 13)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: FarmColors.primary,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                Expanded(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned.fill(
+                        child: Center(
+                          child: Hero(
+                            tag: 'product-${product.id}',
+                            child: ProductVisual(product: product, size: 76),
                           ),
                         ),
                       ),
-                    )
-                  : NotifyMeWhenReadyButton(product: product, compact: true)
-            else
-              Container(
-                height: 36,
-                decoration: BoxDecoration(
-                  color: FarmColors.lightGreen,
-                  borderRadius: BorderRadius.circular(14),
+                      if (product.hasActiveDiscount && !product.isOutOfStock)
+                        Positioned(
+                          top: 5,
+                          left: 5,
+                          child: DiscountBadge(product: product, compact: true),
+                        ),
+                      if (onFavorite != null)
+                        Positioned(
+                          top: 5,
+                          right: 5,
+                          child: SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: Material(
+                              color: isFavorite
+                                  ? FarmColors.dangerSoft
+                                  : Colors.white.withOpacity(0.94),
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: onFavorite,
+                                child: Icon(
+                                  isFavorite
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  size: 18,
+                                  color: isFavorite
+                                      ? FarmColors.danger
+                                      : FarmColors.green,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                child: Row(
+                const SizedBox(height: 8),
+                _HomeProductName(product: product, compact: true),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 5,
                   children: [
-                    Expanded(
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: onDecrease ?? onRemove,
-                        icon: const Icon(Icons.remove, size: 18),
-                        color: FarmColors.green,
-                      ),
+                    ProductOriginBadge(
+                      product: product,
+                      compact: true,
+                      includeIcon: false,
                     ),
-                    Text(
-                      '$quantity',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: FarmColors.green,
-                      ),
-                    ),
-                    Expanded(
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: inStock ? (onIncrease ?? onAdd) : null,
-                        icon: const Icon(Icons.add, size: 18),
-                        color: FarmColors.green,
-                      ),
-                    ),
+                    ProductUnitChip(product: product, compact: true),
                   ],
                 ),
-              ),
-          ],
+                const SizedBox(height: 5),
+                _HomePricePanel(product: product, compact: true),
+                ProductAvailabilityChip(product: product, compact: true),
+                const SizedBox(height: 8),
+                if (quantity <= 0)
+                  inStock
+                      ? SizedBox(
+                          height: 38,
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: onAdd,
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('Add'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: FarmColors.primary,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: EdgeInsets.zero,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                          ),
+                        )
+                      : NotifyMeWhenReadyButton(product: product, compact: true)
+                else
+                  Container(
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: FarmColors.lightGreen,
+                      borderRadius: BorderRadius.circular(15),
+                      border:
+                          Border.all(color: FarmColors.green.withOpacity(0.10)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: onDecrease ?? onRemove,
+                            icon: const Icon(Icons.remove, size: 18),
+                            color: FarmColors.green,
+                          ),
+                        ),
+                        Text(
+                          '$quantity',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: FarmColors.green,
+                          ),
+                        ),
+                        Expanded(
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: inStock ? (onIncrease ?? onAdd) : null,
+                            icon: const Icon(Icons.add, size: 18),
+                            color: FarmColors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -18938,18 +30112,13 @@ class ProductVisual extends StatelessWidget {
     final visualSize = size + (size >= 70 ? 24 : 18);
 
     Widget fallbackVisual() {
-      return Container(
+      return SizedBox(
         height: visualSize,
         width: visualSize,
-        decoration: BoxDecoration(
-          color: FarmColors.chipBackground,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: FarmColors.line),
-        ),
         child: Icon(
           Icons.image_outlined,
           size: (size * 0.58).clamp(18.0, 44.0).toDouble(),
-          color: FarmColors.mutedText,
+          color: FarmColors.mutedText.withOpacity(0.72),
         ),
       );
     }
@@ -18959,13 +30128,10 @@ class ProductVisual extends StatelessWidget {
     if (imageUrl == null) {
       visualContent = fallbackVisual();
     } else {
-      visualContent = ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          height: visualSize,
-          width: visualSize,
-          color: FarmColors.cardSoft,
-          alignment: Alignment.center,
+      visualContent = SizedBox(
+        height: visualSize,
+        width: visualSize,
+        child: Center(
           child: Image.network(
             imageUrl,
             height: visualSize,
@@ -18976,19 +30142,11 @@ class ProductVisual extends StatelessWidget {
             filterQuality: FilterQuality.medium,
             loadingBuilder: (context, child, progress) {
               if (progress == null) return child;
-              return Container(
-                height: visualSize,
-                width: visualSize,
-                decoration: BoxDecoration(
-                  color: FarmColors.chipBackground,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Center(
-                  child: SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+              return const Center(
+                child: SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               );
             },
@@ -18996,6 +30154,10 @@ class ProductVisual extends StatelessWidget {
           ),
         ),
       );
+    }
+
+    if (product.isOutOfStock) {
+      visualContent = Opacity(opacity: 0.58, child: visualContent);
     }
 
     if (!showOrganicBadge) return visualContent;
@@ -19026,25 +30188,45 @@ class MiniProduct extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 100,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Column(
-        children: [
-          ProductVisual(product: product, size: 46),
-          const SizedBox(height: 8),
-          Text(
-            product.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+    final muted = product.isOutOfStock;
+
+    return Opacity(
+      opacity: muted ? 0.82 : 1,
+      child: Container(
+        width: 128,
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: muted ? FarmColors.cardSoft : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: muted
+                ? FarmColors.danger.withOpacity(0.13)
+                : FarmColors.line.withOpacity(0.80),
           ),
-          DiscountPriceText(product: product, compact: true),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: FarmColors.shadow.withOpacity(muted ? 0.025 : 0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 76,
+              width: double.infinity,
+              child: Center(child: ProductVisual(product: product, size: 60)),
+            ),
+            const SizedBox(height: 8),
+            _HomeProductName(product: product, compact: true),
+            const SizedBox(height: 6),
+            _HomePricePanel(product: product, compact: true),
+            ProductAvailabilityChip(product: product, compact: true),
+          ],
+        ),
       ),
     );
   }
@@ -19162,6 +30344,21 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
+Color categoryAccentColorForName(String category) {
+  final lower = category.trim().toLowerCase();
+
+  if (lower.contains('fruit')) return FarmColors.danger;
+  if (lower.contains('ground')) return FarmColors.warning;
+  if (lower.contains('herb')) return FarmColors.olive;
+  if (lower.contains('egg')) return FarmColors.gold;
+  if (lower.contains('honey')) return FarmColors.warning;
+  if (lower.contains('dairy')) return FarmColors.primaryDark;
+  if (lower.contains('drink')) return FarmColors.primary;
+  if (lower.contains('prepared')) return FarmColors.accent;
+
+  return FarmColors.green;
+}
+
 class CategoryPill extends StatelessWidget {
   final Product? previewProduct;
   final IconData fallbackIcon;
@@ -19180,45 +30377,139 @@ class CategoryPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labelText = count == null ? label : '$label • $count available';
+    final cleanCount = count ?? 0;
+    final countText = cleanCount == 1
+        ? '1 item'
+        : cleanCount > 1
+            ? '$cleanCount items'
+            : 'Browse items';
     final imageUrl = cleanHostedImageUrl(previewProduct?.imageUrl);
+    final accent = categoryAccentColorForName(label);
 
-    Widget avatar() {
-      if (imageUrl == null) {
-        return Icon(fallbackIcon, size: 20, color: FarmColors.green);
-      }
+    Widget preview() {
+      final fallback = Icon(
+        fallbackIcon,
+        size: 24,
+        color: accent,
+      );
 
-      return ClipOval(
-        child: Container(
-          height: 32,
-          width: 32,
-          color: FarmColors.cardSoft,
-          alignment: Alignment.center,
-          child: Image.network(
-            imageUrl,
-            height: 32,
-            width: 32,
-            fit: BoxFit.contain,
-            cacheWidth: 96,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) =>
-                Icon(fallbackIcon, size: 20, color: FarmColors.green),
-          ),
+      if (imageUrl == null) return fallback;
+
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.network(
+          imageUrl,
+          height: 44,
+          width: 44,
+          fit: BoxFit.contain,
+          cacheWidth: 140,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => fallback,
         ),
       );
     }
 
-    return ActionChip(
-      avatar: avatar(),
-      label: Text(
-        labelText,
-        style: const TextStyle(fontWeight: FontWeight.w800),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Ink(
+          height: 70,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                Colors.white,
+                FarmColors.primarySoft.withOpacity(0.50),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: FarmColors.line.withOpacity(0.86)),
+            boxShadow: [
+              BoxShadow(
+                color: FarmColors.shadow.withOpacity(0.045),
+                blurRadius: 14,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.09),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                alignment: Alignment.center,
+                child: preview(),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 13.2,
+                        fontWeight: FontWeight.w900,
+                        height: 1.05,
+                        letterSpacing: -0.08,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.86),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        countText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 10.8,
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                height: 26,
+                width: 26,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.90),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  color: accent,
+                  size: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      onPressed: onTap,
-      backgroundColor: FarmColors.chipBackground,
-      side: const BorderSide(color: FarmColors.border),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     );
   }
 }
@@ -19344,8 +30635,40 @@ class OrderSuccessScreen extends StatelessWidget {
   });
 
   String get shortOrderId {
-    if (orderId.length <= 6) return orderId;
+    if (orderId.length <= 6) return orderId.toUpperCase();
     return orderId.substring(0, 6).toUpperCase();
+  }
+
+  Widget _receiptRow(String label, String value, {bool strong = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: strong ? FarmColors.ink : FarmColors.mutedText,
+                fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: strong ? FarmColors.green : FarmColors.ink,
+                fontSize: strong ? 18 : 14,
+                fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -19353,67 +30676,153 @@ class OrderSuccessScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: FarmColors.background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const Spacer(),
-              Container(
-                height: 110,
-                width: 110,
-                decoration: const BoxDecoration(
-                  color: FarmColors.green,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 34),
+          children: [
+            const SizedBox(height: 18),
+            Center(
+              child: Container(
+                height: 118,
+                width: 118,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [FarmColors.green, FarmColors.primaryDark],
+                  ),
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: FarmColors.green.withOpacity(0.22),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
                 ),
                 child: const Icon(
-                  Icons.check,
+                  Icons.check_rounded,
                   color: Colors.white,
-                  size: 62,
+                  size: 68,
                 ),
               ),
-              const SizedBox(height: 28),
-              const Text(
-                'Order placed successfully!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
+            ),
+            const SizedBox(height: 28),
+            const Text(
+              'Order sent to the farm',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 30,
+                height: 1.02,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.6,
               ),
-              const SizedBox(height: 12),
-              Text(
-                'Order #$shortOrderId has been sent to the farm.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 16,
-                ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'We received your order and will keep you updated as it moves through the harvest workflow.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 15,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Total: J\$${total.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: FarmColors.green,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+            ),
+            const SizedBox(height: 24),
+            FarmCard(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        height: 42,
+                        width: 42,
+                        decoration: BoxDecoration(
+                          color: FarmColors.lightGreen,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.receipt_long_outlined,
+                          color: FarmColors.green,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Order #$shortOrderId',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              'Receipt and tracking are available in Orders.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _receiptRow('Status', 'Received'),
+                  _receiptRow('Review', 'Farm review'),
+                  const Divider(height: 22),
+                  _receiptRow('Total', formatJmd(total), strong: true),
+                ],
               ),
-              const Spacer(),
-              PrimaryFarmButton(
-                label: 'View My Orders',
-                onPressed: () {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: FarmColors.accentSoft.withOpacity(0.78),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: FarmColors.accent.withOpacity(0.18)),
               ),
-              const SizedBox(height: 14),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
-                child: const Text('Back to app'),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.notifications_active_outlined,
+                      color: FarmColors.warning),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Tip: keep notifications on so you know when your order is ready for pickup or delivery.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        height: 1.32,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 28),
+            PrimaryFarmButton(
+              label: 'View My Orders',
+              onPressed: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+              icon: const Icon(Icons.storefront_outlined),
+              label: const Text('Continue shopping'),
+            ),
+          ],
         ),
       ),
     );
@@ -19646,6 +31055,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> placeOrder() async {
+    // Prevent double taps from creating duplicate checkout attempts.
+    if (loading) return;
+
     if (!isLoggedIn) {
       final allowed = await requireLoginForCheckout(context);
       if (!mounted || !allowed) return;
@@ -19701,6 +31113,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    if (mounted) setState(() => loading = true);
+
     SecureCartQuote secureQuote;
     try {
       secureQuote = await fetchSecureCartQuote(widget.cartLines);
@@ -19708,6 +31122,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
       widget.onInventoryChanged?.call();
+      if (mounted) setState(() => loading = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -19718,8 +31133,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
       return;
     }
-
-    setState(() => loading = true);
 
     try {
       final signedInUser = supabase.auth.currentUser;
@@ -19862,7 +31275,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       try {
         await supabase.from('orders').update(orderMetadata).eq('id', orderId);
       } catch (error) {
-        debugPrint('Checkout metadata update skipped: $error');
+        farmDebugLog('Checkout metadata update skipped: $error');
       }
 
       await ensureStockReducedAfterCheckout(
@@ -19948,6 +31361,205 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } finally {
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  int get checkoutItemCount {
+    return widget.cartLines.fold<int>(0, (sum, line) => sum + line.quantity);
+  }
+
+  String get checkoutItemLabel {
+    if (checkoutItemCount == 1) return '1 item';
+    return '$checkoutItemCount items';
+  }
+
+  String get checkoutFulfillmentHint {
+    if (fulfillmentType == 'delivery') {
+      return 'Delivery • $deliveryZone • $scheduledDateText at $scheduledTimeText';
+    }
+    return 'Farm Pickup • $scheduledDateText at $scheduledTimeText';
+  }
+
+  Widget _checkoutHeroCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [FarmColors.primaryDark, FarmColors.primary],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.green.withOpacity(0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 42,
+                width: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.verified_user_outlined,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Secure farm checkout',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '$checkoutItemLabel ready for review. Stock is checked again before your order is sent to the farm.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.88),
+              height: 1.34,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _checkoutTrustPill(Icons.inventory_2_outlined, 'Stock checked'),
+              _checkoutTrustPill(Icons.receipt_long_outlined, 'Clear total'),
+              _checkoutTrustPill(
+                  Icons.notifications_active_outlined, 'Order updates'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _checkoutTrustPill(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _checkoutLineItem(CartLine line) {
+    final lineTotal = line.product.effectivePrice * line.quantity;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FarmColors.line.withOpacity(0.72)),
+      ),
+      child: Row(
+        children: [
+          ProductVisual(product: line.product, size: 46),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  line.product.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${line.quantity} × ${formatJmd(line.product.effectivePrice)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            formatJmd(lineTotal),
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _checkoutSummaryBanner() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: FarmColors.lightGreen.withOpacity(0.68),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FarmColors.green.withOpacity(0.10)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.event_available_outlined, color: FarmColors.green),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              checkoutFulfillmentHint,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _checkoutRow(String label, String value, {bool strong = false}) {
@@ -20061,10 +31673,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
           children: [
-            const Header(
-              title: 'Checkout',
-              subtitle: 'Complete your farm order',
-            ),
+            _checkoutHeroCard(),
             const SizedBox(height: 18),
             FarmCard(
               child: Column(
@@ -20078,13 +31687,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         'Check your items and total before placing the order.',
                   ),
                   const SizedBox(height: 12),
-                  ...widget.cartLines.map(
-                    (line) => _checkoutRow(
-                      '${line.product.name} x ${line.quantity}',
-                      'J\$${(line.product.effectivePrice * line.quantity).toStringAsFixed(2)}',
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                  ...widget.cartLines.map(_checkoutLineItem),
+                  _checkoutSummaryBanner(),
+                  const SizedBox(height: 14),
                   _checkoutRow(
                     'Subtotal',
                     'J\$${widget.subtotal.toStringAsFixed(2)}',
@@ -20207,7 +31812,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               ? FarmColors.warning
                               : FarmColors.green,
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 9),
                         Expanded(
                           child: Text(
                             fulfillmentType == 'delivery'
@@ -20538,15 +32143,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              ElevatedButton(
-                onPressed: loading ? null : placeOrder,
+              ElevatedButton.icon(
+                onPressed:
+                    loading || widget.cartLines.isEmpty ? null : placeOrder,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: FarmColors.primary,
                   foregroundColor: Colors.white,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
                 ),
-                child: Text(loading ? 'Placing...' : 'Place Order'),
+                icon: loading
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.lock_outline, size: 17),
+                label: Text(loading ? 'Placing...' : 'Place Order'),
               ),
             ],
           ),
@@ -20598,6 +32217,11 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     super.dispose();
   }
 
+  bool get hasName => nameController.text.trim().isNotEmpty;
+  bool get hasPhone => phoneController.text.trim().isNotEmpty;
+  bool get hasAddress => addressController.text.trim().isNotEmpty;
+  bool get isCheckoutReady => hasName && hasPhone;
+
   Future<void> saveProfile() async {
     final name = nameController.text.trim();
     final phone = phoneController.text.trim();
@@ -20619,17 +32243,129 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile saved')),
+        const SnackBar(content: Text('Profile saved for faster checkout.')),
       );
-      Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save profile: $error')),
+        SnackBar(
+            content:
+                Text('Could not save profile: ${friendlyAppError(error)}')),
       );
     } finally {
       if (mounted) setState(() => saving = false);
     }
+  }
+
+  Future<void> copyProfileSummary() async {
+    final name = nameController.text.trim();
+    final phone = phoneController.text.trim();
+    final address = addressController.text.trim();
+    final parts = <String>[
+      if (name.isNotEmpty) 'Name: $name',
+      if (phone.isNotEmpty) 'Phone: $phone',
+      if (address.isNotEmpty) 'Address: $address',
+    ];
+
+    if (parts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add your details before copying.')),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: parts.join('\n')));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile summary copied.')),
+    );
+  }
+
+  Widget _readinessPill({
+    required IconData icon,
+    required String label,
+    required bool ready,
+  }) {
+    final color = ready ? FarmColors.success : FarmColors.warning;
+    final background = ready ? FarmColors.successSoft : FarmColors.warningSoft;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _profileBenefit({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: FarmColors.lightGreen,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: FarmColors.green, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -20642,59 +32378,231 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
       );
     }
 
+    final readyCount = [hasName, hasPhone, hasAddress].where((v) => v).length;
+    final readinessText = isCheckoutReady
+        ? 'Checkout ready'
+        : 'Add name and phone to speed up checkout';
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
-        title: const Text('Customer Profile'),
+        title: const Text('Profile'),
         backgroundColor: FarmColors.background,
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(18),
-              children: [
-                const Header(
-                  title: 'Profile',
-                  subtitle: 'Saved contact & delivery info',
-                ),
-                const SizedBox(height: 16),
-                FarmCard(
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Full name',
-                          prefixIcon: Icon(Icons.person_outline),
-                        ),
+          ? const SkeletonList(count: 3)
+          : SafeArea(
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [FarmColors.deepGreen, FarmColors.green],
                       ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: phoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Phone number',
-                          prefixIcon: Icon(Icons.phone_outlined),
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: FarmColors.green.withOpacity(0.22),
+                          blurRadius: 26,
+                          offset: const Offset(0, 14),
                         ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: addressController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Default delivery address',
-                          prefixIcon: Icon(Icons.location_on_outlined),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.16),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.18),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.person_outline,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 11, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.14),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '$readyCount/3 saved',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 18),
+                        const Text(
+                          'Your checkout profile',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          readinessText,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.88),
+                            fontSize: 14.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _readinessPill(
+                              icon: Icons.badge_outlined,
+                              label: hasName ? 'Name saved' : 'Name needed',
+                              ready: hasName,
+                            ),
+                            _readinessPill(
+                              icon: Icons.phone_outlined,
+                              label: hasPhone ? 'Phone saved' : 'Phone needed',
+                              ready: hasPhone,
+                            ),
+                            _readinessPill(
+                              icon: Icons.location_on_outlined,
+                              label: hasAddress
+                                  ? 'Address saved'
+                                  : 'Address optional',
+                              ready: hasAddress,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 18),
-                PrimaryFarmButton(
-                  label: saving ? 'Saving...' : 'Save Profile',
-                  onPressed: saving ? null : saveProfile,
-                ),
-              ],
+                  const SizedBox(height: 18),
+                  FarmCard(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const AccountSectionHeading(
+                          title: 'Saved details',
+                          subtitle:
+                              'Used to prefill checkout and help the farm contact you about orders.',
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: nameController,
+                          textCapitalization: TextCapitalization.words,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Full name',
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: phoneController,
+                          keyboardType: TextInputType.phone,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Phone number',
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: addressController,
+                          maxLines: 3,
+                          textCapitalization: TextCapitalization.sentences,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Default delivery address',
+                            alignLabelWithHint: true,
+                            prefixIcon: Icon(Icons.location_on_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FarmCard(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const AccountSectionHeading(
+                          title: 'Why save this?',
+                          subtitle:
+                              'Small details that make ordering smoother.',
+                        ),
+                        const SizedBox(height: 14),
+                        _profileBenefit(
+                          icon: Icons.flash_on_outlined,
+                          title: 'Faster checkout',
+                          subtitle:
+                              'Your name, phone, and address can be reused when placing orders.',
+                        ),
+                        const SizedBox(height: 10),
+                        _profileBenefit(
+                          icon: Icons.support_agent_outlined,
+                          title: 'Better order help',
+                          subtitle:
+                              'The farm can contact the right person if pickup or delivery details need confirming.',
+                        ),
+                        const SizedBox(height: 10),
+                        _profileBenefit(
+                          icon: Icons.privacy_tip_outlined,
+                          title: 'Private to your account',
+                          subtitle:
+                              'Only signed-in account tools and protected checkout flows use these details.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  PrimaryFarmButton(
+                    label: saving ? 'Saving...' : 'Save Profile',
+                    busyLabel: 'Saving profile...',
+                    icon: Icons.save_outlined,
+                    onPressed: saving ? null : saveProfile,
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.copy_outlined),
+                    label: const Text('Copy profile summary'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 15, horizontal: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    onPressed: copyProfileSummary,
+                  ),
+                ],
+              ),
             ),
     );
   }
@@ -20967,28 +32875,28 @@ class SecurityAuditScreen extends StatelessWidget {
         title: 'Authentication',
         status: 'Active',
         detail:
-            'Supabase Auth is used for sign-in, registration, password reset, and protected app access.',
+            'Account sign-in, registration, password reset, and protected access are active.',
         icon: Icons.lock_outline,
       ),
       SecurityAuditItem(
         title: 'Admin access',
         status: 'Review',
         detail:
-            'Admin access checks exist. For production, move fully to the admin_users table and remove hardcoded fallback emails.',
+            'Admin access is checked through the approved admin list. Confirm backend rules also enforce admin-only actions.',
         icon: Icons.admin_panel_settings_outlined,
       ),
       SecurityAuditItem(
         title: 'Customer data',
         status: 'Active',
         detail:
-            'Customer profile, order, support, and notification data should remain protected by Supabase Row Level Security policies.',
+            'Customer profile, order, support, and notification data should remain protected by backend security rules.',
         icon: Icons.privacy_tip_outlined,
       ),
       SecurityAuditItem(
         title: 'Checkout safety',
         status: 'Active',
         detail:
-            'Checkout now uses a secure server RPC so order creation, item inserts, stock reduction, payouts, loyalty, and the order notification happen together.',
+            'Checkout uses a secure server flow so order creation, item inserts, stock reduction, payouts, loyalty, and order notification stay together.',
         icon: Icons.verified_outlined,
       ),
       SecurityAuditItem(
@@ -20999,17 +32907,17 @@ class SecurityAuditScreen extends StatelessWidget {
         icon: Icons.notifications_active_outlined,
       ),
       SecurityAuditItem(
-        title: 'Production readiness',
-        status: 'Next step',
+        title: 'Security readiness',
+        status: 'Review',
         detail:
-            'Before launch, confirm RLS policies for products, orders, customers, support_tickets, notifications, admin_users, and product_reviews.',
+            'Before launch, confirm backend rules for products, orders, customers, support, notifications, admins, and reviews.',
         icon: Icons.shield_outlined,
       ),
     ];
 
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(title: const Text('Security Audit')),
+      appBar: AppBar(title: const Text('Security Review')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
@@ -21065,8 +32973,9 @@ class SecurityAuditScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                   ),
                   SizedBox(height: 10),
-                  Text('• Enable strict Supabase RLS policies.'),
-                  Text('• Remove hardcoded admin fallback emails.'),
+                  Text('• Enable strict backend security rules.'),
+                  Text(
+                      '• Confirm only approved accounts have admin access.'),
                   Text('• Rotate keys if they were exposed publicly.'),
                   Text(
                       '• Confirm refund, privacy, and terms pages are visible.'),
@@ -21233,6 +33142,354 @@ class PolicySection extends StatelessWidget {
           Text(
             body,
             style: TextStyle(height: 1.45, color: FarmColors.text),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TrustCenterScreen extends StatelessWidget {
+  const TrustCenterScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('Trust Center'),
+        backgroundColor: FarmColors.background,
+      ),
+      body: FarmPage(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
+          children: const [
+            Header(
+              title: 'Trust Center',
+              subtitle: 'Everything customers need to feel confident.',
+            ),
+            SizedBox(height: 16),
+            TrustCenterHeroCard(),
+            SizedBox(height: 16),
+            TrustCenterSection(
+              title: 'How your order works',
+              subtitle:
+                  'Simple, clear, and checked before it reaches the farm.',
+              items: [
+                TrustCenterItem(
+                  icon: Icons.shopping_basket_outlined,
+                  title: 'Build your box',
+                  body:
+                      'Browse fresh products, add available items to My Box, and review everything before checkout.',
+                ),
+                TrustCenterItem(
+                  icon: Icons.fact_check_outlined,
+                  title: 'Stock is checked again',
+                  body:
+                      'Before an order is sent, the app checks product availability again so customers do not order unavailable items.',
+                ),
+                TrustCenterItem(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Clear order tracking',
+                  body:
+                      'After checkout, customers can view the order status, payment status, items, notes, pickup, or delivery details.',
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            TrustCenterSection(
+              title: 'Freshness & fulfillment',
+              subtitle: 'What customers can expect from pickup and delivery.',
+              items: [
+                TrustCenterItem(
+                  icon: Icons.eco_outlined,
+                  title: 'Fresh local-first shopping',
+                  body:
+                      'Products can show freshness, origin, organic status, unit size, stock level, and out-of-stock status clearly.',
+                ),
+                TrustCenterItem(
+                  icon: Icons.local_shipping_outlined,
+                  title: 'Pickup or delivery clarity',
+                  body:
+                      'Checkout shows fulfillment details and totals so customers know what they are ordering and how it will reach them.',
+                ),
+                TrustCenterItem(
+                  icon: Icons.support_agent_outlined,
+                  title: 'Support is built in',
+                  body:
+                      'Customers can contact support about orders, delivery, payment, product requests, or other help topics.',
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            TrustCenterSection(
+              title: 'Account protection',
+              subtitle:
+                  'The app uses role-based controls for safer operations.',
+              items: [
+                TrustCenterItem(
+                  icon: Icons.admin_panel_settings_outlined,
+                  title: 'Admin-only tools stay protected',
+                  body:
+                      'Inventory, reports, fulfillment, hero uploads, launch checks, and health tools are only available to approved admin accounts.',
+                ),
+                TrustCenterItem(
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Customer data has a purpose',
+                  body:
+                      'Saved profile details, orders, favorites, support, reviews, and alerts are used to improve checkout, service, and order updates.',
+                ),
+                TrustCenterItem(
+                  icon: Icons.notifications_active_outlined,
+                  title: 'Updates are useful, not noisy',
+                  body:
+                      'Order and stock notifications are targeted to the right user and include duplicate protection for a cleaner customer experience.',
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            TrustCenterLaunchNote(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TrustCenterHeroCard extends StatelessWidget {
+  const TrustCenterHeroCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [FarmColors.deepGreen, FarmColors.green],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.12),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(
+              Icons.verified_user_outlined,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Shop with confidence',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'The Harvest Place Ja is designed around clear products, safe checkout, order tracking, support, and protected admin operations.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.90),
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              TrustHeroPill(label: 'Stock checked'),
+              TrustHeroPill(label: 'Order updates'),
+              TrustHeroPill(label: 'Support built in'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TrustHeroPill extends StatelessWidget {
+  final String label;
+
+  const TrustHeroPill({super.key, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class TrustCenterItem {
+  final IconData icon;
+  final String title;
+  final String body;
+
+  const TrustCenterItem({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+}
+
+class TrustCenterSection extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final List<TrustCenterItem> items;
+
+  const TrustCenterSection({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            subtitle,
+            style: TextStyle(color: FarmColors.mutedText, height: 1.35),
+          ),
+          const SizedBox(height: 16),
+          ...items.map((item) => TrustCenterItemTile(item: item)),
+        ],
+      ),
+    );
+  }
+}
+
+class TrustCenterItemTile extends StatelessWidget {
+  final TrustCenterItem item;
+
+  const TrustCenterItemTile({super.key, required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: BoxDecoration(
+              color: FarmColors.lightGreen,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: Icon(item.icon, color: FarmColors.green, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  style: const TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  item.body,
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    height: 1.35,
+                    fontSize: 13.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TrustCenterLaunchNote extends StatelessWidget {
+  const TrustCenterLaunchNote({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: BoxDecoration(
+              color: FarmColors.accentSoft,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.workspace_premium_outlined,
+                color: FarmColors.warning),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Launch confidence note',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Before sharing widely, place one real test order, tap both customer and admin notifications, confirm image uploads, and check Admin → Launch and Admin → Health.',
+                  style: TextStyle(color: FarmColors.mutedText, height: 1.35),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -21485,6 +33742,30 @@ class AdminFarmerManagementTab extends StatelessWidget {
   const AdminFarmerManagementTab(
       {super.key, required this.refreshKey, required this.onChanged});
 
+  Color _statusColor(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'approved':
+        return FarmColors.green;
+      case 'rejected':
+        return FarmColors.danger;
+      default:
+        return FarmColors.warning;
+    }
+  }
+
+  int _statusPriority(FarmerProfile farmer) {
+    switch (farmer.verificationStatus.trim().toLowerCase()) {
+      case 'pending':
+        return 0;
+      case 'rejected':
+        return 1;
+      case 'approved':
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
   Future<void> setStatus(
       BuildContext context, FarmerProfile farmer, String status) async {
     try {
@@ -21505,6 +33786,233 @@ class AdminFarmerManagementTab extends StatelessWidget {
     }
   }
 
+  Widget _summaryCard({
+    required int total,
+    required int approved,
+    required int pending,
+    required int rejected,
+  }) {
+    return FarmCard(
+      padding: const EdgeInsets.all(18),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [FarmColors.deepGreen, FarmColors.green],
+          ),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.24)),
+                  ),
+                  child:
+                      const Icon(Icons.handshake_outlined, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Farmer partner network',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        pending > 0
+                            ? '$pending farmer application${pending == 1 ? '' : 's'} need review before products go live.'
+                            : 'Farmer applications are under control. Keep approved farms ready for fresh listings.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.86),
+                          fontWeight: FontWeight.w700,
+                          height: 1.28,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _AdminFarmerSummaryPill(label: '$total farmers'),
+                _AdminFarmerSummaryPill(label: '$approved approved'),
+                _AdminFarmerSummaryPill(label: '$pending pending'),
+                if (rejected > 0)
+                  _AdminFarmerSummaryPill(label: '$rejected rejected'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _farmerCard(BuildContext context, FarmerProfile farmer) {
+    final color = _statusColor(farmer.verificationStatus);
+    final hasPayout = farmer.payoutMethod.trim().isNotEmpty;
+    final hasPhone = farmer.phone.trim().isNotEmpty;
+    final readyText = farmer.isApproved
+        ? 'Approved marketplace partner'
+        : farmer.verificationStatus == 'rejected'
+            ? 'Rejected application'
+            : 'Needs admin review';
+
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.10),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withOpacity(0.20)),
+                ),
+                child: Icon(Icons.agriculture_outlined, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      farmer.farmName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: FarmColors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${farmer.farmerName} • ${farmer.parish}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Chip(
+                backgroundColor: color.withOpacity(0.10),
+                label: Text(
+                  farmer.statusLabel,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          if (farmer.bio.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              farmer.bio,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontWeight: FontWeight.w600,
+                height: 1.28,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: FarmColors.background,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: Column(
+              children: [
+                TraceRow(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Review status',
+                  value: readyText,
+                ),
+                TraceRow(
+                  icon: Icons.phone_outlined,
+                  title: 'Phone',
+                  value: hasPhone ? farmer.phone : 'Missing phone',
+                ),
+                TraceRow(
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: 'Payout',
+                  value:
+                      hasPayout ? farmer.payoutMethod : 'Payout method missing',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.check_circle_outline, size: 18),
+                label: const Text('Approve'),
+                onPressed:
+                    farmer.verificationStatus.trim().toLowerCase() == 'approved'
+                        ? null
+                        : () => setStatus(context, farmer, 'approved'),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.pause_circle_outline, size: 18),
+                label: const Text('Pending'),
+                onPressed:
+                    farmer.verificationStatus.trim().toLowerCase() == 'pending'
+                        ? null
+                        : () => setStatus(context, farmer, 'pending'),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.cancel_outlined, size: 18),
+                label: const Text('Reject'),
+                onPressed:
+                    farmer.verificationStatus.trim().toLowerCase() == 'rejected'
+                        ? null
+                        : () => setStatus(context, farmer, 'rejected'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<FarmerProfile>>(
@@ -21515,106 +34023,98 @@ class AdminFarmerManagementTab extends StatelessWidget {
           return const SizedBox.expand(child: SkeletonList(count: 3));
         }
         final farmers = snapshot.data ?? [];
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
-          children: [
-            const Header(
-                title: 'Farmer Management',
-                subtitle: 'Approve Jamaican farmers and farms'),
-            const SizedBox(height: 16),
-            if (farmers.isEmpty)
-              const FarmEmptyState(
-                icon: Icons.agriculture_outlined,
-                title: 'No farmer applications',
-                message:
-                    'Farmer applications will appear here after users register as farmers and complete onboarding.',
-              )
-            else
-              ...farmers.map((farmer) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: FarmCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: FarmColors.lightGreen,
-                                child: const Icon(Icons.agriculture_outlined,
-                                    color: FarmColors.green),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(farmer.farmName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                        '${farmer.farmerName} • ${farmer.parish}',
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis),
-                                    if (farmer.bio.isNotEmpty) ...[
-                                      const SizedBox(height: 6),
-                                      Text(farmer.bio,
-                                          maxLines: 3,
-                                          overflow: TextOverflow.ellipsis),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              Chip(label: Text(farmer.statusLabel)),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          TraceRow(
-                              icon: Icons.phone_outlined,
-                              title: 'Phone',
-                              value: farmer.phone),
-                          TraceRow(
-                              icon: Icons.account_balance_wallet_outlined,
-                              title: 'Payout',
-                              value: farmer.payoutMethod.isEmpty
-                                  ? 'Not provided'
-                                  : farmer.payoutMethod),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.check_circle_outline),
-                                label: const Text('Approve'),
-                                onPressed: () =>
-                                    setStatus(context, farmer, 'approved'),
-                              ),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.pause_circle_outline),
-                                label: const Text('Pending'),
-                                onPressed: () =>
-                                    setStatus(context, farmer, 'pending'),
-                              ),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.cancel_outlined),
-                                label: const Text('Reject'),
-                                onPressed: () =>
-                                    setStatus(context, farmer, 'rejected'),
-                              ),
-                            ],
-                          ),
-                        ],
+        final approved = farmers.where((f) => f.isApproved).length;
+        final pending = farmers
+            .where(
+                (f) => f.verificationStatus.trim().toLowerCase() == 'pending')
+            .length;
+        final rejected = farmers
+            .where(
+                (f) => f.verificationStatus.trim().toLowerCase() == 'rejected')
+            .length;
+        final ordered = [...farmers]..sort((a, b) {
+            final statusCompare =
+                _statusPriority(a).compareTo(_statusPriority(b));
+            if (statusCompare != 0) return statusCompare;
+            return a.farmName.toLowerCase().compareTo(b.farmName.toLowerCase());
+          });
+
+        return RefreshIndicator(
+          onRefresh: () async => onChanged(),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              const Header(
+                title: 'Farmer partners',
+                subtitle: 'Approve farms and protect marketplace quality',
+              ),
+              const SizedBox(height: 16),
+              _summaryCard(
+                total: farmers.length,
+                approved: approved,
+                pending: pending,
+                rejected: rejected,
+              ),
+              const SizedBox(height: 16),
+              if (farmers.isEmpty)
+                const FarmEmptyState(
+                  icon: Icons.agriculture_outlined,
+                  title: 'No farmer applications',
+                  message:
+                      'Farmer applications will appear here after users register as farmers and complete onboarding.',
+                )
+              else ...[
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Applications and partners',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: FarmColors.ink,
+                        ),
                       ),
                     ),
-                  )),
-          ],
+                    Chip(label: Text('${ordered.length} total')),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ...ordered.map((farmer) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _farmerCard(context, farmer),
+                    )),
+              ],
+            ],
+          ),
         );
       },
+    );
+  }
+}
+
+class _AdminFarmerSummaryPill extends StatelessWidget {
+  final String label;
+  const _AdminFarmerSummaryPill({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.20)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
     );
   }
 }
@@ -21624,6 +34124,428 @@ class AdminPayoutsTab extends StatelessWidget {
   final VoidCallback onChanged;
   const AdminPayoutsTab(
       {super.key, required this.refreshKey, required this.onChanged});
+
+  Color _statusColor(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'released':
+        return FarmColors.green;
+      case 'held':
+        return FarmColors.warning;
+      case 'disputed':
+        return FarmColors.danger;
+      default:
+        return FarmColors.gold;
+    }
+  }
+
+  int _statusPriority(FarmerPayout payout) {
+    switch (payout.payoutStatus.trim().toLowerCase()) {
+      case 'pending':
+        return 0;
+      case 'held':
+        return 1;
+      case 'disputed':
+        return 2;
+      case 'released':
+        return 3;
+      default:
+        return 4;
+    }
+  }
+
+  Widget _statusPill(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.11),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.22)),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: color,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _payoutMetric({
+    required IconData icon,
+    required String title,
+    required String value,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.18)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: Colors.white, size: 19),
+            const SizedBox(height: 9),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.78),
+                fontSize: 10.8,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _payoutSummaryCard({
+    required double pending,
+    required double released,
+    required double held,
+    required int pendingCount,
+    required int totalCount,
+  }) {
+    final reviewText = pendingCount == 0
+        ? 'No payout releases waiting right now.'
+        : '$pendingCount payout ${pendingCount == 1 ? 'record needs' : 'records need'} review before release.';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF214B31),
+            Color(0xFF2F6B45),
+            Color(0xFF4F8A5B),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.green.withOpacity(0.18),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.18)),
+                ),
+                child: const Icon(Icons.payments_outlined,
+                    color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Payout control center',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      reviewText,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontSize: 12.5,
+                        height: 1.28,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _statusPill(totalCount == 0 ? 'Setup' : 'Live', Colors.white),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _payoutMetric(
+                icon: Icons.pending_actions_outlined,
+                title: 'Pending',
+                value: formatJmd(pending),
+                color: FarmColors.gold,
+              ),
+              const SizedBox(width: 10),
+              _payoutMetric(
+                icon: Icons.verified_outlined,
+                title: 'Released',
+                value: formatJmd(released),
+                color: FarmColors.green,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _payoutMetric(
+                icon: Icons.pause_circle_outline,
+                title: 'Held',
+                value: formatJmd(held),
+                color: FarmColors.warning,
+              ),
+              const SizedBox(width: 10),
+              _payoutMetric(
+                icon: Icons.receipt_long_outlined,
+                title: 'Records',
+                value: '$totalCount',
+                color: Colors.white,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _payoutGuideCard(int pendingCount) {
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      color: pendingCount > 0 ? FarmColors.accentSoft : FarmColors.primarySoft,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            pendingCount > 0
+                ? Icons.task_alt_outlined
+                : Icons.verified_user_outlined,
+            color: pendingCount > 0 ? FarmColors.warning : FarmColors.green,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  pendingCount > 0
+                      ? 'Review before release'
+                      : 'Payouts are under control',
+                  style: TextStyle(
+                    color: pendingCount > 0
+                        ? FarmColors.warning
+                        : FarmColors.green,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  pendingCount > 0
+                      ? 'Confirm the order was completed and payment is safe before releasing farmer earnings.'
+                      : 'New payout rows will appear here after paid marketplace order items are ready to release.',
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _elitePayoutCard(BuildContext context, FarmerPayout payout) {
+    final status = payout.payoutStatus.trim().toLowerCase();
+    final statusColor = _statusColor(status);
+    final shortOrder = payout.orderId.trim().isEmpty
+        ? 'No order'
+        : '#${shortIdLabel(payout.orderId)}';
+    final method = payout.payoutMethod.trim().isEmpty
+        ? 'Method not set'
+        : _friendlyStatus(payout.payoutMethod);
+    final reference = payout.payoutReference.trim().isEmpty
+        ? 'No reference yet'
+        : payout.payoutReference.trim();
+
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: statusColor.withOpacity(0.18)),
+                ),
+                child: Icon(Icons.account_balance_wallet_outlined,
+                    color: statusColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      shortOrder,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: FarmColors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Created ${formatCustomerDateTime(payout.createdAt)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _statusPill(_friendlyStatus(status), statusColor),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: FarmColors.background,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: Column(
+              children: [
+                TraceRow(
+                  icon: Icons.shopping_bag_outlined,
+                  title: 'Gross sale',
+                  value: formatJmd(payout.grossAmount),
+                ),
+                TraceRow(
+                  icon: Icons.savings_outlined,
+                  title: 'Platform share',
+                  value: formatJmd(payout.commissionAmount),
+                ),
+                TraceRow(
+                  icon: Icons.payments_outlined,
+                  title: 'Farmer payout',
+                  value: formatJmd(payout.netAmount),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(
+                avatar: const Icon(Icons.account_balance_outlined, size: 16),
+                label: Text(method),
+              ),
+              Chip(
+                avatar: const Icon(Icons.tag_outlined, size: 16),
+                label: Text(reference),
+              ),
+            ],
+          ),
+          if (onChanged != null) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: status == 'released'
+                      ? null
+                      : () async {
+                          await updateFarmerPayoutStatus(
+                              payoutId: payout.id, status: 'released');
+                          onChanged.call();
+                        },
+                  icon: const Icon(Icons.verified_outlined, size: 18),
+                  label: const Text('Release'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: status == 'held'
+                      ? null
+                      : () async {
+                          await updateFarmerPayoutStatus(
+                              payoutId: payout.id, status: 'held');
+                          onChanged.call();
+                        },
+                  icon: const Icon(Icons.pause_circle_outline, size: 18),
+                  label: const Text('Hold'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: status == 'disputed'
+                      ? null
+                      : () async {
+                          await updateFarmerPayoutStatus(
+                              payoutId: payout.id, status: 'disputed');
+                          onChanged.call();
+                        },
+                  icon: const Icon(Icons.report_problem_outlined, size: 18),
+                  label: const Text('Dispute'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21635,50 +34557,83 @@ class AdminPayoutsTab extends StatelessWidget {
           return const SizedBox.expand(child: SkeletonList(count: 3));
         }
         final payouts = snapshot.data ?? [];
-        final pending = payouts
-            .where((p) => p.payoutStatus == 'pending')
-            .fold<double>(0, (sum, p) => sum + p.netAmount);
-        final released = payouts
-            .where((p) => p.payoutStatus == 'released')
-            .fold<double>(0, (sum, p) => sum + p.netAmount);
-        final held = payouts
-            .where((p) => p.payoutStatus == 'held')
-            .fold<double>(0, (sum, p) => sum + p.netAmount);
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
-          children: [
-            const Header(
-                title: 'Farmer Payouts',
-                subtitle: 'Admin releases farmer earnings'),
-            const SizedBox(height: 16),
-            Wrap(spacing: 10, runSpacing: 10, children: [
-              MarketplaceStatCard(
-                  icon: Icons.pending_actions,
-                  label: 'Pending',
-                  value: 'J\$${pending.toStringAsFixed(2)}'),
-              MarketplaceStatCard(
-                  icon: Icons.verified_outlined,
-                  label: 'Released',
-                  value: 'J\$${released.toStringAsFixed(2)}'),
-              MarketplaceStatCard(
-                  icon: Icons.pause_circle_outline,
-                  label: 'Held',
-                  value: 'J\$${held.toStringAsFixed(2)}'),
-            ]),
-            const SizedBox(height: 16),
-            if (payouts.isEmpty)
-              const FarmEmptyState(
-                icon: Icons.payments_outlined,
-                title: 'No farmer payouts yet',
-                message:
-                    'Payout records will appear here after marketplace order item payout rows are created.',
-              )
-            else
-              ...payouts.map((payout) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: PayoutCard(payout: payout, onChanged: onChanged),
-                  )),
-          ],
+        final pendingPayouts = payouts
+            .where((p) => p.payoutStatus.trim().toLowerCase() == 'pending')
+            .toList();
+        final releasedPayouts = payouts
+            .where((p) => p.payoutStatus.trim().toLowerCase() == 'released')
+            .toList();
+        final heldPayouts = payouts
+            .where((p) => p.payoutStatus.trim().toLowerCase() == 'held')
+            .toList();
+        final pending =
+            pendingPayouts.fold<double>(0, (sum, p) => sum + p.netAmount);
+        final released =
+            releasedPayouts.fold<double>(0, (sum, p) => sum + p.netAmount);
+        final held = heldPayouts.fold<double>(0, (sum, p) => sum + p.netAmount);
+        final ordered = [...payouts]..sort((a, b) {
+            final statusCompare =
+                _statusPriority(a).compareTo(_statusPriority(b));
+            if (statusCompare != 0) return statusCompare;
+            final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bDate.compareTo(aDate);
+          });
+
+        return RefreshIndicator(
+          onRefresh: () async => onChanged(),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              const Header(
+                title: 'Farmer payouts',
+                subtitle: 'Release earnings with confidence',
+              ),
+              const SizedBox(height: 16),
+              _payoutSummaryCard(
+                pending: pending,
+                released: released,
+                held: held,
+                pendingCount: pendingPayouts.length,
+                totalCount: payouts.length,
+              ),
+              const SizedBox(height: 14),
+              _payoutGuideCard(pendingPayouts.length),
+              const SizedBox(height: 16),
+              if (payouts.isEmpty)
+                const FarmEmptyState(
+                  icon: Icons.payments_outlined,
+                  title: 'No farmer payouts yet',
+                  message:
+                      'Payout records will appear here after marketplace order item payout rows are created.',
+                )
+              else ...[
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Payout queue',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: FarmColors.ink,
+                        ),
+                      ),
+                    ),
+                    _statusPill('${ordered.length} records', FarmColors.green),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ...ordered.map(
+                  (payout) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _elitePayoutCard(context, payout),
+                  ),
+                ),
+              ],
+            ],
+          ),
         );
       },
     );
@@ -21689,38 +34644,74 @@ class FarmEmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
+  final String? actionLabel;
+  final IconData? actionIcon;
+  final VoidCallback? onAction;
+  final bool compact;
 
   const FarmEmptyState({
     super.key,
     required this.icon,
     required this.title,
     required this.message,
+    this.actionLabel,
+    this.actionIcon,
+    this.onAction,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return FarmCard(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 18),
+        padding: EdgeInsets.symmetric(vertical: compact ? 10 : 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 42, color: FarmColors.green),
-            const SizedBox(height: 12),
+            Container(
+              height: compact ? 52 : 64,
+              width: compact ? 52 : 64,
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                shape: BoxShape.circle,
+                border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+              ),
+              child: Icon(
+                icon,
+                size: compact ? 26 : 32,
+                color: FarmColors.green,
+              ),
+            ),
+            SizedBox(height: compact ? 10 : 14),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: compact ? 16 : 19,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.2,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 7),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: FarmColors.mutedText),
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                height: 1.35,
+                fontSize: compact ? 13 : 14.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
+            if (actionLabel != null && onAction != null) ...[
+              SizedBox(height: compact ? 12 : 16),
+              ElevatedButton.icon(
+                onPressed: onAction,
+                icon: Icon(actionIcon ?? Icons.arrow_forward_rounded, size: 18),
+                label: Text(actionLabel!),
+              ),
+            ],
           ],
         ),
       ),

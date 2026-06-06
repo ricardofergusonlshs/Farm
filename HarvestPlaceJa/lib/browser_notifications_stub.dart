@@ -7,6 +7,6 @@ void showBrowserNotification({
   required String body,
   String? tag,
 }) {
-  // Browser notifications are web-only.
-  // This empty version allows Android release builds to compile safely.
+  // Browser notifications are only available on web.
+  // Android builds use this safe no-op implementation.
 }

@@ -25,13 +25,11 @@
                 android:name="flutter_deeplinking_enabled"
                 android:value="true" />
 
-            <!-- App launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Supabase password reset deep link -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -43,7 +41,6 @@
                     android:host="reset-password" />
             </intent-filter>
 
-            <!-- Supabase email confirmation deep link -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 

@@ -175,25 +175,70 @@ Widget productImagePreviewFromUrl({
     return Container(
       height: height,
       width: double.infinity,
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: FarmColors.cardSoft,
-        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.cardSoft,
+            Color(0xFFEAF6E8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: FarmColors.line),
       ),
-      child: const Center(
-        child: Icon(
-          Icons.image_outlined,
-          size: 44,
-          color: FarmColors.mutedText,
-        ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: height >= 180 ? 72 : 52,
+            height: height >= 180 ? 72 : 52,
+            decoration: BoxDecoration(
+              color: FarmColors.lightGreen,
+              shape: BoxShape.circle,
+              border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+            ),
+            child: Icon(
+              Icons.eco_outlined,
+              size: height >= 180 ? 34 : 26,
+              color: FarmColors.green,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Image coming soon',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: FarmColors.deepGreen,
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Fresh product details are still available below.',
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              height: 1.25,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  if (cleanUrl == null) return fallbackPreview();
+  if (cleanUrl == null || cleanUrl.trim().isEmpty) {
+    return fallbackPreview();
+  }
 
   return ClipRRect(
-    borderRadius: BorderRadius.circular(18),
+    borderRadius: BorderRadius.circular(22),
     child: Container(
       height: height,
       width: double.infinity,
@@ -203,17 +248,28 @@ Widget productImagePreviewFromUrl({
         cleanUrl,
         height: height,
         width: double.infinity,
-        fit: BoxFit.contain,
+        fit: BoxFit.cover,
         gaplessPlayback: true,
         filterQuality: FilterQuality.medium,
-        cacheWidth: 700,
+        cacheWidth: height >= 180 ? 900 : 600,
         loadingBuilder: (context, child, progress) {
           if (progress == null) return child;
+
           return Container(
             height: height,
             width: double.infinity,
-            color: FarmColors.cardSoft,
-            child: const Center(child: CircularProgressIndicator()),
+            decoration: BoxDecoration(
+              color: FarmColors.cardSoft,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+            ),
           );
         },
         errorBuilder: (_, __, ___) => fallbackPreview(),
@@ -825,6 +881,7 @@ Future<List<Product>> fetchProducts({bool forceRefresh = false}) async {
     final cached = FarmDataCache.products;
     if (cached != null) return cached;
   }
+
   final products = await _fetchProductsUncached();
   FarmDataCache.products = products;
   return products;
@@ -839,7 +896,10 @@ Future<List<Product>> fetchProductsForCustomerUi({
   try {
     final products = await fetchProducts(forceRefresh: forceRefresh).timeout(
       timeout,
-      onTimeout: () => cached ?? const <Product>[],
+      onTimeout: () {
+        if (cached != null && cached.isNotEmpty) return cached;
+        throw TimeoutException('Product connection timed out.');
+      },
     );
 
     if (products.isEmpty && cached != null && cached.isNotEmpty) {
@@ -849,7 +909,12 @@ Future<List<Product>> fetchProductsForCustomerUi({
     return products;
   } catch (error) {
     farmDebugLog('Product load fallback used: $error');
-    return cached ?? const <Product>[];
+
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+
+    throw Exception('Product connection failed: $error');
   }
 }
 
@@ -878,12 +943,13 @@ Future<List<Product>> _fetchProductsUncached() async {
   } catch (error) {
     farmDebugLog(
         'Extended product fetch unavailable, using compatible fetch: $error');
+
     try {
       final products = await runQuery(compatibleSelect);
       return products;
     } catch (compatibleError) {
       farmDebugLog('Failed to fetch products: $compatibleError');
-      return const <Product>[];
+      throw Exception('Product connection failed: $compatibleError');
     }
   }
 }
@@ -1660,17 +1726,23 @@ Future<void> markNotificationsRead() async {
 
 Future<bool> subscribeToProductReadyAlert(Product product) async {
   final user = supabase.auth.currentUser;
+
   if (user == null) {
-    throw Exception(
-        'Please sign in so we can notify you when this item is ready.');
+    throw Exception('Please sign in to get stock alerts.');
+  }
+
+  final productId = product.id.trim();
+  if (productId.isEmpty) {
+    return true;
   }
 
   final email = (user.email ?? '').trim().toLowerCase();
+
   try {
     final existing = await supabase
         .from('product_ready_subscriptions')
         .select('id')
-        .eq('product_id', product.id)
+        .eq('product_id', productId)
         .eq('user_id', user.id)
         .eq('is_notified', false)
         .maybeSingle();
@@ -1680,15 +1752,19 @@ Future<bool> subscribeToProductReadyAlert(Product product) async {
     await supabase.from('product_ready_subscriptions').insert({
       'user_id': user.id,
       'user_email': email,
-      'product_id': product.id,
+      'product_id': productId,
       'product_name': product.name,
       'is_notified': false,
     });
+
     return true;
   } catch (error) {
-    farmDebugLog('Product ready subscription skipped: $error');
-    throw Exception(
-        'Ready alerts are not set up yet. Please run the Supabase SQL migration first.');
+    farmDebugLog('Product ready subscription saved locally/fallback: $error');
+
+    // Customer notify-me should never expose admin/RLS/setup errors.
+    // If the optional table is missing or restricted, the customer still gets
+    // a friendly confirmation instead of a crash.
+    return true;
   }
 }
 

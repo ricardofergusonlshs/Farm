@@ -1781,22 +1781,62 @@ class _HomeScreenState extends State<HomeScreen> {
     loyaltySummaryFuture = fetchLoyaltySummary();
   }
 
-  Future<List<Product>> loadHomeProducts() async {
-    final products = await fetchProductsForCustomerUi(forceRefresh: true);
-    final visible = products;
+  Future<List<Product>> loadHomeProducts({bool forceRefresh = false}) async {
+    final cached = FarmDataCache.products;
 
-    visible.sort(compareCustomerProductAvailabilityThenName);
+    if (!forceRefresh && cached != null && cached.isNotEmpty) {
+      final visible = List<Product>.from(cached)
+        ..sort(compareCustomerProductAvailabilityThenName);
+
+      cachedHomeProducts = visible;
+
+      // Show cached products immediately, then refresh quietly.
+      unawaited(_refreshHomeProductsQuietly());
+
+      return cachedHomeProducts;
+    }
+
+    final products = await fetchProductsForCustomerUi(
+      forceRefresh: forceRefresh,
+      timeout: const Duration(seconds: 10),
+    );
+
+    final visible = List<Product>.from(products)
+      ..sort(compareCustomerProductAvailabilityThenName);
 
     cachedHomeProducts = visible;
     return cachedHomeProducts;
+  }
+
+  Future<void> _refreshHomeProductsQuietly() async {
+    try {
+      final products = await fetchProductsForCustomerUi(
+        forceRefresh: true,
+        timeout: const Duration(seconds: 10),
+      );
+
+      final visible = List<Product>.from(products)
+        ..sort(compareCustomerProductAvailabilityThenName);
+
+      if (!mounted || visible.isEmpty) return;
+
+      setState(() {
+        cachedHomeProducts = visible;
+        homeProductsFuture = Future<List<Product>>.value(cachedHomeProducts);
+      });
+    } catch (error) {
+      farmDebugLog('Quiet home refresh skipped: $error');
+    }
   }
 
   Future<void> refreshHomeProducts() async {
     FarmDataCache.clearProducts();
     if (!mounted) return;
 
-    final nextHomeProducts = loadHomeProducts();
-    final nextBuyAgainProducts = fetchBuyAgainProductsForCustomerUi();
+    final nextHomeProducts = loadHomeProducts(forceRefresh: true);
+    final nextBuyAgainProducts = fetchBuyAgainProductsForCustomerUi(
+      forceRefresh: true,
+    );
     final nextCustomerProfile = fetchCurrentCustomerProfile();
     final nextLoyaltySummary = fetchLoyaltySummary();
 
@@ -2373,8 +2413,33 @@ class _ShopScreenState extends State<ShopScreen> {
     super.dispose();
   }
 
-  Future<void> loadProducts() async {
+  Future<void> loadProducts({bool forceRefresh = false}) async {
     if (!mounted) return;
+
+    final cached = FarmDataCache.products;
+
+    if (!forceRefresh && cached != null && cached.isNotEmpty) {
+      final cleanCached = List<Product>.from(cached)
+        ..removeWhere(
+          (product) => product.name.trim().isEmpty || product.price < 0,
+        )
+        ..sort(compareCustomerProductAvailabilityThenName);
+
+      if (!mounted) return;
+
+      setState(() {
+        products = cleanCached;
+        loadingProducts = false;
+        productLoadMessage = cleanCached.isEmpty
+            ? 'No fresh products are available right now. Please check back soon.'
+            : null;
+      });
+
+      // Refresh quietly after showing cached products first.
+      unawaited(_refreshShopProductsQuietly());
+      unawaited(_loadOptionalShopProductSections());
+      return;
+    }
 
     setState(() {
       loadingProducts = true;
@@ -2382,14 +2447,18 @@ class _ShopScreenState extends State<ShopScreen> {
     });
 
     try {
-      final fetchedProducts =
-          await fetchProductsForCustomerUi(forceRefresh: true);
+      final fetchedProducts = await fetchProductsForCustomerUi(
+        forceRefresh: forceRefresh,
+        timeout: const Duration(seconds: 10),
+      );
+
       final cleanProducts = fetchedProducts.where((product) {
         return product.name.trim().isNotEmpty && product.price >= 0;
       }).toList()
         ..sort(compareCustomerProductAvailabilityThenName);
 
       if (!mounted) return;
+
       setState(() {
         products = cleanProducts;
         loadingProducts = false;
@@ -2398,27 +2467,62 @@ class _ShopScreenState extends State<ShopScreen> {
             : null;
       });
 
-      _loadOptionalShopProductSections();
+      unawaited(_loadOptionalShopProductSections());
     } catch (error) {
       farmDebugLog('Shop product load failed: $error');
+
       if (!mounted) return;
+
+      final fallback = FarmDataCache.products ?? products;
+      final cleanFallback = List<Product>.from(fallback)
+        ..removeWhere(
+          (product) => product.name.trim().isEmpty || product.price < 0,
+        )
+        ..sort(compareCustomerProductAvailabilityThenName);
+
       setState(() {
+        products = cleanFallback;
         loadingProducts = false;
-        productLoadMessage = products.isEmpty
-            ? 'We couldn’t load fresh products right now. Please try again.'
+        productLoadMessage = cleanFallback.isEmpty
+            ? 'Connection problem. Please check your WiFi and try again.'
             : null;
       });
+    }
+  }
+
+  Future<void> _refreshShopProductsQuietly() async {
+    try {
+      final fetchedProducts = await fetchProductsForCustomerUi(
+        forceRefresh: true,
+        timeout: const Duration(seconds: 10),
+      );
+
+      final cleanProducts = fetchedProducts.where((product) {
+        return product.name.trim().isNotEmpty && product.price >= 0;
+      }).toList()
+        ..sort(compareCustomerProductAvailabilityThenName);
+
+      if (!mounted || cleanProducts.isEmpty) return;
+
+      setState(() {
+        products = cleanProducts;
+        loadingProducts = false;
+        productLoadMessage = null;
+      });
+    } catch (error) {
+      farmDebugLog('Quiet shop refresh skipped: $error');
     }
   }
 
   Future<void> _loadOptionalShopProductSections() async {
     try {
       final results = await Future.wait<List<Product>>([
-        fetchReadySoonProductsForCustomerUi(forceRefresh: true),
-        fetchBuyAgainProductsForCustomerUi(forceRefresh: true),
+        fetchReadySoonProductsForCustomerUi(forceRefresh: false),
+        fetchBuyAgainProductsForCustomerUi(forceRefresh: false),
       ]);
 
       if (!mounted) return;
+
       setState(() {
         readySoonProducts = results[0]
             .where((product) => product.name.trim().isNotEmpty)
@@ -3118,7 +3222,7 @@ class _ShopScreenState extends State<ShopScreen> {
           ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: loadProducts,
+              onRefresh: () => loadProducts(forceRefresh: true),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),

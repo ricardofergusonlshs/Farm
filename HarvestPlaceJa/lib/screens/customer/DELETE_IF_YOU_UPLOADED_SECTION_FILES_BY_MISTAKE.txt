@@ -1,0 +1,7 @@
+Delete these files if you uploaded them by mistake:
+
+HarvestPlaceJa/lib/screens/customer/HomeScreen_cache_fix_REPLACE_SECTION.dart
+HarvestPlaceJa/lib/screens/customer/ShopScreen_cache_fix_REPLACE_SECTION.dart
+
+They are not app files.
+They were only copy/paste instructions.

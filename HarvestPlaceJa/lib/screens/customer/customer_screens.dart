@@ -225,10 +225,9 @@ Future<String> currentReviewCustomerName() async {
   }
 
   final metadata = user?.userMetadata ?? const <String, dynamic>{};
-  final metadataName = (metadata['full_name'] ??
-          metadata['name'] ??
-          metadata['display_name'])
-      ?.toString();
+  final metadataName =
+      (metadata['full_name'] ?? metadata['name'] ?? metadata['display_name'])
+          ?.toString();
 
   return safeReviewDisplayName(
     profileName: profileName,
@@ -281,7 +280,7 @@ class AccountScreen extends StatelessWidget {
     return FarmPage(
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
         children: [
           const Header(
             title: 'Account',
@@ -501,67 +500,262 @@ class InviteFarmMarketScreen extends StatelessWidget {
   String get _marketLink => AppConfig.shareableAppLink.trim();
 
   String get _inviteText {
-    return 'I found a fresh local farm market app you may like: ${AppConfig.appName}. Browse fresh produce, build your weekly box, and track farm orders here: $_marketLink';
+    return 'Join me on ${AppConfig.appName}, a fresh local farm market app. Browse local produce, build your weekly box, and track farm orders here: $_marketLink';
   }
 
-  String get _whatsAppShareUrl {
-    return 'https://wa.me/?text=${Uri.encodeComponent(_inviteText)}';
+  String get _shortInviteText {
+    return 'Fresh local produce is just a tap away. Shop ${AppConfig.appName} here: $_marketLink';
   }
 
-  Future<void> _copyInvite(BuildContext context) async {
-    await Clipboard.setData(ClipboardData(text: _inviteText));
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invite message copied.')),
-      );
-    }
+  String get _encodedInviteText => Uri.encodeComponent(_inviteText);
+  String get _encodedShortInviteText => Uri.encodeComponent(_shortInviteText);
+  String get _encodedMarketLink => Uri.encodeComponent(_marketLink);
+
+  String get _whatsAppAppUrl {
+    return 'whatsapp://send?text=$_encodedInviteText';
   }
 
-  Future<void> _shareOnWhatsApp(BuildContext context) async {
-    final opened = await openExternalShareUrl(_whatsAppShareUrl);
+  String get _whatsAppWebUrl {
+    return 'https://wa.me/?text=$_encodedInviteText';
+  }
 
-    if (!context.mounted) return;
+  String get _facebookShareUrl {
+    return 'https://www.facebook.com/sharer/sharer.php?u=$_encodedMarketLink';
+  }
 
-    if (opened) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Opening WhatsApp share...')),
-      );
+  String get _xShareUrl {
+    return 'https://twitter.com/intent/tweet?text=$_encodedShortInviteText';
+  }
+
+  String get _telegramAppUrl {
+    return 'tg://msg?text=$_encodedInviteText';
+  }
+
+  String get _telegramWebUrl {
+    return 'https://t.me/share/url?url=$_encodedMarketLink&text=${Uri.encodeComponent('Fresh local farm market app')}';
+  }
+
+  String get _smsShareUrl {
+    return 'sms:?body=$_encodedInviteText';
+  }
+
+  String get _emailShareUrl {
+    final subject =
+        Uri.encodeComponent('Fresh local produce from ${AppConfig.appName}');
+    return 'mailto:?subject=$subject&body=$_encodedInviteText';
+  }
+
+  void _goBack(BuildContext context) {
+    final navigator = Navigator.of(context);
+
+    if (navigator.canPop()) {
+      navigator.pop();
       return;
     }
 
-    await Clipboard.setData(ClipboardData(text: _inviteText));
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Invite copied. Open WhatsApp and paste it into a chat.'),
-      ),
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainNavigation()),
+      (route) => false,
     );
+  }
+
+  Future<void> _copyText(
+    BuildContext context, {
+    required String text,
+    required String successMessage,
+  }) async {
+    await Clipboard.setData(ClipboardData(text: text));
+
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(successMessage)),
+    );
+  }
+
+  Future<void> _openInviteUrl(
+    BuildContext context, {
+    required List<String> urls,
+    required String successMessage,
+    required String fallbackMessage,
+    bool copyInviteOnFail = true,
+  }) async {
+    for (final url in urls) {
+      final opened = await openExternalShareUrl(url);
+
+      if (!context.mounted) return;
+
+      if (opened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
+        return;
+      }
+    }
+
+    if (copyInviteOnFail) {
+      await Clipboard.setData(ClipboardData(text: _inviteText));
+    }
+
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(fallbackMessage)),
+    );
+  }
+
+  Future<void> _shareOnWhatsApp(BuildContext context) async {
+    await _openInviteUrl(
+      context,
+      urls: [_whatsAppAppUrl, _whatsAppWebUrl],
+      successMessage: 'Opening WhatsApp with your invite ready to send.',
+      fallbackMessage:
+          'WhatsApp could not open, so the invite message was copied.',
+    );
+  }
+
+  Future<void> _shareOnFacebook(BuildContext context) async {
+    await _openInviteUrl(
+      context,
+      urls: [_facebookShareUrl],
+      successMessage: 'Opening Facebook share.',
+      fallbackMessage:
+          'Facebook could not open, so the invite message was copied.',
+    );
+  }
+
+  Future<void> _shareOnX(BuildContext context) async {
+    await _openInviteUrl(
+      context,
+      urls: [_xShareUrl],
+      successMessage: 'Opening X share.',
+      fallbackMessage: 'X could not open, so the invite message was copied.',
+    );
+  }
+
+  Future<void> _shareOnTelegram(BuildContext context) async {
+    await _openInviteUrl(
+      context,
+      urls: [_telegramAppUrl, _telegramWebUrl],
+      successMessage: 'Opening Telegram with your invite ready to send.',
+      fallbackMessage:
+          'Telegram could not open, so the invite message was copied.',
+    );
+  }
+
+  Future<void> _shareBySms(BuildContext context) async {
+    await _openInviteUrl(
+      context,
+      urls: [_smsShareUrl],
+      successMessage: 'Opening text message with your invite ready to send.',
+      fallbackMessage:
+          'Messages could not open, so the invite message was copied.',
+    );
+  }
+
+  Future<void> _shareByEmail(BuildContext context) async {
+    await _openInviteUrl(
+      context,
+      urls: [_emailShareUrl],
+      successMessage: 'Opening email with your invite ready to send.',
+      fallbackMessage:
+          'Email could not open, so the invite message was copied.',
+    );
+  }
+
+  List<_InviteShareActionItem> _shareActions(BuildContext context) {
+    return [
+      _InviteShareActionItem(
+        icon: Icons.chat_bubble_outline,
+        title: 'WhatsApp',
+        subtitle: 'Send to a chat',
+        color: const Color(0xFF128C7E),
+        onTap: () => _shareOnWhatsApp(context),
+      ),
+      _InviteShareActionItem(
+        icon: Icons.facebook,
+        title: 'Facebook',
+        subtitle: 'Share to friends',
+        color: const Color(0xFF1877F2),
+        onTap: () => _shareOnFacebook(context),
+      ),
+      _InviteShareActionItem(
+        icon: Icons.alternate_email_rounded,
+        title: 'X',
+        subtitle: 'Post invite',
+        color: const Color(0xFF111827),
+        onTap: () => _shareOnX(context),
+      ),
+      _InviteShareActionItem(
+        icon: Icons.send_outlined,
+        title: 'Telegram',
+        subtitle: 'Share quickly',
+        color: const Color(0xFF229ED9),
+        onTap: () => _shareOnTelegram(context),
+      ),
+      _InviteShareActionItem(
+        icon: Icons.sms_outlined,
+        title: 'Text',
+        subtitle: 'Send by SMS',
+        color: const Color(0xFF4F7D3A),
+        onTap: () => _shareBySms(context),
+      ),
+      _InviteShareActionItem(
+        icon: Icons.email_outlined,
+        title: 'Email',
+        subtitle: 'Send by email',
+        color: FarmColors.gold,
+        onTap: () => _shareByEmail(context),
+      ),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
+    final shareActions = _shareActions(context);
+
     return Scaffold(
+      backgroundColor: FarmColors.background,
       appBar: AppBar(
-        leading: const BackButton(),
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => _goBack(context),
+        ),
         title: const Text('Invite Friends'),
+        actions: [
+          IconButton(
+            tooltip: 'Copy invite',
+            icon: const Icon(Icons.copy_outlined),
+            onPressed: () => _copyText(
+              context,
+              text: _inviteText,
+              successMessage: 'Invite message copied.',
+            ),
+          ),
+        ],
       ),
       body: FarmPage(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
           children: [
-            const Header(
-              title: 'Share the harvest',
-              subtitle: 'Send a clean invite link by WhatsApp or copy it.',
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.arrow_back_rounded),
+                label: const Text('Back to Account'),
+                onPressed: () => _goBack(context),
+              ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             const EliteGreenHeroCard(
               eyebrow: 'Share the harvest',
-              title: 'Fresh food, shared simply.',
+              title: 'Invite friends in seconds.',
               subtitle:
-                  'Send one clean market link through WhatsApp, or copy the invite for any group chat.',
-              icon: Icons.spa_outlined,
-              chips: ['WhatsApp ready', 'Clean invite link'],
+                  'Send your market link through WhatsApp, Facebook, X, Telegram, SMS, or email.',
+              icon: Icons.ios_share_outlined,
+              chips: ['Social ready', 'Clean invite link', 'Easy sharing'],
             ),
             const SizedBox(height: 18),
             FarmCard(
@@ -569,15 +763,37 @@ class InviteFarmMarketScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Invite link',
+                  const AccountSectionHeading(
+                    title: 'Choose where to share',
+                    subtitle:
+                        'Open your favourite app with the invite already prepared.',
+                  ),
+                  const SizedBox(height: 14),
+                  _InviteShareActionGrid(actions: shareActions),
+                  const SizedBox(height: 14),
+                  Text(
+                    'You will still tap Send inside the selected app.',
                     style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
+                      color: FarmColors.mutedText.withOpacity(0.9),
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                      fontSize: 12.5,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FarmCard(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const AccountSectionHeading(
+                    title: 'Invite link',
+                    subtitle: 'Use this clean market link anywhere.',
+                  ),
+                  const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
@@ -601,22 +817,28 @@ class InviteFarmMarketScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      label: const Text('Send on WhatsApp'),
-                      onPressed: () => _shareOnWhatsApp(context),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.copy_outlined),
-                      label: const Text('Copy Invite Message'),
-                      onPressed: () => _copyInvite(context),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.chat_bubble_outline),
+                          label: const Text('WhatsApp'),
+                          onPressed: () => _shareOnWhatsApp(context),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.copy_outlined),
+                          label: const Text('Copy'),
+                          onPressed: () => _copyText(
+                            context,
+                            text: _inviteText,
+                            successMessage: 'Invite message copied.',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -627,20 +849,16 @@ class InviteFarmMarketScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Invite message',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  const AccountSectionHeading(
+                    title: 'Message preview',
+                    subtitle: 'This is what your friends will receive.',
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(15),
                     decoration: BoxDecoration(
-                      color: FarmColors.primarySoft.withOpacity(0.56),
+                      color: FarmColors.primarySoft.withOpacity(0.58),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: FarmColors.line),
                     ),
@@ -649,7 +867,20 @@ class InviteFarmMarketScreen extends StatelessWidget {
                       style: const TextStyle(
                         color: FarmColors.ink,
                         fontWeight: FontWeight.w700,
-                        height: 1.35,
+                        height: 1.38,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.copy_all_outlined),
+                      label: const Text('Copy Full Message'),
+                      onPressed: () => _copyText(
+                        context,
+                        text: _inviteText,
+                        successMessage: 'Full invite message copied.',
                       ),
                     ),
                   ),
@@ -664,7 +895,7 @@ class InviteFarmMarketScreen extends StatelessWidget {
                 children: const [
                   AccountSectionHeading(
                     title: 'Why people will join',
-                    subtitle: 'A simple reason to share the app confidently.',
+                    subtitle: 'Clear reasons to share the market confidently.',
                   ),
                   SizedBox(height: 14),
                   _InviteBenefitRow(
@@ -689,6 +920,129 @@ class InviteFarmMarketScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InviteShareActionItem {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _InviteShareActionItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+}
+
+class _InviteShareActionGrid extends StatelessWidget {
+  final List<_InviteShareActionItem> actions;
+
+  const _InviteShareActionGrid({
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final columns = availableWidth >= 620 ? 3 : 2;
+        final spacing = 10.0;
+        final tileWidth = (availableWidth - spacing * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: actions
+              .map(
+                (action) => SizedBox(
+                  width: tileWidth,
+                  child: _InviteShareActionTile(action: action),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _InviteShareActionTile extends StatelessWidget {
+  final _InviteShareActionItem action;
+
+  const _InviteShareActionTile({
+    required this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: action.onTap,
+        child: Container(
+          constraints: const BoxConstraints(
+            minHeight: 128,
+          ),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: FarmColors.cardSoft,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: FarmColors.line.withOpacity(0.9)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: action.color.withOpacity(0.13),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  action.icon,
+                  color: action.color,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                action.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                  height: 1.05,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                action.subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                  height: 1.15,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -720,7 +1074,7 @@ class InstallAppGuideScreen extends StatelessWidget {
       body: SafeArea(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
           children: [
             const EliteGreenHeroCard(
               eyebrow: 'Save the market',
@@ -738,8 +1092,7 @@ class InstallAppGuideScreen extends StatelessWidget {
                 children: const [
                   AccountSectionHeading(
                     title: 'Install steps',
-                    subtitle:
-                        'Choose the steps for your device.',
+                    subtitle: 'Choose the steps for your device.',
                   ),
                   SizedBox(height: 14),
                   _InstallStepRow(
@@ -1506,13 +1859,13 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
   String _titleForSlide(HomeHeroSlide slide) {
     final custom = slide.title?.trim() ?? '';
     if (custom.isNotEmpty) return custom;
-    return 'Fresh ${widget.category.toLowerCase()}\npicked for you today!';
+    return 'Fresh picks for you';
   }
 
   String _subtitleForSlide(HomeHeroSlide slide) {
     final custom = slide.subtitle?.trim() ?? '';
     if (custom.isNotEmpty) return custom;
-    return 'Hand-picked. Farm fresh. Just for you.';
+    return 'Local produce from trusted farms.';
   }
 
   @override
@@ -1591,7 +1944,7 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
                         style: const TextStyle(
                           color: FarmColors.deepGreen,
                           fontSize: 16,
-                          height: 1.08,
+                          height: 1.05,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.25,
                         ),
@@ -1692,8 +2045,8 @@ class PersonalizedHomeHeader extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: FarmColors.deepGreen,
-                              fontSize: 27,
-                              height: 1.02,
+                              fontSize: 25,
+                              height: 1.0,
                               fontWeight: FontWeight.w900,
                               letterSpacing: -0.65,
                             ),
@@ -1709,7 +2062,7 @@ class PersonalizedHomeHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Happy Harvest Day!',
+                      'Fresh local produce, ready for you',
                       style: TextStyle(
                         color: FarmColors.mutedText,
                         fontSize: 13,
@@ -1727,6 +2080,1235 @@ class PersonalizedHomeHeader extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _FreshBoxLineItem {
+  final Product product;
+  int quantity;
+
+  _FreshBoxLineItem({
+    required this.product,
+    this.quantity = 1,
+  });
+
+  double get unitPrice {
+    if (product.effectivePrice > 0) return product.effectivePrice;
+    return product.price;
+  }
+
+  double get lineTotal => unitPrice * quantity;
+}
+
+class _FreshBoxPlan {
+  final List<_FreshBoxLineItem> items;
+  final double budget;
+
+  const _FreshBoxPlan({
+    required this.items,
+    required this.budget,
+  });
+
+  double get total {
+    return items.fold<double>(0, (sum, item) => sum + item.lineTotal);
+  }
+
+  int get totalUnits {
+    return items.fold<int>(0, (sum, item) => sum + item.quantity);
+  }
+
+  int get distinctItems => items.length;
+
+  double get remaining {
+    final value = budget - total;
+    return value < 0 ? 0 : value;
+  }
+
+  int get budgetUsedPercent {
+    if (budget <= 0) return 0;
+    final percent = ((total / budget) * 100).round();
+    if (percent < 0) return 0;
+    if (percent > 100) return 100;
+    return percent;
+  }
+}
+
+class FreshBoxBuilderCard extends StatefulWidget {
+  final List<Product> products;
+  final void Function(Product product) onAddProduct;
+  final VoidCallback onViewMyBox;
+
+  const FreshBoxBuilderCard({
+    super.key,
+    required this.products,
+    required this.onAddProduct,
+    required this.onViewMyBox,
+  });
+
+  @override
+  State<FreshBoxBuilderCard> createState() => _FreshBoxBuilderCardState();
+}
+
+class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
+  double selectedBudget = 3500;
+  String selectedGoal = 'Family Meals';
+  String selectedFamilySize = '2–3 people';
+
+  final List<double> budgetOptions = const [
+    2000,
+    3500,
+    5000,
+    7500,
+  ];
+
+  final List<String> goalOptions = const [
+    'Family Meals',
+    'Healthy Eating',
+    'Vegan Box',
+    'Low Sugar',
+    'Blood Pressure Friendly',
+    'Weekly Basics',
+  ];
+
+  final List<String> familySizeOptions = const [
+    '1 person',
+    '2–3 people',
+    '4–5 people',
+    '6+ people',
+  ];
+
+  int get _minimumDistinctItems {
+    switch (selectedFamilySize) {
+      case '1 person':
+        return 4;
+      case '2–3 people':
+        return 6;
+      case '4–5 people':
+        return 8;
+      case '6+ people':
+        return 10;
+      default:
+        return 6;
+    }
+  }
+
+  int get _maximumDistinctItems {
+    switch (selectedFamilySize) {
+      case '1 person':
+        return 6;
+      case '2–3 people':
+        return 9;
+      case '4–5 people':
+        return 12;
+      case '6+ people':
+        return 15;
+      default:
+        return 9;
+    }
+  }
+
+  int get _maxQuantityPerLine {
+    switch (selectedFamilySize) {
+      case '1 person':
+        return 2;
+      case '2–3 people':
+        return 3;
+      case '4–5 people':
+        return 4;
+      case '6+ people':
+        return 5;
+      default:
+        return 3;
+    }
+  }
+
+  List<String> _priorityTermsForGoal(String goal) {
+    switch (goal) {
+      case 'Family Meals':
+        return [
+          'ground provision',
+          'yam',
+          'sweet potato',
+          'potato',
+          'cassava',
+          'dasheen',
+          'vegetable',
+          'egg',
+          'fruit',
+          'herb',
+        ];
+      case 'Healthy Eating':
+        return [
+          'vegetable',
+          'fruit',
+          'herb',
+          'callaloo',
+          'cabbage',
+          'lettuce',
+          'avocado',
+          'cucumber',
+        ];
+      case 'Vegan Box':
+        return [
+          'vegetable',
+          'fruit',
+          'ground provision',
+          'herb',
+          'yam',
+          'sweet potato',
+          'callaloo',
+          'cucumber',
+        ];
+      case 'Low Sugar':
+        return [
+          'vegetable',
+          'herb',
+          'callaloo',
+          'cabbage',
+          'lettuce',
+          'cucumber',
+          'avocado',
+          'ground provision',
+        ];
+      case 'Blood Pressure Friendly':
+        return [
+          'vegetable',
+          'herb',
+          'callaloo',
+          'cucumber',
+          'lettuce',
+          'cabbage',
+          'avocado',
+          'fruit',
+        ];
+      case 'Weekly Basics':
+        return [
+          'ground provision',
+          'vegetable',
+          'fruit',
+          'egg',
+          'herb',
+          'yam',
+          'banana',
+          'potato',
+        ];
+      default:
+        return [
+          'vegetable',
+          'fruit',
+          'ground provision',
+          'herb',
+        ];
+    }
+  }
+
+  String _goalDescription(String goal) {
+    switch (goal) {
+      case 'Family Meals':
+        return 'Balanced produce for simple home-cooked meals.';
+      case 'Healthy Eating':
+        return 'Fresh items selected for lighter everyday meals.';
+      case 'Vegan Box':
+        return 'Plant-based produce and pantry-friendly basics.';
+      case 'Low Sugar':
+        return 'Vegetable-forward picks with fewer sweet items.';
+      case 'Blood Pressure Friendly':
+        return 'Fresh produce ideas for a lighter, balanced basket.';
+      case 'Weekly Basics':
+        return 'Everyday staples to start your weekly food box.';
+      default:
+        return 'Fresh items selected from available stock.';
+    }
+  }
+
+  String _planTitle() {
+    var goal = selectedGoal.trim();
+
+    if (goal.toLowerCase().endsWith(' box')) {
+      goal = goal.substring(0, goal.length - 4).trim();
+    }
+
+    return '$goal Fresh Box';
+  }
+
+  double _priceOf(Product product) {
+    final price = product.effectivePrice;
+    if (price > 0) return price;
+    return product.price;
+  }
+
+  bool _matchesTerm(Product product, String term) {
+    final text = [
+      product.name,
+      product.category,
+      product.description ?? '',
+      product.unit ?? '',
+    ].join(' ').toLowerCase();
+
+    return text.contains(term.toLowerCase());
+  }
+
+  bool _isRepeatFriendly(Product product) {
+    final text = [
+      product.name,
+      product.category,
+      product.description ?? '',
+      product.unit ?? '',
+    ].join(' ').toLowerCase();
+
+    return text.contains('yam') ||
+        text.contains('potato') ||
+        text.contains('sweet potato') ||
+        text.contains('banana') ||
+        text.contains('plantain') ||
+        text.contains('egg') ||
+        text.contains('fruit') ||
+        text.contains('vegetable') ||
+        text.contains('ground provision') ||
+        text.contains('cucumber') ||
+        text.contains('tomato') ||
+        text.contains('herb');
+  }
+
+  double _priorityScore(Product product, List<String> terms) {
+    final text = [
+      product.name,
+      product.category,
+      product.description ?? '',
+      product.unit ?? '',
+    ].join(' ').toLowerCase();
+
+    double score = 1;
+
+    for (final term in terms) {
+      if (text.contains(term.toLowerCase())) {
+        score += 3;
+      }
+    }
+
+    if (_isRepeatFriendly(product)) score += 2;
+
+    final price = _priceOf(product);
+    if (price >= selectedBudget * 0.08) score += 1.5;
+    if (price >= selectedBudget * 0.12) score += 1.0;
+
+    return score;
+  }
+
+  int _availableStockFor(Product product) {
+    final stock = product.stockQuantity;
+    if (stock <= 0) return 0;
+    return stock;
+  }
+
+  _FreshBoxPlan _buildFreshBoxPlan() {
+    final budget = selectedBudget;
+
+    final available = widget.products.where((product) {
+      return product.canAddToCart &&
+          product.name.trim().isNotEmpty &&
+          _priceOf(product) > 0 &&
+          _priceOf(product) <= budget;
+    }).toList();
+
+    if (available.isEmpty) {
+      return _FreshBoxPlan(
+        items: const <_FreshBoxLineItem>[],
+        budget: budget,
+      );
+    }
+
+    final terms = _priorityTermsForGoal(selectedGoal);
+
+    available.sort((a, b) {
+      final scoreCompare =
+          _priorityScore(b, terms).compareTo(_priorityScore(a, terms));
+      if (scoreCompare != 0) return scoreCompare;
+      return _priceOf(b).compareTo(_priceOf(a));
+    });
+
+    final items = <_FreshBoxLineItem>[];
+    final itemMap = <String, _FreshBoxLineItem>{};
+    final usedCategories = <String>{};
+
+    double total = 0;
+
+    double cheapestPrice = _priceOf(available.first);
+    for (final product in available) {
+      final price = _priceOf(product);
+      if (price < cheapestPrice) cheapestPrice = price;
+    }
+
+    bool canAddUnit(Product product) {
+      return total + _priceOf(product) <= budget;
+    }
+
+    void addNewLine(Product product) {
+      final line = _FreshBoxLineItem(product: product, quantity: 1);
+      items.add(line);
+      itemMap[product.id] = line;
+      usedCategories.add(product.category.toLowerCase());
+      total += line.unitPrice;
+    }
+
+    bool addQuantity(Product product) {
+      final line = itemMap[product.id];
+      if (line == null) return false;
+      if (line.quantity >= _maxQuantityPerLine) return false;
+      if (line.quantity >= _availableStockFor(product)) return false;
+      if (!canAddUnit(product)) return false;
+
+      line.quantity += 1;
+      total += line.unitPrice;
+      return true;
+    }
+
+    // First pass: build a diverse base around the selected goal.
+    for (final term in terms) {
+      Product? bestMatch;
+
+      for (final product in available) {
+        if (itemMap.containsKey(product.id)) continue;
+        if (!_matchesTerm(product, term)) continue;
+        if (!canAddUnit(product)) continue;
+
+        final category = product.category.toLowerCase();
+
+        if (usedCategories.contains(category) &&
+            items.length < _minimumDistinctItems) {
+          continue;
+        }
+
+        bestMatch = product;
+        break;
+      }
+
+      if (bestMatch != null) {
+        addNewLine(bestMatch);
+      }
+
+      if (items.length >= _minimumDistinctItems) {
+        break;
+      }
+    }
+
+    // Second pass: make sure the box has enough different items.
+    for (final product in available) {
+      if (items.length >= _minimumDistinctItems) break;
+      if (itemMap.containsKey(product.id)) continue;
+      if (!canAddUnit(product)) continue;
+
+      final category = product.category.toLowerCase();
+
+      if (usedCategories.contains(category) &&
+          items.length < _minimumDistinctItems - 1) {
+        continue;
+      }
+
+      addNewLine(product);
+    }
+
+    // Third pass: add more useful products if budget allows.
+    for (final product in available) {
+      if (items.length >= _maximumDistinctItems) break;
+      if (itemMap.containsKey(product.id)) continue;
+      if (!canAddUnit(product)) continue;
+      if (budget - total < cheapestPrice) break;
+
+      addNewLine(product);
+
+      if ((total / budget) >= 0.72) break;
+    }
+
+    // Final pass: increase quantities to get closer to the budget.
+    bool improved = true;
+    while (improved) {
+      improved = false;
+
+      final repeatable = items.where((item) {
+        return _isRepeatFriendly(item.product);
+      }).toList()
+        ..sort((a, b) {
+          final scoreCompare = _priorityScore(
+            b.product,
+            terms,
+          ).compareTo(_priorityScore(a.product, terms));
+          if (scoreCompare != 0) return scoreCompare;
+          return b.unitPrice.compareTo(a.unitPrice);
+        });
+
+      for (final line in repeatable) {
+        if (addQuantity(line.product)) {
+          improved = true;
+
+          if ((budget - total) < cheapestPrice) break;
+          if ((total / budget) >= 0.93) break;
+        }
+      }
+
+      if ((budget - total) < cheapestPrice) break;
+      if ((total / budget) >= 0.93) break;
+
+      for (final product in available) {
+        if (itemMap.containsKey(product.id)) continue;
+        if (items.length >= _maximumDistinctItems + 3) break;
+        if (!canAddUnit(product)) continue;
+
+        addNewLine(product);
+        improved = true;
+        break;
+      }
+    }
+
+    items.sort((a, b) {
+      final categoryCompare = a.product.category.toLowerCase().compareTo(
+            b.product.category.toLowerCase(),
+          );
+      if (categoryCompare != 0) return categoryCompare;
+      return b.lineTotal.compareTo(a.lineTotal);
+    });
+
+    return _FreshBoxPlan(
+      items: items,
+      budget: budget,
+    );
+  }
+
+  String _statusText(_FreshBoxPlan plan) {
+    if (plan.budgetUsedPercent >= 90) {
+      return 'Excellent match';
+    }
+    if (plan.budgetUsedPercent >= 75) {
+      return 'Strong match';
+    }
+    if (plan.budgetUsedPercent >= 55) {
+      return 'Balanced box';
+    }
+    return 'Starter box';
+  }
+
+  Future<void> _openBuilder() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final plan = _buildFreshBoxPlan();
+
+            void updateDialog(VoidCallback action) {
+              setDialogState(action);
+              setState(() {});
+            }
+
+            Future<void> addPlanToBox() async {
+              if (plan.items.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'No matching items are available for this box right now.',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              for (final item in plan.items) {
+                for (int i = 0; i < item.quantity; i++) {
+                  widget.onAddProduct(item.product);
+                }
+              }
+
+              if (Navigator.of(sheetContext).canPop()) {
+                Navigator.of(sheetContext).pop();
+              }
+
+              if (!mounted) return;
+
+              ScaffoldMessenger.of(this.context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '${plan.totalUnits} items added to My Box.',
+                  ),
+                ),
+              );
+
+              widget.onViewMyBox();
+            }
+
+            return Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 14,
+                  bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+                ),
+                decoration: const BoxDecoration(
+                  color: FarmColors.cream,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(26),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: FarmColors.line,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: FarmColors.green,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                          label: const Text(
+                            'Back',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          onPressed: () {
+                            if (Navigator.of(sheetContext).canPop()) {
+                              Navigator.of(sheetContext).pop();
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          _FreshBasketIcon(size: 50),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Fresh Box Builder',
+                                  style: TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.05,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Build a fresh basket matched to your goal, family size, and budget.',
+                                  style: TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.25,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Budget',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: budgetOptions.map((budget) {
+                          final selected = selectedBudget == budget;
+                          return ChoiceChip(
+                            selected: selected,
+                            label: Text(formatJmd(budget)),
+                            onSelected: (_) {
+                              updateDialog(() {
+                                selectedBudget = budget;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Goal',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: goalOptions.map((goal) {
+                          final selected = selectedGoal == goal;
+                          return ChoiceChip(
+                            selected: selected,
+                            label: Text(goal),
+                            onSelected: (_) {
+                              updateDialog(() {
+                                selectedGoal = goal;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Family size',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: familySizeOptions.map((size) {
+                          final selected = selectedFamilySize == size;
+                          return ChoiceChip(
+                            selected: selected,
+                            label: Text(size),
+                            onSelected: (_) {
+                              updateDialog(() {
+                                selectedFamilySize = size;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: FarmColors.lightGreen,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: FarmColors.green.withOpacity(0.13),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _planTitle(),
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _goalDescription(selectedGoal),
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontWeight: FontWeight.w700,
+                                height: 1.25,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.74),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    _statusText(plan),
+                                    style: const TextStyle(
+                                      color: FarmColors.green,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '${plan.budgetUsedPercent}% of budget used',
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _FreshBoxSummaryPill(
+                                    label: 'Units',
+                                    value: '${plan.totalUnits}',
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _FreshBoxSummaryPill(
+                                    label: 'Total',
+                                    value: formatJmd(plan.total),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _FreshBoxSummaryPill(
+                                    label: 'Used',
+                                    value: '${plan.budgetUsedPercent}%',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Budget: ${formatJmd(selectedBudget)} • Remaining: ${formatJmd(plan.remaining)}',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      if (plan.items.isEmpty)
+                        const FarmCard(
+                          child: Text(
+                            'No fresh box could be created from available stock right now. Try a higher budget or another goal.',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontWeight: FontWeight.w700,
+                              height: 1.3,
+                            ),
+                          ),
+                        )
+                      else
+                        ...plan.items.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _FreshBoxProductTile(item: item),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.add_shopping_cart_outlined),
+                          label: const Text('Add Fresh Box'),
+                          onPressed: addPlanToBox,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Build another box'),
+                          onPressed: () {
+                            updateDialog(() {
+                              if (selectedBudget == 2000) {
+                                selectedBudget = 3500;
+                              } else if (selectedBudget == 3500) {
+                                selectedBudget = 5000;
+                              } else if (selectedBudget == 5000) {
+                                selectedBudget = 7500;
+                              } else {
+                                selectedBudget = 2000;
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final availableCount =
+        widget.products.where((product) => product.canAddToCart).length;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: _openBuilder,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6FBF2),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: FarmColors.green.withOpacity(0.16),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: FarmColors.shadow.withOpacity(0.07),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const _FreshBasketIcon(
+              size: 48,
+              light: false,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Fresh Box Builder',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: FarmColors.deepGreen,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    availableCount > 0
+                        ? 'Build a fresh box from $availableCount items.'
+                        : 'Build a fresh box when items are available.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: FarmColors.green.withOpacity(0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: FarmColors.green,
+                size: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FreshBasketIcon extends StatelessWidget {
+  final double size;
+  final bool light;
+
+  const _FreshBasketIcon({
+    required this.size,
+    this.light = false,
+  });
+
+  Widget _produceDot({
+    required Color color,
+    required double dotSize,
+  }) {
+    return Container(
+      width: dotSize,
+      height: dotSize,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.4),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.28),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final basketColor = light ? Colors.white : FarmColors.green;
+    final backgroundColors = light
+        ? [
+            Colors.white.withOpacity(0.22),
+            Colors.white.withOpacity(0.08),
+          ]
+        : [
+            Colors.white,
+            FarmColors.primarySoft,
+          ];
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: backgroundColors,
+        ),
+        borderRadius: BorderRadius.circular(size * 0.36),
+        border: Border.all(
+          color: light
+              ? Colors.white.withOpacity(0.22)
+              : FarmColors.green.withOpacity(0.12),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(light ? 0.10 : 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: size * 0.17,
+            bottom: size * 0.15,
+            child: Icon(
+              Icons.shopping_basket_rounded,
+              color: basketColor,
+              size: size * 0.58,
+            ),
+          ),
+          Positioned(
+            left: size * 0.18,
+            top: size * 0.18,
+            child: _produceDot(
+              color: const Color(0xFFE84D3D),
+              dotSize: size * 0.18,
+            ),
+          ),
+          Positioned(
+            left: size * 0.37,
+            top: size * 0.12,
+            child: _produceDot(
+              color: const Color(0xFFF4B43F),
+              dotSize: size * 0.16,
+            ),
+          ),
+          Positioned(
+            right: size * 0.20,
+            top: size * 0.18,
+            child: _produceDot(
+              color: const Color(0xFF4F9A3A),
+              dotSize: size * 0.18,
+            ),
+          ),
+          Positioned(
+            right: size * 0.11,
+            top: size * 0.08,
+            child: Icon(
+              Icons.eco_rounded,
+              color: light ? Colors.white : FarmColors.primary,
+              size: size * 0.24,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FreshBoxSummaryPill extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _FreshBoxSummaryPill({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 9,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.76),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FreshBoxProductTile extends StatelessWidget {
+  final _FreshBoxLineItem item;
+
+  const _FreshBoxProductTile({
+    required this.item,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final product = item.product;
+
+    return FarmCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          ProductVisual(product: product, size: 52),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${product.category} • ${product.unit ?? 'each'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'Qty ${item.quantity}',
+                        style: const TextStyle(
+                          color: FarmColors.green,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '${product.formattedEffectivePrice} each',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            formatJmd(item.lineTotal),
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1790,7 +3372,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       cachedHomeProducts = visible;
 
-      // Show cached products immediately, then refresh quietly.
       unawaited(_refreshHomeProductsQuietly());
 
       return cachedHomeProducts;
@@ -1798,7 +3379,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final products = await fetchProductsForCustomerUi(
       forceRefresh: forceRefresh,
-      timeout: const Duration(seconds: 10),
+      timeout: const Duration(seconds: 8),
     );
 
     final visible = List<Product>.from(products)
@@ -1812,7 +3393,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final products = await fetchProductsForCustomerUi(
         forceRefresh: true,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 8),
       );
 
       final visible = List<Product>.from(products)
@@ -1834,9 +3415,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
 
     final nextHomeProducts = loadHomeProducts(forceRefresh: true);
-    final nextBuyAgainProducts = fetchBuyAgainProductsForCustomerUi(
-      forceRefresh: true,
-    );
+    final nextBuyAgainProducts = fetchBuyAgainProductsForCustomerUi();
     final nextCustomerProfile = fetchCurrentCustomerProfile();
     final nextLoyaltySummary = fetchLoyaltySummary();
 
@@ -1890,59 +3469,122 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return SizedBox(
-      height: 224,
+      height: 154,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         cacheExtent: AppPerformanceConfig.productRailCacheExtent,
         itemCount: visible.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final product = visible[index];
+          final showSale =
+              (product.hasActiveDiscount || product.showAsDealOfDay) &&
+                  !product.isOutOfStock;
 
-          return InkWell(
-            borderRadius: BorderRadius.circular(24),
-            onTap: () => openProduct(product),
-            child: SizedBox(
-              width: 166,
-              child: Opacity(
-                opacity: product.isOutOfStock ? 0.72 : 1,
-                child: FarmCard(
-                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        height: 96,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Center(
-                              child: ProductVisual(product: product, size: 82),
-                            ),
-                            if (product.isOrganic)
-                              const Positioned(
-                                top: 2,
-                                left: 2,
-                                child: OrganicImageStamp(compact: true),
-                              ),
-                            if (product.hasActiveDiscount)
-                              Positioned(
-                                top: 2,
-                                right: 2,
-                                child: DiscountBadge(
-                                  product: product,
-                                  compact: true,
+          return SizedBox(
+            width: 138,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: () => openProduct(product),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                  decoration: BoxDecoration(
+                    color: product.isOutOfStock
+                        ? FarmColors.cardSoft
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(
+                      color: product.isOutOfStock
+                          ? FarmColors.danger.withOpacity(0.13)
+                          : FarmColors.line.withOpacity(0.88),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: FarmColors.shadow.withOpacity(
+                          product.isOutOfStock ? 0.025 : 0.058,
+                        ),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Opacity(
+                    opacity: product.isOutOfStock ? 0.74 : 1,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color:
+                                        FarmColors.cardSoft.withOpacity(0.72),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: Center(
+                                    child: ProductVisual(
+                                      product: product,
+                                      size: 96,
+                                    ),
+                                  ),
                                 ),
                               ),
+                              if (showSale)
+                                Positioned(
+                                  top: 6,
+                                  right: 6,
+                                  child: product.hasActiveDiscount
+                                      ? DiscountBadge(
+                                          product: product,
+                                          compact: true,
+                                        )
+                                      : Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: FarmColors.warningSoft,
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                            border: Border.all(
+                                              color: FarmColors.warning
+                                                  .withOpacity(0.14),
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Sale',
+                                            style: TextStyle(
+                                              color: FarmColors.warning,
+                                              fontSize: 10.5,
+                                              height: 1,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: ProductOriginBadge(
+                                product: product,
+                                compact: true,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 7),
-                      _HomeProductName(product: product),
-                      const SizedBox(height: 6),
-                      _HomePricePanel(product: product),
-                      ProductAvailabilityChip(product: product, compact: true),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2039,7 +3681,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onRefresh: refreshHomeProducts,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 128),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 48),
                   children: [
                     PersonalizedHomeHeader(
                       profileFuture: customerProfileFuture,
@@ -2047,7 +3689,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onCartTap: widget.onCartTap,
                       cartItemCount: widget.cartItemCount,
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
                     PersonalizedHomeHeroLoader(
                       profileFuture: customerProfileFuture,
                       loyaltyFuture: loyaltySummaryFuture,
@@ -2057,41 +3699,44 @@ class _HomeScreenState extends State<HomeScreen> {
                       recentlyViewedProducts: cleanRecentlyViewed,
                       onShopTap: widget.onShopTap,
                     ),
-                    const SizedBox(height: 18),
-                    PersonalizedLoyaltyCard(
-                      loyaltyFuture: loyaltySummaryFuture,
+                    const SizedBox(height: 8),
+                    FreshBoxBuilderCard(
+                      products: products,
+                      onAddProduct: widget.onAddToCart,
+                      onViewMyBox: widget.onViewMyBox,
                     ),
+                    const SizedBox(height: 10),
                     if (!snapshot.hasError &&
                         recommendedProducts.isNotEmpty) ...[
-                      const SizedBox(height: 18),
                       SectionHeader(
                         title: 'Recommended For You',
-                        subtitle: 'Fresh picks selected for your basket',
+                        subtitle: 'Fresh picks for your basket',
                         actionLabel: 'Shop all',
                         onAction: widget.onShopTap,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       ProductMiniRail(
                         products: recommendedProducts,
                         onProductTap: openProduct,
                       ),
                     ],
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 10),
                     DealOfTheDaySection(
                       onViewed: widget.onViewed,
                       onAddProduct: widget.onAddToCart,
                       onViewMyBox: widget.onViewMyBox,
                       onCheckout: widget.onCheckout,
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 10),
                     SectionHeader(
                       title: 'Fresh Products',
-                      subtitle: 'Fresh items available now',
+                      subtitle: 'Available now',
                       actionLabel: 'Shop all',
                       onAction: widget.onShopTap,
                     ),
-                    const SizedBox(height: 12),
-                    snapshot.connectionState == ConnectionState.waiting && products.isEmpty
+                    const SizedBox(height: 8),
+                    snapshot.connectionState == ConnectionState.waiting &&
+                            products.isEmpty
                         ? loadingRail()
                         : productRail(
                             products: freshProductsForHome.isNotEmpty
@@ -2100,10 +3745,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             maxItems: 8,
                           ),
                     if (showFavorites) ...[
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
                       SectionHeader(
                         title: 'Favorites',
-                        subtitle: 'Saved picks you can shop quickly',
+                        subtitle: 'Saved picks',
                         actionLabel: 'View all',
                         onAction: () {
                           Navigator.push(
@@ -2117,65 +3762,64 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                         },
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       ProductMiniRail(
                         products: favoritesForHome,
                         onProductTap: openProduct,
                       ),
                     ],
                     if (showBuyAgain) ...[
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
                       SectionHeader(
                         title: 'Buy Again',
-                        subtitle: 'Items from your past orders',
+                        subtitle: 'From past orders',
                         actionLabel: 'View shop',
                         onAction: widget.onShopTap,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       buyAgainSnapshot.connectionState ==
                               ConnectionState.waiting
                           ? loadingRail()
                           : productRail(products: buyAgainForHome, maxItems: 8),
                     ],
                     if (showRecentlyViewed) ...[
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
                       SectionHeader(
                         title: 'Recently Viewed',
-                        subtitle: 'Items you looked at recently',
+                        subtitle: 'Recently viewed',
                         actionLabel: 'Shop',
                         onAction: widget.onShopTap,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       ProductMiniRail(
                         products: recentlyViewedForHome,
                         onProductTap: openProduct,
                       ),
                     ],
                     if (categoryCards.isNotEmpty) ...[
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
                       SectionHeader(
                         title: 'Shop by Category',
-                        subtitle: 'Find fresh picks by type',
+                        subtitle: 'Browse by type',
                         actionLabel: 'View all',
                         onAction: widget.onShopTap,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       SizedBox(
-                        height: 76,
+                        height: 58,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           physics: const BouncingScrollPhysics(),
                           padding: const EdgeInsets.only(right: 4),
                           itemCount: categoryCards.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 10),
+                          separatorBuilder: (_, __) => const SizedBox(width: 7),
                           itemBuilder: (context, index) {
                             final category = categoryCards[index];
                             return SizedBox(
                               // Wider landscape cards keep names like
                               // “Vegetables” on one line while the row
                               // still uses much less vertical space.
-                              width: categoryCards.length == 1 ? 272 : 218,
+                              width: categoryCards.length == 1 ? 236 : 180,
                               child: CategoryPill(
                                 previewProduct: category.previewProduct,
                                 fallbackIcon:
@@ -2220,7 +3864,7 @@ class _HomeProductName extends StatelessWidget {
         final scale = (availableWidth / (compact ? 138.0 : 150.0))
             .clamp(0.92, 1.05)
             .toDouble();
-        final fontSize = (compact ? 13.2 : 13.8) * scale;
+        final fontSize = (compact ? 12.8 : 13.3) * scale;
 
         return Text(
           product.name,
@@ -2229,7 +3873,7 @@ class _HomeProductName extends StatelessWidget {
           style: TextStyle(
             color: FarmColors.ink,
             fontSize: fontSize,
-            height: 1.08,
+            height: 1.05,
             fontWeight: FontWeight.w900,
             letterSpacing: -0.08,
           ),
@@ -2413,33 +4057,8 @@ class _ShopScreenState extends State<ShopScreen> {
     super.dispose();
   }
 
-  Future<void> loadProducts({bool forceRefresh = false}) async {
+  Future<void> loadProducts() async {
     if (!mounted) return;
-
-    final cached = FarmDataCache.products;
-
-    if (!forceRefresh && cached != null && cached.isNotEmpty) {
-      final cleanCached = List<Product>.from(cached)
-        ..removeWhere(
-          (product) => product.name.trim().isEmpty || product.price < 0,
-        )
-        ..sort(compareCustomerProductAvailabilityThenName);
-
-      if (!mounted) return;
-
-      setState(() {
-        products = cleanCached;
-        loadingProducts = false;
-        productLoadMessage = cleanCached.isEmpty
-            ? 'No fresh products are available right now. Please check back soon.'
-            : null;
-      });
-
-      // Refresh quietly after showing cached products first.
-      unawaited(_refreshShopProductsQuietly());
-      unawaited(_loadOptionalShopProductSections());
-      return;
-    }
 
     setState(() {
       loadingProducts = true;
@@ -2448,17 +4067,15 @@ class _ShopScreenState extends State<ShopScreen> {
 
     try {
       final fetchedProducts = await fetchProductsForCustomerUi(
-        forceRefresh: forceRefresh,
-        timeout: const Duration(seconds: 10),
+        forceRefresh: products.isEmpty,
+        timeout: const Duration(seconds: 8),
       );
-
       final cleanProducts = fetchedProducts.where((product) {
         return product.name.trim().isNotEmpty && product.price >= 0;
       }).toList()
         ..sort(compareCustomerProductAvailabilityThenName);
 
       if (!mounted) return;
-
       setState(() {
         products = cleanProducts;
         loadingProducts = false;
@@ -2467,50 +4084,16 @@ class _ShopScreenState extends State<ShopScreen> {
             : null;
       });
 
-      unawaited(_loadOptionalShopProductSections());
+      _loadOptionalShopProductSections();
     } catch (error) {
       farmDebugLog('Shop product load failed: $error');
-
       if (!mounted) return;
-
-      final fallback = FarmDataCache.products ?? products;
-      final cleanFallback = List<Product>.from(fallback)
-        ..removeWhere(
-          (product) => product.name.trim().isEmpty || product.price < 0,
-        )
-        ..sort(compareCustomerProductAvailabilityThenName);
-
       setState(() {
-        products = cleanFallback;
         loadingProducts = false;
-        productLoadMessage = cleanFallback.isEmpty
-            ? 'Connection problem. Please check your WiFi and try again.'
+        productLoadMessage = products.isEmpty
+            ? 'We couldn’t load fresh products right now. Please try again.'
             : null;
       });
-    }
-  }
-
-  Future<void> _refreshShopProductsQuietly() async {
-    try {
-      final fetchedProducts = await fetchProductsForCustomerUi(
-        forceRefresh: true,
-        timeout: const Duration(seconds: 10),
-      );
-
-      final cleanProducts = fetchedProducts.where((product) {
-        return product.name.trim().isNotEmpty && product.price >= 0;
-      }).toList()
-        ..sort(compareCustomerProductAvailabilityThenName);
-
-      if (!mounted || cleanProducts.isEmpty) return;
-
-      setState(() {
-        products = cleanProducts;
-        loadingProducts = false;
-        productLoadMessage = null;
-      });
-    } catch (error) {
-      farmDebugLog('Quiet shop refresh skipped: $error');
     }
   }
 
@@ -2522,7 +4105,6 @@ class _ShopScreenState extends State<ShopScreen> {
       ]);
 
       if (!mounted) return;
-
       setState(() {
         readySoonProducts = results[0]
             .where((product) => product.name.trim().isNotEmpty)
@@ -3222,7 +4804,7 @@ class _ShopScreenState extends State<ShopScreen> {
           ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () => loadProducts(forceRefresh: true),
+              onRefresh: loadProducts,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
@@ -3485,7 +5067,7 @@ class SafeShopProductTile extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(width: 13),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3500,7 +5082,7 @@ class SafeShopProductTile extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: 16.4,
-                                  height: 1.08,
+                                  height: 1.05,
                                   fontWeight: FontWeight.w900,
                                   letterSpacing: -0.18,
                                 ),
@@ -3966,7 +5548,7 @@ class FarmBoxScreen extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 17,
+                        fontSize: 16,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.15,
                       ),
@@ -4492,7 +6074,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
             if (order == null) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
                 children: const [
                   FarmEmptyState(
                     icon: Icons.search_off_rounded,
@@ -4638,8 +6220,7 @@ class FarmBoxHelperScreen extends StatefulWidget {
   const FarmBoxHelperScreen({super.key});
 
   @override
-  State<FarmBoxHelperScreen> createState() =>
-      _FarmBoxHelperScreenState();
+  State<FarmBoxHelperScreen> createState() => _FarmBoxHelperScreenState();
 }
 
 class LoyaltyRewardsScreen extends StatelessWidget {
@@ -4664,7 +6245,7 @@ class LoyaltyRewardsScreen extends StatelessWidget {
           final nextTier = loyaltyNextTierName(summary);
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
             children: [
               _RewardsHeroCard(
                 summary: summary,
@@ -5113,7 +6694,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               onRefresh: refreshNotifications,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
                 children: [
                   NotificationCenterHero(
                     unreadCount: unreadCount,
@@ -5648,7 +7229,7 @@ class _SupportScreenState extends State<SupportScreen> {
           onRefresh: refreshTickets,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
             children: [
               const SupportHeroCard(),
               const SizedBox(height: 16),
@@ -6125,7 +7706,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           },
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
             children: [
               const ReviewHeroCard(),
               const SizedBox(height: 16),
@@ -6753,8 +8334,7 @@ class _WeeklyBoxBuilderScreenState extends State<WeeklyBoxBuilderScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(friendlyAppError(error))),
+        SnackBar(content: Text(friendlyAppError(error))),
       );
     } finally {
       if (mounted) setState(() => saving = false);
@@ -7247,8 +8827,7 @@ class _CustomerSubscriptionsScreenState
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(friendlyAppError(error))),
+        SnackBar(content: Text(friendlyAppError(error))),
       );
     }
   }
@@ -7312,8 +8891,7 @@ class _CustomerSubscriptionsScreenState
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(friendlyAppError(error))),
+        SnackBar(content: Text(friendlyAppError(error))),
       );
     }
   }
@@ -7350,7 +8928,7 @@ class _CustomerSubscriptionsScreenState
               if (plans.isEmpty) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
                   children: [
                     buildWeeklyBoxBuilderCard(hasPlans: false),
                     const SizedBox(height: 12),
@@ -7386,7 +8964,7 @@ class _CustomerSubscriptionsScreenState
 
               return ListView.separated(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
                 itemCount: plans.length + 1,
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
@@ -8901,7 +10479,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 17,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -8935,7 +10513,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         bottom: true,
         child: ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
           children: [
             _checkoutHeroCard(),
             const SizedBox(height: 18),
@@ -9594,7 +11172,7 @@ class PolicyScreenShell extends StatelessWidget {
       ),
       body: FarmPage(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 78),
           children: [
             Header(title: title, subtitle: subtitle),
             const SizedBox(height: 16),
@@ -9626,7 +11204,7 @@ class PolicySection extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
           Text(
@@ -9653,11 +11231,12 @@ class TrustCenterScreen extends StatelessWidget {
       ),
       body: FarmPage(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
           children: const [
             Header(
               title: 'Trust Center',
-              subtitle: 'Fresh ordering, privacy, support, and delivery clarity.',
+              subtitle:
+                  'Fresh ordering, privacy, support, and delivery clarity.',
             ),
             SizedBox(height: 16),
             TrustCenterHeroCard(),

@@ -1,8 +1,8 @@
 name: farm
-description: A new Flutter project.
+description: Fresh local food ordering and farm updates for The Harvest Place Ja.
 publish_to: 'none'
 
-version: 1.0.3+5
+version: 1.0.3+6
 
 environment:
   sdk: ^3.0.0
@@ -25,4 +25,4 @@ flutter:
   uses-material-design: true
 
   assets:
-    - lib/assets/images/logo.png
+    - lib/assets/images/

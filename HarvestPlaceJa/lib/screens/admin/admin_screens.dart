@@ -172,7 +172,8 @@ Future<void> notifyAdminsAboutLowStockAfterCheckout(
         type: 'stock',
       );
     } catch (error) {
-      farmDebugLog('Low stock admin notification skipped for $productId: $error');
+      farmDebugLog(
+          'Low stock admin notification skipped for $productId: $error');
     }
   }
 }
@@ -1967,7 +1968,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: ListView(
               padding: const EdgeInsets.all(18),
               children: const [
-                Header(title: 'Admin Locked', subtitle: 'Farmer access only'),
+                Header(
+                  title: 'Admin Locked',
+                  subtitle: 'Farmer access only',
+                ),
                 SizedBox(height: 18),
                 FarmCard(
                   child: Text(
@@ -1982,7 +1986,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         return FarmPage(
           child: DefaultTabController(
-            length: 14,
+            length: 12,
             initialIndex: 0,
             child: Column(
               children: [
@@ -2021,41 +2025,53 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     indicatorColor: FarmColors.green,
                     tabs: [
                       Tab(
-                          icon: Icon(Icons.dashboard_customize_outlined),
-                          text: 'Dashboard'),
+                        icon: Icon(Icons.dashboard_customize_outlined),
+                        text: 'Dashboard',
+                      ),
                       Tab(
-                          icon: Icon(Icons.rocket_launch_outlined),
-                          text: 'Launch'),
+                        icon: Icon(Icons.receipt_long),
+                        text: 'Orders',
+                      ),
                       Tab(
-                          icon: Icon(Icons.health_and_safety_outlined),
-                          text: 'Health'),
-                      Tab(icon: Icon(Icons.receipt_long), text: 'Orders'),
+                        icon: Icon(Icons.local_shipping_outlined),
+                        text: 'Fulfillment',
+                      ),
                       Tab(
-                          icon: Icon(Icons.local_shipping_outlined),
-                          text: 'Fulfillment'),
+                        icon: Icon(Icons.analytics_outlined),
+                        text: 'Analytics',
+                      ),
                       Tab(
-                          icon: Icon(Icons.analytics_outlined),
-                          text: 'Analytics'),
-                      Tab(icon: Icon(Icons.eco), text: 'Products'),
+                        icon: Icon(Icons.eco),
+                        text: 'Products',
+                      ),
                       Tab(
-                          icon: Icon(Icons.photo_library_outlined),
-                          text: 'Hero'),
+                        icon: Icon(Icons.photo_library_outlined),
+                        text: 'Hero',
+                      ),
                       Tab(
-                          icon: Icon(Icons.support_agent_outlined),
-                          text: 'Support'),
+                        icon: Icon(Icons.support_agent_outlined),
+                        text: 'Support',
+                      ),
                       Tab(
-                          icon: Icon(Icons.agriculture_outlined),
-                          text: 'Farmers'),
-                      Tab(icon: Icon(Icons.payments_outlined), text: 'Payouts'),
+                        icon: Icon(Icons.agriculture_outlined),
+                        text: 'Farmers',
+                      ),
                       Tab(
-                          icon: Icon(Icons.table_chart_outlined),
-                          text: 'Reports'),
+                        icon: Icon(Icons.payments_outlined),
+                        text: 'Payouts',
+                      ),
                       Tab(
-                          icon: Icon(Icons.rate_review_outlined),
-                          text: 'Reviews'),
+                        icon: Icon(Icons.table_chart_outlined),
+                        text: 'Reports',
+                      ),
                       Tab(
-                          icon: Icon(Icons.confirmation_number_outlined),
-                          text: 'Coupons'),
+                        icon: Icon(Icons.rate_review_outlined),
+                        text: 'Reviews',
+                      ),
+                      Tab(
+                        icon: Icon(Icons.confirmation_number_outlined),
+                        text: 'Coupons',
+                      ),
                     ],
                   ),
                 ),
@@ -2063,28 +2079,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   child: TabBarView(
                     children: [
                       AdminDashboardOverviewTab(refreshKey: refreshKey),
-                      AdminLaunchChecklistTab(
-                          refreshKey: refreshKey, onChanged: refresh),
-                      AdminAppHealthTab(refreshKey: refreshKey),
                       AdminOrdersTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                       AdminDeliveryTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                       AdminAnalyticsTab(refreshKey: refreshKey),
                       AdminProductsTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                       AdminHeroSlidesTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                       AdminSupportTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                       AdminFarmerManagementTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                       AdminPayoutsTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                       AdminReportsTab(refreshKey: refreshKey),
                       AdminReviewsTab(refreshKey: refreshKey),
                       AdminCouponsTab(
-                          refreshKey: refreshKey, onChanged: refresh),
+                        refreshKey: refreshKey,
+                        onChanged: refresh,
+                      ),
                     ],
                   ),
                 ),
@@ -2110,10 +2139,13 @@ class AdminOverviewSnapshot {
 
   int get todaysOrders {
     final now = DateTime.now();
+
     return orders.where((order) {
       final created = order.createdAt;
       if (created == null) return false;
+
       final local = created.toLocal();
+
       return local.year == now.year &&
           local.month == now.month &&
           local.day == now.day;
@@ -2130,6 +2162,7 @@ class AdminOverviewSnapshot {
   int get unpaidPayments {
     return orders.where((order) {
       final status = order.paymentStatus.trim().toLowerCase();
+
       return status != 'paid' && status != 'refunded' && status != 'cancelled';
     }).length;
   }
@@ -2141,6 +2174,7 @@ class AdminOverviewSnapshot {
   int get openSupportMessages {
     return supportTickets.where((ticket) {
       final status = ticket.status.trim().toLowerCase();
+
       return status == 'open' || status == 'pending' || status == 'new';
     }).length;
   }
@@ -2148,6 +2182,7 @@ class AdminOverviewSnapshot {
   int get activeOrders {
     return orders.where((order) {
       final status = order.status.trim().toLowerCase();
+
       return status != 'completed' &&
           status != 'delivered' &&
           status != 'cancelled' &&
@@ -2223,6 +2258,7 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
   @override
   void didUpdateWidget(covariant AdminDashboardOverviewTab oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (oldWidget.refreshKey != widget.refreshKey) {
       _reload();
     }
@@ -2247,6 +2283,7 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
         builder: (context, snapshot) {
           final loading = snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData;
+
           final overview = snapshot.data ??
               const AdminOverviewSnapshot(
                 orders: <AdminOrder>[],
@@ -2271,10 +2308,10 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                 unpaidPayments: overview.unpaidPayments,
                 lowStockItems: overview.lowStockItems,
                 openSupportMessages: overview.openSupportMessages,
-                onOrdersTap: () => _openTab(3),
-                onFulfillmentTap: () => _openTab(4),
-                onProductsTap: () => _openTab(6),
-                onSupportTap: () => _openTab(8),
+                onOrdersTap: () => _openTab(1),
+                onFulfillmentTap: () => _openTab(2),
+                onProductsTap: () => _openTab(4),
+                onSupportTap: () => _openTab(6),
               ),
               const SizedBox(height: 16),
               AdminSectionCard(
@@ -2290,7 +2327,7 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                         ? '${overview.pendingOrders} active'
                         : null,
                     color: FarmColors.green,
-                    onTap: () => _openTab(3),
+                    onTap: () => _openTab(1),
                   ),
                   AdminActionTile(
                     icon: Icons.local_shipping_outlined,
@@ -2301,7 +2338,7 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                         ? '${overview.activeOrders} open'
                         : null,
                     color: const Color(0xFF227C88),
-                    onTap: () => _openTab(4),
+                    onTap: () => _openTab(2),
                   ),
                   AdminActionTile(
                     icon: Icons.payments_outlined,
@@ -2311,7 +2348,7 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                         ? '${overview.unpaidPayments} unpaid'
                         : null,
                     color: FarmColors.warning,
-                    onTap: () => _openTab(3),
+                    onTap: () => _openTab(1),
                   ),
                 ],
               ),
@@ -2324,19 +2361,20 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                   AdminActionTile(
                     icon: Icons.inventory_2_outlined,
                     title: 'Manage products',
-                    description: 'Edit listings, stock, availability, and status.',
+                    description:
+                        'Edit listings, stock, availability, and status.',
                     badge: overview.lowStockItems > 0
                         ? '${overview.lowStockItems} low'
                         : null,
                     color: FarmColors.green,
-                    onTap: () => _openTab(6),
+                    onTap: () => _openTab(4),
                   ),
                   AdminActionTile(
                     icon: Icons.add_box_outlined,
                     title: 'Add product',
                     description: 'Create a new product and upload an image.',
                     color: FarmColors.gold,
-                    onTap: () => _openTab(6),
+                    onTap: () => _openTab(4),
                   ),
                   AdminActionTile(
                     icon: Icons.local_offer_outlined,
@@ -2344,7 +2382,7 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                     description:
                         'Review deals, product discounts, and coupon tools.',
                     color: const Color(0xFF7D5A21),
-                    onTap: () => _openTab(13),
+                    onTap: () => _openTab(11),
                   ),
                 ],
               ),
@@ -2357,26 +2395,28 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                   AdminActionTile(
                     icon: Icons.support_agent_outlined,
                     title: 'Support messages',
-                    description: 'Reply to customer questions and help requests.',
+                    description:
+                        'Reply to customer questions and help requests.',
                     badge: overview.openSupportMessages > 0
                         ? '${overview.openSupportMessages} open'
                         : null,
                     color: FarmColors.danger,
-                    onTap: () => _openTab(8),
+                    onTap: () => _openTab(6),
                   ),
                   AdminActionTile(
                     icon: Icons.rate_review_outlined,
                     title: 'Reviews & feedback',
                     description: 'Read product reviews and customer comments.',
                     color: FarmColors.green,
-                    onTap: () => _openTab(12),
+                    onTap: () => _openTab(10),
                   ),
                   AdminActionTile(
                     icon: Icons.agriculture_outlined,
                     title: 'Farmer partners',
-                    description: 'Review farmer profiles, status, and approvals.',
+                    description:
+                        'Review farmer profiles, status, and approvals.',
                     color: const Color(0xFF6E7D4F),
-                    onTap: () => _openTab(9),
+                    onTap: () => _openTab(7),
                   ),
                 ],
               ),
@@ -2389,23 +2429,25 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                   AdminActionTile(
                     icon: Icons.analytics_outlined,
                     title: 'Analytics',
-                    description: 'See operational trends and store performance.',
+                    description:
+                        'See operational trends and store performance.',
                     color: FarmColors.green,
-                    onTap: () => _openTab(5),
+                    onTap: () => _openTab(3),
                   ),
                   AdminActionTile(
                     icon: Icons.table_chart_outlined,
                     title: 'Reports & CSV',
-                    description: 'Review sales summaries and export order data.',
+                    description:
+                        'Review sales summaries and export order data.',
                     color: const Color(0xFF227C88),
-                    onTap: () => _openTab(11),
+                    onTap: () => _openTab(9),
                   ),
                   AdminActionTile(
                     icon: Icons.account_balance_wallet_outlined,
                     title: 'Payouts',
                     description: 'Review farmer payout records and status.',
                     color: FarmColors.gold,
-                    onTap: () => _openTab(10),
+                    onTap: () => _openTab(8),
                   ),
                 ],
               ),
@@ -2420,21 +2462,7 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
                     title: 'Home hero images',
                     description: 'Upload and manage the home slideshow.',
                     color: FarmColors.green,
-                    onTap: () => _openTab(7),
-                  ),
-                  AdminActionTile(
-                    icon: Icons.rocket_launch_outlined,
-                    title: 'Launch checklist',
-                    description: 'Check final launch tasks and readiness.',
-                    color: const Color(0xFF7D5A21),
-                    onTap: () => _openTab(1),
-                  ),
-                  AdminActionTile(
-                    icon: Icons.health_and_safety_outlined,
-                    title: 'App health',
-                    description: 'Review daily app and store readiness checks.',
-                    color: const Color(0xFF227C88),
-                    onTap: () => _openTab(2),
+                    onTap: () => _openTab(5),
                   ),
                 ],
               ),
@@ -2684,7 +2712,8 @@ class AdminUrgentActionsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.priority_high_rounded, color: FarmColors.warning),
+              const Icon(Icons.priority_high_rounded,
+                  color: FarmColors.warning),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -4031,7 +4060,8 @@ Future<AdminAppHealthSnapshot> buildAdminAppHealthSnapshot() async {
     ),
     ready(
       title: 'Admin gate active',
-      detail: 'Admin screens still verify protected access before loading tools.',
+      detail:
+          'Admin screens still verify protected access before loading tools.',
       icon: Icons.admin_panel_settings_outlined,
     ),
   ];
@@ -4464,7 +4494,7 @@ class _AdminHealthPlaybookCard extends StatelessWidget {
           ),
           SizedBox(height: 8),
           Text(
-            'Before sharing the app link each day: refresh Health, clear active orders, review low stock, and test one customer-facing action on your phone.',
+            'Before sharing the app link each day: review active orders, check low stock, and confirm one customer-facing action on your phone.',
             style: TextStyle(
               color: FarmColors.mutedText,
               fontWeight: FontWeight.w700,
@@ -4628,7 +4658,7 @@ class _AdminLaunchChecklistTabState extends State<AdminLaunchChecklistTab> {
                           const SizedBox(height: 5),
                           Text(
                             data.actionCount == 0
-                                ? 'You are close. Review the yellow items, then run a real phone test.'
+                                ? 'You are close. Review the yellow items, then complete one final phone check.'
                                 : '${data.actionCount} item${data.actionCount == 1 ? '' : 's'} need action before sharing widely.',
                             style: const TextStyle(
                               color: Colors.white,
@@ -6458,16 +6488,6 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
     );
     final discountLabelController =
         TextEditingController(text: product?.discountLabel ?? '');
-    final discountStartsController = TextEditingController(
-      text: product?.discountStartsAt == null
-          ? ''
-          : product!.discountStartsAt!.toIso8601String(),
-    );
-    final discountEndsController = TextEditingController(
-      text: product?.discountEndsAt == null
-          ? ''
-          : product!.discountEndsAt!.toIso8601String(),
-    );
     final estimatedReadyDateController = TextEditingController(
       text: product?.estimatedReadyDate == null
           ? ''
@@ -6478,36 +6498,96 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
           ? ''
           : product!.expectedStockQuantity.toString(),
     );
-    final subscribeSavePercentController = TextEditingController(
-      text: product?.subscribeSaveDiscountPercent == null
-          ? '5'
-          : product!.subscribeSaveDiscountPercent.toStringAsFixed(0),
-    );
     final dealRankController = TextEditingController(
       text: product == null ? '10' : product.dealRank.toString(),
     );
+
     String selectedCategory =
         normalizeProductCategory(product?.category ?? 'Vegetables');
+    if (!productCategoryOptions.contains(selectedCategory) &&
+        productCategoryOptions.isNotEmpty) {
+      selectedCategory = productCategoryOptions.first;
+    }
+
     String selectedProductStatus = product?.productStatus ?? 'available';
+    const allowedStatuses = <String>[
+      'available',
+      'ready_soon',
+      'out_of_stock',
+      'hidden',
+    ];
+    if (!allowedStatuses.contains(selectedProductStatus)) {
+      selectedProductStatus = 'available';
+    }
+
     bool isOrganic = product?.isOrganic ?? false;
     bool isLocal = product?.isLocal ?? true;
     bool isAvailable = product?.isAvailable ?? true;
     bool isDiscountActive = product?.isDiscountActive ?? false;
-    bool readySoon = product?.isReadySoon ?? false;
+    bool readySoon =
+        product?.isReadySoon ?? selectedProductStatus == 'ready_soon';
     bool isDealOfDay = product?.isDealOfDay ?? false;
-    bool subscribeSaveEnabled = product?.subscribeSaveEnabled ?? false;
     bool saving = false;
     bool uploadingImage = false;
 
-    await showModalBottomSheet<void>(
+    Future<void> disposeControllers() async {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameController.dispose();
+        priceController.dispose();
+        stockController.dispose();
+        unitController.dispose();
+        descriptionController.dispose();
+        imageUrlController.dispose();
+        originalPriceController.dispose();
+        discountPriceController.dispose();
+        discountPercentController.dispose();
+        discountLabelController.dispose();
+        estimatedReadyDateController.dispose();
+        expectedStockController.dispose();
+        dealRankController.dispose();
+      });
+    }
+
+    await showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
+      barrierDismissible: !saving,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (dialogContext, setDialogState) {
+            Future<void> uploadImageFromComputer() async {
+              try {
+                setDialogState(() => uploadingImage = true);
+                final pickedImage = await pickProductImageFromDevice();
+                if (pickedImage == null) {
+                  if (dialogContext.mounted) {
+                    setDialogState(() => uploadingImage = false);
+                  }
+                  return;
+                }
+
+                final imageUrl = await uploadProductImageToStorage(pickedImage);
+                imageUrlController.text = imageUrl;
+
+                if (dialogContext.mounted) {
+                  setDialogState(() => uploadingImage = false);
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text('Product image uploaded.')),
+                  );
+                }
+              } catch (error) {
+                if (dialogContext.mounted) {
+                  setDialogState(() => uploadingImage = false);
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        error.toString().replaceFirst('Exception: ', ''),
+                      ),
+                    ),
+                  );
+                }
+              }
+            }
+
             Future<void> saveProduct() async {
               final name = nameController.text.trim();
               final price = double.tryParse(priceController.text.trim());
@@ -6522,32 +6602,23 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
               final discountPercent =
                   double.tryParse(discountPercentController.text.trim());
               final discountLabel = discountLabelController.text.trim();
-              final discountStarts = discountStartsController.text.trim();
-              final discountEnds = discountEndsController.text.trim();
               final estimatedReadyDate =
                   estimatedReadyDateController.text.trim();
               final expectedStock =
                   int.tryParse(expectedStockController.text.trim());
               final dealRank = int.tryParse(dealRankController.text.trim());
-              final subscribeSavePercent =
-                  double.tryParse(subscribeSavePercentController.text.trim());
-              final status = readySoon
-                  ? 'ready_soon'
-                  : selectedProductStatus == 'ready_soon'
-                      ? 'ready_soon'
-                      : selectedProductStatus;
+              final status = readySoon ? 'ready_soon' : selectedProductStatus;
 
               if (name.isEmpty || price == null) {
-                ScaffoldMessenger.of(this.context).showSnackBar(
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
                   const SnackBar(
-                      content: Text('Enter product name and valid price.')),
+                    content: Text('Enter product name and a valid price.'),
+                  ),
                 );
                 return;
               }
 
-              if (dialogContext.mounted) {
-                setDialogState(() => saving = true);
-              }
+              setDialogState(() => saving = true);
 
               try {
                 if (product == null) {
@@ -6567,9 +6638,8 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     discountPrice: discountPrice,
                     discountPercent: discountPercent,
                     discountLabel: discountLabel.isEmpty ? null : discountLabel,
-                    discountStartsAt:
-                        discountStarts.isEmpty ? null : discountStarts,
-                    discountEndsAt: discountEnds.isEmpty ? null : discountEnds,
+                    discountStartsAt: null,
+                    discountEndsAt: null,
                     productStatus: status,
                     readySoon: readySoon,
                     estimatedReadyDate:
@@ -6577,8 +6647,10 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     expectedStockQuantity: expectedStock,
                     isDealOfDay: isDealOfDay,
                     dealRank: dealRank,
-                    subscribeSaveEnabled: subscribeSaveEnabled,
-                    subscribeSaveDiscountPercent: subscribeSavePercent,
+                    subscribeSaveEnabled:
+                        product?.subscribeSaveEnabled ?? false,
+                    subscribeSaveDiscountPercent:
+                        product?.subscribeSaveDiscountPercent,
                   );
                 } else {
                   await updateProductDetails(
@@ -6598,9 +6670,8 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     discountPrice: discountPrice,
                     discountPercent: discountPercent,
                     discountLabel: discountLabel.isEmpty ? null : discountLabel,
-                    discountStartsAt:
-                        discountStarts.isEmpty ? null : discountStarts,
-                    discountEndsAt: discountEnds.isEmpty ? null : discountEnds,
+                    discountStartsAt: null,
+                    discountEndsAt: null,
                     productStatus: status,
                     readySoon: readySoon,
                     estimatedReadyDate:
@@ -6608,578 +6679,579 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     expectedStockQuantity: expectedStock,
                     isDealOfDay: isDealOfDay,
                     dealRank: dealRank,
-                    subscribeSaveEnabled: subscribeSaveEnabled,
-                    subscribeSaveDiscountPercent: subscribeSavePercent,
+                    subscribeSaveEnabled: product.subscribeSaveEnabled,
+                    subscribeSaveDiscountPercent:
+                        product.subscribeSaveDiscountPercent,
                   );
                 }
 
                 if (dialogContext.mounted) {
-                  Navigator.pop(dialogContext);
+                  Navigator.of(dialogContext).pop();
                 }
 
                 if (mounted) {
-                  ScaffoldMessenger.of(this.context).showSnackBar(
-                    SnackBar(
-                      content: Text(product == null
-                          ? 'Product added successfully'
-                          : 'Product updated successfully'),
-                    ),
-                  );
                   FarmDataCache.clearProducts();
                   refreshProducts();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        product == null
+                            ? 'Product added successfully.'
+                            : 'Product updated successfully.',
+                      ),
+                    ),
+                  );
                 }
               } catch (error) {
                 if (dialogContext.mounted) {
                   setDialogState(() => saving = false);
-                }
-
-                if (mounted) {
-                  ScaffoldMessenger.of(this.context).showSnackBar(
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
                     const SnackBar(
                       content: Text(
-                          'Could not save product. Please check the item details and try again.'),
+                        'Could not save product. Check the details and try again.',
+                      ),
                     ),
                   );
                 }
               }
             }
 
-            Future<void> uploadImageFromComputer() async {
-              final messenger = ScaffoldMessenger.of(this.context);
-
-              try {
-                final pickedImage = await pickProductImageFromDevice();
-                if (pickedImage == null) {
-                  return;
-                }
-
-                if (dialogContext.mounted) {
-                  setDialogState(() => uploadingImage = true);
-                }
-
-                final imageUrl = await uploadProductImageToStorage(pickedImage);
-                imageUrlController.text = imageUrl;
-
-                if (dialogContext.mounted) {
-                  setDialogState(() {});
-                }
-
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Product image uploaded.')),
-                );
-              } catch (error) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      error.toString().replaceFirst('Exception: ', ''),
+            Widget sectionTitle(String text) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                );
-              } finally {
-                if (dialogContext.mounted) {
-                  setDialogState(() => uploadingImage = false);
-                }
-              }
+                ),
+              );
             }
 
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 12,
-                right: 12,
-                bottom: MediaQuery.of(dialogContext).viewInsets.bottom + 12,
-              ),
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: SizedBox(
-                  height: MediaQuery.of(dialogContext).size.height * 0.92,
-                  child: Material(
-                    color: FarmColors.card,
-                    elevation: 12,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(28),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: SafeArea(
-                      top: false,
-                      child: Column(
+            Widget productChoiceSelector({
+              required String title,
+              required String helper,
+              required bool value,
+              required String trueLabel,
+              required String falseLabel,
+              required IconData trueIcon,
+              required IconData falseIcon,
+              required ValueChanged<bool> onChanged,
+            }) {
+              Widget option({
+                required bool optionValue,
+                required String label,
+                required IconData icon,
+              }) {
+                final selected = value == optionValue;
+                final color =
+                    optionValue ? FarmColors.green : FarmColors.warning;
+
+                return Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: saving ? null : () => onChanged(optionValue),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? color.withOpacity(0.12)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: selected
+                              ? color.withOpacity(0.38)
+                              : Colors.transparent,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 42,
-                            height: 5,
-                            margin: const EdgeInsets.only(top: 10, bottom: 8),
-                            decoration: BoxDecoration(
-                              color: FarmColors.line,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
+                          Icon(
+                            icon,
+                            size: 15,
+                            color: selected ? color : FarmColors.mutedText,
                           ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(18, 4, 10, 12),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    product == null
-                                        ? 'Add Product'
-                                        : 'Edit ${product.name}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Close',
-                                  onPressed: saving
-                                      ? null
-                                      : () => Navigator.pop(dialogContext),
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              keyboardDismissBehavior:
-                                  ScrollViewKeyboardDismissBehavior.onDrag,
-                              padding:
-                                  const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  TextField(
-                                    controller: nameController,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Product name'),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  TextField(
-                                    controller: priceController,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                            decimal: true),
-                                    decoration: const InputDecoration(
-                                        labelText: 'Price'),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final stockField = TextField(
-                                        controller: stockController,
-                                        keyboardType: TextInputType.number,
-                                        decoration: const InputDecoration(
-                                            labelText: 'Stock quantity'),
-                                      );
-
-                                      final originSelector =
-                                          LocalProductSelector(
-                                        value: isLocal,
-                                        enabled: !saving,
-                                        onChanged: (value) =>
-                                            setDialogState(() {
-                                          isLocal = value;
-                                        }),
-                                      );
-
-                                      if (constraints.maxWidth < 520) {
-                                        return Column(
-                                          children: [
-                                            stockField,
-                                            const SizedBox(height: 10),
-                                            originSelector,
-                                          ],
-                                        );
-                                      }
-
-                                      return Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(child: stockField),
-                                          const SizedBox(width: 9),
-                                          Expanded(child: originSelector),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: 10),
-                                  DropdownButtonFormField<String>(
-                                    value: selectedCategory,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Category'),
-                                    items: productCategoryOptions
-                                        .map(
-                                          (category) =>
-                                              DropdownMenuItem<String>(
-                                            value: category,
-                                            child: Text(category),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: saving
-                                        ? null
-                                        : (value) {
-                                            if (value == null) return;
-                                            setDialogState(() {
-                                              selectedCategory = value;
-                                            });
-                                          },
-                                  ),
-                                  const SizedBox(height: 10),
-                                  DropdownButtonFormField<String>(
-                                    value: selectedProductStatus,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Product status'),
-                                    items: const [
-                                      DropdownMenuItem(
-                                          value: 'available',
-                                          child: Text('Available')),
-                                      DropdownMenuItem(
-                                          value: 'ready_soon',
-                                          child: Text('Ready Soon')),
-                                      DropdownMenuItem(
-                                          value: 'out_of_stock',
-                                          child: Text('Out of Stock')),
-                                      DropdownMenuItem(
-                                          value: 'hidden',
-                                          child: Text('Hidden')),
-                                    ],
-                                    onChanged: saving
-                                        ? null
-                                        : (value) {
-                                            if (value == null) return;
-                                            setDialogState(() {
-                                              selectedProductStatus = value;
-                                              readySoon = value == 'ready_soon';
-                                              if (readySoon)
-                                                isAvailable = false;
-                                            });
-                                          },
-                                  ),
-                                  SwitchListTile(
-                                    value: readySoon,
-                                    title: const Text('Ready soon item'),
-                                    subtitle: const Text(
-                                        'Show this item in the Ready Soon section and let customers request alerts.'),
-                                    activeColor: FarmColors.warning,
-                                    onChanged: saving
-                                        ? null
-                                        : (value) {
-                                            setDialogState(() {
-                                              readySoon = value;
-                                              selectedProductStatus = value
-                                                  ? 'ready_soon'
-                                                  : 'available';
-                                              if (value) isAvailable = false;
-                                            });
-                                          },
-                                  ),
-                                  if (readySoon) ...[
-                                    TextField(
-                                      controller: estimatedReadyDateController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Estimated ready date',
-                                        helperText: 'Use YYYY-MM-DD',
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: expectedStockController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                          labelText: 'Expected quantity'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                  ],
-                                  SwitchListTile(
-                                    value: isDiscountActive,
-                                    title: const Text('Discount / deal active'),
-                                    subtitle: const Text(
-                                        'Show a sale price and deal badge like an online marketplace.'),
-                                    activeColor: FarmColors.warning,
-                                    onChanged: saving
-                                        ? null
-                                        : (value) => setDialogState(
-                                            () => isDiscountActive = value),
-                                  ),
-                                  if (isDiscountActive) ...[
-                                    TextField(
-                                      controller: originalPriceController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                              decimal: true),
-                                      decoration: const InputDecoration(
-                                          labelText: 'Original price'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: discountPriceController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                              decimal: true),
-                                      decoration: const InputDecoration(
-                                          labelText: 'Discount price'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: discountPercentController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                              decimal: true),
-                                      decoration: const InputDecoration(
-                                          labelText: 'Discount percent'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: discountLabelController,
-                                      decoration: const InputDecoration(
-                                          labelText: 'Deal label',
-                                          hintText:
-                                              'Today’s Deal, Fresh Pick Deal...'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: discountStartsController,
-                                      decoration: const InputDecoration(
-                                          labelText: 'Deal starts at',
-                                          helperText: 'Optional ISO date/time'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: discountEndsController,
-                                      decoration: const InputDecoration(
-                                          labelText: 'Deal ends at',
-                                          helperText: 'Optional ISO date/time'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                  ],
-                                  const SizedBox(height: 10),
-                                  SwitchListTile(
-                                    value: isDealOfDay,
-                                    title: const Text('Deal of the Day'),
-                                    subtitle: const Text(
-                                        'Feature this product in the customer Deal of the Day section.'),
-                                    activeColor: FarmColors.warning,
-                                    onChanged: saving
-                                        ? null
-                                        : (value) => setDialogState(
-                                            () => isDealOfDay = value),
-                                  ),
-                                  if (isDealOfDay) ...[
-                                    TextField(
-                                      controller: dealRankController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Deal display rank',
-                                        helperText: 'Lower numbers show first',
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                  ],
-                                  SwitchListTile(
-                                    value: subscribeSaveEnabled,
-                                    title: const Text('Subscribe & Save'),
-                                    subtitle: const Text(
-                                        'Allow customers to create repeat orders for this item.'),
-                                    activeColor: FarmColors.success,
-                                    onChanged: saving
-                                        ? null
-                                        : (value) => setDialogState(
-                                            () => subscribeSaveEnabled = value),
-                                  ),
-                                  if (subscribeSaveEnabled) ...[
-                                    TextField(
-                                      controller:
-                                          subscribeSavePercentController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                              decimal: true),
-                                      decoration: const InputDecoration(
-                                          labelText:
-                                              'Subscribe & Save discount %'),
-                                    ),
-                                    const SizedBox(height: 10),
-                                  ],
-                                  const SizedBox(height: 10),
-                                  SwitchListTile(
-                                    value: isOrganic,
-                                    title: const Text('Organic item'),
-                                    subtitle: Text(
-                                      isOrganic
-                                          ? 'Shown as organic in the shop'
-                                          : 'Turn on only if this item is organic',
-                                    ),
-                                    activeColor: FarmColors.green,
-                                    onChanged: saving
-                                        ? null
-                                        : (value) {
-                                            setDialogState(() {
-                                              isOrganic = value;
-                                            });
-                                          },
-                                  ),
-                                  const SizedBox(height: 10),
-                                  TextField(
-                                    controller: unitController,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Unit'),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  TextField(
-                                    controller: descriptionController,
-                                    maxLines: 3,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Short description'),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: FarmColors.cream,
-                                      borderRadius: BorderRadius.circular(18),
-                                      border: Border.all(
-                                          color: FarmColors.lightGreen),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Product Image',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        productImagePreviewFromUrl(
-                                          imageUrl: imageUrlController.text,
-                                        ),
-                                        const SizedBox(height: 10),
-                                        TextField(
-                                          controller: imageUrlController,
-                                          onChanged: (_) =>
-                                              setDialogState(() {}),
-                                          decoration: const InputDecoration(
-                                            labelText: 'Image URL',
-                                            helperText:
-                                                'Upload from your computer, or paste a hosted image URL.',
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          children: [
-                                            ElevatedButton.icon(
-                                              icon: uploadingImage
-                                                  ? const SizedBox(
-                                                      height: 16,
-                                                      width: 16,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Colors.white,
-                                                      ),
-                                                    )
-                                                  : const Icon(
-                                                      Icons.upload_file),
-                                              label: Text(uploadingImage
-                                                  ? 'Uploading...'
-                                                  : 'Upload from computer'),
-                                              onPressed:
-                                                  saving || uploadingImage
-                                                      ? null
-                                                      : uploadImageFromComputer,
-                                            ),
-                                            TextButton.icon(
-                                              icon: const Icon(Icons.clear),
-                                              label: const Text('Clear Image'),
-                                              onPressed:
-                                                  saving || uploadingImage
-                                                      ? null
-                                                      : () {
-                                                          imageUrlController
-                                                              .clear();
-                                                          setDialogState(() {});
-                                                        },
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  SwitchListTile(
-                                    value: isAvailable,
-                                    title: const Text('Visible in shop'),
-                                    activeColor: FarmColors.green,
-                                    onChanged: (value) {
-                                      setDialogState(() => isAvailable = value);
-                                    },
-                                  ),
-                                ],
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: selected ? color : FarmColors.mutedText,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12.5,
                               ),
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: saving
-                                        ? null
-                                        : () => Navigator.pop(dialogContext),
-                                    child: const Text('Cancel'),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: saving ? null : saveProduct,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: FarmColors.primary,
-                                      foregroundColor: Colors.white,
-                                    ),
-                                    child: Text(saving ? 'Saving...' : 'Save'),
-                                  ),
-                                ),
-                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (value ? FarmColors.green : FarmColors.warning)
+                              .withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          value ? trueLabel : falseLabel,
+                          style: TextStyle(
+                            color:
+                                value ? FarmColors.green : FarmColors.warning,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    helper,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: FarmColors.cardSoft,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: FarmColors.line),
+                    ),
+                    child: Row(
+                      children: [
+                        option(
+                          optionValue: true,
+                          label: trueLabel,
+                          icon: trueIcon,
+                        ),
+                        option(
+                          optionValue: false,
+                          label: falseLabel,
+                          icon: falseIcon,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 18,
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(18, 16, 8, 8),
+              contentPadding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              actionsPadding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      product == null ? 'Add Product' : 'Edit Product',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed:
+                        saving ? null : () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (product != null) ...[
+                        Row(
+                          children: [
+                            ProductVisual(product: product, size: 54),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                product.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      sectionTitle('Basic details'),
+                      TextField(
+                        controller: nameController,
+                        enabled: !saving,
+                        decoration: const InputDecoration(
+                          labelText: 'Product name',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: priceController,
+                              enabled: !saving,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'Price',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: stockController,
+                              enabled: !saving,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Stock',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: selectedCategory,
+                        decoration:
+                            const InputDecoration(labelText: 'Category'),
+                        items: productCategoryOptions
+                            .map(
+                              (category) => DropdownMenuItem<String>(
+                                value: category,
+                                child: Text(category),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() => selectedCategory = value);
+                              },
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: selectedProductStatus,
+                        decoration:
+                            const InputDecoration(labelText: 'Product status'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'available',
+                            child: Text('Available'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ready_soon',
+                            child: Text('Ready Soon'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'out_of_stock',
+                            child: Text('Out of Stock'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'hidden',
+                            child: Text('Hidden'),
+                          ),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() {
+                                  selectedProductStatus = value;
+                                  readySoon = value == 'ready_soon';
+                                  if (value == 'hidden') isAvailable = false;
+                                  if (readySoon) isAvailable = false;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 10),
+                      LocalProductSelector(
+                        value: isLocal,
+                        enabled: !saving,
+                        onChanged: (value) =>
+                            setDialogState(() => isLocal = value),
+                      ),
+                      const SizedBox(height: 12),
+                      productChoiceSelector(
+                        title: 'Organic status',
+                        helper:
+                            'Use Organic only for items confirmed by the supplier or farm.',
+                        value: isOrganic,
+                        trueLabel: 'Organic',
+                        falseLabel: 'Standard',
+                        trueIcon: Icons.eco_outlined,
+                        falseIcon: Icons.spa_outlined,
+                        onChanged: (value) =>
+                            setDialogState(() => isOrganic = value),
+                      ),
+                      sectionTitle('Options'),
+                      SwitchListTile(
+                        value: isAvailable,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Visible in shop'),
+                        activeColor: FarmColors.green,
+                        onChanged: saving
+                            ? null
+                            : (value) =>
+                                setDialogState(() => isAvailable = value),
+                      ),
+                      SwitchListTile(
+                        value: readySoon,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Ready soon'),
+                        activeColor: FarmColors.warning,
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                setDialogState(() {
+                                  readySoon = value;
+                                  selectedProductStatus =
+                                      value ? 'ready_soon' : 'available';
+                                  if (value) isAvailable = false;
+                                });
+                              },
+                      ),
+                      SwitchListTile(
+                        value: isDealOfDay,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Sale / deal'),
+                        activeColor: FarmColors.warning,
+                        onChanged: saving
+                            ? null
+                            : (value) =>
+                                setDialogState(() => isDealOfDay = value),
+                      ),
+                      SwitchListTile(
+                        value: isDiscountActive,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Discount active'),
+                        activeColor: FarmColors.warning,
+                        onChanged: saving
+                            ? null
+                            : (value) => setDialogState(
+                                  () => isDiscountActive = value,
+                                ),
+                      ),
+                      if (isDiscountActive || isDealOfDay) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: discountPercentController,
+                                enabled: !saving,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Discount %',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: discountPriceController,
+                                enabled: !saving,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Sale price',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: discountLabelController,
+                          enabled: !saving,
+                          decoration: const InputDecoration(
+                            labelText: 'Sale label',
+                            hintText: 'Fresh market special',
+                          ),
+                        ),
+                      ],
+                      if (readySoon) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: estimatedReadyDateController,
+                                enabled: !saving,
+                                decoration: const InputDecoration(
+                                  labelText: 'Ready date',
+                                  hintText: 'YYYY-MM-DD',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: expectedStockController,
+                                enabled: !saving,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'Expected stock',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      sectionTitle('Image and notes'),
+                      TextField(
+                        controller: imageUrlController,
+                        enabled: !saving && !uploadingImage,
+                        decoration: const InputDecoration(
+                          labelText: 'Image URL',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ElevatedButton.icon(
+                            icon: uploadingImage
+                                ? const SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.upload_file),
+                            label: Text(
+                              uploadingImage ? 'Uploading...' : 'Upload image',
+                            ),
+                            onPressed: saving || uploadingImage
+                                ? null
+                                : uploadImageFromComputer,
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.clear),
+                            label: const Text('Clear image'),
+                            onPressed: saving || uploadingImage
+                                ? null
+                                : () {
+                                    imageUrlController.clear();
+                                    setDialogState(() {});
+                                  },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: unitController,
+                        enabled: !saving,
+                        decoration: const InputDecoration(labelText: 'Unit'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: descriptionController,
+                        enabled: !saving,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Description',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      saving ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton.icon(
+                  icon: saving
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(saving ? 'Saving...' : 'Save'),
+                  onPressed: saving ? null : saveProduct,
+                ),
+              ],
             );
           },
         );
       },
     );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      nameController.dispose();
-      priceController.dispose();
-      stockController.dispose();
-      unitController.dispose();
-      descriptionController.dispose();
-      imageUrlController.dispose();
-      originalPriceController.dispose();
-      discountPriceController.dispose();
-      discountPercentController.dispose();
-      discountLabelController.dispose();
-      discountStartsController.dispose();
-      discountEndsController.dispose();
-      estimatedReadyDateController.dispose();
-      expectedStockController.dispose();
-      subscribeSavePercentController.dispose();
-      dealRankController.dispose();
-    });
+    await disposeControllers();
   }
 
   Future<void> openRestockDialog(BuildContext context, Product product) async {

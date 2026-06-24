@@ -15,24 +15,24 @@ class EliteGreenHeroCard extends StatelessWidget {
     required this.subtitle,
     this.icon,
     this.chips = const [],
-    this.padding = const EdgeInsets.all(20),
+    this.padding = const EdgeInsets.all(17),
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
             color: FarmColors.primaryDark.withOpacity(0.18),
-            blurRadius: 26,
-            offset: const Offset(0, 16),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(26),
         child: Stack(
           children: [
             Positioned.fill(
@@ -67,7 +67,7 @@ class EliteGreenHeroCard extends StatelessWidget {
               left: -46,
               child: Container(
                 height: 150,
-                width: 150,
+                width: 140,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: FarmColors.accent.withOpacity(0.12),
@@ -78,7 +78,7 @@ class EliteGreenHeroCard extends StatelessWidget {
               child: IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
+                    borderRadius: BorderRadius.circular(26),
                     border: Border.all(color: Colors.white.withOpacity(0.12)),
                   ),
                 ),
@@ -115,7 +115,7 @@ class EliteGreenHeroCard extends StatelessWidget {
                         ),
                       ),
                       if (icon != null) ...[
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 7),
                         Container(
                           height: 38,
                           width: 38,
@@ -132,18 +132,18 @@ class EliteGreenHeroCard extends StatelessWidget {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   Text(
                     title,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 25,
+                      fontSize: 23,
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.65,
                       height: 1.04,
                     ),
                   ),
-                  const SizedBox(height: 9),
+                  const SizedBox(height: 7),
                   Text(
                     subtitle,
                     style: TextStyle(
@@ -154,7 +154,7 @@ class EliteGreenHeroCard extends StatelessWidget {
                     ),
                   ),
                   if (chips.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -532,55 +532,52 @@ class ProductTrustBadges extends StatelessWidget {
 class FreshnessScoreCard extends StatelessWidget {
   final Product product;
 
-  const FreshnessScoreCard({super.key, required this.product});
+  const FreshnessScoreCard({
+    super.key,
+    required this.product,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final score = productFreshnessScore(product);
-    final color = productFreshnessColor(product);
-
     return FarmCard(
       padding: const EdgeInsets.all(14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox(
-                height: 58,
-                width: 58,
-                child: CircularProgressIndicator(
-                  value: score / 100,
-                  strokeWidth: 7,
-                  backgroundColor: FarmColors.line,
-                  valueColor: AlwaysStoppedAnimation<Color>(color),
-                ),
-              ),
-              Text(
-                '$score',
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
+          Container(
+            height: 46,
+            width: 46,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.kitchen_outlined,
+              color: FarmColors.primary,
+              size: 24,
+            ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  productFreshnessLabel(product),
-                  style: const TextStyle(
+                const Text(
+                  'How to Store',
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
+                    color: FarmColors.text,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  productFreshnessDescription(product),
-                  style: TextStyle(color: FarmColors.mutedText, height: 1.25),
+                  productStorageTip(product),
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -667,7 +664,7 @@ class ProductTraceStoryCard extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 value.trim().isEmpty ? 'Not provided yet' : value.trim(),
                 style: const TextStyle(
@@ -763,7 +760,7 @@ class ProductTraceStoryCard extends StatelessWidget {
                 width: 48,
                 decoration: BoxDecoration(
                   color: FarmColors.green,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
                       color: FarmColors.green.withOpacity(0.18),
@@ -1191,7 +1188,7 @@ class FarmBottomOptionsBar extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
         decoration: BoxDecoration(
           color: FarmColors.surface,
           border: const Border(
@@ -1218,11 +1215,11 @@ class FarmBottomOptionsBar extends StatelessWidget {
                   duration: const Duration(milliseconds: 180),
                   curve: Curves.easeOut,
                   margin: const EdgeInsets.symmetric(horizontal: 2),
-                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
                   decoration: BoxDecoration(
                     color:
                         selected ? FarmColors.lightGreen : Colors.transparent,
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1236,7 +1233,7 @@ class FarmBottomOptionsBar extends StatelessWidget {
                               color: selected
                                   ? FarmColors.green
                                   : FarmColors.muted,
-                              size: 22,
+                              size: 21,
                             ),
                             child: selected ? option.selectedIcon : option.icon,
                           ),
@@ -1281,13 +1278,13 @@ class FarmBottomOptionsBar extends StatelessWidget {
                             ),
                         ],
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Text(
                         option.label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 10.2,
                           fontWeight:
                               selected ? FontWeight.w900 : FontWeight.w700,
                           color: selected ? FarmColors.green : FarmColors.muted,
@@ -1453,14 +1450,14 @@ class PersonalizedLoyaltyCard extends StatelessWidget {
                         size: 19,
                       ),
                     ),
-                    const SizedBox(width: 9),
+                    const SizedBox(width: 7),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '$tier Member',
+                            'Member rewards',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1472,12 +1469,12 @@ class PersonalizedLoyaltyCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'You’re saving with every order',
+                            'Enjoy rewards as you shop',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: FarmColors.mutedText,
-                              fontSize: 10.8,
+                              fontSize: 10.2,
                               height: 1.0,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1509,7 +1506,7 @@ class PersonalizedLoyaltyCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Points Balance',
+                    'Rewards',
                     style: TextStyle(
                       color: FarmColors.mutedText,
                       fontSize: 10.2,
@@ -1854,7 +1851,7 @@ class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
       backgroundColor: FarmColors.background,
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 78),
           children: [
             Row(
               children: [
@@ -1870,7 +1867,7 @@ class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
@@ -1915,7 +1912,7 @@ class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             FarmCard(
               child: Column(
                 children: [
@@ -1937,7 +1934,7 @@ class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
                       filled: true,
                       fillColor: FarmColors.cream,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
                       ),
                     ),
@@ -1948,7 +1945,7 @@ class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: categories.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      separatorBuilder: (_, __) => const SizedBox(width: 7),
                       itemBuilder: (context, index) {
                         final category = categories[index];
                         final selected = selectedCategory == category;
@@ -1978,7 +1975,7 @@ class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             if (items.isEmpty)
               const FarmEmptyState(
                 icon: Icons.menu_book_outlined,
@@ -2034,7 +2031,7 @@ class VeganIngredientCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2060,7 +2057,7 @@ class VeganIngredientCard extends StatelessWidget {
           const SizedBox(height: 14),
           IngredientInfoRow(
             icon: Icons.favorite_outline,
-            title: 'Health benefits',
+            title: 'Fresh notes',
             body: ingredient.benefits,
           ),
           IngredientInfoRow(
@@ -2166,7 +2163,7 @@ class _FreshnessChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: const Text(
-        'Freshness guaranteed',
+        'Freshly sourced',
         style: TextStyle(
           color: Colors.white,
           fontSize: 12,
@@ -2301,22 +2298,25 @@ class ProductMiniRail extends StatelessWidget {
     if (visible.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 228,
+      height: 156,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         cacheExtent: AppPerformanceConfig.productRailCacheExtent,
         itemCount: visible.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final product = visible[index];
           final muted = product.isOutOfStock;
+          final showSale =
+              (product.hasActiveDiscount || product.showAsDealOfDay) &&
+                  !product.isOutOfStock;
 
           return SizedBox(
-            width: 164,
+            width: 138,
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(22),
                 onTap: () {
                   if (onProductTap != null) {
                     onProductTap!(product);
@@ -2326,10 +2326,10 @@ class ProductMiniRail extends StatelessWidget {
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
-                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                  padding: const EdgeInsets.fromLTRB(9, 9, 9, 9),
                   decoration: BoxDecoration(
                     color: muted ? FarmColors.cardSoft : Colors.white,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(22),
                     border: Border.all(
                       color: muted
                           ? FarmColors.danger.withOpacity(0.13)
@@ -2338,7 +2338,7 @@ class ProductMiniRail extends StatelessWidget {
                     boxShadow: [
                       BoxShadow(
                         color: FarmColors.shadow
-                            .withOpacity(muted ? 0.025 : 0.055),
+                            .withOpacity(muted ? 0.025 : 0.058),
                         blurRadius: 18,
                         offset: const Offset(0, 8),
                       ),
@@ -2349,53 +2349,73 @@ class ProductMiniRail extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(
-                          height: 88,
+                        Expanded(
                           child: Stack(
                             clipBehavior: Clip.none,
                             children: [
-                              Center(
-                                child: SizedBox(
-                                  height: 86,
-                                  width: double.infinity,
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color:
+                                        FarmColors.cardSoft.withOpacity(0.72),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
                                   child: Center(
                                     child: ProductVisual(
-                                        product: product, size: 72),
+                                      product: product,
+                                      size: 86,
+                                    ),
                                   ),
                                 ),
                               ),
-                              if (product.hasActiveDiscount &&
-                                  !product.isOutOfStock)
+                              if (showSale)
                                 Positioned(
-                                  top: 4,
-                                  right: 4,
-                                  child: DiscountBadge(
-                                    product: product,
-                                    compact: true,
-                                  ),
+                                  top: 6,
+                                  right: 6,
+                                  child: product.hasActiveDiscount
+                                      ? DiscountBadge(
+                                          product: product,
+                                          compact: true,
+                                        )
+                                      : Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: FarmColors.warningSoft,
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                            border: Border.all(
+                                              color: FarmColors.warning
+                                                  .withOpacity(0.14),
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Sale',
+                                            style: TextStyle(
+                                              color: FarmColors.warning,
+                                              fontSize: 10.5,
+                                              height: 1,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
                                 ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 8),
-                        _HomeProductName(product: product, compact: true),
-                        const SizedBox(height: 6),
                         Row(
                           children: [
-                            Expanded(
+                            Flexible(
                               child: ProductOriginBadge(
                                 product: product,
                                 compact: true,
-                                includeIcon: false,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        _HomePricePanel(product: product, compact: true),
-                        ProductAvailabilityChip(
-                            product: product, compact: true),
-                        const Spacer(),
                       ],
                     ),
                   ),
@@ -2568,8 +2588,8 @@ class EliteOrderStatusCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                height: 46,
-                width: 46,
+                height: 36,
+                width: 36,
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.14),
                   borderRadius: BorderRadius.circular(17),
@@ -2634,9 +2654,7 @@ class EliteOrderStatusCard extends StatelessWidget {
                 color: Colors.white,
               ),
               _statusPill(
-                icon: _isPaid
-                    ? Icons.verified_rounded
-                    : Icons.schedule_rounded,
+                icon: _isPaid ? Icons.verified_rounded : Icons.schedule_rounded,
                 label: _paymentLabel,
                 color: _paymentColor,
                 filled: true,
@@ -2652,7 +2670,7 @@ class EliteOrderStatusCard extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.white.withOpacity(0.16)),
               ),
               child: Column(
@@ -2964,7 +2982,7 @@ class PremiumOrderTracker extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 7),
               Expanded(
                 child: Container(
                   height: 5,
@@ -2976,7 +2994,7 @@ class PremiumOrderTracker extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3017,12 +3035,9 @@ class PremiumOrderTracker extends StatelessWidget {
             children: [
               _pill(
                 label: _isPaid ? 'Paid' : 'Payment pending',
-                color: _isPaid
-                    ? const Color(0xFF247545)
-                    : const Color(0xFFB66A00),
-                icon: _isPaid
-                    ? Icons.verified_rounded
-                    : Icons.schedule_rounded,
+                color:
+                    _isPaid ? const Color(0xFF247545) : const Color(0xFFB66A00),
+                icon: _isPaid ? Icons.verified_rounded : Icons.schedule_rounded,
                 filled: true,
               ),
               _pill(
@@ -3032,13 +3047,13 @@ class PremiumOrderTracker extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.82),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: stageColor.withOpacity(0.18)),
             ),
             child: Text(
@@ -3080,7 +3095,7 @@ class PremiumOrderTracker extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             _isCancelled
                 ? 'This order is no longer active.'
@@ -3257,7 +3272,7 @@ class _PremiumTrackingStep extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: cardTint,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: borderColor),
             ),
             child: AnimatedOpacity(
@@ -3277,7 +3292,7 @@ class _PremiumTrackingStep extends StatelessWidget {
                       height: 1.15,
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 3),
                   Text(
                     subtitle,
                     style: TextStyle(
@@ -3399,11 +3414,11 @@ class _LaunchPlaybookHero extends StatelessWidget {
           Row(
             children: [
               Container(
-                height: 46,
-                width: 46,
+                height: 36,
+                width: 36,
                 decoration: BoxDecoration(
                   color: FarmColors.green.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(
                   Icons.verified_user_outlined,
@@ -3519,7 +3534,7 @@ class _LaunchPlaybookGrid extends StatelessWidget {
         ),
         _LaunchPlaybookCard(
           icon: Icons.speed_outlined,
-          title: 'Real phone smoothness test',
+          title: 'Real phone smoothness check',
           detail:
               'Open Home, Shop, Product Details, My Box, Checkout, Orders, and Account on an Android phone.',
         ),
@@ -3688,7 +3703,7 @@ class LaunchCheckTile extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
                 Text(
                   check.detail,
                   style: const TextStyle(
@@ -3723,7 +3738,7 @@ class _FulfillmentMetricPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: FarmColors.cardSoft,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: FarmColors.line),
       ),
       child: Row(
@@ -3903,7 +3918,7 @@ class _FulfillmentOrderCard extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: FarmColors.primarySoft.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: FarmColors.green.withOpacity(0.10)),
               ),
               child: Column(
@@ -3942,7 +3957,7 @@ class _FulfillmentOrderCard extends StatelessWidget {
                   onTap: onPreparing,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 7),
               Expanded(
                 child: _StageButton(
                   label: readyLabel,
@@ -3964,7 +3979,7 @@ class _FulfillmentOrderCard extends StatelessWidget {
                   label: Text(isDelivery ? 'Delivered' : 'Completed'),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 7),
               Expanded(
                 child: DropdownButtonFormField<String>(
                   value: AdminDeliveryTab.deliveryStatuses.contains(status)
@@ -4388,7 +4403,7 @@ class _FarmBoxHelperScreenState extends State<FarmBoxHelperScreen> {
                     constraints: const BoxConstraints(maxWidth: 320),
                     decoration: BoxDecoration(
                       color: isUser ? FarmColors.green : Colors.white,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(16),
                       boxShadow: isUser
                           ? []
                           : [
@@ -4423,13 +4438,13 @@ class _FarmBoxHelperScreenState extends State<FarmBoxHelperScreen> {
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(16),
                           borderSide: BorderSide.none,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 7),
                   IconButton.filled(
                     onPressed: sendMessage,
                     icon: const Icon(Icons.send),
@@ -4579,7 +4594,7 @@ class LoyaltySummaryCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 7),
               Text(
                 pointsToNext <= 0
                     ? 'Top tier unlocked. Thank you for supporting the farm.'
@@ -4616,7 +4631,7 @@ class _RewardsHeroCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(26),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -4911,7 +4926,7 @@ class _RewardMilestoneCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 7),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
@@ -5141,11 +5156,12 @@ class Header extends StatelessWidget {
           if (showBackButton) ...[
             _HeaderBackButton(
               tooltip: backTooltip ?? 'Back',
-              onPressed: onBack ?? () {
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).maybePop();
-                }
-              },
+              onPressed: onBack ??
+                  () {
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).maybePop();
+                    }
+                  },
             ),
             const SizedBox(width: 10),
           ],
@@ -5242,7 +5258,7 @@ class HeroCard extends StatelessWidget {
       margin: const EdgeInsets.only(top: 4),
       height: 188,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(26),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -5261,7 +5277,7 @@ class HeroCard extends StatelessWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(26),
         child: Stack(
           children: [
             Positioned(
@@ -5434,7 +5450,7 @@ class _FarmSkeletonCardState extends State<FarmSkeletonCard>
         padding: EdgeInsets.all(padding),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: FarmColors.line.withOpacity(0.72)),
           boxShadow: [
             BoxShadow(
@@ -5540,7 +5556,7 @@ class ProductRailSkeleton extends StatelessWidget {
         physics: const BouncingScrollPhysics(),
         cacheExtent: AppPerformanceConfig.productRailCacheExtent,
         itemCount: count,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 7),
         itemBuilder: (_, __) => SizedBox(
           width: width,
           child: FarmSkeletonCard(height: height),
@@ -5680,7 +5696,7 @@ class DiscountPriceText extends StatelessWidget {
         Row(
           children: [
             Flexible(child: priceText),
-            const SizedBox(width: 8),
+            const SizedBox(width: 7),
             Flexible(child: DiscountBadge(product: product)),
           ],
         ),
@@ -5781,8 +5797,7 @@ class _NotifyMeWhenReadyButtonState extends State<NotifyMeWhenReadyButton> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(friendlyAppError(error))),
+        SnackBar(content: Text(friendlyAppError(error))),
       );
     } finally {
       if (mounted) setState(() => loading = false);
@@ -5880,7 +5895,7 @@ class ReadySoonRail extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             cacheExtent: AppPerformanceConfig.productRailCacheExtent,
             itemCount: visible.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            separatorBuilder: (_, __) => const SizedBox(width: 7),
             itemBuilder: (context, index) {
               final product = visible[index];
               return ReadySoonProductTile(
@@ -5921,7 +5936,7 @@ class ReadySoonProductTile extends StatelessWidget {
         padding: EdgeInsets.zero,
         color: FarmColors.card,
         child: InkWell(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           onTap: onOpen,
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -5974,7 +5989,7 @@ class ReadySoonProductTile extends StatelessWidget {
                           height: 1.08,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Text(
                         farm.isEmpty ? product.readySoonLabel : farm,
                         maxLines: 1,
@@ -5993,7 +6008,7 @@ class ReadySoonProductTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: FarmColors.mutedText,
-                            fontSize: 10.5,
+                            fontSize: 10.2,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -6079,24 +6094,54 @@ class _DealOfTheDaySectionState extends State<DealOfTheDaySection> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
             Row(
               children: const [
-                Expanded(child: SectionTitle('Deal of the Day')),
+                Expanded(child: SectionTitle("Today's Deal")),
                 Icon(Icons.local_offer_outlined, color: FarmColors.warning),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             InkWell(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(22),
               onTap: () => openProduct(context, featured),
               child: FarmCard(
                 color: FarmColors.warningSoft,
+                padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    ProductVisual(
-                        product: featured, size: widget.compact ? 78 : 104),
-                    const SizedBox(width: 14),
+                    Container(
+                      height: widget.compact ? 86 : 96,
+                      width: widget.compact ? 112 : 128,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.82),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: FarmColors.warning.withOpacity(0.10),
+                        ),
+                      ),
+                      child: Stack(
+                        children: [
+                          Center(
+                            child: ProductVisual(
+                              product: featured,
+                              size: widget.compact ? 76 : 88,
+                            ),
+                          ),
+                          if (featured.hasActiveDiscount &&
+                              !featured.isOutOfStock)
+                            Positioned(
+                              top: 7,
+                              right: 7,
+                              child: DiscountBadge(
+                                product: featured,
+                                compact: true,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6104,68 +6149,67 @@ class _DealOfTheDaySectionState extends State<DealOfTheDaySection> {
                           Text(
                             featured.discountLabel?.trim().isNotEmpty == true
                                 ? featured.discountLabel!.trim()
-                                : 'Limited time fresh deal',
+                                : 'Fresh market special',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: FarmColors.warning,
                               fontSize: 12,
+                              height: 1.18,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            featured.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 8),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
+                            spacing: 7,
+                            runSpacing: 6,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              Text(
-                                featured.formattedEffectivePrice,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: FarmColors.green,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
-                                ),
+                              ProductOriginBadge(
+                                product: featured,
+                                compact: true,
                               ),
-                              if (featured.hasActiveDiscount)
-                                DiscountBadge(
-                                  product: featured,
-                                  compact: true,
+                              if (featured.showAsDealOfDay)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.68),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color:
+                                          FarmColors.warning.withOpacity(0.14),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Sale',
+                                    style: TextStyle(
+                                      color: FarmColors.warning,
+                                      fontSize: 10.8,
+                                      height: 1,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
                                 ),
                             ],
-                          ),
-                          if (featured.hasActiveDiscount) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              featured.formattedOriginalPrice,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                                decoration: TextDecoration.lineThrough,
-                              ),
-                            ),
-                          ],
-                          ProductAvailabilityChip(
-                            product: featured,
-                            compact: true,
                           ),
                         ],
                       ),
                     ),
-                    const Icon(Icons.chevron_right, color: FarmColors.warning),
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.72),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.chevron_right,
+                        color: FarmColors.warning,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -6241,8 +6285,7 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(friendlyAppError(error))),
+        SnackBar(content: Text(friendlyAppError(error))),
       );
     } finally {
       if (mounted) setState(() => loading = false);
@@ -6266,8 +6309,7 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(friendlyAppError(error))),
+        SnackBar(content: Text(friendlyAppError(error))),
       );
     } finally {
       if (mounted) setState(() => loading = false);
@@ -6346,7 +6388,7 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.72),
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: FarmColors.success.withOpacity(0.12)),
               ),
               child: Row(
@@ -6357,7 +6399,7 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
                       value: activePlan.nextOrderLabel,
                     ),
                   ),
-                  const SizedBox(width: 9),
+                  const SizedBox(width: 7),
                   Expanded(
                     child: _PlanMetric(
                       label: 'Repeat',
@@ -6377,7 +6419,7 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
                     label: const Text('Pause'),
                   ),
                 ),
-                const SizedBox(width: 9),
+                const SizedBox(width: 7),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: loading
@@ -6431,7 +6473,7 @@ class _SubscribeSaveButtonState extends State<SubscribeSaveButton> {
                         : (value) => setState(() => intervalDays = value ?? 7),
                   ),
                 ),
-                const SizedBox(width: 9),
+                const SizedBox(width: 7),
                 ElevatedButton.icon(
                   onPressed: loading ? null : subscribe,
                   icon: loading
@@ -6601,7 +6643,7 @@ class FrequentlyBoughtTogetherSection extends StatelessWidget {
                 (item) => Padding(
                   padding: const EdgeInsets.only(top: 10),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(16),
                     onTap: () => openProduct(context, item),
                     child: _BundleProductRow(product: item),
                   ),
@@ -6613,7 +6655,7 @@ class FrequentlyBoughtTogetherSection extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: FarmColors.line),
                 ),
                 child: Row(
@@ -6749,7 +6791,7 @@ class _BundleProductRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
         color: FarmColors.cardSoft,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: FarmColors.line),
       ),
       child: Row(
@@ -6784,7 +6826,7 @@ class _BundleProductRow extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 7),
           Text(
             product.formattedEffectivePrice,
             maxLines: 1,
@@ -6921,13 +6963,13 @@ class ProductCard extends StatelessWidget {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.all(11),
           decoration: BoxDecoration(
             color: muted ? FarmColors.cardSoft : Colors.white,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: muted
                   ? FarmColors.danger.withOpacity(0.13)
@@ -7010,7 +7052,7 @@ class ProductCard extends StatelessWidget {
                     ProductUnitChip(product: product, compact: true),
                   ],
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
                 _HomePricePanel(product: product, compact: true),
                 ProductAvailabilityChip(product: product, compact: true),
                 const SizedBox(height: 8),
@@ -7221,19 +7263,19 @@ class FarmCard extends StatelessWidget {
       color: Colors.transparent,
       child: Container(
         margin: margin,
-        padding: padding ?? const EdgeInsets.all(16),
+        padding: padding ?? const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: color ?? FarmColors.surface,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: FarmColors.line,
-            width: 1.1,
+            width: 1.0,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+              color: Colors.black.withOpacity(0.035),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -7255,8 +7297,8 @@ class SectionTitle extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
-        fontSize: 22,
-        height: 1.1,
+        fontSize: 20,
+        height: 1.05,
         fontWeight: FontWeight.w900,
         color: FarmColors.ink,
       ),
@@ -7288,16 +7330,16 @@ class SectionHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SectionTitle(title),
-              const SizedBox(height: 4),
+              const SizedBox(height: 1),
               Text(
                 subtitle,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: FarmColors.mutedText,
-                  fontSize: 13,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w700,
-                  height: 1.2,
+                  height: 1.15,
                 ),
               ),
             ],
@@ -7305,6 +7347,11 @@ class SectionHeader extends StatelessWidget {
         ),
         if (actionLabel != null && onAction != null)
           TextButton(
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 30),
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             onPressed: onAction,
             child: Text(actionLabel!),
           ),
@@ -7368,8 +7415,8 @@ class CategoryPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Image.network(
           imageUrl,
-          height: 44,
-          width: 44,
+          height: 34,
+          width: 34,
           fit: BoxFit.contain,
           cacheWidth: 140,
           gaplessPlayback: true,
@@ -7381,11 +7428,11 @@ class CategoryPill extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Ink(
-          height: 70,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          height: 54,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.centerLeft,
@@ -7395,7 +7442,7 @@ class CategoryPill extends StatelessWidget {
                 FarmColors.primarySoft.withOpacity(0.50),
               ],
             ),
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: FarmColors.line.withOpacity(0.86)),
             boxShadow: [
               BoxShadow(
@@ -7408,16 +7455,16 @@ class CategoryPill extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                height: 46,
-                width: 46,
+                height: 36,
+                width: 36,
                 decoration: BoxDecoration(
                   color: accent.withOpacity(0.09),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 alignment: Alignment.center,
                 child: preview(),
               ),
-              const SizedBox(width: 9),
+              const SizedBox(width: 7),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -7430,17 +7477,17 @@ class CategoryPill extends StatelessWidget {
                       softWrap: false,
                       style: const TextStyle(
                         color: FarmColors.ink,
-                        fontSize: 13.2,
+                        fontSize: 12.0,
                         fontWeight: FontWeight.w900,
                         height: 1.05,
                         letterSpacing: -0.08,
                       ),
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 3),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                        horizontal: 7,
+                        vertical: 3,
                       ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.86),
@@ -7452,7 +7499,7 @@ class CategoryPill extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: FarmColors.mutedText,
-                          fontSize: 10.8,
+                          fontSize: 9.8,
                           fontWeight: FontWeight.w800,
                           height: 1,
                         ),
@@ -7461,10 +7508,10 @@ class CategoryPill extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Container(
-                height: 26,
-                width: 26,
+                height: 24,
+                width: 24,
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.90),
                   shape: BoxShape.circle,
@@ -7525,7 +7572,7 @@ class OrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: FarmCard(
         margin: const EdgeInsets.only(bottom: 14),
@@ -7545,7 +7592,7 @@ class OrderCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 7),
                 Flexible(
                   child: Chip(
                     label: Text(
@@ -7806,7 +7853,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
           : SafeArea(
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
@@ -7816,7 +7863,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                         end: Alignment.bottomRight,
                         colors: [FarmColors.deepGreen, FarmColors.green],
                       ),
-                      borderRadius: BorderRadius.circular(30),
+                      borderRadius: BorderRadius.circular(26),
                       boxShadow: [
                         BoxShadow(
                           color: FarmColors.green.withOpacity(0.22),
@@ -7885,7 +7932,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -7923,7 +7970,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                           subtitle:
                               'Used to prefill checkout and help the farm contact you about orders.',
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         TextField(
                           controller: nameController,
                           textCapitalization: TextCapitalization.words,
@@ -8008,7 +8055,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                       padding: const EdgeInsets.symmetric(
                           vertical: 15, horizontal: 18),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                     onPressed: copyProfileSummary,
@@ -8213,7 +8260,7 @@ class _PrimaryFarmButtonState extends State<PrimaryFarmButton> {
             const SizedBox(width: 10),
           ] else if (widget.icon != null) ...[
             Icon(widget.icon, size: 18),
-            const SizedBox(width: 8),
+            const SizedBox(width: 7),
           ],
           Flexible(
             child: Text(
@@ -8241,7 +8288,7 @@ class _PrimaryFarmButtonState extends State<PrimaryFarmButton> {
       scale: isBusy ? 0.98 : 1,
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: isEnabled || isBusy
               ? [
                   BoxShadow(
@@ -8263,7 +8310,7 @@ class _PrimaryFarmButtonState extends State<PrimaryFarmButton> {
             shadowColor: Colors.transparent,
             padding: const EdgeInsets.symmetric(vertical: 17, horizontal: 20),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(20),
             ),
           ),
           onPressed: isEnabled ? _handlePressed : null,

@@ -1,19 +1,24 @@
-# Farm
+# The Harvest Place Ja
 
-A new Flutter project created with FlutLab - https://flutlab.io
+Flutter app for fresh local food ordering, farm updates, customer accounts, orders, checkout, and admin/farmer management.
 
-## Getting Started
+## Android release notes
 
-A few resources to get you started if this is your first Flutter project:
+The Android package ID is:
 
-- https://flutter.dev/docs/get-started/codelab
-- https://flutter.dev/docs/cookbook
+```text
+com.theharvestplaceja.app
+```
 
-For help getting started with Flutter, view our
-https://flutter.dev/docs, which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Before building for Google Play, create `android/key.properties` from `android/key.properties.template` and keep the real passwords/keystore file out of source control.
 
-## Getting Started: FlutLab - Flutter Online IDE
+Recommended release test commands:
 
-- How to use FlutLab? Please, view our https://flutlab.io/docs
-- Join the discussion and conversation on https://flutlab.io/residents
+```bash
+flutter clean
+flutter pub get
+flutter analyze
+flutter build appbundle --release
+```
+
+Test the installed release build on real Android devices using both Wi-Fi and mobile data. Confirm Supabase login, signup, email confirmation, forgot password, product loading, images, cart, checkout, orders, admin screens, and notifications.

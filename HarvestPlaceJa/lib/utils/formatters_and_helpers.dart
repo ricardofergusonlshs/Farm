@@ -626,3 +626,74 @@ String safeReviewDisplayName({
   // Email is intentionally not used as a fallback for reviews.
   return 'Verified customer';
 }
+String productStorageTip(Product product) {
+  final name = product.name.toLowerCase();
+  final category = product.category.toLowerCase();
+  final text = '$name $category';
+
+  if (text.contains('avocado')) {
+    return 'Keep at room temperature until ripe. Once ripe, place in the fridge and use within a few days.';
+  }
+
+  if (text.contains('banana')) {
+    return 'Keep at room temperature. Separate from other fruits if you want them to ripen slower.';
+  }
+
+  if (text.contains('tomato')) {
+    return 'Keep at room temperature until ripe. Refrigerate only after cutting or when very ripe.';
+  }
+
+  if (text.contains('lettuce') ||
+      text.contains('callaloo') ||
+      text.contains('spinach') ||
+      text.contains('cabbage') ||
+      text.contains('pak choi') ||
+      text.contains('bok choy') ||
+      text.contains('herb') ||
+      text.contains('leaf') ||
+      text.contains('vegetable')) {
+    return 'Wrap lightly in paper towel, place in a bag or container, and keep in the fridge.';
+  }
+
+  if (text.contains('yam') ||
+      text.contains('sweet potato') ||
+      text.contains('potato') ||
+      text.contains('dasheen') ||
+      text.contains('coco') ||
+      text.contains('cassava') ||
+      text.contains('onion') ||
+      text.contains('garlic') ||
+      text.contains('pumpkin') ||
+      text.contains('ground provision')) {
+    return 'Store in a cool, dry, shaded place with good airflow. Keep away from direct sunlight.';
+  }
+
+  if (text.contains('mango') ||
+      text.contains('papaya') ||
+      text.contains('pineapple') ||
+      text.contains('melon') ||
+      text.contains('fruit')) {
+    return 'Keep at room temperature until ripe, then refrigerate to help it last longer.';
+  }
+
+  if (text.contains('egg')) {
+    return 'Keep refrigerated and use before the recommended date.';
+  }
+
+  if (text.contains('honey')) {
+    return 'Store tightly closed at room temperature in a dry place.';
+  }
+
+  if (text.contains('dairy') ||
+      text.contains('milk') ||
+      text.contains('cheese') ||
+      text.contains('yogurt')) {
+    return 'Keep refrigerated and use soon after opening.';
+  }
+
+  if (text.contains('drink') || text.contains('juice')) {
+    return 'Keep chilled after opening and consume within a few days.';
+  }
+
+  return 'Keep in a cool, clean place. Refrigerate delicate items and use soon for best quality.';
+}

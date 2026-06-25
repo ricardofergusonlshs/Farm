@@ -55,7 +55,7 @@ Future<PickedProductImage?> pickProductImageFromDevice() async {
 
   return PickedProductImage(
     fileName: file.name,
-    mimeType: file.type,
+    mimeType: file.type.isEmpty ? 'image/jpeg' : file.type,
     bytes: bytes,
   );
 }

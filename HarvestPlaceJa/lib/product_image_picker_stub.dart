@@ -13,7 +13,5 @@ class PickedProductImage {
 }
 
 Future<PickedProductImage?> pickProductImageFromDevice() async {
-  throw UnsupportedError(
-    'Direct image upload is available in the web admin app. Paste an image URL on this device.',
-  );
+  return null;
 }

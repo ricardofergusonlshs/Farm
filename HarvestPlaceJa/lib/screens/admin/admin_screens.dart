@@ -232,10 +232,10 @@ Future<bool> isCurrentUserAdminFromDatabase() async {
     }
   }
 
+  // Keep admin lookup failures out of customer-facing and developer logs.
+  // This avoids printing customer email addresses or raw database errors.
   farmDebugLog(
-    'Admin check failed for ${user.email ?? user.id}: '
-    '$userIdCheckError / $idCheckError / $emailCheckError',
-  );
+      'Admin check completed without approval. Continuing as customer.');
   return false;
 }
 

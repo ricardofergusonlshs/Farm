@@ -46,7 +46,7 @@ Future<String> uploadProductImageToStorage(PickedProductImage image) async {
     final message = error.toString().toLowerCase();
     if (message.contains('bucket') || message.contains('not found')) {
       throw Exception(
-        'Image storage is not ready. Please finish the image upload setup.',
+        'Image upload setup needs attention. Please check storage settings.',
       );
     }
     if (message.contains('permission') ||
@@ -54,7 +54,7 @@ Future<String> uploadProductImageToStorage(PickedProductImage image) async {
         message.contains('403') ||
         message.contains('401')) {
       throw Exception(
-        'Image upload permission is not ready. Please review the admin upload setup.',
+        'Image upload permission needs attention. Please check admin storage settings.',
       );
     }
     throw Exception('Could not upload image: ${friendlyAppError(error)}');
@@ -120,7 +120,7 @@ Future<String> uploadHomeHeroImageToStorage({
     final message = error.toString().toLowerCase();
     if (message.contains('bucket') || message.contains('not found')) {
       throw Exception(
-        'Image storage is not ready. Please finish the image upload setup.',
+        'Image upload setup needs attention. Please check storage settings.',
       );
     }
     if (message.contains('permission') ||
@@ -128,7 +128,7 @@ Future<String> uploadHomeHeroImageToStorage({
         message.contains('403') ||
         message.contains('401')) {
       throw Exception(
-        'Hero image upload permission is not ready. Please review the admin upload setup.',
+        'Hero image upload permission needs attention. Please check admin storage settings.',
       );
     }
     throw Exception('Could not upload hero image: ${friendlyAppError(error)}');
@@ -160,7 +160,7 @@ Future<void> saveHomeHeroSlideImage({
         );
   } catch (error) {
     throw Exception(
-      'Hero slideshow is not ready. Please complete the hero image setup before saving.',
+      'Hero slideshow setup needs attention before saving.',
     );
   }
 }
@@ -175,70 +175,25 @@ Widget productImagePreviewFromUrl({
     return Container(
       height: height,
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.cardSoft,
-            Color(0xFFEAF6E8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(22),
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: FarmColors.line),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: height >= 180 ? 72 : 52,
-            height: height >= 180 ? 72 : 52,
-            decoration: BoxDecoration(
-              color: FarmColors.lightGreen,
-              shape: BoxShape.circle,
-              border: Border.all(color: FarmColors.green.withOpacity(0.12)),
-            ),
-            child: Icon(
-              Icons.eco_outlined,
-              size: height >= 180 ? 34 : 26,
-              color: FarmColors.green,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Image coming soon',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: FarmColors.deepGreen,
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Fresh product details are still available below.',
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: FarmColors.mutedText,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-              height: 1.25,
-            ),
-          ),
-        ],
+      child: const Center(
+        child: Icon(
+          Icons.image_outlined,
+          size: 44,
+          color: FarmColors.mutedText,
+        ),
       ),
     );
   }
 
-  if (cleanUrl == null || cleanUrl.trim().isEmpty) {
-    return fallbackPreview();
-  }
+  if (cleanUrl == null) return fallbackPreview();
 
   return ClipRRect(
-    borderRadius: BorderRadius.circular(22),
+    borderRadius: BorderRadius.circular(18),
     child: Container(
       height: height,
       width: double.infinity,
@@ -248,28 +203,17 @@ Widget productImagePreviewFromUrl({
         cleanUrl,
         height: height,
         width: double.infinity,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         gaplessPlayback: true,
         filterQuality: FilterQuality.medium,
-        cacheWidth: height >= 180 ? 900 : 600,
+        cacheWidth: 700,
         loadingBuilder: (context, child, progress) {
           if (progress == null) return child;
-
           return Container(
             height: height,
             width: double.infinity,
-            decoration: BoxDecoration(
-              color: FarmColors.cardSoft,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: FarmColors.line),
-            ),
-            child: const Center(
-              child: SizedBox(
-                width: 26,
-                height: 26,
-                child: CircularProgressIndicator(strokeWidth: 2.4),
-              ),
-            ),
+            color: FarmColors.cardSoft,
+            child: const Center(child: CircularProgressIndicator()),
           );
         },
         errorBuilder: (_, __, ___) => fallbackPreview(),
@@ -566,7 +510,8 @@ Future<LoyaltySummary> fetchLoyaltySummary() async {
       );
     }
   } catch (error) {
-    farmDebugLog('Loyalty table unavailable, using paid order estimate: $error');
+    farmDebugLog(
+        'Loyalty table unavailable, using paid order estimate: $error');
   }
 
   try {
@@ -862,7 +807,8 @@ Future<void> clearPrivateSessionStateForGuestBrowsing() async {
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      farmDebugLog('Supabase sign out skipped while entering guest mode: $error');
+      farmDebugLog(
+          'Supabase sign out skipped while entering guest mode: $error');
     }
   }
 
@@ -881,7 +827,6 @@ Future<List<Product>> fetchProducts({bool forceRefresh = false}) async {
     final cached = FarmDataCache.products;
     if (cached != null) return cached;
   }
-
   final products = await _fetchProductsUncached();
   FarmDataCache.products = products;
   return products;
@@ -892,35 +837,49 @@ Future<List<Product>> fetchProductsForCustomerUi({
   Duration timeout = const Duration(seconds: 12),
 }) async {
   final cached = FarmDataCache.products;
+  Object? lastError;
 
-  try {
-    final products = await fetchProducts(forceRefresh: forceRefresh).timeout(
-      timeout,
-      onTimeout: () {
-        if (cached != null && cached.isNotEmpty) return cached;
-        throw TimeoutException('Product connection timed out.');
-      },
-    );
+  for (var attempt = 1; attempt <= 2; attempt++) {
+    try {
+      final products = await fetchProducts(
+        forceRefresh: forceRefresh || attempt > 1,
+      ).timeout(
+        timeout,
+        onTimeout: () {
+          farmDebugLog(
+            'Product load timed out after ${timeout.inSeconds}s on attempt $attempt.',
+          );
+          if (cached != null && cached.isNotEmpty) return cached;
+          throw TimeoutException('Product load timed out.');
+        },
+      );
 
-    if (products.isEmpty && cached != null && cached.isNotEmpty) {
-      return cached;
+      if (products.isNotEmpty) {
+        return products;
+      }
+
+      if (cached != null && cached.isNotEmpty) {
+        farmDebugLog('Product load returned empty, using cached products.');
+        return cached;
+      }
+    } catch (error) {
+      lastError = error;
+      farmDebugLog('Product load attempt $attempt failed: $error');
+
+      if (attempt < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+      }
     }
-
-    return products;
-  } catch (error) {
-    farmDebugLog('Product load fallback used: $error');
-
-    if (cached != null && cached.isNotEmpty) {
-      return cached;
-    }
-
-    throw Exception('Product connection failed: $error');
   }
+
+  farmDebugLog(
+      'Product load fallback used: ${lastError ?? 'No products returned'}');
+  return cached ?? const <Product>[];
 }
 
 Future<List<Product>> _fetchProductsUncached() async {
   final extendedSelect =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
   final compatibleSelect =
       'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at';
 
@@ -929,7 +888,14 @@ Future<List<Product>> _fetchProductsUncached() async {
         .from('products')
         .select(selectFields)
         .order('created_at', ascending: false)
-        .limit(120);
+        .limit(120)
+        .timeout(
+      const Duration(seconds: 12),
+      onTimeout: () {
+        farmDebugLog('Supabase products query timed out after 12s.');
+        throw TimeoutException('Supabase products query timed out.');
+      },
+    );
 
     return (response as List)
         .map((item) => Product.fromSupabase(Map<String, dynamic>.from(item)))
@@ -938,18 +904,15 @@ Future<List<Product>> _fetchProductsUncached() async {
   }
 
   try {
-    final products = await runQuery(extendedSelect);
-    return products;
+    return await runQuery(extendedSelect);
   } catch (error) {
     farmDebugLog(
         'Extended product fetch unavailable, using compatible fetch: $error');
-
     try {
-      final products = await runQuery(compatibleSelect);
-      return products;
+      return await runQuery(compatibleSelect);
     } catch (compatibleError) {
       farmDebugLog('Failed to fetch products: $compatibleError');
-      throw Exception('Product connection failed: $compatibleError');
+      return const <Product>[];
     }
   }
 }
@@ -983,7 +946,7 @@ Future<List<Product>> fetchReadySoonProductsForCustomerUi({
 
 Future<List<Product>> _fetchReadySoonProductsUncached() async {
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   try {
     // Customer-facing Ready Soon list. Only products explicitly marked
@@ -1029,7 +992,7 @@ Future<List<Product>> _fetchReadySoonProductsUncached() async {
 Future<Product?> fetchProductById(String productId) async {
   if (productId.trim().isEmpty) return null;
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   try {
     final response = await supabase
@@ -1070,7 +1033,7 @@ Future<List<Product>> fetchDealOfTheDayProducts(
 
 Future<List<Product>> _fetchDealOfTheDayProductsUncached() async {
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   try {
     final response = await supabase
@@ -1283,7 +1246,7 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
   }
 
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   final productsById = <String, Product>{};
 
@@ -1726,23 +1689,17 @@ Future<void> markNotificationsRead() async {
 
 Future<bool> subscribeToProductReadyAlert(Product product) async {
   final user = supabase.auth.currentUser;
-
   if (user == null) {
-    throw Exception('Please sign in to get stock alerts.');
-  }
-
-  final productId = product.id.trim();
-  if (productId.isEmpty) {
-    return true;
+    throw Exception(
+        'Please sign in so we can notify you when this item is ready.');
   }
 
   final email = (user.email ?? '').trim().toLowerCase();
-
   try {
     final existing = await supabase
         .from('product_ready_subscriptions')
         .select('id')
-        .eq('product_id', productId)
+        .eq('product_id', product.id)
         .eq('user_id', user.id)
         .eq('is_notified', false)
         .maybeSingle();
@@ -1752,19 +1709,15 @@ Future<bool> subscribeToProductReadyAlert(Product product) async {
     await supabase.from('product_ready_subscriptions').insert({
       'user_id': user.id,
       'user_email': email,
-      'product_id': productId,
+      'product_id': product.id,
       'product_name': product.name,
       'is_notified': false,
     });
-
     return true;
   } catch (error) {
-    farmDebugLog('Product ready subscription saved locally/fallback: $error');
-
-    // Customer notify-me should never expose admin/RLS/setup errors.
-    // If the optional table is missing or restricted, the customer still gets
-    // a friendly confirmation instead of a crash.
-    return true;
+    farmDebugLog('Product ready subscription skipped: $error');
+    throw Exception(
+        'Ready alerts are not set up yet. Please run the Supabase SQL migration first.');
   }
 }
 
@@ -2200,7 +2153,7 @@ Future<void> updateDeliveryStatus(String orderId, String deliveryStatus) async {
 
 Future<List<Product>> fetchAllProducts() async {
   final extendedSelect =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
   final compatibleSelect =
       'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at';
   Future<List<Product>> runQuery(String selectFields) async {
@@ -2321,6 +2274,48 @@ Future<Map<String, dynamic>?> adminUpdateProduct({
   }
 }
 
+Future<void> updateProductNutritionTags({
+  required String productId,
+  List<String> nutrientStrong = const <String>[],
+  List<String> nutrientGood = const <String>[],
+  List<String> nutrientContains = const <String>[],
+  String? nutritionNotes,
+  String? nutritionSource,
+  bool nutritionVerified = false,
+  String? usdaFdcId,
+  double servingSizeG = 100,
+}) async {
+  await requireAdminAccess();
+
+  List<String> cleanList(List<String> values) {
+    return values
+        .map((value) =>
+            value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' '))
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  final cleanProductId = productId.trim();
+  if (cleanProductId.isEmpty) {
+    throw Exception('Missing product ID.');
+  }
+
+  await supabase.from('products').update({
+    'nutrient_strong': cleanList(nutrientStrong),
+    'nutrient_good': cleanList(nutrientGood),
+    'nutrient_contains': cleanList(nutrientContains),
+    'nutrition_notes': nutritionNotes?.trim(),
+    'nutrition_source': nutritionSource?.trim(),
+    'nutrition_verified': nutritionVerified,
+    'usda_fdc_id': usdaFdcId?.trim(),
+    'serving_size_g': servingSizeG <= 0 ? 100 : servingSizeG,
+  }).eq('id', cleanProductId);
+
+  FarmDataCache.clearProducts();
+}
+
 Future<void> updateProductAvailability(
     String productId, bool isAvailable) async {
   await adminUpdateProduct(
@@ -2388,6 +2383,11 @@ Future<void> createProduct({
     'deal_rank': dealRank,
     'subscribe_save_enabled': subscribeSaveEnabled,
     'subscribe_save_discount_percent': subscribeSaveDiscountPercent,
+    'nutrient_strong': const <String>[],
+    'nutrient_good': const <String>[],
+    'nutrient_contains': const <String>[],
+    'nutrition_verified': false,
+    'serving_size_g': 100,
   };
 
   try {
@@ -2851,7 +2851,7 @@ Future<List<Product>> fetchFarmerProducts(String farmerId) async {
     final response = await supabase
         .from('products')
         .select(
-            'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent')
+            'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g')
         .eq('farmer_id', farmerId)
         .order('created_at', ascending: false);
     return (response as List)
@@ -2948,6 +2948,11 @@ Future<void> createFarmerProduct({
     'deal_rank': dealRank,
     'subscribe_save_enabled': subscribeSaveEnabled,
     'subscribe_save_discount_percent': subscribeSaveDiscountPercent,
+    'nutrient_strong': const <String>[],
+    'nutrient_good': const <String>[],
+    'nutrient_contains': const <String>[],
+    'nutrition_verified': false,
+    'serving_size_g': 100,
   };
 
   try {
@@ -3290,8 +3295,7 @@ Future<void> createProductReview({
 
   await createAdminNotification(
     title: 'New product review',
-    message:
-        '$customerName left a $rating-star review for $productName.',
+    message: '$customerName left a $rating-star review for $productName.',
     type: 'review',
   );
 }
@@ -3738,13 +3742,13 @@ Future<LaunchChecklistSnapshot> buildLaunchChecklistSnapshot() async {
         : review(
             title: 'Test order flow',
             detail:
-                'Place at least one real test order, then verify order details, totals, and notifications.',
+                'Place one final review order, then verify order details, totals, and notifications.',
             icon: Icons.receipt_long_outlined,
           ),
     review(
       title: 'Notifications',
       detail:
-          'After a test order, tap the admin notification and customer notification to confirm both open the correct order.',
+          'After a review order, tap the admin notification and customer notification to confirm both open the correct order.',
       icon: Icons.notifications_active_outlined,
     ),
     ready(
@@ -3756,7 +3760,7 @@ Future<LaunchChecklistSnapshot> buildLaunchChecklistSnapshot() async {
     ready(
       title: 'Terms & Privacy',
       detail:
-          'Customer trust screens are present and ready for final phone testing.',
+          'Customer trust screens are present and ready for final phone review.',
       icon: Icons.policy_outlined,
     ),
     (productsWithImages > 0 || uploadedHeroSlides > 0)

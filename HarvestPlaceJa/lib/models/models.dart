@@ -174,6 +174,14 @@ class Product {
   final int dealRank;
   final bool subscribeSaveEnabled;
   final double subscribeSaveDiscountPercent;
+  final List<String> nutrientStrong;
+  final List<String> nutrientGood;
+  final List<String> nutrientContains;
+  final String? nutritionNotes;
+  final String? nutritionSource;
+  final bool nutritionVerified;
+  final String? usdaFdcId;
+  final double servingSizeG;
 
   const Product({
     required this.id,
@@ -210,6 +218,14 @@ class Product {
     this.dealRank = 999,
     this.subscribeSaveEnabled = false,
     this.subscribeSaveDiscountPercent = 5,
+    this.nutrientStrong = const <String>[],
+    this.nutrientGood = const <String>[],
+    this.nutrientContains = const <String>[],
+    this.nutritionNotes,
+    this.nutritionSource,
+    this.nutritionVerified = false,
+    this.usdaFdcId,
+    this.servingSizeG = 100,
   });
 
   double get originalPriceValue {
@@ -293,6 +309,52 @@ class Product {
 
   String get formattedSubscribeSavePrice => formatJmd(subscribeSavePrice);
 
+  static String _cleanNutrientKey(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  List<String> get allNutrientTags {
+    final tags = <String>{
+      ...nutrientStrong.map(_cleanNutrientKey),
+      ...nutrientGood.map(_cleanNutrientKey),
+      ...nutrientContains.map(_cleanNutrientKey),
+    }..removeWhere((value) => value.isEmpty);
+
+    return tags.toList()..sort();
+  }
+
+  bool get hasNutritionTags => allNutrientTags.isNotEmpty;
+
+  int nutrientLevelRank(String nutrient) {
+    final key = _cleanNutrientKey(nutrient);
+    if (key.isEmpty) return 0;
+
+    if (nutrientStrong.map(_cleanNutrientKey).contains(key)) return 3;
+    if (nutrientGood.map(_cleanNutrientKey).contains(key)) return 2;
+    if (nutrientContains.map(_cleanNutrientKey).contains(key)) return 1;
+    return 0;
+  }
+
+  String nutrientLevelLabel(String nutrient) {
+    switch (nutrientLevelRank(nutrient)) {
+      case 3:
+        return 'Strong source';
+      case 2:
+        return 'Good source';
+      case 1:
+        return 'Contains';
+      default:
+        return '';
+    }
+  }
+
+  String nutrientBadgeLabel(String nutrient) {
+    final clean = nutrient.trim();
+    final level = nutrientLevelLabel(nutrient);
+    if (clean.isEmpty || level.isEmpty) return '';
+    return '$level of $clean';
+  }
+
   bool get showAsDealOfDay {
     final label = (discountLabel ?? '').toLowerCase();
     return isDealOfDay ||
@@ -362,7 +424,47 @@ class Product {
       subscribeSaveEnabled: data['subscribe_save_enabled'] == true,
       subscribeSaveDiscountPercent:
           parseNullableDouble(data['subscribe_save_discount_percent']) ?? 5,
+      nutrientStrong: _toStringList(data['nutrient_strong']),
+      nutrientGood: _toStringList(data['nutrient_good']),
+      nutrientContains: _toStringList(data['nutrient_contains']),
+      nutritionNotes: data['nutrition_notes']?.toString(),
+      nutritionSource: data['nutrition_source']?.toString(),
+      nutritionVerified: data['nutrition_verified'] == true,
+      usdaFdcId: data['usda_fdc_id']?.toString(),
+      servingSizeG: _toDouble(data['serving_size_g'] ?? 100),
     );
+  }
+
+  static List<String> _toStringList(dynamic value) {
+    if (value == null) return const <String>[];
+
+    Iterable<dynamic> rawItems;
+
+    if (value is Iterable) {
+      rawItems = value;
+    } else {
+      final raw = value.toString().trim();
+
+      if (raw.isEmpty || raw == '{}') return const <String>[];
+
+      rawItems = raw
+          .replaceAll('{', '')
+          .replaceAll('}', '')
+          .replaceAll('[', '')
+          .replaceAll(']', '')
+          .split(',');
+    }
+
+    final clean = rawItems
+        .map((item) => item.toString().trim().toLowerCase())
+        .map((item) => item.replaceAll(RegExp(r'^"|"$'), ''))
+        .map((item) => item.replaceAll(RegExp(r"^'|'$"), ''))
+        .where((item) => item.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    return clean;
   }
 
   static double _toDouble(dynamic value) {

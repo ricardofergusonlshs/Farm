@@ -402,6 +402,252 @@ const String savedCartSource = 'mobile_app';
 const String _savedCartProductSelectFields =
     'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
+class SavedCustomerProductSnapshot {
+  final List<Product> favoriteProducts;
+  final List<Product> recentlyViewedProducts;
+
+  const SavedCustomerProductSnapshot({
+    this.favoriteProducts = const <Product>[],
+    this.recentlyViewedProducts = const <Product>[],
+  });
+}
+
+String _cleanSavedProductId(String? value) {
+  return (value ?? '').trim();
+}
+
+List<String> _uniqueSavedProductIds(Iterable<String> ids) {
+  final seen = <String>{};
+  final output = <String>[];
+
+  for (final rawId in ids) {
+    final id = _cleanSavedProductId(rawId);
+    if (id.isEmpty) continue;
+    if (seen.add(id)) output.add(id);
+  }
+
+  return output;
+}
+
+List<Product> _fallbackProductsBySavedIds({
+  required List<String> ids,
+  required List<Product> fallbackProducts,
+}) {
+  if (ids.isEmpty || fallbackProducts.isEmpty) return const <Product>[];
+
+  final byId = <String, Product>{};
+  for (final product in fallbackProducts) {
+    final id = _cleanSavedProductId(product.id);
+    if (id.isNotEmpty) byId[id] = product;
+  }
+
+  return ids
+      .map((id) => byId[id])
+      .whereType<Product>()
+      .where(isVisibleCustomerProduct)
+      .toList();
+}
+
+Future<List<Product>> _fetchSavedProductsByIdsInOrder({
+  required List<String> ids,
+  List<Product> fallbackProducts = const <Product>[],
+}) async {
+  final orderedIds = _uniqueSavedProductIds(ids);
+  if (orderedIds.isEmpty) return const <Product>[];
+
+  final fallback = _fallbackProductsBySavedIds(
+    ids: orderedIds,
+    fallbackProducts: fallbackProducts,
+  );
+
+  try {
+    final response = await supabase
+        .from('products')
+        .select(_savedCartProductSelectFields)
+        .inFilter('id', orderedIds);
+
+    final byId = <String, Product>{};
+    for (final item in response as List) {
+      final product =
+          Product.fromSupabase(Map<String, dynamic>.from(item as Map));
+      final id = _cleanSavedProductId(product.id);
+      if (id.isNotEmpty && isVisibleCustomerProduct(product)) {
+        byId[id] = product;
+      }
+    }
+
+    final products =
+        orderedIds.map((id) => byId[id]).whereType<Product>().toList();
+
+    if (products.isNotEmpty) return products;
+  } catch (error) {
+    farmDebugLog('Saved product details load skipped safely: $error');
+  }
+
+  return fallback;
+}
+
+Future<List<String>> fetchFavoriteProductIdsForCurrentUser({
+  int limit = 120,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return const <String>[];
+
+  try {
+    final response = await supabase
+        .from('customer_favorites')
+        .select('product_id, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', ascending: false)
+        .limit(limit);
+
+    return _uniqueSavedProductIds(
+      (response as List)
+          .map((row) => (row as Map)['product_id']?.toString() ?? ''),
+    );
+  } catch (error) {
+    farmDebugLog('Favorite product ids load skipped safely: $error');
+    return const <String>[];
+  }
+}
+
+Future<List<Product>> fetchFavoriteProductsForCurrentUser({
+  List<Product> fallbackProducts = const <Product>[],
+  int limit = 120,
+}) async {
+  final ids = await fetchFavoriteProductIdsForCurrentUser(limit: limit);
+  return _fetchSavedProductsByIdsInOrder(
+    ids: ids,
+    fallbackProducts: fallbackProducts,
+  );
+}
+
+Future<void> setFavoriteForCurrentUser(
+  Product product, {
+  required bool isFavorite,
+}) async {
+  final user = supabase.auth.currentUser;
+  final productId = _cleanSavedProductId(product.id);
+  if (user == null || productId.isEmpty) return;
+
+  try {
+    if (isFavorite) {
+      await supabase.from('customer_favorites').upsert(
+        {
+          'user_id': user.id,
+          'product_id': productId,
+          'created_at': DateTime.now().toIso8601String(),
+        },
+        onConflict: 'user_id,product_id',
+      );
+    } else {
+      await supabase
+          .from('customer_favorites')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('product_id', productId);
+    }
+  } catch (error) {
+    farmDebugLog('Favorite save/remove skipped safely: $error');
+  }
+}
+
+Future<void> saveFavoriteForCurrentUser(Product product) {
+  return setFavoriteForCurrentUser(product, isFavorite: true);
+}
+
+Future<void> removeFavoriteForCurrentUser(Product product) {
+  return setFavoriteForCurrentUser(product, isFavorite: false);
+}
+
+Future<void> saveRecentlyViewedForCurrentUser(Product product) async {
+  final user = supabase.auth.currentUser;
+  final productId = _cleanSavedProductId(product.id);
+  if (user == null || productId.isEmpty) return;
+
+  try {
+    await supabase.from('customer_recently_viewed').upsert(
+      {
+        'user_id': user.id,
+        'product_id': productId,
+        'viewed_at': DateTime.now().toIso8601String(),
+      },
+      onConflict: 'user_id,product_id',
+    );
+  } catch (error) {
+    farmDebugLog('Recently viewed save skipped safely: $error');
+  }
+}
+
+Future<List<String>> fetchRecentlyViewedProductIdsForCurrentUser({
+  int limit = 30,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return const <String>[];
+
+  try {
+    final response = await supabase
+        .from('customer_recently_viewed')
+        .select('product_id, viewed_at')
+        .eq('user_id', user.id)
+        .order('viewed_at', ascending: false)
+        .limit(limit);
+
+    return _uniqueSavedProductIds(
+      (response as List)
+          .map((row) => (row as Map)['product_id']?.toString() ?? ''),
+    );
+  } catch (error) {
+    farmDebugLog('Recently viewed ids load skipped safely: $error');
+    return const <String>[];
+  }
+}
+
+Future<List<Product>> fetchRecentlyViewedProductsForCurrentUser({
+  List<Product> fallbackProducts = const <Product>[],
+  int limit = 30,
+}) async {
+  final ids = await fetchRecentlyViewedProductIdsForCurrentUser(limit: limit);
+  return _fetchSavedProductsByIdsInOrder(
+    ids: ids,
+    fallbackProducts: fallbackProducts,
+  );
+}
+
+Future<SavedCustomerProductSnapshot> fetchSavedCustomerProductSnapshot({
+  List<Product> fallbackFavoriteProducts = const <Product>[],
+  List<Product> fallbackRecentlyViewedProducts = const <Product>[],
+}) async {
+  if (!isLoggedIn || supabase.auth.currentUser == null) {
+    return SavedCustomerProductSnapshot(
+      favoriteProducts: fallbackFavoriteProducts,
+      recentlyViewedProducts: fallbackRecentlyViewedProducts,
+    );
+  }
+
+  try {
+    final results = await Future.wait<List<Product>>([
+      fetchFavoriteProductsForCurrentUser(
+        fallbackProducts: fallbackFavoriteProducts,
+      ),
+      fetchRecentlyViewedProductsForCurrentUser(
+        fallbackProducts: fallbackRecentlyViewedProducts,
+      ),
+    ]);
+
+    return SavedCustomerProductSnapshot(
+      favoriteProducts: results[0],
+      recentlyViewedProducts: results[1],
+    );
+  } catch (error) {
+    farmDebugLog('Saved customer product snapshot skipped safely: $error');
+    return SavedCustomerProductSnapshot(
+      favoriteProducts: fallbackFavoriteProducts,
+      recentlyViewedProducts: fallbackRecentlyViewedProducts,
+    );
+  }
+}
+
 Future<void> saveCartItemForCurrentUser(Product product) async {
   final user = supabase.auth.currentUser;
   if (user == null || product.id.trim().isEmpty || !product.canAddToCart) {
@@ -2751,6 +2997,16 @@ Future<void> updateProductAvailability(
   await maybeNotifyProductReady(productId);
 }
 
+List<String> _cleanProductNutrientValues(Iterable<String> values) {
+  final cleaned = values
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .toList();
+  cleaned.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  return cleaned;
+}
+
 Future<void> createProduct({
   required String name,
   required double price,
@@ -2777,6 +3033,14 @@ Future<void> createProduct({
   int? dealRank,
   bool subscribeSaveEnabled = false,
   double? subscribeSaveDiscountPercent,
+  List<String> nutrientStrong = const <String>[],
+  List<String> nutrientGood = const <String>[],
+  List<String> nutrientContains = const <String>[],
+  bool nutritionVerified = false,
+  String? nutritionNotes,
+  String? nutritionSource,
+  String? usdaFdcId,
+  double servingSizeG = 100,
 }) async {
   await requireAdminAccess();
   final payload = {
@@ -2806,11 +3070,14 @@ Future<void> createProduct({
     'deal_rank': dealRank,
     'subscribe_save_enabled': subscribeSaveEnabled,
     'subscribe_save_discount_percent': subscribeSaveDiscountPercent,
-    'nutrient_strong': const <String>[],
-    'nutrient_good': const <String>[],
-    'nutrient_contains': const <String>[],
-    'nutrition_verified': false,
-    'serving_size_g': 100,
+    'nutrient_strong': _cleanProductNutrientValues(nutrientStrong),
+    'nutrient_good': _cleanProductNutrientValues(nutrientGood),
+    'nutrient_contains': _cleanProductNutrientValues(nutrientContains),
+    'nutrition_verified': nutritionVerified,
+    'nutrition_notes': nutritionNotes?.trim(),
+    'nutrition_source': nutritionSource?.trim(),
+    'usda_fdc_id': usdaFdcId?.trim(),
+    'serving_size_g': servingSizeG <= 0 ? 100 : servingSizeG,
   };
 
   try {

@@ -397,6 +397,218 @@ Future<void> saveNotificationPreference({required bool enabled}) async {
   }
 }
 
+const String savedCartSource = 'mobile_app';
+
+const String _savedCartProductSelectFields =
+    'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+
+Future<void> saveCartItemForCurrentUser(Product product) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || product.id.trim().isEmpty || !product.canAddToCart) {
+    return;
+  }
+
+  try {
+    final existing = await supabase
+        .from('cart_items')
+        .select('quantity')
+        .eq('user_id', user.id)
+        .eq('product_id', product.id)
+        .maybeSingle();
+
+    final currentQuantity =
+        existing == null ? 0 : Product._toInt((existing as Map)['quantity']);
+    final maxQuantity =
+        product.stockQuantity > 0 ? product.stockQuantity : 999999;
+    final nextQuantity = (currentQuantity + 1).clamp(1, maxQuantity).toInt();
+
+    await supabase.from('cart_items').upsert(
+      {
+        'user_id': user.id,
+        'product_id': product.id,
+        'quantity': nextQuantity,
+        'unit_price': product.effectivePrice,
+        'source': savedCartSource,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      onConflict: 'user_id,product_id',
+    );
+  } catch (error) {
+    farmDebugLog('Saved cart add skipped safely: $error');
+  }
+}
+
+Future<void> removeCartItemForCurrentUser(Product product) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || product.id.trim().isEmpty) return;
+
+  try {
+    final existing = await supabase
+        .from('cart_items')
+        .select('id, quantity')
+        .eq('user_id', user.id)
+        .eq('product_id', product.id)
+        .maybeSingle();
+
+    if (existing == null) return;
+
+    final row = Map<String, dynamic>.from(existing as Map);
+    final quantity = Product._toInt(row['quantity']);
+
+    if (quantity <= 1) {
+      await supabase
+          .from('cart_items')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('product_id', product.id);
+      return;
+    }
+
+    await supabase
+        .from('cart_items')
+        .update({
+          'quantity': quantity - 1,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('user_id', user.id)
+        .eq('product_id', product.id);
+  } catch (error) {
+    farmDebugLog('Saved cart remove skipped safely: $error');
+  }
+}
+
+Future<void> setCartItemQuantityForCurrentUser({
+  required Product product,
+  required int quantity,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || product.id.trim().isEmpty) return;
+
+  try {
+    if (quantity <= 0) {
+      await supabase
+          .from('cart_items')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('product_id', product.id);
+      return;
+    }
+
+    final maxQuantity =
+        product.stockQuantity > 0 ? product.stockQuantity : quantity;
+    final safeQuantity = quantity.clamp(1, maxQuantity).toInt();
+
+    await supabase.from('cart_items').upsert(
+      {
+        'user_id': user.id,
+        'product_id': product.id,
+        'quantity': safeQuantity,
+        'unit_price': product.effectivePrice,
+        'source': savedCartSource,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      onConflict: 'user_id,product_id',
+    );
+  } catch (error) {
+    farmDebugLog('Saved cart quantity update skipped safely: $error');
+  }
+}
+
+Future<void> clearSavedCartForCurrentUser() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
+
+  try {
+    await supabase.from('cart_items').delete().eq('user_id', user.id);
+  } catch (error) {
+    farmDebugLog('Saved cart clear skipped safely: $error');
+  }
+}
+
+Future<List<CartLine>> fetchSavedCartLinesForCurrentUser() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return const <CartLine>[];
+
+  try {
+    // Do not use an embedded Supabase/PostgREST relationship here.
+    // Some projects do not expose cart_items -> products immediately in the
+    // PostgREST schema cache, even when the normal SQL join works.
+    // This two-step load is safer: first read the customer's cart rows,
+    // then fetch the matching products directly from the products table.
+    final cartResponse = await supabase
+        .from('cart_items')
+        .select(
+            'id, user_id, product_id, quantity, unit_price, source, created_at, updated_at')
+        .eq('user_id', user.id)
+        .order('updated_at', ascending: false)
+        .limit(120);
+
+    final cartRows = (cartResponse as List)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+
+    if (cartRows.isEmpty) return const <CartLine>[];
+
+    final productIds = cartRows
+        .map((row) => (row['product_id'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (productIds.isEmpty) return const <CartLine>[];
+
+    final productResponse = await supabase
+        .from('products')
+        .select(_savedCartProductSelectFields)
+        .inFilter('id', productIds);
+
+    final productsById = <String, Product>{};
+    for (final item in productResponse as List) {
+      final row = Map<String, dynamic>.from(item as Map);
+      final product = Product.fromSupabase(row);
+      if (product.id.trim().isNotEmpty) {
+        productsById[product.id] = product;
+      }
+    }
+
+    final lines = <CartLine>[];
+
+    for (final row in cartRows) {
+      final quantity = Product._toInt(row['quantity']);
+      if (quantity <= 0) continue;
+
+      final productId = (row['product_id'] ?? '').toString().trim();
+      final product = productsById[productId];
+      if (product == null || product.id.trim().isEmpty) continue;
+
+      lines.add(
+        CartLine(
+          product: product,
+          quantity: quantity,
+        ),
+      );
+    }
+
+    return lines;
+  } catch (error) {
+    farmDebugLog('Saved cart load skipped safely: $error');
+    return const <CartLine>[];
+  }
+}
+
+List<Product> expandCartLinesToProducts(List<CartLine> lines) {
+  final products = <Product>[];
+
+  for (final line in lines) {
+    if (line.quantity <= 0) continue;
+    for (var index = 0; index < line.quantity; index++) {
+      products.add(line.product);
+    }
+  }
+
+  return products;
+}
+
 Future<SecureCartQuote> fetchSecureCartQuote(List<CartLine> lines) async {
   final validLines = lines
       .where((line) => line.product.id.trim().isNotEmpty && line.quantity > 0)
@@ -480,6 +692,213 @@ String loyaltyTierForPoints(int lifetimePoints) {
   return 'Green';
 }
 
+const int referralRewardPoints = 100;
+
+String cleanReferralCode(String value) {
+  final clean =
+      value.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9-]'), '');
+  return clean.length > 40 ? clean.substring(0, 40) : clean;
+}
+
+String referralCodeForUserId(String userId) {
+  final clean =
+      userId.trim().replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+  if (clean.isEmpty) return 'HPJ-GUEST';
+  final short =
+      clean.length >= 8 ? clean.substring(0, 8) : clean.padRight(8, 'X');
+  return 'HPJ-$short';
+}
+
+String buildCustomerReferralLink({
+  required String referralCode,
+  required String referrerId,
+}) {
+  final base = AppConfig.shareableAppLink.trim();
+  final safeBase = base.isEmpty ? AppConfig.appName : base;
+  final code = cleanReferralCode(referralCode);
+  final cleanReferrerId = referrerId.trim();
+
+  final uri = Uri.tryParse(safeBase);
+  if (uri != null && uri.hasScheme) {
+    final nextQuery = Map<String, String>.from(uri.queryParameters);
+    nextQuery['ref'] = code;
+    if (cleanReferrerId.isNotEmpty) {
+      nextQuery['referrer'] = cleanReferrerId;
+    }
+    return uri.replace(queryParameters: nextQuery).toString();
+  }
+
+  final separator = safeBase.contains('?') ? '&' : '?';
+  final referrerParam = cleanReferrerId.isEmpty
+      ? ''
+      : '&referrer=${Uri.encodeComponent(cleanReferrerId)}';
+  return '$safeBase${separator}ref=${Uri.encodeComponent(code)}$referrerParam';
+}
+
+Map<String, String> _activeReferralParams() {
+  final params = Map<String, String>.from(AppConfig.authCallbackParams);
+
+  try {
+    final uri = Uri.base;
+    params.addAll(uri.queryParameters);
+  } catch (_) {}
+
+  return params;
+}
+
+String? _incomingReferralCodeFromParams() {
+  final params = _activeReferralParams();
+  final raw = params['ref'] ??
+      params['referral'] ??
+      params['referral_code'] ??
+      params['invite'];
+  if (raw == null) return null;
+  final clean = cleanReferralCode(raw);
+  return clean.isEmpty ? null : clean;
+}
+
+String? _incomingReferrerIdFromParams() {
+  final params = _activeReferralParams();
+  final raw = params['referrer'] ??
+      params['referrer_id'] ??
+      params['referrerUserId'] ??
+      params['referrer_user_id'];
+  if (raw == null) return null;
+  final clean = raw.trim();
+  return clean.isEmpty ? null : clean;
+}
+
+Future<void> recordIncomingReferralForCurrentUser() async {
+  if (!isLoggedIn) return;
+
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
+
+  final referralCode = _incomingReferralCodeFromParams();
+  final referrerId = _incomingReferrerIdFromParams();
+
+  if (referralCode == null || referrerId == null || referrerId == user.id) {
+    return;
+  }
+
+  try {
+    final existing = await supabase
+        .from('customer_referrals')
+        .select('id')
+        .eq('referred_customer_id', user.id)
+        .maybeSingle();
+
+    if (existing != null) return;
+
+    final referralLink = buildCustomerReferralLink(
+      referralCode: referralCode,
+      referrerId: referrerId,
+    );
+
+    await supabase.from('customer_referrals').insert({
+      'referrer_id': referrerId,
+      'referred_customer_id': user.id,
+      'referral_code': referralCode,
+      'referral_link': referralLink,
+      'status': 'pending',
+      'points_awarded': 0,
+    });
+  } catch (_) {
+    farmDebugLog('Referral link capture skipped safely.');
+  }
+}
+
+Future<CustomerReferralSummary> fetchCustomerReferralSummary() async {
+  if (!isLoggedIn) return const CustomerReferralSummary();
+
+  final user = supabase.auth.currentUser;
+  if (user == null) return const CustomerReferralSummary();
+
+  try {
+    final response = await supabase
+        .from('customer_referrals')
+        .select('status, points_awarded')
+        .eq('referrer_id', user.id)
+        .limit(500);
+
+    var pending = 0;
+    var completed = 0;
+    var points = 0;
+
+    for (final item in response as List) {
+      final row = Map<String, dynamic>.from(item as Map);
+      final status = (row['status'] ?? '').toString().trim().toLowerCase();
+      final awarded = Product._toInt(row['points_awarded']);
+
+      if (status == 'completed' || awarded > 0) {
+        completed++;
+        points += awarded;
+      } else if (status != 'cancelled' &&
+          status != 'canceled' &&
+          status != 'rejected') {
+        pending++;
+      }
+    }
+
+    return CustomerReferralSummary(
+      pendingCount: pending,
+      completedCount: completed,
+      pointsEarned: points,
+    );
+  } catch (_) {
+    farmDebugLog('Referral summary unavailable. Continuing safely.');
+    return const CustomerReferralSummary();
+  }
+}
+
+Future<ReferralShareSnapshot> fetchReferralShareSnapshot() async {
+  final user = supabase.auth.currentUser;
+  final userId = user?.id ?? '';
+  final code = referralCodeForUserId(userId);
+  final link = buildCustomerReferralLink(
+    referralCode: code,
+    referrerId: userId,
+  );
+
+  final results = await Future.wait<dynamic>([
+    fetchCustomerReferralSummary(),
+    fetchLoyaltySummary(),
+  ]);
+
+  final summary = results[0] as CustomerReferralSummary;
+  final loyalty = results[1] as LoyaltySummary;
+
+  final message =
+      'I am inviting you to ${AppConfig.appName}. Shop fresh local produce, build your farm box, and track your order here: $link\n\nMy referral code: $code';
+
+  return ReferralShareSnapshot(
+    referralCode: code,
+    referralLink: link,
+    inviteMessage: message,
+    referralSummary: summary,
+    loyaltySummary: loyalty,
+  );
+}
+
+Future<void> completeReferralRewardForCurrentUserFirstOrder({
+  required String orderId,
+}) async {
+  if (!isLoggedIn || orderId.trim().isEmpty) return;
+
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
+
+  try {
+    await supabase.rpc('complete_referral_after_first_order', params: {
+      'p_referred_customer_id': user.id,
+      'p_order_id': orderId,
+      'p_points': referralRewardPoints,
+    });
+  } catch (_) {
+    farmDebugLog('Referral reward completion skipped safely.');
+  }
+}
+
 Future<LoyaltySummary> fetchLoyaltySummary() async {
   if (!isLoggedIn) {
     return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
@@ -489,6 +908,8 @@ Future<LoyaltySummary> fetchLoyaltySummary() async {
   if (user == null) {
     return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
   }
+
+  await recordIncomingReferralForCurrentUser();
 
   try {
     final response = await supabase
@@ -566,6 +987,8 @@ Future<void> awardLoyaltyPointsForOrder({
       farmDebugLog('Loyalty award skipped: $error');
     }
   }
+
+  await completeReferralRewardForCurrentUserFirstOrder(orderId: orderId);
 }
 
 Future<ProductTraceRecord?> fetchTraceRecordByCode(String code) async {

@@ -6287,6 +6287,11 @@ class AdminDeliveryTab extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
+              AdminDeliveryZonesManager(
+                key: ValueKey('delivery-zones-$refreshKey'),
+                onChanged: onChanged,
+              ),
+              const SizedBox(height: 16),
               FarmCard(
                 padding: const EdgeInsets.all(18),
                 child: Column(
@@ -6413,6 +6418,352 @@ class AdminDeliveryTab extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class AdminDeliveryZonesManager extends StatefulWidget {
+  final VoidCallback onChanged;
+
+  const AdminDeliveryZonesManager({
+    super.key,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminDeliveryZonesManager> createState() =>
+      _AdminDeliveryZonesManagerState();
+}
+
+class _AdminDeliveryZonesManagerState extends State<AdminDeliveryZonesManager> {
+  late Future<List<DeliveryZone>> zonesFuture;
+  bool seeding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    zonesFuture = fetchAdminDeliveryZones();
+  }
+
+  void _reload() {
+    setState(() => zonesFuture = fetchAdminDeliveryZones());
+    widget.onChanged();
+  }
+
+  Future<void> _seedDefaults() async {
+    if (seeding) return;
+    setState(() => seeding = true);
+
+    try {
+      await seedDefaultDeliveryZones();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Delivery parishes loaded.')),
+      );
+      _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not load delivery parishes: ${friendlyAppError(error)}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => seeding = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(18),
+      child: FutureBuilder<List<DeliveryZone>>(
+        future: zonesFuture,
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData;
+          final zones = _cleanDeliveryZones(snapshot.data ?? const []);
+          final activeCount = zones.where((zone) => zone.isActive).length;
+          final loadError =
+              snapshot.hasError ? friendlyAppError(snapshot.error!) : '';
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: FarmColors.primarySoft,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.map_outlined,
+                      color: FarmColors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Delivery Areas',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$activeCount active parish${activeCount == 1 ? '' : 'es'}. Choose where customers can request Home Delivery and set the fee.',
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: seeding
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.playlist_add_check_rounded),
+                      label: Text(
+                        seeding ? 'Loading...' : 'Load Jamaica parishes',
+                      ),
+                      onPressed: seeding ? null : _seedDefaults,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  IconButton.filledTonal(
+                    tooltip: 'Refresh delivery areas',
+                    onPressed: loading ? null : _reload,
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (loading)
+                const SkeletonList(count: 3)
+              else if (loadError.isNotEmpty)
+                FarmEmptyState(
+                  icon: Icons.error_outline_rounded,
+                  title: 'Delivery areas could not load',
+                  message:
+                      '$loadError\n\nCheck that the delivery_zones table exists, then tap refresh.',
+                )
+              else if (zones.isEmpty)
+                const FarmEmptyState(
+                  icon: Icons.local_shipping_outlined,
+                  title: 'No delivery parishes yet',
+                  message:
+                      'Run the Supabase SQL setup, then load the Jamaica parishes here.',
+                )
+              else
+                ...zones.map(
+                  (zone) => _AdminDeliveryZoneTile(
+                    key: ValueKey('delivery-zone-${zone.id}-${zone.updatedAt}'),
+                    zone: zone,
+                    onChanged: _reload,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AdminDeliveryZoneTile extends StatefulWidget {
+  final DeliveryZone zone;
+  final VoidCallback onChanged;
+
+  const _AdminDeliveryZoneTile({
+    super.key,
+    required this.zone,
+    required this.onChanged,
+  });
+
+  @override
+  State<_AdminDeliveryZoneTile> createState() => _AdminDeliveryZoneTileState();
+}
+
+class _AdminDeliveryZoneTileState extends State<_AdminDeliveryZoneTile> {
+  late final TextEditingController feeController;
+  late bool active;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    feeController = TextEditingController(
+      text: widget.zone.deliveryFee.toStringAsFixed(0),
+    );
+    active = widget.zone.isActive;
+  }
+
+  @override
+  void dispose() {
+    feeController.dispose();
+    super.dispose();
+  }
+
+  double _parseFee() {
+    final clean =
+        feeController.text.replaceAll('J\$', '').replaceAll(',', '').trim();
+    return double.tryParse(clean) ?? 0.0;
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+    setState(() => saving = true);
+
+    try {
+      await upsertDeliveryZone(
+        id: widget.zone.id,
+        parish: widget.zone.parish,
+        zoneName: widget.zone.zoneName,
+        deliveryFee: _parseFee(),
+        isActive: active,
+        sortOrder: widget.zone.sortOrder,
+        notes: widget.zone.notes,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${widget.zone.displayName} updated.')),
+      );
+      widget.onChanged();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Could not save delivery area: ${friendlyAppError(error)}'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: active ? FarmColors.lightGreen : FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: active ? FarmColors.green.withOpacity(0.22) : FarmColors.line,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active
+                      ? FarmColors.green.withOpacity(0.12)
+                      : FarmColors.mutedText.withOpacity(0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  active
+                      ? Icons.local_shipping_outlined
+                      : Icons.visibility_off_outlined,
+                  color: active ? FarmColors.green : FarmColors.mutedText,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.zone.displayName,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      active ? 'Visible at checkout' : 'Hidden from customers',
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: active,
+                onChanged: (value) => setState(() => active = value),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: feeController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Delivery fee (JMD)',
+                    prefixIcon: Icon(Icons.attach_money_rounded),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton.icon(
+                icon: saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined, size: 18),
+                label: Text(saving ? 'Saving' : 'Save'),
+                onPressed: saving ? null : _save,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

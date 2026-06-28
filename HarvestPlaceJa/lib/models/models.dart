@@ -32,6 +32,71 @@ class HomeHeroSlide {
   }
 }
 
+class DeliveryZone {
+  final String id;
+  final String parish;
+  final String? zoneName;
+  final double deliveryFee;
+  final bool isActive;
+  final int sortOrder;
+  final String? notes;
+  final DateTime? updatedAt;
+
+  const DeliveryZone({
+    required this.id,
+    required this.parish,
+    this.zoneName,
+    required this.deliveryFee,
+    this.isActive = true,
+    this.sortOrder = 0,
+    this.notes,
+    this.updatedAt,
+  });
+
+  factory DeliveryZone.fromSupabase(Map<String, dynamic> data) {
+    return DeliveryZone(
+      id: (data['id'] ?? '').toString(),
+      parish: (data['parish'] ?? '').toString(),
+      zoneName: data['zone_name']?.toString(),
+      deliveryFee: Product._toDouble(data['delivery_fee']),
+      isActive: data['is_active'] == null ? true : data['is_active'] == true,
+      sortOrder: Product._toInt(data['sort_order']),
+      notes: data['notes']?.toString(),
+      updatedAt: parseProductDate(data['updated_at']),
+    );
+  }
+
+  String get displayName {
+    final parishText = parish.trim();
+    final zoneText = zoneName?.trim() ?? '';
+    if (zoneText.isEmpty) return parishText;
+    if (zoneText.toLowerCase() == parishText.toLowerCase()) return parishText;
+    return '$parishText / $zoneText';
+  }
+
+  DeliveryZone copyWith({
+    String? id,
+    String? parish,
+    String? zoneName,
+    double? deliveryFee,
+    bool? isActive,
+    int? sortOrder,
+    String? notes,
+    DateTime? updatedAt,
+  }) {
+    return DeliveryZone(
+      id: id ?? this.id,
+      parish: parish ?? this.parish,
+      zoneName: zoneName ?? this.zoneName,
+      deliveryFee: deliveryFee ?? this.deliveryFee,
+      isActive: isActive ?? this.isActive,
+      sortOrder: sortOrder ?? this.sortOrder,
+      notes: notes ?? this.notes,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
 class SecureCartLineQuote {
   final Product product;
   final int quantity;

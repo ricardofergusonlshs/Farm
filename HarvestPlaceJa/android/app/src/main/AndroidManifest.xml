@@ -1,11 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Basic app permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Android 13+ notification permission.
+         The app must still request this permission at runtime if you later add push/local notifications. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Android 11+ package visibility for social sharing and external apps -->
     <queries>
 
-        <!-- WhatsApp -->
+        <!-- WhatsApp / WhatsApp Business -->
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
 
@@ -25,6 +31,9 @@
 
         <!-- Gmail / Email clients -->
         <package android:name="com.google.android.gm" />
+
+        <!-- Google Play Store -->
+        <package android:name="com.android.vending" />
 
         <!-- WhatsApp scheme -->
         <intent>
@@ -59,6 +68,12 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="instagram" />
+        </intent>
+
+        <!-- Google Play / market links -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="market" />
         </intent>
 
         <!-- Web fallback links -->
@@ -106,7 +121,8 @@
     <application
         android:label="The Harvest Place Ja"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
 
         <activity
             android:name=".MainActivity"
@@ -132,7 +148,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Password reset deep link -->
+            <!-- Password reset deep link: farm://reset-password -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -144,7 +160,7 @@
                     android:host="reset-password" />
             </intent-filter>
 
-            <!-- Auth callback deep link -->
+            <!-- Auth callback deep link: farm://auth-callback -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -156,7 +172,7 @@
                     android:host="auth-callback" />
             </intent-filter>
 
-            <!-- Referral invite deep link -->
+            <!-- Referral invite deep link: farm://invite -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -166,6 +182,48 @@
                 <data
                     android:scheme="farm"
                     android:host="invite" />
+            </intent-filter>
+
+            <!-- Staff invite deep link: farm://staff-invite -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="farm"
+                    android:host="staff-invite" />
+            </intent-filter>
+
+            <!-- Optional web referral link:
+                 https://theharvestplaceja.com/invite
+                 This opens the app if Android can route it.
+                 Proper verified app links require assetlinks.json on the website. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="https"
+                    android:host="theharvestplaceja.com"
+                    android:pathPrefix="/invite" />
+            </intent-filter>
+
+            <!-- Optional web staff invite link:
+                 https://theharvestplaceja.com/staff-invite -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="https"
+                    android:host="theharvestplaceja.com"
+                    android:pathPrefix="/staff-invite" />
             </intent-filter>
 
         </activity>

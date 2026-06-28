@@ -180,9 +180,283 @@ Future<void> notifyAdminsAboutLowStockAfterCheckout(
 
 bool get isAdminUser => false;
 
+const Set<String> _staffAdminRoles = <String>{
+  'owner',
+  'manager',
+  'packer',
+  'delivery',
+  'inventory',
+  'support',
+};
+
+String normalizeStaffRole(String? value) {
+  final role = (value ?? '').trim().toLowerCase();
+  return _staffAdminRoles.contains(role) ? role : '';
+}
+
+bool isStaffRoleActive(String? value) {
+  return normalizeStaffRole(value).isNotEmpty;
+}
+
+String staffRoleDisplayLabel(String? value) {
+  switch (normalizeStaffRole(value)) {
+    case 'owner':
+      return 'Owner';
+    case 'manager':
+      return 'Manager';
+    case 'packer':
+      return 'Packer';
+    case 'delivery':
+      return 'Delivery';
+    case 'inventory':
+      return 'Inventory';
+    case 'support':
+      return 'Support';
+    default:
+      return 'Admin';
+  }
+}
+
+bool staffRoleHasFullAdminAccess(String? value) {
+  final role = normalizeStaffRole(value);
+  return role == 'owner' || role == 'manager';
+}
+
+bool staffRoleCanManageStaff(String? value) {
+  return normalizeStaffRole(value) == 'owner';
+}
+
+bool staffRoleCanManageBusinessSettings(String? value) {
+  final role = normalizeStaffRole(value);
+  return role == 'owner' || role.isEmpty;
+}
+
+const List<String> staffAssignableRoles = <String>[
+  'manager',
+  'packer',
+  'delivery',
+  'inventory',
+  'support',
+];
+
+String staffRoleWorkflowSummary(String? value) {
+  switch (normalizeStaffRole(value)) {
+    case 'owner':
+      return 'Full owner access. Owner is managed manually for safety.';
+    case 'manager':
+      return 'Can manage daily orders, fulfillment, products, and support. Staff, payouts, delivery fees, and business settings stay owner-only.';
+    case 'packer':
+      return 'Can view orders and fulfillment tools for preparing and packing orders.';
+    case 'delivery':
+      return 'Can view delivery workflow and update delivery-related order progress.';
+    case 'inventory':
+      return 'Can manage product stock and review inventory reports.';
+    case 'support':
+      return 'Can view and respond to customer support messages.';
+    default:
+      return 'No staff access assigned.';
+  }
+}
+
+class StaffUserAccount {
+  final String id;
+  final String? userId;
+  final String email;
+  final String fullName;
+  final String role;
+  final bool isActive;
+  final String? notes;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const StaffUserAccount({
+    required this.id,
+    this.userId,
+    required this.email,
+    required this.fullName,
+    required this.role,
+    required this.isActive,
+    this.notes,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory StaffUserAccount.fromSupabase(Map<String, dynamic> data) {
+    return StaffUserAccount(
+      id: (data['id'] ?? '').toString(),
+      userId: data['user_id']?.toString(),
+      email: (data['email'] ?? '').toString().trim().toLowerCase(),
+      fullName: (data['full_name'] ?? '').toString().trim(),
+      role: normalizeStaffRole(data['role']?.toString()),
+      isActive: data['is_active'] == true,
+      notes: data['notes']?.toString(),
+      createdAt: parseProductDate(data['created_at']),
+      updatedAt: parseProductDate(data['updated_at']),
+    );
+  }
+
+  String get displayName {
+    final clean = fullName.trim();
+    if (clean.isNotEmpty) return clean;
+    return email;
+  }
+
+  String get roleLabel => staffRoleDisplayLabel(role);
+
+  String get initials {
+    final source = displayName.trim().isNotEmpty ? displayName.trim() : email;
+    if (source.isEmpty) return 'S';
+    final parts =
+        source.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.length >= 2) {
+      return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+    }
+    return source.substring(0, 1).toUpperCase();
+  }
+}
+
+Future<List<StaffUserAccount>> fetchStaffUsersForAdmin() async {
+  final staffRole = await fetchCurrentStaffRole();
+  if (!staffRoleCanManageStaff(staffRole)) return const <StaffUserAccount>[];
+
+  try {
+    final response = await supabase
+        .from('staff_users')
+        .select(
+            'id, user_id, email, full_name, role, is_active, notes, created_at, updated_at')
+        .order('is_active', ascending: false)
+        .order('role', ascending: true)
+        .order('email', ascending: true);
+
+    return (response as List)
+        .map((item) => StaffUserAccount.fromSupabase(
+            Map<String, dynamic>.from(item as Map)))
+        .toList();
+  } catch (error) {
+    farmDebugLog('Staff users lookup skipped: $error');
+    return const <StaffUserAccount>[];
+  }
+}
+
+Future<void> saveStaffUserForAdmin({
+  String? id,
+  required String email,
+  String? fullName,
+  required String role,
+  required bool isActive,
+  String? notes,
+}) async {
+  final staffRole = await fetchCurrentStaffRole();
+  if (!staffRoleCanManageStaff(staffRole)) {
+    throw Exception('Only the owner can manage staff.');
+  }
+
+  final cleanEmail = email.trim().toLowerCase();
+  if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+    throw Exception('Enter a valid staff email address.');
+  }
+
+  final cleanRole = normalizeStaffRole(role);
+  if (!staffAssignableRoles.contains(cleanRole)) {
+    throw Exception('Choose a valid staff role.');
+  }
+
+  final cleanId = id?.trim() ?? '';
+  final payload = <String, dynamic>{
+    'email': cleanEmail,
+    'full_name':
+        fullName == null || fullName.trim().isEmpty ? null : fullName.trim(),
+    'role': cleanRole,
+    'is_active': isActive,
+    'notes': notes == null || notes.trim().isEmpty ? null : notes.trim(),
+    'updated_at': DateTime.now().toIso8601String(),
+  };
+
+  try {
+    if (cleanId.isNotEmpty) {
+      await supabase.from('staff_users').update(payload).eq('id', cleanId);
+      return;
+    }
+
+    final existing = await supabase
+        .from('staff_users')
+        .select('id')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+    if (existing != null) {
+      final row = Map<String, dynamic>.from(existing as Map);
+      final existingId = (row['id'] ?? '').toString();
+      if (existingId.isNotEmpty) {
+        await supabase.from('staff_users').update(payload).eq('id', existingId);
+        return;
+      }
+    }
+
+    await supabase.from('staff_users').insert(payload);
+  } catch (error) {
+    throw Exception(
+        'Could not save staff user. Please check staff permissions.');
+  }
+}
+
+Future<void> setStaffUserActiveForAdmin({
+  required StaffUserAccount staff,
+  required bool isActive,
+}) async {
+  if (normalizeStaffRole(staff.role) == 'owner') {
+    throw Exception('Owner access is managed manually for safety.');
+  }
+
+  await saveStaffUserForAdmin(
+    id: staff.id,
+    email: staff.email,
+    fullName: staff.fullName,
+    role: staff.role,
+    isActive: isActive,
+    notes: staff.notes,
+  );
+}
+
+Future<String> fetchCurrentStaffRole() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return '';
+
+  try {
+    final response = await supabase.rpc('current_staff_role');
+    final role = normalizeStaffRole(response?.toString());
+    if (role.isNotEmpty) return role;
+  } catch (error) {
+    farmDebugLog('Staff role RPC lookup skipped: $error');
+  }
+
+  final email = (user.email ?? '').trim().toLowerCase();
+  if (email.isEmpty) return '';
+
+  try {
+    final response = await supabase
+        .from('staff_users')
+        .select('role, is_active')
+        .ilike('email', email)
+        .eq('is_active', true)
+        .maybeSingle();
+
+    if (response == null) return '';
+
+    final row = Map<String, dynamic>.from(response as Map);
+    return normalizeStaffRole(row['role']?.toString());
+  } catch (error) {
+    farmDebugLog('Staff role direct lookup skipped: $error');
+    return '';
+  }
+}
+
 Future<bool> isCurrentUserAdminFromDatabase() async {
   final user = supabase.auth.currentUser;
   if (user == null) return false;
+
+  final staffRole = await fetchCurrentStaffRole();
+  if (isStaffRoleActive(staffRole)) return true;
 
   Object? userIdCheckError;
   Object? idCheckError;
@@ -1910,6 +2184,215 @@ class _AdminAuditLogsTabState extends State<AdminAuditLogsTab> {
   }
 }
 
+class _AdminTabSpec {
+  final Tab tab;
+  final Widget child;
+
+  const _AdminTabSpec({
+    required this.tab,
+    required this.child,
+  });
+}
+
+List<_AdminTabSpec> _adminTabSpecsForRole({
+  required String staffRole,
+  required int refreshKey,
+  required VoidCallback onChanged,
+}) {
+  final role = normalizeStaffRole(staffRole);
+  final ownerAccess = role.isEmpty || role == 'owner';
+  final managerAccess = role == 'manager';
+
+  _AdminTabSpec dashboard() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.dashboard_customize_outlined),
+          text: 'Dashboard',
+        ),
+        child: AdminDashboardOverviewTab(refreshKey: refreshKey),
+      );
+
+  _AdminTabSpec orders() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.receipt_long),
+          text: 'Orders',
+        ),
+        child: AdminOrdersTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec fulfillment() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.local_shipping_outlined),
+          text: 'Fulfillment',
+        ),
+        child: AdminDeliveryTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec analytics() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.analytics_outlined),
+          text: 'Analytics',
+        ),
+        child: AdminAnalyticsTab(refreshKey: refreshKey),
+      );
+
+  _AdminTabSpec products() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.eco),
+          text: 'Products',
+        ),
+        child: AdminProductsTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec hero() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.photo_library_outlined),
+          text: 'Hero',
+        ),
+        child: AdminHeroSlidesTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec support() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.support_agent_outlined),
+          text: 'Support',
+        ),
+        child: AdminSupportTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec farmers() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.agriculture_outlined),
+          text: 'Farmers',
+        ),
+        child: AdminFarmerManagementTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec payouts() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.payments_outlined),
+          text: 'Payouts',
+        ),
+        child: AdminPayoutsTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec reports() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.table_chart_outlined),
+          text: 'Reports',
+        ),
+        child: AdminReportsTab(refreshKey: refreshKey),
+      );
+
+  _AdminTabSpec reviews() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.rate_review_outlined),
+          text: 'Reviews',
+        ),
+        child: AdminReviewsTab(refreshKey: refreshKey),
+      );
+
+  _AdminTabSpec coupons() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.confirmation_number_outlined),
+          text: 'Coupons',
+        ),
+        child: AdminCouponsTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec staff() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.badge_outlined),
+          text: 'Staff',
+        ),
+        child: AdminStaffTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  if (ownerAccess) {
+    return [
+      dashboard(),
+      orders(),
+      fulfillment(),
+      analytics(),
+      products(),
+      hero(),
+      support(),
+      farmers(),
+      payouts(),
+      reports(),
+      reviews(),
+      coupons(),
+      staff(),
+    ];
+  }
+
+  if (managerAccess) {
+    return [
+      dashboard(),
+      orders(),
+      fulfillment(),
+      analytics(),
+      products(),
+      support(),
+      reports(),
+      reviews(),
+    ];
+  }
+
+  switch (role) {
+    case 'packer':
+      return [
+        orders(),
+        fulfillment(),
+      ];
+    case 'delivery':
+      return [
+        fulfillment(),
+        orders(),
+      ];
+    case 'inventory':
+      return [
+        products(),
+        reports(),
+      ];
+    case 'support':
+      return [
+        support(),
+      ];
+    default:
+      return [
+        orders(),
+        fulfillment(),
+      ];
+  }
+}
+
 class AdminDashboardScreen extends StatefulWidget {
   final VoidCallback? onHomeTap;
 
@@ -1921,16 +2404,21 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final Future<bool> _adminAllowedFuture;
+  late Future<String> _staffRoleFuture;
   int refreshKey = 0;
 
   @override
   void initState() {
     super.initState();
     _adminAllowedFuture = isCurrentUserAdminFromDatabase();
+    _staffRoleFuture = fetchCurrentStaffRole();
   }
 
   void refresh() {
-    setState(() => refreshKey++);
+    setState(() {
+      refreshKey++;
+      _staffRoleFuture = fetchCurrentStaffRole();
+    });
   }
 
   void goBackHome() {
@@ -1970,12 +2458,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: const [
                 Header(
                   title: 'Admin Locked',
-                  subtitle: 'Farmer access only',
+                  subtitle: 'Staff access required',
                 ),
                 SizedBox(height: 18),
                 FarmCard(
                   child: Text(
-                    'This area is only available to approved admin users.',
+                    'This area is only available to approved owner, manager, or staff users.',
                     style: TextStyle(fontSize: 16),
                   ),
                 ),
@@ -1984,144 +2472,594 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           );
         }
 
-        return FarmPage(
-          child: DefaultTabController(
-            length: 12,
-            initialIndex: 0,
-            child: Column(
+        return FutureBuilder<String>(
+          future: _staffRoleFuture,
+          builder: (context, roleSnapshot) {
+            final staffRole = normalizeStaffRole(roleSnapshot.data);
+            final roleLabel = staffRoleDisplayLabel(staffRole);
+            final tabs = _adminTabSpecsForRole(
+              staffRole: staffRole,
+              refreshKey: refreshKey,
+              onChanged: refresh,
+            );
+
+            final dashboardTitle =
+                staffRole.isEmpty ? 'Admin Dashboard' : '$roleLabel Dashboard';
+            final dashboardSubtitle = staffRole.isEmpty
+                ? 'Manage orders, products, customers, and store updates.'
+                : roleLabel == 'Owner' || roleLabel == 'Manager'
+                    ? 'Full access to orders, products, customers, and store updates.'
+                    : 'Limited access for ${roleLabel.toLowerCase()} workflow.';
+
+            return FarmPage(
+              child: DefaultTabController(
+                length: tabs.length,
+                initialIndex: 0,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+                      child: Header(
+                        title: dashboardTitle,
+                        subtitle: dashboardSubtitle,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+                      child: Row(
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.home_outlined),
+                            label: const Text('Back to Home'),
+                            onPressed: goBackHome,
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: FarmColors.lightGreen,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: FarmColors.green.withOpacity(0.18),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.verified_user_outlined,
+                                  size: 15,
+                                  color: FarmColors.green,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  roleLabel,
+                                  style: const TextStyle(
+                                    color: FarmColors.green,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filledTonal(
+                            tooltip: 'Refresh admin dashboard',
+                            onPressed: refresh,
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Material(
+                      color: Colors.transparent,
+                      child: TabBar(
+                        isScrollable: true,
+                        labelColor: FarmColors.green,
+                        indicatorColor: FarmColors.green,
+                        tabs: tabs.map((item) => item.tab).toList(),
+                      ),
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: tabs.map((item) => item.child).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class AdminStaffTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminStaffTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminStaffTab> createState() => _AdminStaffTabState();
+}
+
+class _AdminStaffTabState extends State<AdminStaffTab> {
+  late Future<List<StaffUserAccount>> _future;
+  final emailController = TextEditingController();
+  final nameController = TextEditingController();
+  final notesController = TextEditingController();
+  String selectedRole = 'packer';
+  bool isActive = true;
+  String? editingId;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchStaffUsersForAdmin();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminStaffTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _reload();
+    }
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    nameController.dispose();
+    notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _reload() async {
+    final future = fetchStaffUsersForAdmin();
+    setState(() {
+      _future = future;
+    });
+    await future;
+  }
+
+  void _clearForm() {
+    setState(() {
+      editingId = null;
+      emailController.clear();
+      nameController.clear();
+      notesController.clear();
+      selectedRole = 'packer';
+      isActive = true;
+    });
+  }
+
+  void _editStaff(StaffUserAccount staff) {
+    if (normalizeStaffRole(staff.role) == 'owner') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Owner access is managed manually for safety.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      editingId = staff.id;
+      emailController.text = staff.email;
+      nameController.text = staff.fullName;
+      notesController.text = staff.notes ?? '';
+      selectedRole =
+          staffAssignableRoles.contains(staff.role) ? staff.role : 'packer';
+      isActive = staff.isActive;
+    });
+  }
+
+  Future<void> _saveStaff() async {
+    if (saving) return;
+
+    setState(() => saving = true);
+    try {
+      await saveStaffUserForAdmin(
+        id: editingId,
+        email: emailController.text,
+        fullName: nameController.text,
+        role: selectedRole,
+        isActive: isActive,
+        notes: notesController.text,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              editingId == null ? 'Staff user added.' : 'Staff user updated.'),
+        ),
+      );
+      _clearForm();
+      widget.onChanged();
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> _toggleActive(StaffUserAccount staff) async {
+    try {
+      await setStaffUserActiveForAdmin(
+        staff: staff,
+        isActive: !staff.isActive,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(staff.isActive
+              ? 'Staff user deactivated.'
+              : 'Staff user activated.'),
+        ),
+      );
+      widget.onChanged();
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+
+  Widget _roleChip(String role, {bool active = true}) {
+    final color = active ? FarmColors.green : FarmColors.mutedText;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? FarmColors.lightGreen : FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.20)),
+      ),
+      child: Text(
+        staffRoleDisplayLabel(role),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _staffCard(StaffUserAccount staff) {
+    final role = normalizeStaffRole(staff.role);
+    final owner = role == 'owner';
+    final activeColor =
+        staff.isActive ? FarmColors.green : FarmColors.mutedText;
+
+    return FarmCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                backgroundColor: staff.isActive
+                    ? FarmColors.lightGreen
+                    : FarmColors.cardSoft,
+                child: Text(
+                  staff.initials,
+                  style: TextStyle(
+                    color: activeColor,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      staff.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      staff.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _roleChip(role, active: staff.isActive),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            staffRoleWorkflowSummary(role),
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(
+                avatar: Icon(
+                  staff.isActive
+                      ? Icons.check_circle_outline
+                      : Icons.block_outlined,
+                  size: 17,
+                  color: activeColor,
+                ),
+                label: Text(staff.isActive ? 'Active' : 'Inactive'),
+              ),
+              if (staff.userId == null || staff.userId!.trim().isEmpty)
+                const Chip(
+                  avatar: Icon(Icons.mail_outline, size: 17),
+                  label: Text('Email invite ready'),
+                )
+              else
+                const Chip(
+                  avatar: Icon(Icons.verified_user_outlined, size: 17),
+                  label: Text('Account linked'),
+                ),
+            ],
+          ),
+          if (!owner) ...[
+            const SizedBox(height: 12),
+            Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
-                  child: Header(
-                    title: 'Admin Dashboard',
-                    subtitle:
-                        'Manage orders, products, customers, and store updates.',
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
-                  child: Row(
-                    children: [
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.home_outlined),
-                        label: const Text('Back to Home'),
-                        onPressed: goBackHome,
-                      ),
-                      const Spacer(),
-                      IconButton.filledTonal(
-                        tooltip: 'Refresh admin dashboard',
-                        onPressed: refresh,
-                        icon: const Icon(Icons.refresh_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Material(
-                  color: Colors.transparent,
-                  child: const TabBar(
-                    isScrollable: true,
-                    labelColor: FarmColors.green,
-                    indicatorColor: FarmColors.green,
-                    tabs: [
-                      Tab(
-                        icon: Icon(Icons.dashboard_customize_outlined),
-                        text: 'Dashboard',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.receipt_long),
-                        text: 'Orders',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.local_shipping_outlined),
-                        text: 'Fulfillment',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.analytics_outlined),
-                        text: 'Analytics',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.eco),
-                        text: 'Products',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.photo_library_outlined),
-                        text: 'Hero',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.support_agent_outlined),
-                        text: 'Support',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.agriculture_outlined),
-                        text: 'Farmers',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.payments_outlined),
-                        text: 'Payouts',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.table_chart_outlined),
-                        text: 'Reports',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.rate_review_outlined),
-                        text: 'Reviews',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.confirmation_number_outlined),
-                        text: 'Coupons',
-                      ),
-                    ],
-                  ),
-                ),
                 Expanded(
-                  child: TabBarView(
-                    children: [
-                      AdminDashboardOverviewTab(refreshKey: refreshKey),
-                      AdminOrdersTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                      AdminDeliveryTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                      AdminAnalyticsTab(refreshKey: refreshKey),
-                      AdminProductsTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                      AdminHeroSlidesTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                      AdminSupportTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                      AdminFarmerManagementTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                      AdminPayoutsTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                      AdminReportsTab(refreshKey: refreshKey),
-                      AdminReviewsTab(refreshKey: refreshKey),
-                      AdminCouponsTab(
-                        refreshKey: refreshKey,
-                        onChanged: refresh,
-                      ),
-                    ],
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit'),
+                    onPressed: () => _editStaff(staff),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: Icon(
+                      staff.isActive
+                          ? Icons.block_outlined
+                          : Icons.check_circle_outline,
+                      size: 18,
+                    ),
+                    label: Text(staff.isActive ? 'Deactivate' : 'Activate'),
+                    onPressed: () => _toggleActive(staff),
                   ),
                 ),
               ],
             ),
-          ),
-        );
-      },
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: FutureBuilder<List<StaffUserAccount>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final staff = snapshot.data ?? const <StaffUserAccount>[];
+          final loading = snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData;
+
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
+            children: [
+              const Header(
+                title: 'Staff Users',
+                subtitle:
+                    'Owner-only staff setup for safe warehouse operations.',
+              ),
+              const SizedBox(height: 14),
+              FarmCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      editingId == null
+                          ? 'Add staff member'
+                          : 'Edit staff member',
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Only the owner can add, edit, activate, or deactivate staff. Do not share the owner password.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Staff email',
+                        hintText: 'worker@example.com',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Display name',
+                        hintText: 'Optional',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: selectedRole,
+                      decoration: const InputDecoration(labelText: 'Role'),
+                      items: staffAssignableRoles
+                          .map(
+                            (role) => DropdownMenuItem<String>(
+                              value: role,
+                              child: Text(staffRoleDisplayLabel(role)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => selectedRole = value);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: isActive,
+                      activeColor: FarmColors.green,
+                      title: const Text('Active staff access'),
+                      subtitle: Text(
+                        isActive
+                            ? 'This worker can sign in with the selected role.'
+                            : 'This worker is blocked from staff tools.',
+                      ),
+                      onChanged: (value) => setState(() => isActive = value),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: notesController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes',
+                        hintText: 'Optional internal note',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: PrimaryFarmButton(
+                            label: saving
+                                ? 'Saving...'
+                                : editingId == null
+                                    ? 'Add Staff'
+                                    : 'Save Staff',
+                            onPressed: saving ? null : _saveStaff,
+                          ),
+                        ),
+                        if (editingId != null) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.close),
+                              label: const Text('Cancel'),
+                              onPressed: saving ? null : _clearForm,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              AdminSectionCard(
+                icon: Icons.security_outlined,
+                title: 'Role guide',
+                subtitle: 'Recommended access for daily warehouse operations.',
+                children: staffAssignableRoles
+                    .map(
+                      (role) => AdminActionTile(
+                        icon: role == 'manager'
+                            ? Icons.admin_panel_settings_outlined
+                            : role == 'packer'
+                                ? Icons.inventory_2_outlined
+                                : role == 'delivery'
+                                    ? Icons.local_shipping_outlined
+                                    : role == 'inventory'
+                                        ? Icons.fact_check_outlined
+                                        : Icons.support_agent_outlined,
+                        title: staffRoleDisplayLabel(role),
+                        description: staffRoleWorkflowSummary(role),
+                        color: FarmColors.green,
+                        onTap: () {},
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Current staff',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (loading)
+                const SizedBox(height: 360, child: SkeletonList(count: 3))
+              else if (staff.isEmpty)
+                const FarmEmptyState(
+                  icon: Icons.badge_outlined,
+                  title: 'No staff users found',
+                  message:
+                      'Add a staff email above to prepare role-based access.',
+                )
+              else
+                ...staff.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _staffCard(item),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -2266,7 +3204,9 @@ class _AdminDashboardOverviewTabState extends State<AdminDashboardOverviewTab> {
 
   Future<void> _reload() async {
     final future = fetchAdminOverviewSnapshot();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     await future;
   }
 
@@ -3018,7 +3958,9 @@ class _AdminReportsTabState extends State<AdminReportsTab> {
 
   Future<void> _reload() async {
     final future = fetchAdminOrders();
-    setState(() => _ordersFuture = future);
+    setState(() {
+      _ordersFuture = future;
+    });
     await future;
   }
 
@@ -4115,7 +5057,9 @@ class _AdminAppHealthTabState extends State<AdminAppHealthTab> {
 
   Future<void> refresh() async {
     final future = buildAdminAppHealthSnapshot();
-    setState(() => snapshotFuture = future);
+    setState(() {
+      snapshotFuture = future;
+    });
     await future;
   }
 
@@ -6287,11 +7231,25 @@ class AdminDeliveryTab extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              AdminDeliveryZonesManager(
-                key: ValueKey('delivery-zones-$refreshKey'),
-                onChanged: onChanged,
+              FutureBuilder<String>(
+                future: fetchCurrentStaffRole(),
+                builder: (context, staffSnapshot) {
+                  final currentStaffRole =
+                      normalizeStaffRole(staffSnapshot.data);
+                  if (!staffRoleCanManageBusinessSettings(currentStaffRole)) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: AdminDeliveryZonesManager(
+                      key: ValueKey('delivery-zones-$refreshKey'),
+                      onChanged: onChanged,
+                    ),
+                  );
+                },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 0),
               FarmCard(
                 padding: const EdgeInsets.all(18),
                 child: Column(
@@ -6446,7 +7404,9 @@ class _AdminDeliveryZonesManagerState extends State<AdminDeliveryZonesManager> {
   }
 
   void _reload() {
-    setState(() => zonesFuture = fetchAdminDeliveryZones());
+    setState(() {
+      zonesFuture = fetchAdminDeliveryZones();
+    });
     widget.onChanged();
   }
 
@@ -6820,7 +7780,7 @@ Future<void> updateAdminProductNutritionBadges({
   };
 
   if (cleanNote.isNotEmpty) {
-    payload['nutrition_note'] = cleanNote;
+    payload['nutrition_notes'] = cleanNote;
   }
 
   await supabase.from('products').update(payload).eq('id', productId);
@@ -7074,6 +8034,13 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                         product?.subscribeSaveEnabled ?? false,
                     subscribeSaveDiscountPercent:
                         product?.subscribeSaveDiscountPercent,
+                    nutrientStrong: selectedStrongNutrients.toList(),
+                    nutrientGood: selectedGoodNutrients.toList(),
+                    nutrientContains: selectedContainsNutrients.toList(),
+                    nutritionVerified: nutritionVerified,
+                    nutritionNotes: nutritionNoteController.text.trim().isEmpty
+                        ? null
+                        : nutritionNoteController.text.trim(),
                   );
                 } else {
                   await updateProductDetails(
@@ -7647,83 +8614,79 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                             setDialogState(() => isOrganic = value),
                       ),
                       sectionTitle('Nutrition badges'),
-                      if (product == null)
-                        nutritionSaveLaterNotice()
-                      else ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: FarmColors.primarySoft.withOpacity(0.42),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: FarmColors.line),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Customer badge preview',
-                                style: TextStyle(
-                                  color: FarmColors.ink,
-                                  fontWeight: FontWeight.w900,
-                                ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: FarmColors.primarySoft.withOpacity(0.42),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Customer badge preview',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontWeight: FontWeight.w900,
                               ),
-                              const SizedBox(height: 8),
-                              nutritionPreview(),
-                              const SizedBox(height: 10),
-                              SwitchListTile(
-                                value: nutritionVerified,
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text('Nutrition verified'),
-                                subtitle: const Text(
-                                  'Use only for simple food nutrient badges, not medical claims.',
-                                ),
-                                activeColor: FarmColors.green,
-                                onChanged: saving
-                                    ? null
-                                    : (value) => setDialogState(
-                                          () => nutritionVerified = value,
-                                        ),
+                            ),
+                            const SizedBox(height: 8),
+                            nutritionPreview(),
+                            const SizedBox(height: 10),
+                            SwitchListTile(
+                              value: nutritionVerified,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Nutrition verified'),
+                              subtitle: const Text(
+                                'Use only for simple food nutrient badges, not medical claims.',
                               ),
-                            ],
-                          ),
+                              activeColor: FarmColors.green,
+                              onChanged: saving
+                                  ? null
+                                  : (value) => setDialogState(
+                                        () => nutritionVerified = value,
+                                      ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
-                        nutritionLevelGroup(
-                          title: 'Strong source of',
-                          helper: 'Use for the clearest nutrient strengths.',
-                          level: 'strong',
-                          selectedValues: selectedStrongNutrients,
-                          color: FarmColors.green,
+                      ),
+                      const SizedBox(height: 12),
+                      nutritionLevelGroup(
+                        title: 'Strong source of',
+                        helper: 'Use for the clearest nutrient strengths.',
+                        level: 'strong',
+                        selectedValues: selectedStrongNutrients,
+                        color: FarmColors.green,
+                      ),
+                      nutritionLevelGroup(
+                        title: 'Good source of',
+                        helper: 'Use for helpful but less dominant nutrients.',
+                        level: 'good',
+                        selectedValues: selectedGoodNutrients,
+                        color: FarmColors.primary,
+                      ),
+                      nutritionLevelGroup(
+                        title: 'Contains',
+                        helper:
+                            'Use when the item contains the nutrient but should not be highlighted strongly.',
+                        level: 'contains',
+                        selectedValues: selectedContainsNutrients,
+                        color: FarmColors.warning,
+                      ),
+                      TextField(
+                        controller: nutritionNoteController,
+                        enabled: !saving,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Nutrition note optional',
+                          helperText: product == null
+                              ? 'Optional note saved with the new product.'
+                              : 'Leave blank to keep any existing note.',
                         ),
-                        nutritionLevelGroup(
-                          title: 'Good source of',
-                          helper:
-                              'Use for helpful but less dominant nutrients.',
-                          level: 'good',
-                          selectedValues: selectedGoodNutrients,
-                          color: FarmColors.primary,
-                        ),
-                        nutritionLevelGroup(
-                          title: 'Contains',
-                          helper:
-                              'Use when the item contains the nutrient but should not be highlighted strongly.',
-                          level: 'contains',
-                          selectedValues: selectedContainsNutrients,
-                          color: FarmColors.warning,
-                        ),
-                        TextField(
-                          controller: nutritionNoteController,
-                          enabled: !saving,
-                          maxLines: 2,
-                          decoration: const InputDecoration(
-                            labelText: 'Nutrition note optional',
-                            helperText:
-                                'Leave blank to keep any existing note.',
-                          ),
-                        ),
-                      ],
+                      ),
                       sectionTitle('Options'),
                       SwitchListTile(
                         value: isAvailable,

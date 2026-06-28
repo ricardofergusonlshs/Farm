@@ -24,6 +24,227 @@ List<HomeHeroSlide> _cleanHomeHeroSlides(List<HomeHeroSlide> slides) {
 
 final Set<String> _shownBrowserNotificationTags = <String>{};
 
+const List<DeliveryZone> _defaultDeliveryZones = <DeliveryZone>[
+  DeliveryZone(
+    id: 'default-st-elizabeth',
+    parish: 'St. Elizabeth',
+    deliveryFee: 1000,
+    isActive: true,
+    sortOrder: 1,
+  ),
+  DeliveryZone(
+    id: 'default-manchester',
+    parish: 'Manchester',
+    deliveryFee: 1500,
+    isActive: true,
+    sortOrder: 2,
+  ),
+];
+
+List<DeliveryZone> _cleanDeliveryZones(List<DeliveryZone> zones) {
+  final clean = zones.where((zone) => zone.parish.trim().isNotEmpty).toList()
+    ..sort((a, b) {
+      final orderCompare = a.sortOrder.compareTo(b.sortOrder);
+      if (orderCompare != 0) return orderCompare;
+      return a.displayName.compareTo(b.displayName);
+    });
+
+  return clean;
+}
+
+Future<List<DeliveryZone>> fetchActiveDeliveryZones() async {
+  try {
+    final response = await supabase
+        .from('delivery_zones')
+        .select(
+          'id, parish, zone_name, delivery_fee, is_active, sort_order, notes, updated_at',
+        )
+        .eq('is_active', true)
+        .order('sort_order', ascending: true)
+        .order('parish', ascending: true);
+
+    final zones = (response as List)
+        .map((item) =>
+            DeliveryZone.fromSupabase(Map<String, dynamic>.from(item)))
+        .toList();
+
+    final clean = _cleanDeliveryZones(zones);
+    if (clean.isNotEmpty) return clean;
+  } catch (error) {
+    farmDebugLog(
+        'Active delivery zones unavailable. Using safe defaults: $error');
+  }
+
+  return _defaultDeliveryZones;
+}
+
+Future<List<DeliveryZone>> fetchAdminDeliveryZones() async {
+  await requireAdminAccess();
+
+  try {
+    final response = await supabase
+        .from('delivery_zones')
+        .select(
+          'id, parish, zone_name, delivery_fee, is_active, sort_order, notes, updated_at',
+        )
+        .order('sort_order', ascending: true)
+        .order('parish', ascending: true);
+
+    final zones = (response as List)
+        .map((item) =>
+            DeliveryZone.fromSupabase(Map<String, dynamic>.from(item)))
+        .toList();
+
+    final clean = _cleanDeliveryZones(zones);
+    if (clean.isNotEmpty) return clean;
+  } catch (error) {
+    farmDebugLog('Admin delivery zones unavailable: $error');
+  }
+
+  return _defaultDeliveryZones;
+}
+
+Future<void> upsertDeliveryZone({
+  String? id,
+  required String parish,
+  String? zoneName,
+  required double deliveryFee,
+  required bool isActive,
+  int sortOrder = 0,
+  String? notes,
+}) async {
+  await requireAdminAccess();
+
+  final cleanParish = parish.trim();
+  if (cleanParish.isEmpty) {
+    throw Exception('Please enter a parish.');
+  }
+
+  final payload = <String, dynamic>{
+    'parish': cleanParish,
+    'zone_name':
+        zoneName == null || zoneName.trim().isEmpty ? '' : zoneName.trim(),
+    'delivery_fee': deliveryFee < 0 ? 0 : deliveryFee,
+    'is_active': isActive,
+    'sort_order': sortOrder,
+    'notes': notes == null || notes.trim().isEmpty ? null : notes.trim(),
+    'updated_at': DateTime.now().toIso8601String(),
+  };
+
+  final cleanId = id?.trim() ?? '';
+  if (cleanId.isNotEmpty && !cleanId.startsWith('default-')) {
+    await supabase.from('delivery_zones').update(payload).eq('id', cleanId);
+    return;
+  }
+
+  await supabase.from('delivery_zones').upsert(
+        payload,
+        onConflict: 'parish,zone_name',
+      );
+}
+
+Future<void> seedDefaultDeliveryZones() async {
+  await requireAdminAccess();
+
+  final parishes = <DeliveryZone>[
+    const DeliveryZone(
+        id: 'seed-1',
+        parish: 'St. Elizabeth',
+        deliveryFee: 1000,
+        isActive: true,
+        sortOrder: 1),
+    const DeliveryZone(
+        id: 'seed-2',
+        parish: 'Manchester',
+        deliveryFee: 1500,
+        isActive: true,
+        sortOrder: 2),
+    const DeliveryZone(
+        id: 'seed-3',
+        parish: 'Clarendon',
+        deliveryFee: 1800,
+        isActive: false,
+        sortOrder: 3),
+    const DeliveryZone(
+        id: 'seed-4',
+        parish: 'Kingston',
+        deliveryFee: 2500,
+        isActive: false,
+        sortOrder: 4),
+    const DeliveryZone(
+        id: 'seed-5',
+        parish: 'St. Andrew',
+        deliveryFee: 2500,
+        isActive: false,
+        sortOrder: 5),
+    const DeliveryZone(
+        id: 'seed-6',
+        parish: 'St. Catherine',
+        deliveryFee: 2200,
+        isActive: false,
+        sortOrder: 6),
+    const DeliveryZone(
+        id: 'seed-7',
+        parish: 'St. James',
+        deliveryFee: 3000,
+        isActive: false,
+        sortOrder: 7),
+    const DeliveryZone(
+        id: 'seed-8',
+        parish: 'Westmoreland',
+        deliveryFee: 2200,
+        isActive: false,
+        sortOrder: 8),
+    const DeliveryZone(
+        id: 'seed-9',
+        parish: 'Hanover',
+        deliveryFee: 2800,
+        isActive: false,
+        sortOrder: 9),
+    const DeliveryZone(
+        id: 'seed-10',
+        parish: 'Trelawny',
+        deliveryFee: 2800,
+        isActive: false,
+        sortOrder: 10),
+    const DeliveryZone(
+        id: 'seed-11',
+        parish: 'St. Ann',
+        deliveryFee: 3000,
+        isActive: false,
+        sortOrder: 11),
+    const DeliveryZone(
+        id: 'seed-12',
+        parish: 'St. Mary',
+        deliveryFee: 3200,
+        isActive: false,
+        sortOrder: 12),
+    const DeliveryZone(
+        id: 'seed-13',
+        parish: 'Portland',
+        deliveryFee: 3500,
+        isActive: false,
+        sortOrder: 13),
+    const DeliveryZone(
+        id: 'seed-14',
+        parish: 'St. Thomas',
+        deliveryFee: 3500,
+        isActive: false,
+        sortOrder: 14),
+  ];
+
+  for (final zone in parishes) {
+    await upsertDeliveryZone(
+      parish: zone.parish,
+      zoneName: zone.zoneName,
+      deliveryFee: zone.deliveryFee,
+      isActive: zone.isActive,
+      sortOrder: zone.sortOrder,
+      notes: zone.notes,
+    );
+  }
+}
+
 Future<List<FarmOrder>> _fetchOrdersUncached() async {
   if (!isLoggedIn) return [];
 
@@ -11692,24 +11913,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   CustomerProfile? savedProfile;
   String fulfillmentType = 'pickup';
   String paymentMethod = 'cash_on_pickup';
-  String deliveryZone = 'Kingston / St. Andrew';
+  String deliveryZone = 'St. Elizabeth';
+  List<DeliveryZone> deliveryZones = _defaultDeliveryZones;
+  bool deliveryZonesLoading = false;
   DateTime? scheduledDate;
   TimeOfDay? scheduledTime;
 
-  static const double homeDeliveryFee = 500.0;
+  DeliveryZone? get selectedDeliveryZone {
+    for (final zone in deliveryZones) {
+      if (zone.displayName == deliveryZone) return zone;
+    }
+    if (deliveryZones.isNotEmpty) return deliveryZones.first;
+    return null;
+  }
 
-  final List<String> deliveryZones = const [
-    'Kingston / St. Andrew',
-    'St. Catherine',
-    'St. Elizabeth',
-    'Manchester',
-    'Clarendon',
-    'Montego Bay / St. James',
-    'Other Parish',
-  ];
-
-  double get deliveryFee =>
-      fulfillmentType == 'delivery' ? homeDeliveryFee : 0.0;
+  double get deliveryFee {
+    if (fulfillmentType != 'delivery') return 0.0;
+    final fee = selectedDeliveryZone?.deliveryFee ?? 0.0;
+    return fee < 0 ? 0.0 : fee;
+  }
 
   bool _isPrepaidPaymentMethod(String method) {
     return method == 'bank_transfer';
@@ -11791,6 +12013,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     scheduledTime = const TimeOfDay(hour: 16, minute: 0);
     loadSavedCustomerProfile();
+    loadDeliveryZones();
+  }
+
+  Future<void> loadDeliveryZones() async {
+    if (mounted) setState(() => deliveryZonesLoading = true);
+
+    final zones = await fetchActiveDeliveryZones();
+    if (!mounted) return;
+
+    final clean = _cleanDeliveryZones(zones);
+    setState(() {
+      deliveryZones = clean.isEmpty ? _defaultDeliveryZones : clean;
+      final currentStillExists = deliveryZones.any(
+        (zone) => zone.displayName == deliveryZone,
+      );
+      if (!currentStillExists && deliveryZones.isNotEmpty) {
+        deliveryZone = deliveryZones.first.displayName;
+      }
+      deliveryZonesLoading = false;
+    });
   }
 
   Future<void> loadSavedCustomerProfile() async {
@@ -11909,6 +12151,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (fulfillmentType == 'delivery' && address.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a delivery address.')),
+      );
+      return;
+    }
+
+    if (fulfillmentType == 'delivery' && selectedDeliveryZone == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please choose an active delivery parish.'),
+        ),
       );
       return;
     }
@@ -12601,28 +12852,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   if (fulfillmentType == 'delivery') ...[
                     DropdownButtonFormField<String>(
                       isExpanded: true,
-                      value: deliveryZone,
+                      value: deliveryZones.any(
+                        (zone) => zone.displayName == deliveryZone,
+                      )
+                          ? deliveryZone
+                          : null,
                       items: deliveryZones
+                          .where((zone) => zone.isActive)
                           .map(
                             (zone) => DropdownMenuItem(
-                              value: zone,
+                              value: zone.displayName,
                               child: Text(
-                                zone,
+                                '${zone.displayName} • ${formatJmd(zone.deliveryFee)}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           )
                           .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => deliveryZone = value);
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Delivery parish / zone',
-                        prefixIcon: Icon(Icons.local_shipping_outlined),
+                      onChanged: deliveryZonesLoading
+                          ? null
+                          : (value) {
+                              if (value == null) return;
+                              setState(() => deliveryZone = value);
+                            },
+                      decoration: InputDecoration(
+                        labelText: deliveryZonesLoading
+                            ? 'Loading delivery parishes...'
+                            : 'Delivery parish',
+                        prefixIcon: const Icon(Icons.local_shipping_outlined),
                       ),
                     ),
+                    const SizedBox(height: 10),
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -12630,12 +12891,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: FarmColors.line),
                       ),
-                      child: Text(
-                        'Delivery fee: ${formatJmd(deliveryFee)}. This is added to your total for Home Delivery.',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: FarmColors.green,
-                        ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.verified_outlined,
+                            color: FarmColors.green,
+                            size: 19,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Delivery fee for $deliveryZone: ${formatJmd(deliveryFee)}. Admin can update active parishes and fees anytime.',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: FarmColors.green,
+                                height: 1.25,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 14),

@@ -6417,6 +6417,64 @@ class AdminDeliveryTab extends StatelessWidget {
   }
 }
 
+const List<String> _adminNutritionBadgeOptions = <String>[
+  'Magnesium',
+  'Iron',
+  'Fiber',
+  'Potassium',
+  'Vitamin C',
+  'Protein',
+  'Calcium',
+  'Antioxidants',
+];
+
+List<String> _cleanAdminNutritionBadges(Iterable<String> values) {
+  final normalized = <String>{};
+  final cleaned = <String>[];
+
+  for (final option in _adminNutritionBadgeOptions) {
+    final match = values.any(
+      (value) => value.trim().toLowerCase() == option.toLowerCase(),
+    );
+    if (match && normalized.add(option.toLowerCase())) {
+      cleaned.add(option);
+    }
+  }
+
+  for (final value in values) {
+    final clean = value.trim();
+    if (clean.isEmpty) continue;
+    if (normalized.add(clean.toLowerCase())) cleaned.add(clean);
+  }
+
+  return cleaned;
+}
+
+Future<void> updateAdminProductNutritionBadges({
+  required String productId,
+  required Iterable<String> nutrientStrong,
+  required Iterable<String> nutrientGood,
+  required Iterable<String> nutrientContains,
+  required bool nutritionVerified,
+  String? nutritionNote,
+}) async {
+  await requireAdminAccess();
+
+  final cleanNote = (nutritionNote ?? '').trim();
+  final payload = <String, dynamic>{
+    'nutrient_strong': _cleanAdminNutritionBadges(nutrientStrong),
+    'nutrient_good': _cleanAdminNutritionBadges(nutrientGood),
+    'nutrient_contains': _cleanAdminNutritionBadges(nutrientContains),
+    'nutrition_verified': nutritionVerified,
+  };
+
+  if (cleanNote.isNotEmpty) {
+    payload['nutrition_note'] = cleanNote;
+  }
+
+  await supabase.from('products').update(payload).eq('id', productId);
+}
+
 class AdminProductsTab extends StatefulWidget {
   final int refreshKey;
   final VoidCallback onChanged;
@@ -6527,6 +6585,19 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
     bool readySoon =
         product?.isReadySoon ?? selectedProductStatus == 'ready_soon';
     bool isDealOfDay = product?.isDealOfDay ?? false;
+    final selectedStrongNutrients = <String>{
+      ..._cleanAdminNutritionBadges(
+          product?.nutrientStrong ?? const <String>[]),
+    };
+    final selectedGoodNutrients = <String>{
+      ..._cleanAdminNutritionBadges(product?.nutrientGood ?? const <String>[]),
+    };
+    final selectedContainsNutrients = <String>{
+      ..._cleanAdminNutritionBadges(
+          product?.nutrientContains ?? const <String>[]),
+    };
+    final nutritionNoteController = TextEditingController();
+    bool nutritionVerified = product?.nutritionVerified ?? false;
     bool saving = false;
     bool uploadingImage = false;
 
@@ -6545,6 +6616,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
         estimatedReadyDateController.dispose();
         expectedStockController.dispose();
         dealRankController.dispose();
+        nutritionNoteController.dispose();
       });
     }
 
@@ -6682,6 +6754,15 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     subscribeSaveEnabled: product.subscribeSaveEnabled,
                     subscribeSaveDiscountPercent:
                         product.subscribeSaveDiscountPercent,
+                  );
+
+                  await updateAdminProductNutritionBadges(
+                    productId: product.id,
+                    nutrientStrong: selectedStrongNutrients,
+                    nutrientGood: selectedGoodNutrients,
+                    nutrientContains: selectedContainsNutrients,
+                    nutritionVerified: nutritionVerified,
+                    nutritionNote: nutritionNoteController.text,
                   );
                 }
 
@@ -6874,6 +6955,181 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
               );
             }
 
+            void setNutrientLevel(String nutrient, String level) {
+              setDialogState(() {
+                final wasStrong = selectedStrongNutrients.contains(nutrient);
+                final wasGood = selectedGoodNutrients.contains(nutrient);
+                final wasContains =
+                    selectedContainsNutrients.contains(nutrient);
+
+                selectedStrongNutrients.remove(nutrient);
+                selectedGoodNutrients.remove(nutrient);
+                selectedContainsNutrients.remove(nutrient);
+
+                if (level == 'strong' && !wasStrong) {
+                  selectedStrongNutrients.add(nutrient);
+                } else if (level == 'good' && !wasGood) {
+                  selectedGoodNutrients.add(nutrient);
+                } else if (level == 'contains' && !wasContains) {
+                  selectedContainsNutrients.add(nutrient);
+                }
+              });
+            }
+
+            Widget nutritionLevelGroup({
+              required String title,
+              required String helper,
+              required String level,
+              required Set<String> selectedValues,
+              required Color color,
+            }) {
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.055),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: color.withOpacity(0.16)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      helper,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                        fontSize: 11.6,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: _adminNutritionBadgeOptions.map((nutrient) {
+                        final selected = selectedValues.contains(nutrient);
+                        return FilterChip(
+                          selected: selected,
+                          label: Text(nutrient),
+                          onSelected: saving
+                              ? null
+                              : (_) => setNutrientLevel(nutrient, level),
+                          selectedColor: color.withOpacity(0.16),
+                          checkmarkColor: color,
+                          backgroundColor: FarmColors.card,
+                          labelStyle: TextStyle(
+                            color: selected ? color : FarmColors.mutedText,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11.8,
+                          ),
+                          side: BorderSide(
+                            color: selected
+                                ? color.withOpacity(0.35)
+                                : FarmColors.line,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget nutritionPreview() {
+              final badges = <String>[
+                ...selectedStrongNutrients.map((item) => 'Strong $item'),
+                ...selectedGoodNutrients.map((item) => 'Good $item'),
+                ...selectedContainsNutrients.map((item) => 'Contains $item'),
+              ];
+
+              if (badges.isEmpty) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: FarmColors.cardSoft,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: FarmColors.line),
+                  ),
+                  child: const Text(
+                    'No nutrient badges selected yet.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                );
+              }
+
+              return Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: badges
+                    .map(
+                      (badge) => Chip(
+                        avatar: const Icon(
+                          Icons.health_and_safety_outlined,
+                          size: 16,
+                          color: FarmColors.green,
+                        ),
+                        label: Text(badge),
+                        backgroundColor: FarmColors.primarySoft,
+                        labelStyle: const TextStyle(
+                          color: FarmColors.green,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    )
+                    .toList(),
+              );
+            }
+
+            Widget nutritionSaveLaterNotice() {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: FarmColors.warning.withOpacity(0.075),
+                  borderRadius: BorderRadius.circular(18),
+                  border:
+                      Border.all(color: FarmColors.warning.withOpacity(0.18)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: FarmColors.warning,
+                      size: 20,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Save the product first, then edit it to add nutrition badges. This protects the normal add-product flow.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontWeight: FontWeight.w800,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
             return AlertDialog(
               insetPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -7039,6 +7295,84 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                         onChanged: (value) =>
                             setDialogState(() => isOrganic = value),
                       ),
+                      sectionTitle('Nutrition badges'),
+                      if (product == null)
+                        nutritionSaveLaterNotice()
+                      else ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: FarmColors.primarySoft.withOpacity(0.42),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: FarmColors.line),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Customer badge preview',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              nutritionPreview(),
+                              const SizedBox(height: 10),
+                              SwitchListTile(
+                                value: nutritionVerified,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Nutrition verified'),
+                                subtitle: const Text(
+                                  'Use only for simple food nutrient badges, not medical claims.',
+                                ),
+                                activeColor: FarmColors.green,
+                                onChanged: saving
+                                    ? null
+                                    : (value) => setDialogState(
+                                          () => nutritionVerified = value,
+                                        ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        nutritionLevelGroup(
+                          title: 'Strong source of',
+                          helper: 'Use for the clearest nutrient strengths.',
+                          level: 'strong',
+                          selectedValues: selectedStrongNutrients,
+                          color: FarmColors.green,
+                        ),
+                        nutritionLevelGroup(
+                          title: 'Good source of',
+                          helper:
+                              'Use for helpful but less dominant nutrients.',
+                          level: 'good',
+                          selectedValues: selectedGoodNutrients,
+                          color: FarmColors.primary,
+                        ),
+                        nutritionLevelGroup(
+                          title: 'Contains',
+                          helper:
+                              'Use when the item contains the nutrient but should not be highlighted strongly.',
+                          level: 'contains',
+                          selectedValues: selectedContainsNutrients,
+                          color: FarmColors.warning,
+                        ),
+                        TextField(
+                          controller: nutritionNoteController,
+                          enabled: !saving,
+                          maxLines: 2,
+                          decoration: const InputDecoration(
+                            labelText: 'Nutrition note optional',
+                            helperText:
+                                'Leave blank to keep any existing note.',
+                          ),
+                        ),
+                      ],
                       sectionTitle('Options'),
                       SwitchListTile(
                         value: isAvailable,
@@ -7865,6 +8199,18 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                             label: 'Organic',
                             icon: Icons.eco_outlined,
                             color: FarmColors.green,
+                          ),
+                        if (product.nutrientStrong.isNotEmpty ||
+                            product.nutrientGood.isNotEmpty ||
+                            product.nutrientContains.isNotEmpty)
+                          _MiniInfoPill(
+                            label: product.nutritionVerified
+                                ? 'Nutrition verified'
+                                : 'Nutrition tags',
+                            icon: Icons.health_and_safety_outlined,
+                            color: product.nutritionVerified
+                                ? FarmColors.green
+                                : FarmColors.warning,
                           ),
                       ],
                     ),

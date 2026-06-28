@@ -24,7 +24,7 @@ android {
         targetSdk = flutter.targetSdkVersion
 
         // Google Play requires this to increase for every new upload.
-        versionCode = 19
+        versionCode = 20
         versionName = "1.0.3"
     }
 

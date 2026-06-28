@@ -376,8 +376,8 @@ class AccountScreen extends StatelessWidget {
                     ),
                     AccountActionItem(
                       icon: Icons.ios_share_outlined,
-                      title: 'Invite',
-                      subtitle: 'Share market',
+                      title: 'Invite & Earn',
+                      subtitle: 'Referral points',
                       onTap: () => _open(
                         context,
                         const InviteFarmMarketScreen(),
@@ -493,106 +493,100 @@ class AccountScreen extends StatelessWidget {
 class InviteFarmMarketScreen extends StatelessWidget {
   const InviteFarmMarketScreen({super.key});
 
-  String get _marketLink => AppConfig.shareableAppLink.trim();
+  String get _shareSubject => 'The Harvest Place Ja';
 
-  String get _inviteText {
-    return 'I found a fresh local farm market app you may like: ${AppConfig.appName}. Browse fresh produce, build your weekly box, and track farm orders here: $_marketLink';
+  String _encoded(String value) => Uri.encodeComponent(value.trim());
+
+  List<_InviteShareAction> _shareActionsFor(ReferralShareSnapshot referral) {
+    final inviteText = referral.inviteMessage.trim();
+    final referralLink = referral.referralLink.trim();
+
+    final encodedInviteText = _encoded(inviteText);
+    final encodedReferralLink = _encoded(referralLink);
+    final encodedSubject = _encoded(_shareSubject);
+
+    final webShareText =
+        _encoded('Fresh local food, weekly boxes, and farm order tracking.');
+
+    return [
+      _InviteShareAction(
+        label: 'WhatsApp',
+        subtitle: 'Chats & groups',
+        icon: Icons.chat_bubble_outline,
+        accentColor: FarmColors.success,
+        urls: [
+          'whatsapp://send?text=$encodedInviteText',
+          'https://api.whatsapp.com/send?text=$encodedInviteText',
+          'https://wa.me/?text=$encodedInviteText',
+        ],
+        successMessage: 'Opening WhatsApp...',
+      ),
+      _InviteShareAction(
+        label: 'Telegram',
+        subtitle: 'Send link',
+        icon: Icons.send_outlined,
+        accentColor: const Color(0xFF2AABEE),
+        urls: [
+          'tg://msg_url?url=$encodedReferralLink&text=$encodedInviteText',
+          'tg://msg?text=$encodedInviteText',
+          'https://t.me/share/url?url=$encodedReferralLink&text=$webShareText',
+        ],
+        successMessage: 'Opening Telegram...',
+      ),
+      _InviteShareAction(
+        label: 'Facebook',
+        subtitle: 'Share link',
+        icon: Icons.facebook,
+        accentColor: const Color(0xFF1877F2),
+        urls: [
+          'fb://facewebmodal/f?href=https://www.facebook.com/sharer/sharer.php?u=$encodedReferralLink',
+          'https://www.facebook.com/sharer/sharer.php?u=$encodedReferralLink',
+        ],
+        successMessage: 'Opening Facebook...',
+      ),
+      _InviteShareAction(
+        label: 'X',
+        subtitle: 'Post invite',
+        icon: Icons.alternate_email_rounded,
+        accentColor: FarmColors.ink,
+        urls: [
+          'twitter://post?message=$encodedInviteText',
+          'https://twitter.com/intent/tweet?text=$encodedInviteText',
+        ],
+        successMessage: 'Opening X...',
+      ),
+      _InviteShareAction(
+        label: 'Text',
+        subtitle: 'SMS invite',
+        icon: Icons.sms_outlined,
+        accentColor: FarmColors.primary,
+        urls: [
+          'sms:?body=$encodedInviteText',
+          'sms:&body=$encodedInviteText',
+          'smsto:?body=$encodedInviteText',
+        ],
+        successMessage: 'Opening text message...',
+      ),
+      _InviteShareAction(
+        label: 'Email',
+        subtitle: 'Send email',
+        icon: Icons.email_outlined,
+        accentColor: FarmColors.warning,
+        urls: [
+          'mailto:?subject=$encodedSubject&body=$encodedInviteText',
+        ],
+        successMessage: 'Opening email...',
+      ),
+      _InviteShareAction(
+        label: 'Open link',
+        subtitle: 'Browser',
+        icon: Icons.open_in_new_rounded,
+        accentColor: FarmColors.green,
+        urls: [referralLink],
+        successMessage: 'Opening invite link...',
+      ),
+    ];
   }
-
-  String get _shareSubject => 'Fresh local farm market app';
-
-  String get _encodedInviteText => Uri.encodeComponent(_inviteText);
-
-  String get _encodedMarketLink => Uri.encodeComponent(_marketLink);
-
-  String get _encodedShareSubject => Uri.encodeComponent(_shareSubject);
-
-  String get _whatsAppAppShareUrl {
-    return 'whatsapp://send?text=$_encodedInviteText';
-  }
-
-  String get _whatsAppWebShareUrl {
-    return 'https://wa.me/?text=$_encodedInviteText';
-  }
-
-  String get _facebookShareUrl {
-    return 'https://www.facebook.com/sharer/sharer.php?u=$_encodedMarketLink&quote=$_encodedInviteText';
-  }
-
-  String get _xShareUrl {
-    return 'https://twitter.com/intent/tweet?text=$_encodedInviteText';
-  }
-
-  String get _telegramAppShareUrl {
-    return 'tg://msg?text=$_encodedInviteText';
-  }
-
-  String get _telegramWebShareUrl {
-    return 'https://t.me/share/url?url=$_encodedMarketLink&text=${Uri.encodeComponent('Fresh local food, weekly boxes, and farm order tracking.')}';
-  }
-
-  String get _emailShareUrl {
-    return 'mailto:?subject=$_encodedShareSubject&body=$_encodedInviteText';
-  }
-
-  String get _smsShareUrlAndroid {
-    return 'sms:?body=$_encodedInviteText';
-  }
-
-  String get _smsShareUrlIosFallback {
-    return 'sms:&body=$_encodedInviteText';
-  }
-
-  List<_InviteShareAction> get _shareActions => [
-        _InviteShareAction(
-          label: 'WhatsApp',
-          subtitle: 'Send to chats',
-          icon: Icons.chat_bubble_outline,
-          accentColor: FarmColors.success,
-          urls: [_whatsAppAppShareUrl, _whatsAppWebShareUrl],
-          successMessage: 'Opening WhatsApp...',
-        ),
-        _InviteShareAction(
-          label: 'Facebook',
-          subtitle: 'Post or share',
-          icon: Icons.facebook,
-          accentColor: const Color(0xFF1877F2),
-          urls: [_facebookShareUrl],
-          successMessage: 'Opening Facebook share...',
-        ),
-        _InviteShareAction(
-          label: 'X',
-          subtitle: 'Share a post',
-          icon: Icons.alternate_email_rounded,
-          accentColor: FarmColors.ink,
-          urls: [_xShareUrl],
-          successMessage: 'Opening X share...',
-        ),
-        _InviteShareAction(
-          label: 'Telegram',
-          subtitle: 'Send link',
-          icon: Icons.send_outlined,
-          accentColor: const Color(0xFF2AABEE),
-          urls: [_telegramAppShareUrl, _telegramWebShareUrl],
-          successMessage: 'Opening Telegram...',
-        ),
-        _InviteShareAction(
-          label: 'Text',
-          subtitle: 'SMS invite',
-          icon: Icons.sms_outlined,
-          accentColor: FarmColors.primary,
-          urls: [_smsShareUrlAndroid, _smsShareUrlIosFallback],
-          successMessage: 'Opening text message...',
-        ),
-        _InviteShareAction(
-          label: 'Email',
-          subtitle: 'Send email',
-          icon: Icons.email_outlined,
-          accentColor: FarmColors.warning,
-          urls: [_emailShareUrl],
-          successMessage: 'Opening email...',
-        ),
-      ];
 
   Future<bool> _openFirstAvailable(List<String> urls) async {
     for (final url in urls) {
@@ -603,270 +597,527 @@ class InviteFarmMarketScreen extends StatelessWidget {
         final opened = await openExternalShareUrl(cleanUrl);
         if (opened) return true;
       } catch (_) {
-        // Continue to the next share option safely.
+        // Keep trying every fallback before copying.
       }
     }
 
     return false;
   }
 
-  Future<void> _copyInvite(BuildContext context) async {
-    await Clipboard.setData(ClipboardData(text: _inviteText));
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invite message copied.')),
-      );
-    }
+  Future<void> _showShareSnackBar(
+    BuildContext context,
+    String message,
+  ) async {
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _copyInvite(
+    BuildContext context,
+    ReferralShareSnapshot referral,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: referral.inviteMessage));
+    await _showShareSnackBar(context, 'Referral invite copied.');
+  }
+
+  Future<void> _copyCode(
+    BuildContext context,
+    ReferralShareSnapshot referral,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: referral.referralCode));
+    await _showShareSnackBar(context, 'Referral code copied.');
+  }
+
+  Future<void> _copyLink(
+    BuildContext context,
+    ReferralShareSnapshot referral,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: referral.referralLink));
+    await _showShareSnackBar(context, 'Referral link copied.');
   }
 
   Future<void> _shareWithAction(
     BuildContext context,
     _InviteShareAction action,
+    ReferralShareSnapshot referral,
   ) async {
     final opened = await _openFirstAvailable(action.urls);
 
     if (!context.mounted) return;
 
     if (opened) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(action.successMessage)),
-      );
+      await _showShareSnackBar(context, action.successMessage);
       return;
     }
 
-    await Clipboard.setData(ClipboardData(text: _inviteText));
+    await Clipboard.setData(ClipboardData(text: referral.inviteMessage));
+
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${action.label} did not open on this device. Invite copied instead.',
-        ),
-      ),
+
+    await _showShareSnackBar(
+      context,
+      '${action.label} could not open on this device. Referral invite copied instead.',
     );
   }
 
-  Future<void> _shareOnWhatsApp(BuildContext context) async {
-    await _shareWithAction(context, _shareActions.first);
+  Future<void> _shareOnWhatsApp(
+    BuildContext context,
+    ReferralShareSnapshot referral,
+  ) async {
+    final whatsapp = _shareActionsFor(referral).firstWhere(
+      (action) => action.label == 'WhatsApp',
+    );
+    await _shareWithAction(context, whatsapp, referral);
   }
 
   @override
   Widget build(BuildContext context) {
-    final shareActions = _shareActions;
+    if (!isLoggedIn || supabase.auth.currentUser == null) {
+      return const GuestProtectedScreen(
+        title: 'Invite Friends',
+        subtitle: 'Share the market and earn rewards',
+        message:
+            'Sign in to get your personal referral link and earn Harvest Rewards points when invited customers complete their first order.',
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
-        title: const Text('Invite Friends'),
+        title: const Text('Invite & Earn'),
       ),
       body: FarmPage(
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-          children: [
-            const Header(
-              title: 'Share your market link',
-              subtitle: 'Choose WhatsApp, social media, text, email, or copy.',
-            ),
-            const SizedBox(height: 18),
-            FarmCard(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: FarmColors.primarySoft,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: FarmColors.green.withOpacity(0.10),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.ios_share_outlined,
-                      color: FarmColors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'One clean invite link',
-                          style: TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 19,
-                            fontWeight: FontWeight.w900,
-                            height: 1.05,
-                          ),
-                        ),
-                        SizedBox(height: 5),
-                        Text(
-                          'Share the app with customers, family, friends, or community groups in seconds.',
-                          style: TextStyle(
-                            color: FarmColors.mutedText,
-                            fontWeight: FontWeight.w700,
-                            height: 1.28,
-                          ),
-                        ),
-                      ],
-                    ),
+        child: FutureBuilder<ReferralShareSnapshot>(
+          future: fetchReferralShareSnapshot(),
+          builder: (context, snapshot) {
+            final loading = snapshot.connectionState == ConnectionState.waiting;
+            final referral = snapshot.data;
+
+            if (loading && referral == null) {
+              return const SizedBox.expand(child: SkeletonList(count: 4));
+            }
+
+            if (referral == null) {
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                children: const [
+                  FarmEmptyState(
+                    icon: Icons.ios_share_outlined,
+                    title: 'Referral link not ready',
+                    message:
+                        'Please check your connection and try opening Invite & Earn again.',
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            FarmCard(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const AccountSectionHeading(
-                    title: 'Share with',
-                    subtitle: 'Tap an option to open the app on your phone.',
-                  ),
-                  const SizedBox(height: 14),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final columns = constraints.maxWidth >= 520 ? 3 : 2;
-                      final spacing = 10.0;
-                      final width =
-                          (constraints.maxWidth - spacing * (columns - 1)) /
-                              columns;
+              );
+            }
 
-                      return Wrap(
-                        spacing: spacing,
-                        runSpacing: spacing,
-                        children: [
-                          ...shareActions.map(
-                            (action) => SizedBox(
-                              width: width,
-                              child: _InviteShareTile(
-                                action: action,
-                                onTap: () => _shareWithAction(context, action),
+            final shareActions = _shareActionsFor(referral);
+
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                const Header(
+                  title: 'Invite & Earn',
+                  subtitle:
+                      'Share your personal link and earn points after a new customer’s first completed order.',
+                ),
+                const SizedBox(height: 18),
+                _ReferralRewardsHero(referral: referral),
+                const SizedBox(height: 14),
+                FarmCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const AccountSectionHeading(
+                        title: 'Your referral',
+                        subtitle:
+                            'Use WhatsApp first, or copy your code/link anytime.',
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: FarmColors.cardSoft,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Referral code',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
                               ),
                             ),
-                          ),
-                          SizedBox(
-                            width: width,
-                            child: _InviteShareTile(
-                              action: const _InviteShareAction(
-                                label: 'Copy',
-                                subtitle: 'Copy message',
-                                icon: Icons.copy_outlined,
-                                accentColor: FarmColors.green,
-                                urls: [],
-                                successMessage: 'Invite copied.',
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    referral.referralCode,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.green,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 22,
+                                      letterSpacing: 0.4,
+                                    ),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  icon: const Icon(Icons.copy_outlined),
+                                  label: const Text('Copy'),
+                                  onPressed: () => _copyCode(context, referral),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Referral link',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
                               ),
-                              onTap: () => _copyInvite(context),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              referral.referralLink,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontWeight: FontWeight.w700,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.chat_bubble_outline),
+                              label: const Text('WhatsApp'),
+                              onPressed: () =>
+                                  _shareOnWhatsApp(context, referral),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.link_rounded),
+                              label: const Text('Copy link'),
+                              onPressed: () => _copyLink(context, referral),
                             ),
                           ),
                         ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            FarmCard(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Invite link',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: FarmColors.cardSoft,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: FarmColors.line),
-                    ),
-                    child: Text(
-                      _marketLink,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.green,
-                        fontWeight: FontWeight.w900,
-                        height: 1.25,
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
-                  Row(
+                ),
+                const SizedBox(height: 18),
+                FarmCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.chat_bubble_outline),
-                          label: const Text('WhatsApp'),
-                          onPressed: () => _shareOnWhatsApp(context),
+                      const AccountSectionHeading(
+                        title: 'Share with',
+                        subtitle:
+                            'Each option tries the phone app first, then falls back safely.',
+                      ),
+                      const SizedBox(height: 14),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final columns = constraints.maxWidth >= 520 ? 3 : 2;
+                          final spacing = 10.0;
+                          final width =
+                              (constraints.maxWidth - spacing * (columns - 1)) /
+                                  columns;
+
+                          return Wrap(
+                            spacing: spacing,
+                            runSpacing: spacing,
+                            children: [
+                              ...shareActions.map(
+                                (action) => SizedBox(
+                                  width: width,
+                                  child: _InviteShareTile(
+                                    action: action,
+                                    onTap: () => _shareWithAction(
+                                      context,
+                                      action,
+                                      referral,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: width,
+                                child: _InviteShareTile(
+                                  action: const _InviteShareAction(
+                                    label: 'Copy',
+                                    subtitle: 'Message',
+                                    icon: Icons.copy_outlined,
+                                    accentColor: FarmColors.green,
+                                    urls: [],
+                                    successMessage: 'Invite copied.',
+                                  ),
+                                  onTap: () => _copyInvite(context, referral),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                FarmCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'How points work',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.copy_outlined),
-                          label: const Text('Copy'),
-                          onPressed: () => _copyInvite(context),
+                      const SizedBox(height: 12),
+                      _RewardInfoRow(
+                        icon: Icons.ios_share_outlined,
+                        title: 'Share your personal link',
+                        message:
+                            'Send your link by WhatsApp, text, email, or social media.',
+                      ),
+                      _RewardInfoRow(
+                        icon: Icons.person_add_alt_1_outlined,
+                        title: 'A new customer joins',
+                        message:
+                            'The referral is saved when the invited customer opens the app with your link or code.',
+                      ),
+                      _RewardInfoRow(
+                        icon: Icons.card_giftcard_outlined,
+                        title: 'Earn after their first order',
+                        message:
+                            'You earn $referralRewardPoints points after their first eligible completed order.',
+                        isLast: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                FarmCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Message preview',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: FarmColors.primarySoft.withOpacity(0.46),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: Text(
+                          referral.inviteMessage,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ReferralRewardsHero extends StatelessWidget {
+  final ReferralShareSnapshot referral;
+
+  const _ReferralRewardsHero({required this.referral});
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = referral.referralSummary;
+    final loyalty = referral.loyaltySummary;
+
+    return FarmCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF7E9),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFDDEED8)),
+                ),
+                child: const Icon(
+                  Icons.card_giftcard_outlined,
+                  color: FarmColors.green,
+                ),
               ),
-            ),
-            const SizedBox(height: 18),
-            FarmCard(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Message preview',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: FarmColors.primarySoft.withOpacity(0.46),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: FarmColors.line),
-                    ),
-                    child: Text(
-                      _inviteText,
-                      style: const TextStyle(
+              const SizedBox(width: 13),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Give fresh. Earn points.',
+                      style: TextStyle(
                         color: FarmColors.ink,
-                        fontWeight: FontWeight.w700,
-                        height: 1.35,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        height: 1.05,
                       ),
                     ),
-                  ),
-                ],
+                    SizedBox(height: 5),
+                    Text(
+                      'Earn referral rewards when new customers shop through your invite.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        height: 1.28,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _ReferralMiniMetric(
+                  label: 'Available',
+                  value: '${loyalty.points}',
+                  helper: 'points',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ReferralMiniMetric(
+                  label: 'Completed',
+                  value: '${summary.completedCount}',
+                  helper: 'referrals',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ReferralMiniMetric(
+                  label: 'Pending',
+                  value: '${summary.pendingCount}',
+                  helper: 'invites',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReferralMiniMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final String helper;
+
+  const _ReferralMiniMetric({
+    required this.label,
+    required this.value,
+    required this.helper,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontWeight: FontWeight.w900,
+              fontSize: 11.2,
+            ),
+          ),
+          Text(
+            helper,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              fontSize: 10.6,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1784,13 +2035,13 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
   String _titleForSlide(HomeHeroSlide slide) {
     final custom = slide.title?.trim() ?? '';
     if (custom.isNotEmpty) return custom;
-    return 'Fresh picks for you';
+    return 'Build Your Fresh Box';
   }
 
   String _subtitleForSlide(HomeHeroSlide slide) {
     final custom = slide.subtitle?.trim() ?? '';
     if (custom.isNotEmpty) return custom;
-    return 'Local produce from trusted farms.';
+    return 'Choose local produce for pickup or delivery';
   }
 
   @override
@@ -2774,7 +3025,7 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Fresh Box Builder',
+                                  'Build Your Fresh Box',
                                   style: TextStyle(
                                     color: FarmColors.ink,
                                     fontSize: 22,
@@ -3524,6 +3775,16 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
   }
 
+  void _addProductToCart(Product product) {
+    widget.onAddToCart(product);
+    Future.microtask(() => saveCartItemForCurrentUser(product));
+  }
+
+  void _removeProductFromCart(Product product) {
+    widget.onRemoveFromCart(product);
+    Future.microtask(() => removeCartItemForCurrentUser(product));
+  }
+
   void openProduct(Product product) {
     widget.onViewed(product);
 
@@ -3533,9 +3794,9 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => ProductDetailScreen(
           product: product,
           quantity: widget.quantityForProduct(product),
-          onAdd: () => widget.onAddToCart(product),
-          onRemove: () => widget.onRemoveFromCart(product),
-          onAddProduct: widget.onAddToCart,
+          onAdd: () => _addProductToCart(product),
+          onRemove: () => _removeProductFromCart(product),
+          onAddProduct: _addProductToCart,
           onViewed: widget.onViewed,
           onViewMyBox: widget.onViewMyBox,
           onCheckout: widget.onCheckout,
@@ -3559,7 +3820,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return SizedBox(
-      height: 224,
+      height: 154,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         cacheExtent: AppPerformanceConfig.productRailCacheExtent,
@@ -3572,45 +3833,61 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(24),
             onTap: () => openProduct(product),
             child: SizedBox(
-              width: 166,
+              width: 142,
               child: Opacity(
                 opacity: product.isOutOfStock ? 0.72 : 1,
                 child: FarmCard(
-                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  padding: const EdgeInsets.all(9),
+                  child: Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      SizedBox(
-                        height: 96,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Center(
-                              child: ProductVisual(product: product, size: 82),
-                            ),
-                            if (product.isOrganic)
-                              const Positioned(
-                                top: 2,
-                                left: 2,
-                                child: OrganicImageStamp(compact: true),
+                      Center(
+                        child: ProductVisual(
+                          product: product,
+                          size: 104,
+                          showOrganicBadge: false,
+                        ),
+                      ),
+                      if (product.isOrganic)
+                        const Positioned(
+                          top: 2,
+                          left: 2,
+                          child: OrganicImageStamp(compact: true),
+                        ),
+                      if (product.hasActiveDiscount)
+                        Positioned(
+                          top: 2,
+                          right: 2,
+                          child: DiscountBadge(
+                            product: product,
+                            compact: true,
+                          ),
+                        ),
+                      Positioned(
+                        left: 2,
+                        bottom: 2,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 106),
+                          child: Wrap(
+                            alignment: WrapAlignment.start,
+                            crossAxisAlignment: WrapCrossAlignment.start,
+                            spacing: 5,
+                            runSpacing: 5,
+                            children: [
+                              ProductOriginBadge(
+                                product: product,
+                                compact: true,
+                                includeIcon: false,
                               ),
-                            if (product.hasActiveDiscount)
-                              Positioned(
-                                top: 2,
-                                right: 2,
-                                child: DiscountBadge(
+                              if (product.isOutOfStock || product.isLowStock)
+                                ProductAvailabilityChip(
                                   product: product,
                                   compact: true,
                                 ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 7),
-                      _HomeProductName(product: product),
-                      const SizedBox(height: 6),
-                      _HomePricePanel(product: product),
-                      ProductAvailabilityChip(product: product, compact: true),
                     ],
                   ),
                 ),
@@ -4463,7 +4740,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 14),
                           FreshBoxBuilderCard(
                             products: products,
-                            onAddProduct: widget.onAddToCart,
+                            onAddProduct: _addProductToCart,
                             onViewMyBox: widget.onViewMyBox,
                           ),
                           if (categoryCards.isNotEmpty) ...[
@@ -4513,18 +4790,14 @@ class _HomeScreenState extends State<HomeScreen> {
                               onAction: widget.onShopTap,
                             ),
                             const SizedBox(height: 12),
-                            ProductMiniRail(
+                            productRail(
                               products: recommendedProducts,
-                              onProductTap: openProduct,
+                              maxItems: 8,
                             ),
                           ],
-                          const SizedBox(height: 18),
-                          DealOfTheDaySection(
-                            onViewed: widget.onViewed,
-                            onAddProduct: widget.onAddToCart,
-                            onViewMyBox: widget.onViewMyBox,
-                            onCheckout: widget.onCheckout,
-                          ),
+                          // Deals remain available in the Shop.
+                          // Hidden on Home so product names and prices do not
+                          // appear on the landing page.
                           const SizedBox(height: 18),
                           SectionHeader(
                             title: 'Fresh Products',
@@ -4561,9 +4834,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               },
                             ),
                             const SizedBox(height: 12),
-                            ProductMiniRail(
+                            productRail(
                               products: favoritesForHome,
-                              onProductTap: openProduct,
+                              maxItems: 8,
                             ),
                           ],
                           if (showBuyAgain) ...[
@@ -4590,9 +4863,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               onAction: widget.onShopTap,
                             ),
                             const SizedBox(height: 12),
-                            ProductMiniRail(
+                            productRail(
                               products: recentlyViewedForHome,
-                              onProductTap: openProduct,
+                              maxItems: 8,
                             ),
                           ],
                           const SizedBox(height: 22),
@@ -4909,6 +5182,16 @@ class _ShopScreenState extends State<ShopScreen> {
     searchDebounce?.cancel();
     searchController.dispose();
     super.dispose();
+  }
+
+  void _addProductToCart(Product product) {
+    widget.onAddToCart(product);
+    Future.microtask(() => saveCartItemForCurrentUser(product));
+  }
+
+  void _removeProductFromCart(Product product) {
+    widget.onRemoveFromCart(product);
+    Future.microtask(() => removeCartItemForCurrentUser(product));
   }
 
   Future<void> loadProducts() async {
@@ -5763,8 +6046,8 @@ class _ShopScreenState extends State<ShopScreen> {
             ),
             isFavorite: widget.isFavorite(product),
             onFavorite: () => widget.onToggleFavorite(product),
-            onAdd: () => widget.onAddToCart(product),
-            onRemove: () => widget.onRemoveFromCart(product),
+            onAdd: () => _addProductToCart(product),
+            onRemove: () => _removeProductFromCart(product),
             onOpenDetails: () {
               widget.onViewed(product);
               Navigator.push(
@@ -5773,9 +6056,9 @@ class _ShopScreenState extends State<ShopScreen> {
                   builder: (_) => ProductDetailScreen(
                     product: product,
                     quantity: quantity,
-                    onAdd: () => widget.onAddToCart(product),
-                    onRemove: () => widget.onRemoveFromCart(product),
-                    onAddProduct: widget.onAddToCart,
+                    onAdd: () => _addProductToCart(product),
+                    onRemove: () => _removeProductFromCart(product),
+                    onAddProduct: _addProductToCart,
                     onViewed: widget.onViewed,
                     onViewMyBox: widget.onViewMyBox,
                     onCheckout: widget.onCheckout,
@@ -5897,19 +6180,19 @@ class SafeShopProductTile extends StatelessWidget {
 
     Widget favoriteButton() {
       return SizedBox(
-        width: 38,
-        height: 38,
+        width: 34,
+        height: 34,
         child: Material(
-          color: isFavorite
-              ? FarmColors.dangerSoft
-              : FarmColors.lightGreen.withOpacity(0.72),
+          color: isFavorite ? FarmColors.dangerSoft : Colors.white,
           shape: const CircleBorder(),
+          elevation: isFavorite ? 0 : 1,
+          shadowColor: FarmColors.shadow.withOpacity(0.10),
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onFavorite,
             child: Icon(
-              isFavorite ? Icons.favorite : Icons.favorite_border,
-              size: 19,
+              isFavorite ? Icons.favorite : Icons.favorite_border_rounded,
+              size: 18,
               color: isFavorite ? FarmColors.danger : FarmColors.green,
             ),
           ),
@@ -5924,8 +6207,8 @@ class SafeShopProductTile extends StatelessWidget {
         required bool filled,
       }) {
         return SizedBox(
-          height: 30,
-          width: 30,
+          height: 32,
+          width: 32,
           child: Material(
             color: filled ? FarmColors.green : Colors.white,
             shape: const CircleBorder(),
@@ -5943,21 +6226,14 @@ class SafeShopProductTile extends StatelessWidget {
       }
 
       return SizedBox(
-        width: fullWidth ? double.infinity : 118,
-        height: 38,
+        width: fullWidth ? double.infinity : 126,
+        height: 40,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 5),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: FarmColors.green.withOpacity(0.18)),
-            boxShadow: [
-              BoxShadow(
-                color: FarmColors.shadow.withOpacity(0.035),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
           child: Row(
             children: [
@@ -5975,7 +6251,7 @@ class SafeShopProductTile extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     color: FarmColors.green,
-                    fontSize: 13.2,
+                    fontSize: 13,
                     letterSpacing: -0.05,
                   ),
                 ),
@@ -5996,26 +6272,123 @@ class SafeShopProductTile extends StatelessWidget {
 
       if (!inStock) {
         return SizedBox(
-          width: fullWidth ? double.infinity : 126,
+          width: fullWidth ? double.infinity : 132,
           child: NotifyMeWhenReadyButton(product: product, compact: true),
         );
       }
 
       return SizedBox(
-        width: fullWidth ? double.infinity : 112,
+        width: fullWidth ? double.infinity : 116,
         height: 40,
         child: ElevatedButton.icon(
           onPressed: onAdd,
-          icon: const Icon(Icons.add, size: 17),
+          icon: const Icon(Icons.add_rounded, size: 17),
           label: const Text('Add'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
             minimumSize: Size.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            elevation: 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(999),
             ),
           ),
+        ),
+      );
+    }
+
+    Widget imageBlock() {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            height: 82,
+            width: 82,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft.withOpacity(0.55),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: FarmColors.line.withOpacity(0.70)),
+            ),
+            child: Center(
+              child: ProductVisual(
+                product: product,
+                size: 64,
+                showOrganicBadge: false,
+              ),
+            ),
+          ),
+          if (product.hasActiveDiscount && !product.isOutOfStock)
+            Positioned(
+              top: -5,
+              left: -5,
+              child: DiscountBadge(product: product, compact: true),
+            ),
+        ],
+      );
+    }
+
+    Widget badges() {
+      return Wrap(
+        spacing: 5,
+        runSpacing: 5,
+        children: [
+          if (product.isOrganic) const _SmallShopChip(label: 'Organic'),
+          ProductOriginBadge(
+            product: product,
+            compact: true,
+            includeIcon: false,
+          ),
+          ProductUnitChip(product: product, compact: true),
+          ProductAvailabilityChip(product: product, compact: true),
+          for (final badge in nutrientBadges)
+            _SmallShopChip(
+              label: badge,
+              color: FarmColors.deepGreen,
+              backgroundColor: FarmColors.primarySoft.withOpacity(0.78),
+            ),
+        ],
+      );
+    }
+
+    Widget footer() {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: muted
+              ? FarmColors.cardSoft
+              : FarmColors.primarySoft.withOpacity(0.58),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: FarmColors.line.withOpacity(0.65)),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 235;
+            final price = DiscountPriceText(
+              product: product,
+              compact: true,
+            );
+
+            if (isNarrow) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  price,
+                  const SizedBox(height: 9),
+                  primaryAction(fullWidth: true),
+                ],
+              );
+            }
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: price),
+                const SizedBox(width: 10),
+                primaryAction(fullWidth: false),
+              ],
+            );
+          },
         ),
       );
     }
@@ -6024,16 +6397,16 @@ class SafeShopProductTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: muted ? FarmColors.cardSoft : Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(26),
         border: Border.all(
           color: muted
               ? FarmColors.danger.withOpacity(0.13)
-              : FarmColors.line.withOpacity(0.84),
-          width: 1.05,
+              : FarmColors.line.withOpacity(0.82),
+          width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.shadow.withOpacity(muted ? 0.025 : 0.055),
+            color: FarmColors.shadow.withOpacity(muted ? 0.02 : 0.045),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -6042,134 +6415,66 @@ class SafeShopProductTile extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(26),
           onTap: onOpenDetails,
           child: Opacity(
-            opacity: muted ? 0.82 : 1,
+            opacity: muted ? 0.84 : 1,
             child: Padding(
-              padding: const EdgeInsets.all(13),
-              child: Row(
+              padding: const EdgeInsets.all(12),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Stack(
-                    clipBehavior: Clip.none,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(
-                        height: 92,
-                        width: 92,
-                        child: Center(
-                          child: ProductVisual(
-                            product: product,
-                            size: 72,
-                            // Keep product-list imagery clean. Organic is shown
-                            // as a text chip below so it never clashes with
-                            // discount badges on the image.
-                            showOrganicBadge: false,
-                          ),
-                        ),
-                      ),
-                      if (product.hasActiveDiscount && !product.isOutOfStock)
-                        Positioned(
-                          top: -3,
-                          left: -3,
-                          child: DiscountBadge(product: product, compact: true),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                      imageBlock(),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Text(
-                                name,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 16.4,
-                                  height: 1.08,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.18,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            favoriteButton(),
-                          ],
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 12.6,
-                            height: 1.25,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            if (product.isOrganic)
-                              const _SmallShopChip(label: 'Organic'),
-                            ProductOriginBadge(
-                              product: product,
-                              compact: true,
-                              includeIcon: false,
-                            ),
-                            ProductUnitChip(product: product, compact: true),
-                            ProductAvailabilityChip(
-                                product: product, compact: true),
-                            for (final badge in nutrientBadges)
-                              _SmallShopChip(
-                                label: badge,
-                                color: FarmColors.deepGreen,
-                                backgroundColor:
-                                    FarmColors.primarySoft.withOpacity(0.78),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isNarrow = constraints.maxWidth < 224;
-                            final price = DiscountPriceText(
-                              product: product,
-                              compact: true,
-                            );
-
-                            if (isNarrow) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  price,
-                                  const SizedBox(height: 8),
-                                  primaryAction(fullWidth: true),
-                                ],
-                              );
-                            }
-
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(child: price),
-                                const SizedBox(width: 9),
-                                primaryAction(fullWidth: false),
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 16.2,
+                                      height: 1.08,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: -0.18,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                favoriteButton(),
                               ],
-                            );
-                          },
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 12.1,
+                                height: 1.23,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 10),
+                  badges(),
+                  const SizedBox(height: 10),
+                  footer(),
                 ],
               ),
             ),
@@ -6211,7 +6516,7 @@ class _SmallShopChip extends StatelessWidget {
   }
 }
 
-class FarmBoxScreen extends StatelessWidget {
+class FarmBoxScreen extends StatefulWidget {
   final List<Product> cart;
   final void Function(Product product) onRemoveFromCart;
   final void Function(Product product) onAddToCart;
@@ -6227,7 +6532,104 @@ class FarmBoxScreen extends StatelessWidget {
     this.onInventoryChanged,
   });
 
+  @override
+  State<FarmBoxScreen> createState() => _FarmBoxScreenState();
+}
+
+class _FarmBoxScreenState extends State<FarmBoxScreen> {
+  List<CartLine>? savedCartLines;
+  bool loadingSavedCart = false;
+
+  List<Product> get cart => widget.cart;
+  VoidCallback? get onInventoryChanged => widget.onInventoryChanged;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCartIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant FarmBoxScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.cart.isNotEmpty) {
+      savedCartLines = null;
+      return;
+    }
+    if (oldWidget.cart.length != widget.cart.length && widget.cart.isEmpty) {
+      _loadSavedCartIfNeeded();
+    }
+  }
+
+  Future<void> _loadSavedCartIfNeeded() async {
+    if (!isLoggedIn || widget.cart.isNotEmpty || loadingSavedCart) return;
+
+    setState(() => loadingSavedCart = true);
+    try {
+      final lines = await fetchSavedCartLinesForCurrentUser();
+      if (!mounted || widget.cart.isNotEmpty) return;
+      setState(() => savedCartLines = lines);
+    } catch (error) {
+      farmDebugLog('Saved farm box restore skipped: $error');
+    } finally {
+      if (mounted) setState(() => loadingSavedCart = false);
+    }
+  }
+
+  void onAddToCart(Product product) {
+    widget.onAddToCart(product);
+    if (savedCartLines != null || widget.cart.isEmpty) {
+      _adjustSavedLine(product, 1);
+    }
+    Future.microtask(() => saveCartItemForCurrentUser(product));
+  }
+
+  void onRemoveFromCart(Product product) {
+    widget.onRemoveFromCart(product);
+    if (savedCartLines != null || widget.cart.isEmpty) {
+      _adjustSavedLine(product, -1);
+    }
+    Future.microtask(() => removeCartItemForCurrentUser(product));
+  }
+
+  void onOrderPlaced() {
+    setState(() => savedCartLines = const <CartLine>[]);
+    Future.microtask(clearSavedCartForCurrentUser);
+    widget.onOrderPlaced();
+  }
+
+  void _adjustSavedLine(Product product, int delta) {
+    final current = List<CartLine>.from(savedCartLines ?? const <CartLine>[]);
+    final index = current.indexWhere((line) => line.product.id == product.id);
+
+    if (index < 0) {
+      if (delta > 0) {
+        current.add(CartLine(product: product, quantity: 1));
+      }
+    } else {
+      final nextQuantity = current[index].quantity + delta;
+      if (nextQuantity <= 0) {
+        current.removeAt(index);
+      } else {
+        current[index] = current[index].copyWith(quantity: nextQuantity);
+      }
+    }
+
+    if (mounted) {
+      setState(() => savedCartLines = current);
+    }
+  }
+
   Map<String, CartLine> get groupedCart {
+    final restoredLines = savedCartLines;
+    if (widget.cart.isEmpty && restoredLines != null) {
+      return <String, CartLine>{
+        for (final line in restoredLines)
+          if (line.product.id.trim().isNotEmpty && line.quantity > 0)
+            line.product.id: line,
+      };
+    }
+
     final grouped = <String, CartLine>{};
 
     for (final product in cart) {
@@ -6284,9 +6686,9 @@ class FarmBoxScreen extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: FarmColors.cardSoft,
+          color: Colors.white.withOpacity(0.88),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: FarmColors.green.withOpacity(0.10)),
+          border: Border.all(color: const Color(0xFFE2EEDF)),
         ),
         child: Row(
           children: [
@@ -6294,8 +6696,9 @@ class FarmBoxScreen extends StatelessWidget {
               height: 28,
               width: 28,
               decoration: BoxDecoration(
-                color: FarmColors.primarySoft,
+                color: const Color(0xFFEAF7E9),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDDEED8)),
               ),
               child: Icon(icon, color: FarmColors.green, size: 16),
             ),
@@ -6309,7 +6712,7 @@ class FarmBoxScreen extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: FarmColors.ink,
+                      color: Color(0xFF24382A),
                       fontWeight: FontWeight.w900,
                       fontSize: 14,
                     ),
@@ -6320,7 +6723,7 @@ class FarmBoxScreen extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: FarmColors.mutedText,
+                      color: Color(0xFF667568),
                       fontWeight: FontWeight.w800,
                       fontSize: 10.4,
                     ),
@@ -6340,16 +6743,21 @@ class FarmBoxScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: FarmColors.card,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: FarmColors.green.withOpacity(0.11),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFFFFEFA),
+            Color(0xFFF6FBF3),
+          ],
         ),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: const Color(0xFFE2EEDF)),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.shadow.withOpacity(0.05),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.035),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -6363,9 +6771,9 @@ class FarmBoxScreen extends StatelessWidget {
                 height: 48,
                 width: 48,
                 decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
+                  color: const Color(0xFFEAF7E9),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+                  border: Border.all(color: const Color(0xFFDDEED8)),
                 ),
                 child: const Icon(
                   Icons.shopping_basket_outlined,
@@ -6381,7 +6789,7 @@ class FarmBoxScreen extends StatelessWidget {
                     const Text(
                       'My Farm Box',
                       style: TextStyle(
-                        color: FarmColors.ink,
+                        color: Color(0xFF24382A),
                         fontSize: 23,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.45,
@@ -6394,7 +6802,7 @@ class FarmBoxScreen extends StatelessWidget {
                           ? 'Review each item, adjust quantities, share your list, then checkout.'
                           : 'Your fresh picks will stay here until you are ready to checkout.',
                       style: const TextStyle(
-                        color: FarmColors.mutedText,
+                        color: Color(0xFF667568),
                         fontWeight: FontWeight.w700,
                         height: 1.26,
                       ),
@@ -6426,9 +6834,9 @@ class FarmBoxScreen extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
               decoration: BoxDecoration(
-                color: FarmColors.primarySoft.withOpacity(0.58),
+                color: const Color(0xFFF1FAEF),
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: FarmColors.green.withOpacity(0.10)),
+                border: Border.all(color: const Color(0xFFDDEED8)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -6437,10 +6845,9 @@ class FarmBoxScreen extends StatelessWidget {
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.72),
+                      color: const Color(0xFFFFFEFA),
                       shape: BoxShape.circle,
-                      border:
-                          Border.all(color: FarmColors.green.withOpacity(0.10)),
+                      border: Border.all(color: const Color(0xFFDDEED8)),
                     ),
                     child: const Icon(
                       Icons.spa_outlined,
@@ -6453,7 +6860,7 @@ class FarmBoxScreen extends StatelessWidget {
                     child: Text(
                       'Tap Shop below to add fresh produce, pantry items, or nutrient-focused picks.',
                       style: TextStyle(
-                        color: FarmColors.deepGreen,
+                        color: Color(0xFF24382A),
                         fontWeight: FontWeight.w800,
                         fontSize: 12.2,
                         height: 1.28,
@@ -7204,7 +7611,7 @@ class FarmBoxScreen extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+        margin: const EdgeInsets.fromLTRB(0, 8, 0, 18),
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -7281,31 +7688,47 @@ class FarmBoxScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lines = groupedCart.values.toList();
+    final hasItems = lines.isNotEmpty;
+
+    if (loadingSavedCart && widget.cart.isEmpty && savedCartLines == null) {
+      return const FarmPage(
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return FarmPage(
-      child: Column(
+      child: Stack(
         children: [
-          Expanded(
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-              children: [
-                _boxHeroCard(lines),
-                const SizedBox(height: 18),
-                if (lines.isEmpty)
-                  _emptyBoxInviteCard(context)
-                else ...[
-                  _selectedItemsHeader(lines),
-                  const SizedBox(height: 12),
-                  ...lines.map(_cartLineCard),
-                  const SizedBox(height: 6),
-                  _shareListCard(context, lines),
-                  const SizedBox(height: 90),
-                ],
-              ],
+          ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              18,
+              18,
+              18,
+              hasItems ? 250 : 120,
             ),
+            children: [
+              _boxHeroCard(lines),
+              const SizedBox(height: 18),
+              if (lines.isEmpty)
+                _emptyBoxInviteCard(context)
+              else ...[
+                _selectedItemsHeader(lines),
+                const SizedBox(height: 12),
+                ...lines.map(_cartLineCard),
+                const SizedBox(height: 6),
+                _shareListCard(context, lines),
+                const SizedBox(height: 18),
+              ],
+            ],
           ),
-          if (lines.isNotEmpty) _checkoutBar(context, lines),
+          if (hasItems)
+            Positioned(
+              left: 18,
+              right: 18,
+              bottom: 0,
+              child: _checkoutBar(context, lines),
+            ),
         ],
       ),
     );
@@ -7767,6 +8190,45 @@ class LoyaltyRewardsScreen extends StatelessWidget {
                       message:
                           'The more you shop fresh, the faster your tier grows.',
                       isLast: true,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              FarmCard(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Invite friends',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Share your referral link and earn points when a new customer completes their first eligible order.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        height: 1.32,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.ios_share_outlined),
+                      label: const Text('Open referral invite'),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const InviteFarmMarketScreen(),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -9937,17 +10399,21 @@ class _WeeklyBoxBuilderScreenState extends State<WeeklyBoxBuilderScreen> {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'Choose items',
+                        'Today’s Fresh Harvest',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 20,
                           fontWeight: FontWeight.w900,
+                          letterSpacing: -0.4,
+                          color: FarmColors.primaryDark,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${products.length} available items can be added to your box.',
-                        style: const TextStyle(
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Choose your favourites and build your box.',
+                        style: TextStyle(
                           color: FarmColors.mutedText,
+                          fontSize: 12.5,
+                          height: 1.25,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -11700,6 +12166,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
+      await clearSavedCartForCurrentUser();
 
       if (!mounted) return;
 

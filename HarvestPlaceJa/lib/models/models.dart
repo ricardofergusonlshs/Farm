@@ -88,6 +88,38 @@ class LoyaltySummary {
   }
 }
 
+class CustomerReferralSummary {
+  final int pendingCount;
+  final int completedCount;
+  final int pointsEarned;
+
+  const CustomerReferralSummary({
+    this.pendingCount = 0,
+    this.completedCount = 0,
+    this.pointsEarned = 0,
+  });
+
+  int get totalInvites => pendingCount + completedCount;
+
+  bool get hasActivity => totalInvites > 0 || pointsEarned > 0;
+}
+
+class ReferralShareSnapshot {
+  final String referralCode;
+  final String referralLink;
+  final String inviteMessage;
+  final CustomerReferralSummary referralSummary;
+  final LoyaltySummary loyaltySummary;
+
+  const ReferralShareSnapshot({
+    required this.referralCode,
+    required this.referralLink,
+    required this.inviteMessage,
+    required this.referralSummary,
+    required this.loyaltySummary,
+  });
+}
+
 class ProductTraceRecord {
   final String id;
   final String traceCode;

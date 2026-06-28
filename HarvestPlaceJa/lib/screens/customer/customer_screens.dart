@@ -416,6 +416,57 @@ bool canAddToWeeklyBox(Product product) {
   return product.canAddToCart;
 }
 
+String normalizeCategoryKey(String? value) {
+  final clean = (value ?? '').trim().toLowerCase();
+
+  switch (clean) {
+    case 'fruit':
+    case 'fruits':
+      return 'fruits';
+    case 'vegetable':
+    case 'vegetables':
+      return 'vegetables';
+    case 'ground provision':
+    case 'ground provisions':
+      return 'ground provisions';
+    case 'herb':
+    case 'herbs':
+      return 'herbs';
+    case 'egg':
+    case 'eggs':
+      return 'eggs';
+    case 'prepared food':
+    case 'prepared foods':
+      return 'prepared foods';
+    case 'all':
+      return 'all';
+    default:
+      return clean;
+  }
+}
+
+String displayCategoryLabel(String? value) {
+  switch (normalizeCategoryKey(value)) {
+    case 'fruits':
+      return 'Fruits';
+    case 'vegetables':
+      return 'Vegetables';
+    case 'ground provisions':
+      return 'Ground Provisions';
+    case 'herbs':
+      return 'Herbs';
+    case 'eggs':
+      return 'Eggs';
+    case 'prepared foods':
+      return 'Prepared Foods';
+    case 'all':
+      return 'All';
+    default:
+      final clean = (value ?? '').trim();
+      return clean.isEmpty ? 'Other' : clean;
+  }
+}
+
 String _cleanReviewNameCandidate(String? value) {
   final clean = (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
   if (clean.isEmpty) return '';
@@ -492,221 +543,260 @@ class AccountScreen extends StatelessWidget {
 
     final name = user.userMetadata?['full_name']?.toString() ?? 'Farm Customer';
     final role = currentUserRole;
-    final roleLabel = showAdmin
-        ? 'Admin'
-        : role == 'farmer'
-            ? 'Farmer'
-            : 'Customer';
 
-    return FarmPage(
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
-        children: [
-          EliteAccountHeroCard(
-            name: name,
-            email: user.email ?? '',
-            roleLabel: roleLabel,
-            favoriteCount: favoriteProducts.length,
-            recentCount: recentlyViewedProducts.length,
-            showAdmin: showAdmin,
+    return FutureBuilder<String>(
+      future: showAdmin ? fetchCurrentStaffRole() : Future<String>.value(''),
+      builder: (context, staffSnapshot) {
+        final staffRole = normalizeStaffRole(staffSnapshot.data);
+        final roleLabel = showAdmin
+            ? staffRoleDisplayLabel(staffRole)
+            : role == 'farmer'
+                ? 'Farmer'
+                : 'Customer';
+        final adminDashboardTitle = roleLabel == 'Admin' ? 'Admin' : roleLabel;
+        final adminDashboardSubtitle =
+            roleLabel == 'Admin' ? 'Dashboard' : 'Role dashboard';
+
+        return FutureBuilder<SavedCustomerProductSnapshot>(
+          future: fetchSavedCustomerProductSnapshot(
+            fallbackFavoriteProducts: favoriteProducts,
+            fallbackRecentlyViewedProducts: recentlyViewedProducts,
           ),
-          const SizedBox(height: 14),
-          FarmCard(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.shopping_basket_outlined, size: 18),
-                    label: const Text('Shop'),
-                    onPressed: onShopTap,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                    label: const Text('Orders'),
-                    onPressed: () => _open(context, const OrdersScreen()),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          FarmCard(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const AccountSectionHeading(
-                  title: 'Account tools',
-                  subtitle: 'Quick access to the things customers use most.',
-                ),
-                const SizedBox(height: 14),
-                AccountActionGrid(
-                  actions: [
-                    AccountActionItem(
-                      icon: Icons.person_outline,
-                      title: 'Profile',
-                      subtitle: 'Saved details',
-                      onTap: () => _open(
-                        context,
-                        const CustomerProfileScreen(),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.inventory_2_outlined,
-                      title: 'Weekly Box',
-                      subtitle: 'Manage repeats',
-                      onTap: () => _open(
-                        context,
-                        const CustomerSubscriptionsScreen(),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.card_giftcard,
-                      title: 'Rewards',
-                      subtitle: 'Points & perks',
-                      onTap: () => _open(
-                        context,
-                        const LoyaltyRewardsScreen(),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.favorite_outline,
-                      title: 'Favorites',
-                      subtitle: '${favoriteProducts.length} saved',
-                      onTap: () => _open(
-                        context,
-                        FavoritesScreen(
-                          products: favoriteProducts,
-                          onShopTap: onShopTap,
-                        ),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.notifications_none_outlined,
-                      title: 'Alerts',
-                      subtitle: 'Order updates',
-                      onTap: () => _open(
-                        context,
-                        const NotificationsScreen(),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.ios_share_outlined,
-                      title: 'Invite & Earn',
-                      subtitle: 'Referral points',
-                      onTap: () => _open(
-                        context,
-                        const InviteFarmMarketScreen(),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.support_agent_outlined,
-                      title: 'Support',
-                      subtitle: 'Get help',
-                      onTap: () => _open(context, const SupportScreen()),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.history,
-                      title: 'Recent',
-                      subtitle: '${recentlyViewedProducts.length} viewed',
-                      onTap: () => _open(
-                        context,
-                        RecentlyViewedScreen(
-                          products: recentlyViewedProducts,
-                          onShopTap: onShopTap,
-                        ),
-                      ),
-                    ),
-                    if (showAdmin)
-                      AccountActionItem(
-                        icon: Icons.admin_panel_settings_outlined,
-                        title: 'Admin',
-                        subtitle: 'Dashboard',
-                        accentColor: FarmColors.warning,
-                        onTap: () => _open(
-                          context,
-                          const AdminDashboardScreen(),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          FarmCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                  child: AccountSectionHeading(
-                    title: 'Help & policies',
-                    subtitle: 'Simple support when you need it.',
-                  ),
-                ),
-                AccountListTile(
-                  icon: Icons.verified_user_outlined,
-                  title: 'Trust Center',
-                  subtitle: 'Freshness, privacy, and support.',
-                  onTap: () => _open(context, const TrustCenterScreen()),
-                ),
-                AccountListTile(
-                  icon: Icons.rate_review_outlined,
-                  title: 'Reviews & Feedback',
-                  subtitle: 'Share your experience.',
-                  onTap: () => _open(context, const ReviewScreen()),
-                ),
-                AccountListTile(
-                  icon: Icons.privacy_tip_outlined,
-                  title: 'Privacy Policy',
-                  subtitle: 'How your information is protected.',
-                  onTap: () => _open(context, const PrivacyPolicyScreen()),
-                ),
-                AccountListTile(
-                  icon: Icons.replay_circle_filled_outlined,
-                  title: 'Refund Policy',
-                  subtitle: 'Freshness and cancellation support.',
-                  isLast: true,
-                  onTap: () => _open(context, const RefundPolicyScreen()),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.logout_outlined),
-            label: const Text('Sign Out'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: FarmColors.danger,
-              side: BorderSide(color: FarmColors.danger.withOpacity(0.26)),
-              backgroundColor: FarmColors.card,
-              padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 18),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-            onPressed: () async {
-              await clearPrivateSessionStateForGuestBrowsing();
-              onSignedOut?.call();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content:
-                        Text('Signed out. You can keep browsing as a guest.'),
-                  ),
+          builder: (context, savedSnapshot) {
+            final savedProducts = savedSnapshot.data ??
+                SavedCustomerProductSnapshot(
+                  favoriteProducts: favoriteProducts,
+                  recentlyViewedProducts: recentlyViewedProducts,
                 );
-              }
-            },
-          ),
-        ],
-      ),
+            final displayFavoriteProducts = savedProducts.favoriteProducts;
+            final displayRecentlyViewedProducts =
+                savedProducts.recentlyViewedProducts;
+
+            return FarmPage(
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
+                children: [
+                  EliteAccountHeroCard(
+                    name: name,
+                    email: user.email ?? '',
+                    roleLabel: roleLabel,
+                    favoriteCount: displayFavoriteProducts.length,
+                    recentCount: displayRecentlyViewedProducts.length,
+                    showAdmin: showAdmin,
+                  ),
+                  const SizedBox(height: 14),
+                  FarmCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.shopping_basket_outlined,
+                                size: 18),
+                            label: const Text('Shop'),
+                            onPressed: onShopTap,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.receipt_long_outlined,
+                                size: 18),
+                            label: const Text('Orders'),
+                            onPressed: () =>
+                                _open(context, const OrdersScreen()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FarmCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const AccountSectionHeading(
+                          title: 'Account tools',
+                          subtitle:
+                              'Quick access to the things customers use most.',
+                        ),
+                        const SizedBox(height: 14),
+                        AccountActionGrid(
+                          actions: [
+                            AccountActionItem(
+                              icon: Icons.person_outline,
+                              title: 'Profile',
+                              subtitle: 'Saved details',
+                              onTap: () => _open(
+                                context,
+                                const CustomerProfileScreen(),
+                              ),
+                            ),
+                            AccountActionItem(
+                              icon: Icons.inventory_2_outlined,
+                              title: 'Weekly Box',
+                              subtitle: 'Manage repeats',
+                              onTap: () => _open(
+                                context,
+                                const CustomerSubscriptionsScreen(),
+                              ),
+                            ),
+                            AccountActionItem(
+                              icon: Icons.card_giftcard,
+                              title: 'Rewards',
+                              subtitle: 'Points & perks',
+                              onTap: () => _open(
+                                context,
+                                const LoyaltyRewardsScreen(),
+                              ),
+                            ),
+                            AccountActionItem(
+                              icon: Icons.favorite_outline,
+                              title: 'Favorites',
+                              subtitle:
+                                  '${displayFavoriteProducts.length} saved',
+                              onTap: () => _open(
+                                context,
+                                FavoritesScreen(
+                                  products: displayFavoriteProducts,
+                                  onShopTap: onShopTap,
+                                ),
+                              ),
+                            ),
+                            AccountActionItem(
+                              icon: Icons.notifications_none_outlined,
+                              title: 'Alerts',
+                              subtitle: 'Order updates',
+                              onTap: () => _open(
+                                context,
+                                const NotificationsScreen(),
+                              ),
+                            ),
+                            AccountActionItem(
+                              icon: Icons.ios_share_outlined,
+                              title: 'Invite & Earn',
+                              subtitle: 'Referral points',
+                              onTap: () => _open(
+                                context,
+                                const InviteFarmMarketScreen(),
+                              ),
+                            ),
+                            AccountActionItem(
+                              icon: Icons.support_agent_outlined,
+                              title: 'Support',
+                              subtitle: 'Get help',
+                              onTap: () =>
+                                  _open(context, const SupportScreen()),
+                            ),
+                            AccountActionItem(
+                              icon: Icons.history,
+                              title: 'Recent',
+                              subtitle:
+                                  '${displayRecentlyViewedProducts.length} viewed',
+                              onTap: () => _open(
+                                context,
+                                RecentlyViewedScreen(
+                                  products: displayRecentlyViewedProducts,
+                                  onShopTap: onShopTap,
+                                ),
+                              ),
+                            ),
+                            if (showAdmin)
+                              AccountActionItem(
+                                icon: Icons.admin_panel_settings_outlined,
+                                title: adminDashboardTitle,
+                                subtitle: adminDashboardSubtitle,
+                                accentColor: FarmColors.warning,
+                                onTap: () => _open(
+                                  context,
+                                  const AdminDashboardScreen(),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FarmCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                          child: AccountSectionHeading(
+                            title: 'Help & policies',
+                            subtitle: 'Simple support when you need it.',
+                          ),
+                        ),
+                        AccountListTile(
+                          icon: Icons.verified_user_outlined,
+                          title: 'Trust Center',
+                          subtitle: 'Freshness, privacy, and support.',
+                          onTap: () =>
+                              _open(context, const TrustCenterScreen()),
+                        ),
+                        AccountListTile(
+                          icon: Icons.rate_review_outlined,
+                          title: 'Reviews & Feedback',
+                          subtitle: 'Share your experience.',
+                          onTap: () => _open(context, const ReviewScreen()),
+                        ),
+                        AccountListTile(
+                          icon: Icons.privacy_tip_outlined,
+                          title: 'Privacy Policy',
+                          subtitle: 'How your information is protected.',
+                          onTap: () =>
+                              _open(context, const PrivacyPolicyScreen()),
+                        ),
+                        AccountListTile(
+                          icon: Icons.replay_circle_filled_outlined,
+                          title: 'Refund Policy',
+                          subtitle: 'Freshness and cancellation support.',
+                          isLast: true,
+                          onTap: () =>
+                              _open(context, const RefundPolicyScreen()),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.logout_outlined),
+                    label: const Text('Sign Out'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: FarmColors.danger,
+                      side: BorderSide(
+                          color: FarmColors.danger.withOpacity(0.26)),
+                      backgroundColor: FarmColors.card,
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 15, horizontal: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    onPressed: () async {
+                      await clearPrivateSessionStateForGuestBrowsing();
+                      onSignedOut?.call();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Signed out. You can keep browsing as a guest.'),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -737,8 +827,8 @@ class InviteFarmMarketScreen extends StatelessWidget {
         accentColor: FarmColors.success,
         urls: [
           'whatsapp://send?text=$encodedInviteText',
-          'https://api.whatsapp.com/send?text=$encodedInviteText',
           'https://wa.me/?text=$encodedInviteText',
+          'https://api.whatsapp.com/send?text=$encodedInviteText',
         ],
         successMessage: 'Opening WhatsApp...',
       ),
@@ -4006,8 +4096,13 @@ class _HomeScreenState extends State<HomeScreen> {
     Future.microtask(() => removeCartItemForCurrentUser(product));
   }
 
-  void openProduct(Product product) {
+  void _rememberViewedProduct(Product product) {
     widget.onViewed(product);
+    unawaited(saveRecentlyViewedForCurrentUser(product));
+  }
+
+  void openProduct(Product product) {
+    _rememberViewedProduct(product);
 
     Navigator.push(
       context,
@@ -4018,7 +4113,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onAdd: () => _addProductToCart(product),
           onRemove: () => _removeProductFromCart(product),
           onAddProduct: _addProductToCart,
-          onViewed: widget.onViewed,
+          onViewed: _rememberViewedProduct,
           onViewMyBox: widget.onViewMyBox,
           onCheckout: widget.onCheckout,
         ),
@@ -5367,6 +5462,7 @@ class _ShopScreenState extends State<ShopScreen> {
   String selectedSort = 'Featured';
   String selectedShopNutrient = 'All';
   Timer? searchDebounce;
+  Set<String> persistedFavoriteIds = <String>{};
 
   @override
   void initState() {
@@ -5379,6 +5475,7 @@ class _ShopScreenState extends State<ShopScreen> {
       });
     });
     loadProducts();
+    _loadSavedFavoritesForShop();
   }
 
   @override
@@ -5413,6 +5510,48 @@ class _ShopScreenState extends State<ShopScreen> {
   void _removeProductFromCart(Product product) {
     widget.onRemoveFromCart(product);
     Future.microtask(() => removeCartItemForCurrentUser(product));
+  }
+
+  bool _isFavoriteProduct(Product product) {
+    final productId = product.id.trim();
+    return widget.isFavorite(product) ||
+        (productId.isNotEmpty && persistedFavoriteIds.contains(productId));
+  }
+
+  Future<void> _loadSavedFavoritesForShop() async {
+    try {
+      final ids = await fetchFavoriteProductIdsForCurrentUser();
+      if (!mounted) return;
+      setState(() {
+        persistedFavoriteIds = ids.toSet();
+      });
+    } catch (error) {
+      farmDebugLog('Saved favorites load skipped in shop: $error');
+    }
+  }
+
+  void _toggleFavoriteProduct(Product product) {
+    final productId = product.id.trim();
+    if (productId.isEmpty) return;
+
+    final nextValue = !_isFavoriteProduct(product);
+
+    widget.onToggleFavorite(product);
+
+    setState(() {
+      if (nextValue) {
+        persistedFavoriteIds.add(productId);
+      } else {
+        persistedFavoriteIds.remove(productId);
+      }
+    });
+
+    unawaited(setFavoriteForCurrentUser(product, isFavorite: nextValue));
+  }
+
+  void _rememberViewedProduct(Product product) {
+    widget.onViewed(product);
+    unawaited(saveRecentlyViewedForCurrentUser(product));
   }
 
   Future<void> loadProducts() async {
@@ -5477,7 +5616,7 @@ class _ShopScreenState extends State<ShopScreen> {
   List<String> get categories {
     final values = <String>{'All'};
 
-    if (products.any(widget.isFavorite)) {
+    if (products.any(_isFavoriteProduct)) {
       values.add('Favorites');
     }
 
@@ -5652,7 +5791,7 @@ class _ShopScreenState extends State<ShopScreen> {
           (product.farmName ?? product.farmerName ?? '').trim().toLowerCase();
 
       final matchesCategory = showingFavorites
-          ? widget.isFavorite(product)
+          ? _isFavoriteProduct(product)
           : activeCategory == 'All' ||
               category == activeCategoryLower ||
               name.contains(activeCategoryLower);
@@ -5681,7 +5820,7 @@ class _ShopScreenState extends State<ShopScreen> {
         return matchesSearch &&
             matchesNutrient &&
             matchesFilter &&
-            (!showingFavorites || widget.isFavorite(product));
+            (!showingFavorites || _isFavoriteProduct(product));
       }
 
       return matchesCategory && matchesNutrient && matchesFilter;
@@ -6196,8 +6335,7 @@ class _ShopScreenState extends State<ShopScreen> {
       savedProducts: widget.recentlyViewedProducts,
       latestProducts: products,
     );
-    final favoriteProducts =
-        products.where((product) => widget.isFavorite(product)).toList();
+    final favoriteProducts = products.where(_isFavoriteProduct).toList();
     final visibleCustomerProducts = visibleProducts
         .where((product) => isVisibleCustomerProduct(product))
         .toList();
@@ -6265,12 +6403,12 @@ class _ShopScreenState extends State<ShopScreen> {
               product,
               selectedNutrient: _activeShopNutrient(),
             ),
-            isFavorite: widget.isFavorite(product),
-            onFavorite: () => widget.onToggleFavorite(product),
+            isFavorite: _isFavoriteProduct(product),
+            onFavorite: () => _toggleFavoriteProduct(product),
             onAdd: () => _addProductToCart(product),
             onRemove: () => _removeProductFromCart(product),
             onOpenDetails: () {
-              widget.onViewed(product);
+              _rememberViewedProduct(product);
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -6280,7 +6418,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     onAdd: () => _addProductToCart(product),
                     onRemove: () => _removeProductFromCart(product),
                     onAddProduct: _addProductToCart,
-                    onViewed: widget.onViewed,
+                    onViewed: _rememberViewedProduct,
                     onViewMyBox: widget.onViewMyBox,
                     onCheckout: widget.onCheckout,
                   ),
@@ -8528,13 +8666,20 @@ class FavoritesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ProductCollectionScreen(
-      title: 'Favorites',
-      subtitle: 'Saved products you love',
-      products: products,
-      emptyText:
-          'No favorites yet. Tap the heart on products you love while shopping.',
-      onShopTap: onShopTap,
+    return FutureBuilder<List<Product>>(
+      future: fetchFavoriteProductsForCurrentUser(fallbackProducts: products),
+      builder: (context, snapshot) {
+        final savedProducts = snapshot.data ?? products;
+
+        return ProductCollectionScreen(
+          title: 'Favorites',
+          subtitle: 'Saved products you love',
+          products: savedProducts,
+          emptyText:
+              'No favorites yet. Tap the heart on products you love while shopping.',
+          onShopTap: onShopTap,
+        );
+      },
     );
   }
 }
@@ -8551,13 +8696,22 @@ class RecentlyViewedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ProductCollectionScreen(
-      title: 'Recently Viewed',
-      subtitle: 'Products you checked recently',
-      products: products,
-      emptyText:
-          'No recently viewed products yet. Products you open will appear here.',
-      onShopTap: onShopTap,
+    return FutureBuilder<List<Product>>(
+      future: fetchRecentlyViewedProductsForCurrentUser(
+        fallbackProducts: products,
+      ),
+      builder: (context, snapshot) {
+        final savedProducts = snapshot.data ?? products;
+
+        return ProductCollectionScreen(
+          title: 'Recently Viewed',
+          subtitle: 'Products you checked recently',
+          products: savedProducts,
+          emptyText:
+              'No recently viewed products yet. Products you open will appear here.',
+          onShopTap: onShopTap,
+        );
+      },
     );
   }
 }

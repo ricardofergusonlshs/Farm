@@ -1,12 +1,6 @@
 library harvest_place_app;
 
-import 'package:image_picker/image_picker.dart';
 import 'dart:async';
-import 'dart:typed_data';
-import 'dart:ui';
-
-import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:app_links/app_links.dart';
@@ -105,6 +99,7 @@ class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
       );
 
       if (!mounted) return;
+
       setState(() {
         _ready = true;
         _error = null;
@@ -115,6 +110,7 @@ class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
       debugPrintStack(stackTrace: stackTrace);
 
       if (!mounted) return;
+
       setState(() {
         _ready = false;
         _error = error;
@@ -193,6 +189,7 @@ class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
                                 _error = null;
                                 _stackTrace = null;
                               });
+
                               unawaited(_startApp());
                             },
                             child: const Text('Try again'),

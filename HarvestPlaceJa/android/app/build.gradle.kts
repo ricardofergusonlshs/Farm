@@ -1,23 +1,13 @@
-import java.util.Properties
-import java.io.FileInputStream
-
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val keystoreProperties = Properties()
-val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-}
-
 android {
-    namespace = "com.theharvestplaceja.app"
-    compileSdk = 35
-    ndkVersion = "27.0.12077973"
+    namespace = "com.harvestplaceja.myapp"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -29,31 +19,51 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.theharvestplaceja.app"
+        applicationId = "com.harvestplaceja.myapp"
         minSdk = flutter.minSdkVersion
-        targetSdk = 35
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        targetSdk = flutter.targetSdkVersion
+
+        // Google Play requires this to increase for every new upload.
+        versionCode = 21
+        versionName = "1.0.3"
     }
 
+    val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH")
+    val cmKeystorePassword = System.getenv("CM_KEYSTORE_PASSWORD")
+    val cmKeyAlias = System.getenv("CM_KEY_ALIAS")
+    val cmKeyPassword = System.getenv("CM_KEY_PASSWORD")
+
+    val hasCodemagicSigning =
+        !cmKeystorePath.isNullOrBlank() &&
+        !cmKeystorePassword.isNullOrBlank() &&
+        !cmKeyAlias.isNullOrBlank() &&
+        !cmKeyPassword.isNullOrBlank()
+
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
-            create("release") {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
+        create("release") {
+            if (hasCodemagicSigning) {
+                storeFile = file(cmKeystorePath!!)
+                storePassword = cmKeystorePassword
+                keyAlias = cmKeyAlias
+                keyPassword = cmKeyPassword
             }
         }
     }
 
     buildTypes {
         release {
-            if (keystorePropertiesFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
+            if (!hasCodemagicSigning) {
+                throw GradleException(
+                    "Release signing variables are missing. Set CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, and CM_KEY_PASSWORD in Codemagic."
+                )
             }
-            isMinifyEnabled = false
-            isShrinkResources = false
+
+            println("Using Codemagic release signing config.")
+            signingConfig = signingConfigs.getByName("release")
+        }
+
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }

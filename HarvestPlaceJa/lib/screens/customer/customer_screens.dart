@@ -1,5 +1,146 @@
 part of harvest_place_app;
 
+class CustomerOrderMessage {
+  final String id;
+  final String message;
+  final String senderRole;
+  final DateTime? createdAt;
+
+  const CustomerOrderMessage({
+    required this.id,
+    required this.message,
+    required this.senderRole,
+    this.createdAt,
+  });
+
+  factory CustomerOrderMessage.fromSupabase(Map<String, dynamic> data) {
+    return CustomerOrderMessage(
+      id: (data['id'] ?? '').toString(),
+      message: (data['message'] ?? '').toString().trim(),
+      senderRole: (data['sender_role'] ?? 'staff').toString().trim(),
+      createdAt: parseProductDate(data['created_at']),
+    );
+  }
+}
+
+Future<List<CustomerOrderMessage>> fetchCustomerOrderMessages(
+  String orderId,
+) async {
+  final cleanOrderId = orderId.trim();
+  if (cleanOrderId.isEmpty) return const <CustomerOrderMessage>[];
+
+  final response = await supabase
+      .from('order_messages')
+      .select('id, message, sender_role, created_at')
+      .eq('order_id', cleanOrderId)
+      .eq('visible_to_customer', true)
+      .order('created_at', ascending: false);
+
+  return (response as List)
+      .map(
+        (item) => CustomerOrderMessage.fromSupabase(
+          Map<String, dynamic>.from(item as Map),
+        ),
+      )
+      .toList();
+}
+
+class CustomerOrderUpdatesCard extends StatelessWidget {
+  final String orderId;
+
+  const CustomerOrderUpdatesCard({
+    super.key,
+    required this.orderId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<CustomerOrderMessage>>(
+      future: fetchCustomerOrderMessages(orderId),
+      builder: (context, snapshot) {
+        final messages = snapshot.data ?? const <CustomerOrderMessage>[];
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            messages.isEmpty) {
+          return const FarmCard(
+            child: Text(
+              'Loading order updates...',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          );
+        }
+
+        if (messages.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return FarmCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(
+                    Icons.message_outlined,
+                    color: FarmColors.green,
+                    size: 20,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Order Updates',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ...messages.map(
+                (message) => Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: FarmColors.cardSoft,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: FarmColors.line),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        message.message,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontWeight: FontWeight.w800,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        message.createdAt == null
+                            ? 'Sent by staff'
+                            : 'Sent by staff • ${formatCustomerDateTime(message.createdAt!)}',
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 List<HomeHeroSlide> defaultHomeHeroSlides() {
   return List<HomeHeroSlide>.generate(_defaultHomeHeroImageUrls.length,
       (index) {
@@ -2639,7 +2780,7 @@ class FreshBoxBuilderCard extends StatefulWidget {
 
 class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
   double selectedBudget = 3500;
-  List<String> selectedNutrients = ['Fiber'];
+  List<String> selectedNutrients = [];
   String selectedFamilySize = '2–3 people';
 
   final List<double> budgetOptions = const [
@@ -2913,19 +3054,23 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
     }
   }
 
+  String _nutritionMixLabel() {
+    if (selectedNutrients.isEmpty) return 'Harvest Mix';
+    if (selectedNutrients.length == 1) return selectedNutrients.first;
+
+    return selectedNutrients.join(' + ');
+  }
+
   String _nutritionMixDescription() {
+    if (selectedNutrients.isEmpty) {
+      return 'Fresh picks selected from your budget, family size, and available stock.';
+    }
+
     if (selectedNutrients.length == 1) {
       return _singleNutrientDescription(selectedNutrients.first);
     }
 
     return 'Fresh picks selected from your ${selectedNutrients.length}-nutrient mix.';
-  }
-
-  String _nutritionMixLabel() {
-    if (selectedNutrients.isEmpty) return 'Nutrition Mix';
-    if (selectedNutrients.length == 1) return selectedNutrients.first;
-
-    return selectedNutrients.join(' + ');
   }
 
   String _planTitle() {
@@ -2935,10 +3080,22 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
   double _priceOf(Product product) {
     final price = product.effectivePrice;
     if (price > 0) return price;
-    return product.price;
+
+    if (product.price > 0) return product.price;
+
+    return 0;
   }
 
-  bool _matchesTerm(Product product, String term) {
+  bool _matchesSelectedTerms(Product product) {
+    if (selectedNutrients.isEmpty) return true;
+
+    final terms = _selectedPriorityTerms()
+        .map((term) => term.trim().toLowerCase())
+        .where((term) => term.isNotEmpty)
+        .toList();
+
+    if (terms.isEmpty) return true;
+
     final text = [
       product.name,
       product.category,
@@ -2946,12 +3103,7 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
       product.unit ?? '',
     ].join(' ').toLowerCase();
 
-    return text.contains(term.toLowerCase());
-  }
-
-  bool _matchesSelectedTerms(Product product) {
-    final terms = _selectedPriorityTerms();
-    return terms.any((term) => _matchesTerm(product, term));
+    return terms.any((term) => text.contains(term));
   }
 
   bool _isRepeatFriendly(Product product) {
@@ -3204,15 +3356,6 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
   }) {
     final selected = selectedNutrients.contains(nutrient);
 
-    if (selected && selectedNutrients.length == 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Choose at least one nutrient for your box.'),
-        ),
-      );
-      return;
-    }
-
     if (!selected && selectedNutrients.length >= 3) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3246,7 +3389,7 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
 
             void updateDialog(VoidCallback action) {
               setDialogState(action);
-              setState(() {});
+              if (mounted) setState(() {});
             }
 
             Future<void> addPlanToBox() async {
@@ -8259,6 +8402,92 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
   }
 
+  Future<String?> _fetchCustomerBoxPhotoUrl() async {
+    final response = await supabase
+        .from('orders')
+        .select('box_photo_url')
+        .eq('id', widget.orderId)
+        .maybeSingle();
+
+    final url = response?['box_photo_url']?.toString().trim();
+
+    if (url == null || url.isEmpty) return null;
+
+    return url;
+  }
+
+  Widget _customerBoxPhotoCard() {
+    return FutureBuilder<String?>(
+      future: _fetchCustomerBoxPhotoUrl(),
+      builder: (context, snapshot) {
+        final photoUrl = snapshot.data;
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox.shrink();
+        }
+
+        if (photoUrl == null || photoUrl.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return FarmCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.photo_camera_outlined, color: FarmColors.green),
+                  SizedBox(width: 8),
+                  Text(
+                    'Your Box Photo',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.all(Radius.circular(18)),
+                child: Image.network(
+                  photoUrl,
+                  width: double.infinity,
+                  height: 220,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: FarmColors.cardSoft,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Text(
+                        'Box photo could not be loaded.',
+                        style: TextStyle(color: FarmColors.muted),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Photo proof of your packed fresh box.',
+                style: TextStyle(
+                  color: FarmColors.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _trackingRow({
     required String label,
     required bool active,
@@ -8284,6 +8513,521 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _downloadCustomerReceiptPdf(dynamic order) async {
+    String safeText(
+      Object? Function() read, {
+      String fallback = 'Not available',
+    }) {
+      try {
+        final value = read();
+        if (value == null) return fallback;
+
+        final text = value.toString().trim();
+        if (text.isEmpty || text == 'null') return fallback;
+
+        return text;
+      } catch (_) {
+        return fallback;
+      }
+    }
+
+    String titleCase(String value) {
+      final clean = value.replaceAll('_', ' ').trim();
+      if (clean.isEmpty) return value;
+
+      return clean
+          .split(' ')
+          .where((part) => part.trim().isNotEmpty)
+          .map((part) {
+        final lower = part.toLowerCase();
+        return '${lower[0].toUpperCase()}${lower.substring(1)}';
+      }).join(' ');
+    }
+
+    List<dynamic> safeList(Object? Function() read) {
+      try {
+        final value = read();
+        if (value is List) return value;
+        return [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    Object? readItemValue(dynamic item, String key) {
+      try {
+        if (item is Map) {
+          return item[key];
+        }
+
+        switch (key) {
+          case 'productName':
+          case 'product_name':
+            return item.productName;
+          case 'name':
+            return item.name;
+          case 'quantity':
+          case 'qty':
+            return item.quantity;
+          case 'formattedUnitPrice':
+          case 'formatted_unit_price':
+            return item.formattedUnitPrice;
+          case 'unitPrice':
+          case 'unit_price':
+            return item.unitPrice;
+          case 'price':
+            return item.price;
+          case 'formattedSubtotal':
+          case 'formatted_subtotal':
+            return item.formattedSubtotal;
+          case 'subtotal':
+          case 'line_total':
+            return item.subtotal;
+          case 'total':
+            return item.total;
+          default:
+            return null;
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+
+    String itemText(
+      dynamic item,
+      List<String> keys, {
+      String fallback = '',
+    }) {
+      for (final key in keys) {
+        final value = readItemValue(item, key);
+        if (value != null && value.toString().trim().isNotEmpty) {
+          return value.toString().trim();
+        }
+      }
+
+      return fallback;
+    }
+
+    pw.Widget infoBox({
+      required String title,
+      required List<String> lines,
+    }) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.all(12),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColor.fromInt(0xFFD8E8D8)),
+          borderRadius: pw.BorderRadius.circular(10),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              title,
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromInt(0xFF1F6B3A),
+              ),
+            ),
+            pw.SizedBox(height: 8),
+            ...lines.map(
+              (line) => pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 4),
+                child: pw.Text(
+                  line,
+                  style: const pw.TextStyle(fontSize: 10),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    pw.Widget amountRow(
+      String label,
+      String value, {
+      bool bold = false,
+      bool green = false,
+    }) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 6),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              label,
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              ),
+            ),
+            pw.Text(
+              value,
+              style: pw.TextStyle(
+                fontSize: bold ? 13 : 10,
+                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                color: green ? PdfColor.fromInt(0xFF1F6B3A) : PdfColors.black,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    try {
+      final pdf = pw.Document();
+      final receiptOrder = await supabase
+          .from('orders')
+          .select('*, customers(*)')
+          .eq('id', widget.orderId)
+          .maybeSingle();
+
+      final receiptItems = await supabase
+          .from('order_items')
+          .select('*, products(*)')
+          .eq('order_id', widget.orderId);
+
+      final shortId = safeText(() => order.shortId, fallback: widget.orderId);
+      final status = safeText(() => order.status, fallback: 'Pending');
+      final paymentStatus =
+          safeText(() => order.paymentStatus, fallback: 'Unpaid');
+      final fulfillment = safeText(
+        () => order.formattedFulfillmentType,
+        fallback: 'Farm Pickup',
+      );
+      final paymentMethod = safeText(
+        () => order.formattedPaymentMethod,
+        fallback: 'Payment on collection',
+      );
+      final total = safeText(() => order.formattedTotal, fallback: 'J\$0.00');
+      final subtotal = safeText(() => order.formattedSubtotal, fallback: '');
+      final deliveryFee =
+          safeText(() => order.formattedDeliveryFee, fallback: '');
+      final customer = receiptOrder?['customers'];
+
+      String customerValue(List<String> keys,
+          {String fallback = 'Not available'}) {
+        try {
+          for (final key in keys) {
+            final orderValue = receiptOrder?[key];
+            if (orderValue != null && orderValue.toString().trim().isNotEmpty) {
+              return orderValue.toString().trim();
+            }
+
+            if (customer is Map) {
+              final customerValue = customer[key];
+              if (customerValue != null &&
+                  customerValue.toString().trim().isNotEmpty) {
+                return customerValue.toString().trim();
+              }
+            }
+          }
+
+          return fallback;
+        } catch (_) {
+          return fallback;
+        }
+      }
+
+      final customerName = customerValue(
+        [
+          'customer_name',
+          'full_name',
+          'name',
+          'display_name',
+        ],
+        fallback: 'Customer',
+      );
+
+      final customerPhone = customerValue(
+        [
+          'customer_phone',
+          'phone',
+          'phone_number',
+        ],
+        fallback: 'Not provided',
+      );
+      final createdAt =
+          safeText(() => order.createdAt, fallback: 'Not available');
+      final scheduledFor =
+          safeText(() => order.scheduledFor, fallback: 'Not available');
+
+      final items = receiptItems;
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(34),
+          build: (context) {
+            return [
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(18),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromInt(0xFFEFF7EF),
+                  borderRadius: pw.BorderRadius.circular(14),
+                  border: pw.Border.all(
+                    color: PdfColor.fromInt(0xFF1F6B3A),
+                    width: 1.2,
+                  ),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'THE HARVEST PLACE JA',
+                          style: pw.TextStyle(
+                            fontSize: 22,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromInt(0xFF1F6B3A),
+                          ),
+                        ),
+                        pw.SizedBox(height: 5),
+                        pw.Text(
+                          'Fresh - Local - Jamaican',
+                          style: const pw.TextStyle(fontSize: 10),
+                        ),
+                        pw.SizedBox(height: 14),
+                        pw.Text(
+                          'Official Customer Receipt',
+                          style: pw.TextStyle(
+                            fontSize: 15,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text(
+                          'Receipt #$shortId',
+                          style: pw.TextStyle(
+                            fontSize: 13,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 6),
+                        pw.Text('Status: ${titleCase(status)}'),
+                        pw.Text('Payment: ${titleCase(paymentStatus)}'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: infoBox(
+                      title: 'Customer Details',
+                      lines: [
+                        'Name: $customerName',
+                        'Phone: $customerPhone',
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 12),
+                  pw.Expanded(
+                    child: infoBox(
+                      title: 'Order Details',
+                      lines: [
+                        'Order ID: $shortId',
+                        'Order date: $createdAt',
+                        'Scheduled: $scheduledFor',
+                        'Fulfillment: $fulfillment',
+                        'Payment method: $paymentMethod',
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 22),
+              pw.Text(
+                'Items Purchased',
+                style: pw.TextStyle(
+                  fontSize: 15,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromInt(0xFF1F6B3A),
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              if (items.isEmpty)
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(12),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColor.fromInt(0xFFD8E8D8)),
+                    borderRadius: pw.BorderRadius.circular(8),
+                  ),
+                  child: pw.Text(
+                    'Item details were not available for this receipt.',
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                )
+              else
+                pw.TableHelper.fromTextArray(
+                  headers: ['Item', 'Qty', 'Unit Price', 'Subtotal'],
+                  data: items.map((item) {
+                    final name = itemText(
+                      item,
+                      ['productName', 'product_name', 'name'],
+                      fallback: 'Item',
+                    );
+
+                    final qty = itemText(
+                      item,
+                      ['quantity', 'qty'],
+                      fallback: '1',
+                    );
+
+                    final unitPrice = itemText(
+                      item,
+                      [
+                        'formattedUnitPrice',
+                        'formatted_unit_price',
+                        'unitPrice',
+                        'unit_price',
+                        'price',
+                      ],
+                      fallback: '',
+                    );
+
+                    final itemSubtotal = itemText(
+                      item,
+                      [
+                        'formattedSubtotal',
+                        'formatted_subtotal',
+                        'subtotal',
+                        'line_total',
+                        'total',
+                      ],
+                      fallback: '',
+                    );
+
+                    return [name, qty, unitPrice, itemSubtotal];
+                  }).toList(),
+                  headerDecoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFF1F6B3A),
+                  ),
+                  headerStyle: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                  cellStyle: const pw.TextStyle(fontSize: 10),
+                  cellAlignment: pw.Alignment.centerLeft,
+                  headerAlignment: pw.Alignment.centerLeft,
+                  border: pw.TableBorder.all(
+                    color: PdfColor.fromInt(0xFFD8E8D8),
+                    width: 0.6,
+                  ),
+                  cellPadding: const pw.EdgeInsets.all(7),
+                ),
+              pw.SizedBox(height: 22),
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Container(
+                  width: 245,
+                  padding: const pw.EdgeInsets.all(14),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFFF8FAF7),
+                    borderRadius: pw.BorderRadius.circular(10),
+                    border: pw.Border.all(
+                      color: PdfColor.fromInt(0xFFD8E8D8),
+                    ),
+                  ),
+                  child: pw.Column(
+                    children: [
+                      if (subtotal.isNotEmpty && subtotal != 'Not available')
+                        amountRow('Subtotal', subtotal),
+                      if (deliveryFee.isNotEmpty &&
+                          deliveryFee != 'Not available')
+                        amountRow('Delivery fee', deliveryFee),
+                      pw.Divider(color: PdfColor.fromInt(0xFFD8E8D8)),
+                      amountRow(
+                        'Total',
+                        total,
+                        bold: true,
+                        green: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 28),
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(14),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromInt(0xFFFFFBF0),
+                  borderRadius: pw.BorderRadius.circular(10),
+                  border: pw.Border.all(
+                    color: PdfColor.fromInt(0xFFE8D6A8),
+                  ),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Receipt Notes',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromInt(0xFF1F6B3A),
+                      ),
+                    ),
+                    pw.SizedBox(height: 6),
+                    pw.Text(
+                      'Please keep this receipt for your records. You can view your order status, staff messages, and box photo proof inside the app under My Orders.',
+                      style: const pw.TextStyle(fontSize: 9),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Divider(color: PdfColor.fromInt(0xFFD8E8D8)),
+              pw.Text(
+                'Thank you for supporting local farmers through The Harvest Place Ja.',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromInt(0xFF1F6B3A),
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Fresh produce. Local support. Better food for Jamaican families.',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ];
+          },
+        ),
+      );
+
+      final cleanShortId = shortId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+
+      await Printing.sharePdf(
+        bytes: await pdf.save(),
+        filename: 'HPJ-Receipt-$cleanShortId.pdf',
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not create receipt: $error'),
+        ),
+      );
+    }
   }
 
   @override
@@ -8348,6 +9092,16 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                   order: order,
                   onRefresh: _refreshOrderDetails,
                 ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                  label: const Text('Download PDF Receipt'),
+                  onPressed: () => _downloadCustomerReceiptPdf(order),
+                ),
+                const SizedBox(height: 14),
+                _customerBoxPhotoCard(),
+                const SizedBox(height: 12),
+                CustomerOrderUpdatesCard(orderId: widget.orderId),
                 const SizedBox(height: 14),
                 PremiumOrderTracker(
                   status: order.status,

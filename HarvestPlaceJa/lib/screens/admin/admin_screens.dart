@@ -133,7 +133,7 @@ Future<List<AdminOrder>> fetchAdminOrders() async {
     final response = await supabase
         .from('orders')
         .select(
-          'id, order_status, fulfillment_type, subtotal, delivery_fee, discount_amount, total, payment_status, payment_method, bank_reference, delivery_status, delivery_address, delivery_zone, scheduled_date, scheduled_time, notes, created_at, customers(full_name, phone, address), order_items(product_name, quantity, line_total)',
+          'id, order_status, fulfillment_type, subtotal, delivery_fee, discount_amount, total, payment_status, payment_method, bank_reference, delivery_status, delivery_address, delivery_zone, scheduled_date, scheduled_time, notes, box_photo_url, box_photo_uploaded_at, box_photo_note, created_at, customers(full_name, phone, address), order_items(product_name, quantity, line_total)',
         )
         .order('created_at', ascending: false)
         .limit(50);
@@ -5873,7 +5873,356 @@ class AdminOrdersTab extends StatefulWidget {
 }
 
 class _AdminOrdersTabState extends State<AdminOrdersTab> {
+  Future<Uint8List> buildOrderSlipPdf(AdminOrder order) async {
+    final pdf = pw.Document();
+
+    final labelFormat = PdfPageFormat(
+      4 * PdfPageFormat.inch,
+      6 * PdfPageFormat.inch,
+      marginAll: 0.16 * PdfPageFormat.inch,
+    );
+
+    final isDelivery = order.fulfillmentType == 'delivery';
+
+    final customerName = cleanText(order.customerName);
+    final customerPhone = cleanText(order.customerPhone);
+
+    final deliveryAddress = (order.deliveryAddress ?? '').trim().isNotEmpty
+        ? (order.deliveryAddress ?? '').trim()
+        : (order.customerAddress ?? '').trim();
+
+    final itemLines = order.items.map((item) {
+      return '${item.productName} x${item.quantity}';
+    }).toList();
+    String safePdfText(String value) {
+      return value
+          .replaceAll('•', '-')
+          .replaceAll('×', 'x')
+          .replaceAll('–', '-')
+          .replaceAll('—', '-')
+          .replaceAll('’', "'")
+          .replaceAll('“', '"')
+          .replaceAll('”', '"');
+    }
+
+    pw.Widget sectionTitle(String text) {
+      return pw.Container(
+        width: double.infinity,
+        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+        decoration: pw.BoxDecoration(
+          color: PdfColors.grey200,
+          borderRadius: pw.BorderRadius.circular(4),
+        ),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: 9,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+      );
+    }
+
+    pw.Widget infoRow(String label, String value) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 3),
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.SizedBox(
+              width: 62,
+              child: pw.Text(
+                label,
+                style: pw.TextStyle(
+                  fontSize: 8,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+            pw.Expanded(
+              child: pw.Text(
+                value,
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    pw.Widget statusBox(String label, String value) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 7),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey500, width: 0.8),
+          borderRadius: pw.BorderRadius.circular(5),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              label.toUpperCase(),
+              style: const pw.TextStyle(
+                fontSize: 6.5,
+                color: PdfColors.grey700,
+              ),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              value,
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: labelFormat,
+        build: (context) {
+          return pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.black, width: 1.2),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Center(
+                  child: pw.Text(
+                    'THE HARVEST PLACE JA',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: 13,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Center(
+                  child: pw.Text(
+                    'Fresh - Local - Jamaican',
+                    style: const pw.TextStyle(fontSize: 8),
+                  ),
+                ),
+                pw.SizedBox(height: 7),
+                pw.Container(height: 1.2, color: PdfColors.black),
+                pw.SizedBox(height: 8),
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'ORDER #${order.shortId}',
+                            style: pw.TextStyle(
+                              fontSize: 17,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.SizedBox(height: 2),
+                          pw.Text(
+                            safePdfText(orderDateLabel(order)),
+                            style: const pw.TextStyle(
+                              fontSize: 8,
+                              color: PdfColors.grey700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                        vertical: 5,
+                        horizontal: 8,
+                      ),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: PdfColors.black, width: 1),
+                        borderRadius: pw.BorderRadius.circular(4),
+                      ),
+                      child: pw.Text(
+                        order.formattedPaymentStatus.toUpperCase(),
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 10),
+                pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: statusBox('Fulfillment', order.formattedType),
+                    ),
+                    pw.SizedBox(width: 6),
+                    pw.Expanded(
+                      child: statusBox('Total', money(order.total)),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 9),
+                sectionTitle('CUSTOMER DETAILS'),
+                pw.SizedBox(height: 5),
+                infoRow('Name', customerName),
+                infoRow('Phone', customerPhone),
+                pw.SizedBox(height: 7),
+                sectionTitle(
+                    isDelivery ? 'DELIVERY DETAILS' : 'PICKUP DETAILS'),
+                pw.SizedBox(height: 5),
+                if (isDelivery) ...[
+                  infoRow('Zone', cleanText(order.deliveryZone)),
+                  infoRow('Address', cleanText(deliveryAddress)),
+                ] else ...[
+                  infoRow('Method', 'Farm Pickup'),
+                ],
+                infoRow('Scheduled', safePdfText(scheduledLabel(order))),
+                pw.SizedBox(height: 7),
+                sectionTitle('ITEMS TO PACK'),
+                pw.SizedBox(height: 5),
+                if (itemLines.isEmpty)
+                  pw.Text(
+                    'No item details found.',
+                    style: const pw.TextStyle(fontSize: 9),
+                  )
+                else
+                  ...itemLines.map(
+                    (line) => pw.Container(
+                      width: double.infinity,
+                      margin: const pw.EdgeInsets.only(bottom: 3),
+                      padding: const pw.EdgeInsets.symmetric(
+                        vertical: 4,
+                        horizontal: 6,
+                      ),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(
+                          color: PdfColors.grey300,
+                          width: 0.7,
+                        ),
+                        borderRadius: pw.BorderRadius.circular(3),
+                      ),
+                      child: pw.Text(
+                        '- $line',
+                        style: pw.TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                pw.Spacer(),
+                pw.Container(height: 1, color: PdfColors.black),
+                pw.SizedBox(height: 5),
+                pw.Center(
+                  child: pw.Text(
+                    'Packing / Pickup / Delivery Label',
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Center(
+                  child: pw.Text(
+                    'Attach to customer box, bag, or delivery package.',
+                    style: const pw.TextStyle(fontSize: 7),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  Future<void> printOrderSlip(BuildContext context, AdminOrder order) async {
+    try {
+      await Printing.layoutPdf(
+        name: 'HPJ_Order_${order.shortId}.pdf',
+        format: PdfPageFormat(
+          4 * PdfPageFormat.inch,
+          6 * PdfPageFormat.inch,
+        ),
+        onLayout: (_) => buildOrderSlipPdf(order),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not print order slip: $error'),
+        ),
+      );
+    }
+  }
+
+  Future<void> shareOrderSlip(BuildContext context, AdminOrder order) async {
+    try {
+      final bytes = await buildOrderSlipPdf(order);
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'HPJ_Order_${order.shortId}.pdf',
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not share order slip: $error'),
+        ),
+      );
+    }
+  }
+
+  void openOrderSlipActions(BuildContext context, AdminOrder order) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(
+              runSpacing: 10,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.print_outlined),
+                  title: const Text('Print 4×6 Order Slip'),
+                  subtitle:
+                      const Text('Use the Android print option or MUNBYN app.'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    printOrderSlip(context, order);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.ios_share_outlined),
+                  title: const Text('Share 4×6 PDF'),
+                  subtitle: const Text(
+                      'Send to MUNBYN app, WhatsApp, email, or files.'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    shareOrderSlip(context, order);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   String selectedFilter = 'all';
+  String orderSearchQuery = '';
 
   static const statuses = [
     'pending',
@@ -5892,10 +6241,61 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
 
   String formatStatus(String status) {
     return status
+        .trim()
         .split('_')
         .map((part) =>
             part.isEmpty ? part : part[0].toUpperCase() + part.substring(1))
         .join(' ');
+  }
+
+  String money(double value) {
+    return 'J\$${value.toStringAsFixed(0)}';
+  }
+
+  String cleanText(String? value, {String fallback = 'Not provided'}) {
+    final clean = value?.trim() ?? '';
+    return clean.isEmpty ? fallback : clean;
+  }
+
+  String orderDateLabel(AdminOrder order) {
+    final created = order.createdAt;
+    if (created == null) return 'Date unavailable';
+    return formatCustomerDateTime(created);
+  }
+
+  String scheduledLabel(AdminOrder order) {
+    final parts = <String>[];
+
+    final date = order.scheduledDate?.trim() ?? '';
+    final time = order.scheduledTime?.trim() ?? '';
+
+    if (date.isNotEmpty) parts.add(date);
+    if (time.isNotEmpty) parts.add(time);
+
+    if (parts.isEmpty) return 'Not scheduled';
+    return parts.join(' • ');
+  }
+
+  Color statusColor(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'paid':
+      case 'delivered':
+      case 'completed':
+        return FarmColors.success;
+      case 'preparing':
+      case 'ready':
+      case 'out_for_delivery':
+        return FarmColors.green;
+      case 'pending':
+      case 'unpaid':
+        return FarmColors.warning;
+      case 'cancelled':
+      case 'refunded':
+      case 'rejected':
+        return FarmColors.danger;
+      default:
+        return FarmColors.mutedText;
+    }
   }
 
   List<AdminOrder> applyFilter(List<AdminOrder> orders) {
@@ -5905,14 +6305,53 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
       case 'ready':
       case 'out_for_delivery':
       case 'delivered':
+      case 'cancelled':
         return orders.where((order) => order.status == selectedFilter).toList();
       case 'unpaid':
         return orders.where((order) => order.paymentStatus != 'paid').toList();
       case 'paid':
         return orders.where((order) => order.paymentStatus == 'paid').toList();
+      case 'refunded':
+        return orders
+            .where((order) => order.paymentStatus == 'refunded')
+            .toList();
       default:
         return orders;
     }
+  }
+
+  List<AdminOrder> applySearch(List<AdminOrder> orders) {
+    final query = orderSearchQuery.trim().toLowerCase();
+    if (query.isEmpty) return orders;
+
+    return orders.where((order) {
+      final itemText = order.items
+          .map((item) => '${item.productName} ${item.quantity}')
+          .join(' ')
+          .toLowerCase();
+
+      final searchable = [
+        order.id,
+        order.shortId,
+        order.customerName,
+        order.customerPhone,
+        order.customerAddress,
+        order.deliveryAddress,
+        order.deliveryZone,
+        order.status,
+        order.paymentStatus,
+        order.paymentMethod,
+        order.fulfillmentType,
+        order.formattedType,
+        order.formattedPaymentMethod,
+        order.formattedPaymentStatus,
+        orderDateLabel(order),
+        scheduledLabel(order),
+        itemText,
+      ].join(' ').toLowerCase();
+
+      return searchable.contains(query);
+    }).toList();
   }
 
   Future<void> changeOrderStatus(
@@ -5960,18 +6399,524 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: FarmColors.line),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(icon, color: FarmColors.green),
             const SizedBox(height: 8),
-            Text(value,
-                style:
-                    const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-            Text(label, style: const TextStyle(fontSize: 12)),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: FarmColors.mutedText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget statusBadge(String label, String value, {IconData? icon}) {
+    final color = statusColor(value);
+    return Chip(
+      avatar: icon == null ? null : Icon(icon, size: 16, color: color),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+      backgroundColor: color.withOpacity(0.10),
+      side: BorderSide(color: color.withOpacity(0.20)),
+    );
+  }
+
+  Widget infoRow({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: FarmColors.green),
+          const SizedBox(width: 8),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 13.5,
+                  height: 1.25,
+                ),
+                children: [
+                  TextSpan(
+                    text: '$title: ',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  TextSpan(text: value),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> captureOrderBoxPhoto(
+      BuildContext context, AdminOrder order) async {
+    try {
+      final picker = ImagePicker();
+
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+        maxWidth: 1600,
+      );
+
+      if (picked == null) {
+        return;
+      }
+
+      final bytes = await picked.readAsBytes();
+
+      final cleanOrderId = order.id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path = '$cleanOrderId/$fileName';
+
+      await supabase.storage.from('order-box-photos').uploadBinary(
+            path,
+            bytes,
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
+          );
+
+      final publicUrl =
+          supabase.storage.from('order-box-photos').getPublicUrl(path);
+
+      final updatedOrder = await supabase
+          .from('orders')
+          .update({
+            'box_photo_url': publicUrl,
+            'box_photo_uploaded_at': DateTime.now().toIso8601String(),
+            'box_photo_uploaded_by': supabase.auth.currentUser?.id,
+          })
+          .eq('id', order.id)
+          .select('id, box_photo_url')
+          .maybeSingle();
+
+      if (!context.mounted) return;
+
+      final savedUrl = updatedOrder?['box_photo_url']?.toString();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            savedUrl == null || savedUrl.isEmpty
+                ? 'Photo uploaded, but order was not updated.'
+                : 'Box photo saved to order.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Box photo failed: $error'),
+        ),
+      );
+    }
+  }
+
+  Widget orderCard(AdminOrder order) {
+    final isDelivery = order.fulfillmentType == 'delivery';
+    final deliveryAddress = (order.deliveryAddress ?? '').trim().isNotEmpty
+        ? (order.deliveryAddress ?? '').trim()
+        : (order.customerAddress ?? '').trim();
+
+    final itemSummary = order.items.isEmpty
+        ? 'No item details found.'
+        : order.items
+            .map((item) => '${item.productName} x${item.quantity}')
+            .join(' • ');
+
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Order #${order.shortId}',
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      orderDateLabel(order),
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              statusBadge(
+                formatStatus(order.status),
+                order.status,
+                icon: Icons.receipt_long_outlined,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              statusBadge(
+                order.formattedPaymentStatus,
+                order.paymentStatus,
+                icon: Icons.payments_outlined,
+              ),
+              statusBadge(
+                order.formattedType,
+                order.fulfillmentType,
+                icon: isDelivery
+                    ? Icons.local_shipping_outlined
+                    : Icons.storefront_outlined,
+              ),
+              statusBadge(
+                money(order.total),
+                'paid',
+                icon: Icons.attach_money_rounded,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: FarmColors.cardSoft,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                infoRow(
+                  icon: Icons.person_outline,
+                  title: 'Customer',
+                  value: cleanText(order.customerName),
+                ),
+                infoRow(
+                  icon: Icons.phone_outlined,
+                  title: 'Phone',
+                  value: cleanText(order.customerPhone),
+                ),
+                infoRow(
+                  icon: Icons.payment_outlined,
+                  title: 'Payment',
+                  value:
+                      '${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}',
+                ),
+                if (order.paymentMethod == 'bank_transfer' &&
+                    (order.bankReference ?? '').trim().isNotEmpty)
+                  infoRow(
+                    icon: Icons.account_balance_outlined,
+                    title: 'Bank ref',
+                    value: order.bankReference!.trim(),
+                  ),
+                infoRow(
+                  icon: isDelivery
+                      ? Icons.local_shipping_outlined
+                      : Icons.storefront_outlined,
+                  title: 'Fulfillment',
+                  value: order.formattedType,
+                ),
+                if (isDelivery)
+                  infoRow(
+                    icon: Icons.map_outlined,
+                    title: 'Zone',
+                    value: cleanText(order.deliveryZone),
+                  ),
+                if (isDelivery)
+                  infoRow(
+                    icon: Icons.location_on_outlined,
+                    title: 'Address',
+                    value: cleanText(deliveryAddress),
+                  ),
+                infoRow(
+                  icon: Icons.schedule_outlined,
+                  title: 'Scheduled',
+                  value: scheduledLabel(order),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Items',
+            style: TextStyle(
+              color: FarmColors.ink,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            itemSummary,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+          ),
+          if (order.items.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...order.items.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• ${item.productName} x${item.quantity} — J\$${item.lineTotal.toStringAsFixed(0)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Column(
+            children: [
+              DropdownButtonFormField<String>(
+                value:
+                    statuses.contains(order.status) ? order.status : 'pending',
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Order status',
+                ),
+                items: statuses
+                    .map(
+                      (status) => DropdownMenuItem<String>(
+                        value: status,
+                        child: Text(
+                          formatStatus(status),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null || value == order.status) return;
+                  changeOrderStatus(context, order, value);
+                },
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: paymentStatuses.contains(order.paymentStatus)
+                    ? order.paymentStatus
+                    : 'unpaid',
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Payment',
+                ),
+                items: paymentStatuses
+                    .map(
+                      (status) => DropdownMenuItem<String>(
+                        value: status,
+                        child: Text(
+                          formatStatus(status),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null || value == order.paymentStatus) return;
+                  changePaymentStatus(context, order, value);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.print_outlined),
+                label: const Text('Print 4×6 Order Slip'),
+                onPressed: () => openOrderSlipActions(context, order),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.camera_alt_outlined),
+                label: const Text('Take Box Photo'),
+                onPressed: () => captureOrderBoxPhoto(context, order),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.message_outlined),
+                label: const Text('Message Customer'),
+                onPressed: () => openOrderMessageSheet(context, order),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> openOrderMessageSheet(
+    BuildContext context,
+    AdminOrder order,
+  ) async {
+    final controller = TextEditingController();
+    var sending = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            Future<void> sendMessage() async {
+              final message = controller.text.trim();
+
+              if (message.isEmpty) {
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a message for the customer.'),
+                  ),
+                );
+                return;
+              }
+
+              setSheetState(() => sending = true);
+
+              try {
+                await supabase.from('order_messages').insert({
+                  'order_id': order.id,
+                  'message': message,
+                  'message_type': 'update',
+                  'sender_role': 'manager',
+                });
+
+                if (Navigator.canPop(sheetContext)) {
+                  Navigator.pop(sheetContext);
+                }
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Message sent to customer.'),
+                  ),
+                );
+              } catch (error) {
+                setSheetState(() => sending = false);
+
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  SnackBar(
+                    content: Text('Could not send message: $error'),
+                  ),
+                );
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 18,
+                right: 18,
+                top: 18,
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 18,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Message Customer',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Send an update for order #${order.shortId}.',
+                    style: const TextStyle(
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: controller,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Message',
+                      hintText: 'Example: Your order is being prepared.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: sending
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_outlined),
+                      label: Text(sending ? 'Sending...' : 'Send Message'),
+                      onPressed: sending ? null : sendMessage,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+  }
+
+  Widget filterChip(String value, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        selected: selectedFilter == value,
+        label: Text(label),
+        onSelected: (_) => setState(() => selectedFilter = value),
       ),
     );
   }
@@ -5988,7 +6933,7 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
         }
 
         final orders = snapshot.data ?? [];
-        final filteredOrders = applyFilter(orders);
+        final filteredOrders = applySearch(applyFilter(orders));
         final paidCount =
             orders.where((order) => order.paymentStatus == 'paid').length;
         final unpaidCount =
@@ -6002,7 +6947,8 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
             padding: EdgeInsets.all(18),
             child: FarmCard(
               child: Text(
-                  'No orders yet. When you place an order, it will appear here.'),
+                'No orders yet. When customers place orders, they will appear here.',
+              ),
             ),
           );
         }
@@ -6015,283 +6961,99 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Today / Recent Summary',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    'Orders Summary',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       summaryTile(
-                          'Orders', '${orders.length}', Icons.receipt_long),
+                        'Orders',
+                        '${orders.length}',
+                        Icons.receipt_long,
+                      ),
                       const SizedBox(width: 8),
                       summaryTile(
-                          'Unpaid', '$unpaidCount', Icons.pending_actions),
+                        'Unpaid',
+                        '$unpaidCount',
+                        Icons.pending_actions,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      summaryTile('Paid', '$paidCount', Icons.verified),
+                      summaryTile(
+                        'Paid',
+                        '$paidCount',
+                        Icons.verified,
+                      ),
                       const SizedBox(width: 8),
                       summaryTile(
-                          'Paid Sales',
-                          'J\$${totalSales.toStringAsFixed(0)}',
-                          Icons.payments),
+                        'Paid Sales',
+                        money(totalSales),
+                        Icons.payments,
+                      ),
                     ],
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                labelText: 'Search orders',
+                hintText: 'Name, phone, order ID, zone, item...',
+              ),
+              onChanged: (value) {
+                setState(() {
+                  orderSearchQuery = value;
+                });
+              },
             ),
             const SizedBox(height: 14),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  FilterChip(
-                    selected: selectedFilter == 'all',
-                    label: const Text('All'),
-                    onSelected: (_) => setState(() => selectedFilter = 'all'),
-                  ),
-                  const SizedBox(width: 8),
-                  ...[
-                    'pending',
-                    'preparing',
-                    'ready',
-                    'out_for_delivery',
-                    'delivered',
-                    'unpaid',
-                    'paid'
-                  ].map(
-                    (filter) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        selected: selectedFilter == filter,
-                        label: Text(formatStatus(filter)),
-                        onSelected: (_) =>
-                            setState(() => selectedFilter = filter),
-                      ),
-                    ),
-                  ),
+                  filterChip('all', 'All'),
+                  filterChip('pending', 'Pending'),
+                  filterChip('preparing', 'Preparing'),
+                  filterChip('ready', 'Ready'),
+                  filterChip('out_for_delivery', 'Out for Delivery'),
+                  filterChip('delivered', 'Delivered'),
+                  filterChip('unpaid', 'Unpaid'),
+                  filterChip('paid', 'Paid'),
+                  filterChip('refunded', 'Refunded'),
                 ],
               ),
             ),
             const SizedBox(height: 14),
+            Text(
+              '${filteredOrders.length} matching order${filteredOrders.length == 1 ? '' : 's'}',
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 10),
             if (filteredOrders.isEmpty)
               const FarmCard(
-                  child:
-                      Text('No orders match this filter. Try another status.'))
+                child: Text(
+                  'No orders match this search/filter. Try another name, phone number, order ID, zone, item, or status.',
+                ),
+              )
             else
-              ...filteredOrders.map((order) => Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: FarmCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Order #${order.shortId}',
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              Chip(
-                                label: Text(formatStatus(order.status)),
-                                backgroundColor: FarmColors.lightGreen,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(order.formattedType,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold)),
-                          Text(
-                              '${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}'),
-                          if (order.paymentMethod == 'bank_transfer' &&
-                              (order.bankReference ?? '').isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Text(
-                                'Bank reference: ${order.bankReference}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          const SizedBox(height: 8),
-                          Text(
-                              '${order.customerName} • ${order.customerPhone}'),
-                          if (order.customerAddress.isNotEmpty)
-                            Text(order.customerAddress),
-                          const SizedBox(height: 10),
-                          if (order.items.isEmpty)
-                            const Text('No item details found.')
-                          else
-                            ...order.items.map(
-                              (item) => Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                        child: Text(
-                                            '${item.productName} x ${item.quantity}')),
-                                    Text(
-                                        'J\$${item.lineTotal.toStringAsFixed(2)}'),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          const Divider(),
-                          if (order.subtotal > 0)
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('Subtotal'),
-                                Text(order.formattedSubtotal),
-                              ],
-                            ),
-                          if (order.deliveryFee > 0) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('Delivery fee'),
-                                Text(order.formattedDeliveryFee),
-                              ],
-                            ),
-                          ],
-                          if (order.discountAmount > 0) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('Discount'),
-                                Text('-${order.formattedDiscountAmount}'),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Total',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.bold)),
-                              Text(order.formattedTotal,
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              if (order.status != 'preparing')
-                                ActionChip(
-                                  avatar: const Icon(Icons.restaurant_menu,
-                                      size: 18),
-                                  label: const Text('Preparing'),
-                                  onPressed: () => changeOrderStatus(
-                                      context, order, 'preparing'),
-                                ),
-                              if (order.status != 'ready')
-                                ActionChip(
-                                  avatar: const Icon(Icons.check_circle_outline,
-                                      size: 18),
-                                  label: const Text('Ready'),
-                                  onPressed: () => changeOrderStatus(
-                                      context, order, 'ready'),
-                                ),
-                              if (order.status != 'delivered')
-                                ActionChip(
-                                  avatar: const Icon(Icons.done_all, size: 18),
-                                  label: const Text('Delivered'),
-                                  onPressed: () => changeOrderStatus(
-                                      context, order, 'delivered'),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          if (order.paymentStatus != 'paid')
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                icon: const Icon(Icons.verified),
-                                label: const Text('Mark Paid'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: FarmColors.primary,
-                                  foregroundColor: Colors.white,
-                                ),
-                                onPressed: () async {
-                                  try {
-                                    await markOrderPaid(order.id);
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text('Payment verified')),
-                                      );
-                                    }
-                                    widget.onChanged();
-                                  } catch (error) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                            content: Text(
-                                                'Could not verify payment: $error')),
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                            ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: statuses.contains(order.status)
-                                ? order.status
-                                : 'pending',
-                            decoration: const InputDecoration(
-                                labelText: 'Update status'),
-                            items: statuses
-                                .map((status) => DropdownMenuItem(
-                                      value: status,
-                                      child: Text(formatStatus(status)),
-                                    ))
-                                .toList(),
-                            onChanged: (status) {
-                              if (status != null)
-                                changeOrderStatus(context, order, status);
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: paymentStatuses.contains(order.paymentStatus)
-                                ? order.paymentStatus
-                                : 'unpaid',
-                            decoration: const InputDecoration(
-                                labelText: 'Payment status'),
-                            items: paymentStatuses
-                                .map((status) => DropdownMenuItem(
-                                      value: status,
-                                      child: Text(formatStatus(status)),
-                                    ))
-                                .toList(),
-                            onChanged: (status) {
-                              if (status != null)
-                                changePaymentStatus(context, order, status);
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  )),
+              ...filteredOrders.map(
+                (order) => Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: orderCard(order),
+                ),
+              ),
           ],
         );
       },
@@ -8105,9 +8867,9 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                 if (dialogContext.mounted) {
                   setDialogState(() => saving = false);
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                       content: Text(
-                        'Could not save product. Check the details and try again.',
+                        error.toString().replaceFirst('Exception: ', ''),
                       ),
                     ),
                   );

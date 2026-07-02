@@ -6485,7 +6485,7 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
       final picker = ImagePicker();
 
       final picked = await picker.pickImage(
-        source: ImageSource.gallery,
+        source: ImageSource.camera,
         imageQuality: 80,
         maxWidth: 1600,
       );

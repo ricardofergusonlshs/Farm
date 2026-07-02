@@ -1245,7 +1245,7 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
         }
       } else if (currentSession == null) {
         throw Exception(
-          'Open the newest password reset email link. The test URL without code=... can show this page, but it cannot change the password.',
+          'Open the newest password reset email link to continue. This page needs a valid reset link before the password can be changed.',
         );
       }
 
@@ -2108,29 +2108,23 @@ class _MainNavigationState extends State<MainNavigation> {
       context,
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          backgroundColor: FarmColors.background,
-          appBar: AppBar(
-            title: const Text('My Farm Box'),
             backgroundColor: FarmColors.background,
-          ),
-          body: FarmBoxScreen(
-            cart: cart,
-            onRemoveFromCart: removeFromCart,
-            onAddToCart: increaseProductQuantity,
-            onOrderPlaced: () {
-              if (!mounted) return;
-              setState(() {
-                cart.clear();
-                persistCart();
-                FarmDataCache.clearProducts();
-                FarmDataCache.clearOrders();
-                authViewVersion++;
-                selectedIndex = ordersTabIndex;
-              });
-            },
-            onInventoryChanged: refreshInventoryViews,
-          ),
-        ),
+            appBar: AppBar(
+              title: const Text('My Farm Box'),
+              backgroundColor: FarmColors.background,
+            ),
+            body: FarmBoxScreen(
+              cart: cart,
+              onRemoveFromCart: removeFromCart,
+              onAddToCart: increaseProductQuantity,
+              onShopTap: () => setState(() => selectedIndex = 1),
+              onOrderPlaced: () {
+                setState(() {
+                  selectedIndex = 3;
+                });
+              },
+              onInventoryChanged: refreshInventoryViews,
+            )),
       ),
     );
   }
@@ -2260,15 +2254,10 @@ class _MainNavigationState extends State<MainNavigation> {
         cart: cart,
         onRemoveFromCart: removeFromCart,
         onAddToCart: increaseProductQuantity,
+        onShopTap: () => setState(() => selectedIndex = 1),
         onOrderPlaced: () {
-          if (!mounted) return;
           setState(() {
-            cart.clear();
-            persistCart();
-            FarmDataCache.clearProducts();
-            FarmDataCache.clearOrders();
-            authViewVersion++;
-            selectedIndex = ordersTabIndex;
+            selectedIndex = 3;
           });
         },
         onInventoryChanged: refreshInventoryViews,

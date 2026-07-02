@@ -6920,7 +6920,7 @@ class SafeShopProductTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(26),
           onTap: onOpenDetails,
           child: Opacity(
-            opacity: muted ? 0.84 : 1,
+            opacity: 1,
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -7023,6 +7023,7 @@ class FarmBoxScreen extends StatefulWidget {
   final void Function(Product product) onRemoveFromCart;
   final void Function(Product product) onAddToCart;
   final VoidCallback onOrderPlaced;
+  final VoidCallback onShopTap;
   final VoidCallback? onInventoryChanged;
 
   const FarmBoxScreen({
@@ -7031,6 +7032,7 @@ class FarmBoxScreen extends StatefulWidget {
     required this.onRemoveFromCart,
     required this.onAddToCart,
     required this.onOrderPlaced,
+    required this.onShopTap,
     this.onInventoryChanged,
   });
 
@@ -7928,106 +7930,116 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
   }
 
   Widget _emptyBoxInviteCard(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
-      child: Column(
-        children: [
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              color: FarmColors.primarySoft,
-              shape: BoxShape.circle,
-              border: Border.all(color: FarmColors.green.withOpacity(0.12)),
-              boxShadow: [
-                BoxShadow(
-                  color: FarmColors.green.withOpacity(0.07),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.shopping_basket_outlined,
-              color: FarmColors.green,
-              size: 34,
-            ),
-          ),
-          const SizedBox(height: 17),
-          const Text(
-            'Your box is waiting',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: FarmColors.ink,
-              fontSize: 21,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.25,
-            ),
-          ),
-          const SizedBox(height: 7),
-          const Text(
-            'Add fresh produce, weekly staples, or nutrient-focused picks from the Shop.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: FarmColors.mutedText,
-              fontWeight: FontWeight.w700,
-              height: 1.32,
-            ),
-          ),
-          const SizedBox(height: 18),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: FarmColors.cardSoft,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: FarmColors.line.withOpacity(0.82)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: const BoxDecoration(
-                    color: FarmColors.primarySoft,
-                    shape: BoxShape.circle,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onShopTap,
+      child: FarmCard(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
+        child: Column(
+          children: [
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                shape: BoxShape.circle,
+                border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+                boxShadow: [
+                  BoxShadow(
+                    color: FarmColors.green.withOpacity(0.07),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
                   ),
-                  child: const Icon(
-                    Icons.storefront_outlined,
+                ],
+              ),
+              child: const Icon(
+                Icons.shopping_basket_outlined,
+                color: FarmColors.green,
+                size: 34,
+              ),
+            ),
+            const SizedBox(height: 17),
+            const Text(
+              'Your box is waiting',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 21,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.25,
+              ),
+            ),
+            const SizedBox(height: 7),
+            const Text(
+              'Add fresh produce, weekly staples, or nutrient-focused picks from the Shop.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontWeight: FontWeight.w700,
+                height: 1.32,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: FarmColors.cardSoft,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: FarmColors.line.withOpacity(0.82)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: const BoxDecoration(
+                      color: FarmColors.primarySoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.storefront_outlined,
+                      color: FarmColors.green,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Start from the Shop tab',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13.4,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Search items, nutrients, farms, or build a fresh box.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11.5,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
                     color: FarmColors.green,
-                    size: 18,
+                    size: 14,
                   ),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Start from the Shop tab',
-                        style: TextStyle(
-                          color: FarmColors.ink,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13.4,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Search items, nutrients, farms, or build a fresh box.',
-                        style: TextStyle(
-                          color: FarmColors.mutedText,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11.5,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -9095,7 +9107,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.picture_as_pdf_outlined),
-                  label: const Text('Download PDF Receipt'),
+                  label: const Text('Share / Save PDF Receipt'),
                   onPressed: () => _downloadCustomerReceiptPdf(order),
                 ),
                 const SizedBox(height: 14),

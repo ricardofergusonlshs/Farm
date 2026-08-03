@@ -768,12 +768,14 @@ class CustomerProductSubscription {
 }
 
 class OrderDetailsItem {
+  final String productId;
   final String productName;
   final int quantity;
   final double unitPrice;
   final double lineTotal;
 
   const OrderDetailsItem({
+    required this.productId,
     required this.productName,
     required this.quantity,
     required this.unitPrice,
@@ -782,6 +784,7 @@ class OrderDetailsItem {
 
   factory OrderDetailsItem.fromSupabase(Map<String, dynamic> data) {
     return OrderDetailsItem(
+      productId: (data['product_id'] ?? '').toString(),
       productName: (data['product_name'] ?? 'Product').toString(),
       quantity: Product._toInt(data['quantity']),
       unitPrice: Product._toDouble(data['unit_price']),
@@ -1498,7 +1501,10 @@ class PopularCategorySummary {
 class MiniProduct extends StatelessWidget {
   final Product product;
 
-  const MiniProduct({super.key, required this.product});
+  const MiniProduct({
+    super.key,
+    required this.product,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1532,13 +1538,41 @@ class MiniProduct extends StatelessWidget {
             SizedBox(
               height: 76,
               width: double.infinity,
-              child: Center(child: ProductVisual(product: product, size: 60)),
+              child: Center(
+                child: ProductVisual(
+                  product: product,
+                  size: 60,
+                ),
+              ),
             ),
             const SizedBox(height: 8),
-            _HomeProductName(product: product, compact: true),
+            Text(
+              product.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                height: 1.15,
+              ),
+            ),
             const SizedBox(height: 6),
-            _HomePricePanel(product: product, compact: true),
-            ProductAvailabilityChip(product: product, compact: true),
+            Text(
+              product.formattedPrice,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.green,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ProductAvailabilityChip(
+              product: product,
+              compact: true,
+            ),
           ],
         ),
       ),

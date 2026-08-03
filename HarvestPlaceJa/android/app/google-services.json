@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:110895599576:android:5c35242a2efe87c8b46cad",
+        "android_client_info": {
+          "package_name": "com.harvestplaceja.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKVa41zAmJJ9rQAjUw-J3wYLWorjE0K94"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:110895599576:android:4888e5b33b42a7d3b46cad",
         "android_client_info": {
           "package_name": "com.theharvestplaceja.app"

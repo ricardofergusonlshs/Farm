@@ -4245,56 +4245,56 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> openProduct(Product product) async {
-  _rememberViewedProduct(product);
+    _rememberViewedProduct(product);
 
-  final nutrientToFilter = await Navigator.push<String>(
-    context,
-    MaterialPageRoute(
-      builder: (detailContext) => ProductDetailScreen(
-        product: product,
-        quantity: widget.quantityForProduct(product),
+    final nutrientToFilter = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (detailContext) => ProductDetailScreen(
+          product: product,
+          quantity: widget.quantityForProduct(product),
 
-        // Makes the nutrient chips clickable when opened from Home.
-        onNutrientTap: (nutrient) {
-          Navigator.of(detailContext).pop(nutrient);
-        },
+          // Makes the nutrient chips clickable when opened from Home.
+          onNutrientTap: (nutrient) {
+            Navigator.of(detailContext).pop(nutrient);
+          },
 
-        onAdd: () => _addProductToCart(product),
-        onRemove: () => _removeProductFromCart(product),
-        onAddProduct: _addProductToCart,
-        onViewed: _rememberViewedProduct,
-        onViewMyBox: widget.onViewMyBox,
-        onCheckout: widget.onCheckout,
+          onAdd: () => _addProductToCart(product),
+          onRemove: () => _removeProductFromCart(product),
+          onAddProduct: _addProductToCart,
+          onViewed: _rememberViewedProduct,
+          onViewMyBox: widget.onViewMyBox,
+          onCheckout: widget.onCheckout,
+        ),
       ),
-    ),
-  );
+    );
 
-  if (!mounted ||
-      nutrientToFilter == null ||
-      nutrientToFilter.trim().isEmpty) {
-    return;
+    if (!mounted ||
+        nutrientToFilter == null ||
+        nutrientToFilter.trim().isEmpty) {
+      return;
+    }
+
+    final selectedNutrient = nutrientToFilter.trim();
+
+    setState(() {
+      selectedHomeCategory = 'All';
+      selectedHomeNutrient = selectedNutrient;
+      selectedHomeFilter = 'All items';
+
+      homeSearchController.clear();
+      homeSearchQuery = '';
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Showing products with $selectedNutrient.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
-
-  final selectedNutrient = nutrientToFilter.trim();
-
-  setState(() {
-    selectedHomeCategory = 'All';
-    selectedHomeNutrient = selectedNutrient;
-    selectedHomeFilter = 'All items';
-
-    homeSearchController.clear();
-    homeSearchQuery = '';
-  });
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(
-        'Showing products with $selectedNutrient.',
-      ),
-      behavior: SnackBarBehavior.floating,
-    ),
-  );
-}
 
   Widget productRail({
     required List<Product> products,
@@ -4323,8 +4323,8 @@ class _HomeScreenState extends State<HomeScreen> {
           return InkWell(
             borderRadius: BorderRadius.circular(24),
             onTap: () {
-  unawaited(openProduct(product));
-},
+              unawaited(openProduct(product));
+            },
             child: SizedBox(
               width: 142,
               child: Opacity(
@@ -5914,89 +5914,90 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   String _shopDisplayNutrientName(String value) {
-  switch (_cleanNutrientKey(value)) {
-    case 'magnesium':
-      return 'Magnesium';
-    case 'iron':
-      return 'Iron';
-    case 'fiber':
-    case 'fibre':
-      return 'Fiber';
-    case 'potassium':
-      return 'Potassium';
-    case 'vitamin c':
-    case 'vit c':
-      return 'Vitamin C';
-    case 'protein':
-      return 'Protein';
-    case 'calcium':
-      return 'Calcium';
-    case 'antioxidant':
-    case 'antioxidants':
-      return 'Antioxidants';
-    default:
-      final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    switch (_cleanNutrientKey(value)) {
+      case 'magnesium':
+        return 'Magnesium';
+      case 'iron':
+        return 'Iron';
+      case 'fiber':
+      case 'fibre':
+        return 'Fiber';
+      case 'potassium':
+        return 'Potassium';
+      case 'vitamin c':
+      case 'vit c':
+        return 'Vitamin C';
+      case 'protein':
+        return 'Protein';
+      case 'calcium':
+        return 'Calcium';
+      case 'antioxidant':
+      case 'antioxidants':
+        return 'Antioxidants';
+      default:
+        final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
 
-      return clean
-          .split(' ')
-          .where((word) => word.isNotEmpty)
-          .map(
-            (word) =>
-                '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
-          )
-          .join(' ');
-  }
-}
-
-List<String> _nutrientBadgesForProduct(
-  Product product, {
-  String? selectedNutrient,
-  int? limit = 3,
-}) {
-  final badges = <String>[];
-  final seenNutrients = <String>{};
-
-  void addBadge(String level, String nutrient) {
-    final cleanNutrient = _shopDisplayNutrientName(nutrient);
-    final nutrientKey = _cleanNutrientKey(cleanNutrient);
-
-    if (cleanNutrient.isEmpty || nutrientKey.isEmpty) return;
-    if (!seenNutrients.add(nutrientKey)) return;
-
-    final cleanLevel = switch (level.trim().toLowerCase()) {
-      'strong' => 'Strong',
-      'good' => 'Good',
-      _ => 'Contains',
-    };
-
-    badges.add('$cleanLevel $cleanNutrient');
-  }
-
-  final priority = selectedNutrient == null
-      ? shopNutrientOptions.where((item) => item != 'All').toList()
-      : <String>[
-          selectedNutrient,
-          ...shopNutrientOptions.where(
-            (item) => item != 'All' && item != selectedNutrient,
-          ),
-        ];
-
-  for (final nutrient in priority) {
-    if (_listHasNutrient(product.nutrientStrong, nutrient)) {
-      addBadge('Strong', nutrient);
-    } else if (_listHasNutrient(product.nutrientGood, nutrient)) {
-      addBadge('Good', nutrient);
-    } else if (_listHasNutrient(product.nutrientContains, nutrient)) {
-      addBadge('Contains', nutrient);
-    }
-
-    if (limit != null && badges.length >= limit) {
-      break;
+        return clean
+            .split(' ')
+            .where((word) => word.isNotEmpty)
+            .map(
+              (word) =>
+                  '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
+            )
+            .join(' ');
     }
   }
 
-  return badges;
-}
+  List<String> _nutrientBadgesForProduct(
+    Product product, {
+    String? selectedNutrient,
+    int? limit = 3,
+  }) {
+    final badges = <String>[];
+    final seenNutrients = <String>{};
+
+    void addBadge(String level, String nutrient) {
+      final cleanNutrient = _shopDisplayNutrientName(nutrient);
+      final nutrientKey = _cleanNutrientKey(cleanNutrient);
+
+      if (cleanNutrient.isEmpty || nutrientKey.isEmpty) return;
+      if (!seenNutrients.add(nutrientKey)) return;
+
+      final cleanLevel = switch (level.trim().toLowerCase()) {
+        'strong' => 'Strong',
+        'good' => 'Good',
+        _ => 'Contains',
+      };
+
+      badges.add('$cleanLevel $cleanNutrient');
+    }
+
+    final priority = selectedNutrient == null
+        ? shopNutrientOptions.where((item) => item != 'All').toList()
+        : <String>[
+            selectedNutrient,
+            ...shopNutrientOptions.where(
+              (item) => item != 'All' && item != selectedNutrient,
+            ),
+          ];
+
+    for (final nutrient in priority) {
+      if (_listHasNutrient(product.nutrientStrong, nutrient)) {
+        addBadge('Strong', nutrient);
+      } else if (_listHasNutrient(product.nutrientGood, nutrient)) {
+        addBadge('Good', nutrient);
+      } else if (_listHasNutrient(product.nutrientContains, nutrient)) {
+        addBadge('Contains', nutrient);
+      }
+
+      if (limit != null && badges.length >= limit) {
+        break;
+      }
+    }
+
+    return badges;
+  }
+
   List<Product> filteredProducts(String activeCategory) {
     final rawQuery = searchController.text.trim();
     final query = rawQuery.toLowerCase();
@@ -6575,138 +6576,132 @@ List<String> _nutrientBadgesForProduct(
           )
         : sortedShopProducts(visibleCustomerProducts);
     final contentSections = <Widget>[
-  if (!loadingProducts && availableNowProducts.isNotEmpty) ...[
-    SectionHeader(
-      title: activeCategory == 'All' ? 'Fresh shop' : activeCategory,
-      subtitle: selectedShopFilter == 'All items'
-          ? 'Browse available and out-of-stock items clearly marked'
-          : selectedShopFilter,
-    ),
-    const SizedBox(height: 12),
-  ],
-
-  if (productLoadMessage != null) ...[
-    FarmCard(
-      child: Row(
-        children: [
-          const Icon(
-            Icons.info_outline,
-            color: FarmColors.green,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Text(productLoadMessage!),
-          ),
-        ],
-      ),
-    ),
-    const SizedBox(height: 12),
-  ],
-
-  if (loadingProducts && products.isEmpty) ...[
-    const FarmSkeletonCard(height: 180),
-    const FarmSkeletonCard(height: 180),
-    const FarmSkeletonCard(height: 180),
-  ] else if (availableNowProducts.isEmpty) ...[
-    Padding(
-      padding: const EdgeInsets.only(top: 30),
-      child: FarmEmptyState(
-        icon: activeCategory == 'Favorites'
-            ? Icons.favorite_border_rounded
-            : Icons.storefront_outlined,
-        title: activeCategory == 'Favorites'
-            ? 'No favorites here yet'
-            : 'No products found',
-        message: activeCategory == 'All'
-            ? 'No products match your search. Try another category or clear the search.'
-            : activeCategory == 'Favorites'
-                ? 'Tap the heart on products you love to save them here.'
-                : 'No items are listed in $activeCategory right now. Try another category or clear the search.',
-      ),
-    ),
-  ] else ...[
-    ...availableNowProducts.map((product) {
-      final quantity = widget.quantityForProduct(product);
-      final activeNutrient = _activeShopNutrient();
-
-      final shopNutrientBadges = _nutrientBadgesForProduct(
-        product,
-        selectedNutrient: activeNutrient,
-      );
-
-      final detailNutrientBadges = _nutrientBadgesForProduct(
-        product,
-        selectedNutrient: activeNutrient,
-        limit: null,
-      );
-
-      return SafeShopProductTile(
-        key: ValueKey(
-          'shop-${product.id}-${product.name}',
+      if (!loadingProducts && availableNowProducts.isNotEmpty) ...[
+        SectionHeader(
+          title: activeCategory == 'All' ? 'Fresh shop' : activeCategory,
+          subtitle: selectedShopFilter == 'All items'
+              ? 'Browse available and out-of-stock items clearly marked'
+              : selectedShopFilter,
         ),
-        product: product,
-        quantity: quantity,
-        nutrientBadges: shopNutrientBadges,
-        isFavorite: _isFavoriteProduct(product),
-        onFavorite: () => _toggleFavoriteProduct(product),
-        onAdd: () => _addProductToCart(product),
-        onRemove: () => _removeProductFromCart(product),
-        onOpenDetails: () async {
-          _rememberViewedProduct(product);
-
-          final nutrientToFilter =
-              await Navigator.push<String>(
-            context,
-            MaterialPageRoute(
-              builder: (detailContext) => ProductDetailScreen(
-                product: product,
-                quantity: quantity,
-                nutrientBadges: detailNutrientBadges,
-               onNutrientTap: (nutrient) {
-  Navigator.of(detailContext).pop(nutrient);
-},
-                onAdd: () => _addProductToCart(product),
-                onRemove: () =>
-                    _removeProductFromCart(product),
-                onAddProduct: _addProductToCart,
-                onViewed: _rememberViewedProduct,
-                onViewMyBox: widget.onViewMyBox,
-                onCheckout: widget.onCheckout,
+        const SizedBox(height: 12),
+      ],
+      if (productLoadMessage != null) ...[
+        FarmCard(
+          child: Row(
+            children: [
+              const Icon(
+                Icons.info_outline,
+                color: FarmColors.green,
               ),
-            ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(productLoadMessage!),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (loadingProducts && products.isEmpty) ...[
+        const FarmSkeletonCard(height: 180),
+        const FarmSkeletonCard(height: 180),
+        const FarmSkeletonCard(height: 180),
+      ] else if (availableNowProducts.isEmpty) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: 30),
+          child: FarmEmptyState(
+            icon: activeCategory == 'Favorites'
+                ? Icons.favorite_border_rounded
+                : Icons.storefront_outlined,
+            title: activeCategory == 'Favorites'
+                ? 'No favorites here yet'
+                : 'No products found',
+            message: activeCategory == 'All'
+                ? 'No products match your search. Try another category or clear the search.'
+                : activeCategory == 'Favorites'
+                    ? 'Tap the heart on products you love to save them here.'
+                    : 'No items are listed in $activeCategory right now. Try another category or clear the search.',
+          ),
+        ),
+      ] else ...[
+        ...availableNowProducts.map((product) {
+          final quantity = widget.quantityForProduct(product);
+          final activeNutrient = _activeShopNutrient();
+
+          final shopNutrientBadges = _nutrientBadgesForProduct(
+            product,
+            selectedNutrient: activeNutrient,
           );
 
-          if (!mounted ||
-              nutrientToFilter == null ||
-              nutrientToFilter.trim().isEmpty) {
-            return;
-          }
-
-          setState(() {
-            selectedCategory = 'All';
-            selectedShopFilter = 'All items';
-            selectedShopNutrient =
-                nutrientToFilter.trim();
-            selectedSort = 'Featured';
-            searchController.clear();
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Showing products with '
-                '${nutrientToFilter.trim()}.',
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
+          final detailNutrientBadges = _nutrientBadgesForProduct(
+            product,
+            selectedNutrient: activeNutrient,
+            limit: null,
           );
-        },
-      );
-    }),
 
-    const SizedBox(height: 90),
-  ],
-];
+          return SafeShopProductTile(
+            key: ValueKey(
+              'shop-${product.id}-${product.name}',
+            ),
+            product: product,
+            quantity: quantity,
+            nutrientBadges: shopNutrientBadges,
+            isFavorite: _isFavoriteProduct(product),
+            onFavorite: () => _toggleFavoriteProduct(product),
+            onAdd: () => _addProductToCart(product),
+            onRemove: () => _removeProductFromCart(product),
+            onOpenDetails: () async {
+              _rememberViewedProduct(product);
+
+              final nutrientToFilter = await Navigator.push<String>(
+                context,
+                MaterialPageRoute(
+                  builder: (detailContext) => ProductDetailScreen(
+                    product: product,
+                    quantity: quantity,
+                    nutrientBadges: detailNutrientBadges,
+                    onNutrientTap: (nutrient) {
+                      Navigator.of(detailContext).pop(nutrient);
+                    },
+                    onAdd: () => _addProductToCart(product),
+                    onRemove: () => _removeProductFromCart(product),
+                    onAddProduct: _addProductToCart,
+                    onViewed: _rememberViewedProduct,
+                    onViewMyBox: widget.onViewMyBox,
+                    onCheckout: widget.onCheckout,
+                  ),
+                ),
+              );
+
+              if (!mounted ||
+                  nutrientToFilter == null ||
+                  nutrientToFilter.trim().isEmpty) {
+                return;
+              }
+
+              setState(() {
+                selectedCategory = 'All';
+                selectedShopFilter = 'All items';
+                selectedShopNutrient = nutrientToFilter.trim();
+                selectedSort = 'Featured';
+                searchController.clear();
+              });
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Showing products with '
+                    '${nutrientToFilter.trim()}.',
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+          );
+        }),
+        const SizedBox(height: 90),
+      ],
+    ];
     return FarmPage(
       child: Column(
         children: [
@@ -12890,6 +12885,7 @@ class _CustomerSubscriptionsScreenState
     );
   }
 }
+
 String _detailDisplayNutrientName(String value) {
   final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
   final key = clean.toLowerCase();
@@ -13017,6 +13013,7 @@ class _DetailNutrientBadge {
     );
   }
 }
+
 class _ProductNutritionHighlightsCard extends StatefulWidget {
   final List<String> badges;
   final ValueChanged<String>? onNutrientTap;
@@ -13043,10 +13040,9 @@ class _ProductNutritionHighlightsCardState
         .map(_DetailNutrientBadge.tryParse)
         .whereType<_DetailNutrientBadge>()
         .where((item) {
-          final key = item.nutrient.trim().toLowerCase();
-          return key.isNotEmpty && seen.add(key);
-        })
-        .toList();
+      final key = item.nutrient.trim().toLowerCase();
+      return key.isNotEmpty && seen.add(key);
+    }).toList();
 
     if (nutrients.isEmpty) {
       return const SizedBox.shrink();
@@ -13054,8 +13050,7 @@ class _ProductNutritionHighlightsCardState
 
     final canExpand = nutrients.length > 3;
 
-    final visibleNutrients =
-        expanded ? nutrients : nutrients.take(3).toList();
+    final visibleNutrients = expanded ? nutrients : nutrients.take(3).toList();
 
     return Container(
       width: double.infinity,
@@ -13120,67 +13115,67 @@ class _ProductNutritionHighlightsCardState
           Wrap(
             spacing: 8,
             runSpacing: 8,
-           children: visibleNutrients.map((item) {
-  final canTap = widget.onNutrientTap != null;
+            children: visibleNutrients.map((item) {
+              final canTap = widget.onNutrientTap != null;
 
-  return Tooltip(
-    message: canTap
-    ? 'View similar products with ${item.nutrient}'
-    : item.label,
-    child: Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: canTap
-            ? () => widget.onNutrientTap!(item.nutrient)
-            : null,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 11,
-            vertical: 8,
-          ),
-          decoration: BoxDecoration(
-            color: item.backgroundColor,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: item.borderColor,
-              width: item.level == 'Strong' ? 1.2 : 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.eco_outlined,
-                size: 14,
-                color: item.foregroundColor,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                item.label,
-                style: TextStyle(
-                  color: item.foregroundColor,
-                  fontSize: 12,
-                  fontWeight: item.level == 'Strong'
-                      ? FontWeight.w900
-                      : FontWeight.w800,
+              return Tooltip(
+                message: canTap
+                    ? 'View similar products with ${item.nutrient}'
+                    : item.label,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: canTap
+                        ? () => widget.onNutrientTap!(item.nutrient)
+                        : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: item.backgroundColor,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: item.borderColor,
+                          width: item.level == 'Strong' ? 1.2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.eco_outlined,
+                            size: 14,
+                            color: item.foregroundColor,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            item.label,
+                            style: TextStyle(
+                              color: item.foregroundColor,
+                              fontSize: 12,
+                              fontWeight: item.level == 'Strong'
+                                  ? FontWeight.w900
+                                  : FontWeight.w800,
+                            ),
+                          ),
+                          if (canTap) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 14,
+                              color: item.foregroundColor,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              if (canTap) ...[
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.arrow_forward_rounded,
-                  size: 14,
-                  color: item.foregroundColor,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}).toList(),
+              );
+            }).toList(),
           ),
           if (canExpand) ...[
             const SizedBox(height: 6),
@@ -13197,9 +13192,7 @@ class _ProductNutritionHighlightsCardState
                 size: 18,
               ),
               label: Text(
-                expanded
-                    ? 'Show less'
-                    : '+${nutrients.length - 3} more',
+                expanded ? 'Show less' : '+${nutrients.length - 3} more',
               ),
               style: TextButton.styleFrom(
                 foregroundColor: FarmColors.green,
@@ -13241,6 +13234,7 @@ class _ProductNutritionHighlightsCardState
     );
   }
 }
+
 class ProductDetailScreen extends StatelessWidget {
   final Product product;
   final int quantity;
@@ -13285,46 +13279,44 @@ class ProductDetailScreen extends StatelessWidget {
         : parts.join(' • ');
   }
 
- List<String> get displayNutrientBadges {
-  final source = nutrientBadges.isNotEmpty
-      ? nutrientBadges
-      : <String>[
-          ...product.nutrientStrong.map(
-            (nutrient) => 'Strong $nutrient',
-          ),
-          ...product.nutrientGood.map(
-            (nutrient) => 'Good $nutrient',
-          ),
-          ...product.nutrientContains.map(
-            (nutrient) => 'Contains $nutrient',
-          ),
-        ];
+  List<String> get displayNutrientBadges {
+    final source = nutrientBadges.isNotEmpty
+        ? nutrientBadges
+        : <String>[
+            ...product.nutrientStrong.map(
+              (nutrient) => 'Strong $nutrient',
+            ),
+            ...product.nutrientGood.map(
+              (nutrient) => 'Good $nutrient',
+            ),
+            ...product.nutrientContains.map(
+              (nutrient) => 'Contains $nutrient',
+            ),
+          ];
 
-  final seen = <String>{};
-  final output = <String>[];
+    final seen = <String>{};
+    final output = <String>[];
 
-  for (final badgeLabel in source) {
-    final cleanLabel =
-        _normaliseDetailNutrientBadgeLabel(badgeLabel);
+    for (final badgeLabel in source) {
+      final cleanLabel = _normaliseDetailNutrientBadgeLabel(badgeLabel);
 
-    if (cleanLabel.isEmpty) continue;
+      if (cleanLabel.isEmpty) continue;
 
-    final parsed = _DetailNutrientBadge.tryParse(cleanLabel);
-    if (parsed == null) continue;
+      final parsed = _DetailNutrientBadge.tryParse(cleanLabel);
+      if (parsed == null) continue;
 
-    final nutrientKey = parsed.nutrient
-        .trim()
-        .toLowerCase();
+      final nutrientKey = parsed.nutrient.trim().toLowerCase();
 
-    if (nutrientKey.isEmpty) continue;
+      if (nutrientKey.isEmpty) continue;
 
-    if (seen.add(nutrientKey)) {
-      output.add(parsed.label);
+      if (seen.add(nutrientKey)) {
+        output.add(parsed.label);
+      }
     }
+
+    return output;
   }
 
-  return output;
-}
   Widget badge({
     required String label,
     IconData? icon,
@@ -13559,7 +13551,6 @@ class ProductDetailScreen extends StatelessWidget {
                         ),
 
                       // Show the same nutrient information seen in Shop.
-                     
 
                       if (product.isOutOfStock)
                         badge(
@@ -13569,7 +13560,6 @@ class ProductDetailScreen extends StatelessWidget {
                         ),
                     ],
                   ),
-
                   if (displayNutrientBadges.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     _ProductNutritionHighlightsCard(
@@ -13577,7 +13567,6 @@ class ProductDetailScreen extends StatelessWidget {
                       onNutrientTap: onNutrientTap,
                     ),
                   ],
-
                   const SizedBox(height: 16),
                   DiscountPriceText(product: product),
                 ],
@@ -14471,11 +14460,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
-      await clearSavedCartForCurrentUser();
 
       if (!mounted) return;
 
+// Clear the visible My Box immediately.
       widget.onOrderPlaced();
+
+// Clear the saved Supabase cart.
+      await clearSavedCartForCurrentUser();
+
+      if (!mounted) return;
 
       Navigator.pushReplacement(
         context,

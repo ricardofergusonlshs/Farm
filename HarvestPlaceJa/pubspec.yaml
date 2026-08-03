@@ -2,7 +2,7 @@ name: farm
 description: Fresh local food ordering and farm updates for The Harvest Place Ja.
 publish_to: 'none'
 
-version: 1.0.3+6
+version: 1.0.4+23
 
 environment:
   sdk: ^3.0.0
@@ -12,11 +12,13 @@ dependencies:
     sdk: flutter
 
   supabase_flutter: ^2.5.6
+  firebase_core:
+  firebase_messaging:
   app_links: ^6.4.1
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
 
-  # 4x6 order slip / label printing
+  # PDF receipt and order slip printing/sharing
   pdf: ^3.11.0
   printing: ^5.14.0
 

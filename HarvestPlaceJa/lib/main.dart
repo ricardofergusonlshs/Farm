@@ -5,6 +5,8 @@ import 'dart:ui';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -22,14 +24,36 @@ part 'app/harvest_place_app.dart';
 part 'theme/farm_colors.dart';
 part 'models/models.dart';
 part 'services/services.dart';
+part 'services/push_notification_service.dart';
 part 'screens/customer/customer_screens.dart';
 part 'screens/admin/admin_screens.dart';
 part 'screens/admin/driver_delivery_management.dart';
 part 'widgets/shared_widgets.dart';
 part 'utils/formatters_and_helpers.dart';
 
-void main() {
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(
+  RemoteMessage message,
+) async {
+  await Firebase.initializeApp();
+
+  debugPrint(
+    'Background notification received: ${message.messageId}',
+  );
+}
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final isAndroidApp =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  if (isAndroidApp) {
+    await Firebase.initializeApp();
+
+    FirebaseMessaging.onBackgroundMessage(
+      firebaseMessagingBackgroundHandler,
+    );
+  }
 
   ErrorWidget.builder = (FlutterErrorDetails details) {
     return MaterialApp(
@@ -98,6 +122,9 @@ class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
           );
         },
       );
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        await PushNotificationService.initialise();
+      }
 
       if (!mounted) return;
 

@@ -2688,7 +2688,7 @@ Future<OrderDetails?> fetchOrderDetails(String orderId) async {
   if (user == null) return null;
 
   const fields =
-      'id, order_status, fulfillment_type, subtotal, delivery_fee, discount_amount, total, payment_status, payment_method, delivery_address, delivery_zone, scheduled_date, scheduled_time, notes, created_at, order_items(product_name, quantity, unit_price, line_total)';
+      'id, order_status, fulfillment_type, subtotal, delivery_fee, discount_amount, total, payment_status, payment_method, delivery_address, delivery_zone, scheduled_date, scheduled_time, notes, created_at, order_items(product_id, product_name, quantity, unit_price, line_total)';
 
   try {
     final isAdmin = await isCurrentUserAdminFromDatabase();

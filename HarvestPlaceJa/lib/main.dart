@@ -24,6 +24,7 @@ part 'models/models.dart';
 part 'services/services.dart';
 part 'screens/customer/customer_screens.dart';
 part 'screens/admin/admin_screens.dart';
+part 'screens/admin/driver_delivery_management.dart';
 part 'widgets/shared_widgets.dart';
 part 'utils/formatters_and_helpers.dart';
 

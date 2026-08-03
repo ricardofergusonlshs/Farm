@@ -248,7 +248,7 @@ String staffRoleWorkflowSummary(String? value) {
     case 'packer':
       return 'Can view orders and fulfillment tools for preparing and packing orders.';
     case 'delivery':
-      return 'Can view delivery workflow and update delivery-related order progress.';
+      return 'Can view only assigned delivery tasks, contact customers, open navigation, upload proof, and update delivery progress.';
     case 'inventory':
       return 'Can manage product stock and review inventory reports.';
     case 'support':
@@ -2232,6 +2232,16 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
           onChanged: onChanged,
         ),
       );
+  _AdminTabSpec drivers() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.delivery_dining_outlined),
+          text: 'Drivers',
+        ),
+        child: AdminDriverManagementTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
 
   _AdminTabSpec analytics() => _AdminTabSpec(
         tab: const Tab(
@@ -2339,6 +2349,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       dashboard(),
       orders(),
       fulfillment(),
+      drivers(),
       analytics(),
       products(),
       hero(),
@@ -2357,6 +2368,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       dashboard(),
       orders(),
       fulfillment(),
+      drivers(),
       analytics(),
       products(),
       support(),
@@ -2373,8 +2385,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       ];
     case 'delivery':
       return [
-        fulfillment(),
-        orders(),
+        drivers(),
       ];
     case 'inventory':
       return [
@@ -5872,6 +5883,15 @@ class AdminOrdersTab extends StatefulWidget {
   State<AdminOrdersTab> createState() => _AdminOrdersTabState();
 }
 
+String pdfSafe(String value) {
+  return value
+      .replaceAll('•', '-')
+      .replaceAll('–', '-')
+      .replaceAll('—', '-')
+      .replaceAll('\u00A0', ' ')
+      .trim();
+}
+
 class _AdminOrdersTabState extends State<AdminOrdersTab> {
   Future<Uint8List> buildOrderSlipPdf(AdminOrder order) async {
     final pdf = pw.Document();
@@ -5894,29 +5914,31 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
     final itemLines = order.items.map((item) {
       return '${item.productName} x${item.quantity}';
     }).toList();
-    String safePdfText(String value) {
-      return value
-          .replaceAll('•', '-')
-          .replaceAll('×', 'x')
-          .replaceAll('–', '-')
-          .replaceAll('—', '-')
-          .replaceAll('’', "'")
-          .replaceAll('“', '"')
-          .replaceAll('”', '"');
+
+    pw.MemoryImage? logoImage;
+
+    try {
+      final logoBytes = await rootBundle.load('lib/assets/images/logo.png');
+      logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
+    } catch (_) {
+      logoImage = null;
     }
 
-    pw.Widget sectionTitle(String text) {
+    pw.Widget sectionTitle(String title) {
       return pw.Container(
         width: double.infinity,
-        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+        padding: const pw.EdgeInsets.symmetric(
+          vertical: 4,
+          horizontal: 6,
+        ),
         decoration: pw.BoxDecoration(
           color: PdfColors.grey200,
           borderRadius: pw.BorderRadius.circular(4),
         ),
         child: pw.Text(
-          text,
+          title,
           style: pw.TextStyle(
-            fontSize: 9,
+            fontSize: 8,
             fontWeight: pw.FontWeight.bold,
           ),
         ),
@@ -5925,16 +5947,16 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
 
     pw.Widget infoRow(String label, String value) {
       return pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 3),
+        padding: const pw.EdgeInsets.only(bottom: 2),
         child: pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.SizedBox(
-              width: 62,
+              width: 54,
               child: pw.Text(
                 label,
                 style: pw.TextStyle(
-                  fontSize: 8,
+                  fontSize: 7,
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
@@ -5942,7 +5964,7 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
             pw.Expanded(
               child: pw.Text(
                 value,
-                style: const pw.TextStyle(fontSize: 9),
+                style: const pw.TextStyle(fontSize: 7.5),
               ),
             ),
           ],
@@ -5952,9 +5974,15 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
 
     pw.Widget statusBox(String label, String value) {
       return pw.Container(
-        padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 7),
+        padding: const pw.EdgeInsets.symmetric(
+          vertical: 6,
+          horizontal: 7,
+        ),
         decoration: pw.BoxDecoration(
-          border: pw.Border.all(color: PdfColors.grey500, width: 0.8),
+          border: pw.Border.all(
+            color: PdfColors.grey600,
+            width: 0.7,
+          ),
           borderRadius: pw.BorderRadius.circular(5),
         ),
         child: pw.Column(
@@ -5963,15 +5991,16 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
             pw.Text(
               label.toUpperCase(),
               style: const pw.TextStyle(
-                fontSize: 6.5,
-                color: PdfColors.grey700,
+                fontSize: 6,
+                color: PdfColors.grey600,
               ),
             ),
             pw.SizedBox(height: 2),
             pw.Text(
               value,
+              maxLines: 1,
               style: pw.TextStyle(
-                fontSize: 10,
+                fontSize: 9,
                 fontWeight: pw.FontWeight.bold,
               ),
             ),
@@ -5980,38 +6009,192 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
       );
     }
 
+    pw.Widget itemBox(String text) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.symmetric(
+          vertical: 1.6,
+          horizontal: 3,
+        ),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(
+            color: PdfColors.grey300,
+            width: 0.5,
+          ),
+          borderRadius: pw.BorderRadius.circular(2),
+        ),
+        child: pw.Text(
+          '- $text',
+          maxLines: 1,
+          style: pw.TextStyle(
+            fontSize: 6.2,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+      );
+    }
+
+    final brandGreen = PdfColor.fromInt(0xFF1F5C34);
+    final deepGreen = PdfColor.fromInt(0xFF183D25);
+
+    pw.Widget smallLeafMark() {
+      return pw.Container(
+        width: 16,
+        height: 14,
+        alignment: pw.Alignment.center,
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.Container(
+              width: 5,
+              height: 9,
+              decoration: pw.BoxDecoration(
+                color: brandGreen,
+                borderRadius: pw.BorderRadius.circular(5),
+              ),
+            ),
+            pw.SizedBox(width: 2),
+            pw.Container(
+              width: 5,
+              height: 9,
+              decoration: pw.BoxDecoration(
+                color: brandGreen,
+                borderRadius: pw.BorderRadius.circular(5),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    pw.Widget leafIcon() {
+      return pw.SizedBox(
+        width: 18,
+        height: 10,
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            pw.Transform.rotate(
+              angle: -0.55,
+              child: pw.Container(
+                width: 7,
+                height: 8,
+                decoration: pw.BoxDecoration(
+                  color: brandGreen,
+                  borderRadius: pw.BorderRadius.only(
+                    topLeft: pw.Radius.circular(8),
+                    bottomRight: pw.Radius.circular(8),
+                    topRight: pw.Radius.circular(1),
+                    bottomLeft: pw.Radius.circular(1),
+                  ),
+                ),
+              ),
+            ),
+            pw.SizedBox(width: 1),
+            pw.Transform.rotate(
+              angle: 0.55,
+              child: pw.Container(
+                width: 7,
+                height: 8,
+                decoration: pw.BoxDecoration(
+                  color: brandGreen,
+                  borderRadius: pw.BorderRadius.only(
+                    topRight: pw.Radius.circular(8),
+                    bottomLeft: pw.Radius.circular(8),
+                    topLeft: pw.Radius.circular(1),
+                    bottomRight: pw.Radius.circular(1),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    pw.Widget leafDivider() {
+      return pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          pw.Expanded(
+            child: pw.Container(
+              height: 1.1,
+              color: brandGreen,
+            ),
+          ),
+          pw.SizedBox(width: 7),
+          leafIcon(),
+          pw.SizedBox(width: 7),
+          pw.Expanded(
+            child: pw.Container(
+              height: 1.1,
+              color: brandGreen,
+            ),
+          ),
+        ],
+      );
+    }
+
     pdf.addPage(
       pw.Page(
         pageFormat: labelFormat,
         build: (context) {
           return pw.Container(
-            padding: const pw.EdgeInsets.all(10),
+            padding: const pw.EdgeInsets.all(8),
             decoration: pw.BoxDecoration(
               border: pw.Border.all(color: PdfColors.black, width: 1.2),
             ),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Center(
-                  child: pw.Text(
-                    'THE HARVEST PLACE JA',
-                    textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(
-                      fontSize: 13,
-                      fontWeight: pw.FontWeight.bold,
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    if (logoImage != null)
+                      pw.Image(
+                        logoImage,
+                        width: 28,
+                        height: 28,
+                        fit: pw.BoxFit.contain,
+                      )
+                    else
+                      pw.SizedBox(width: 28, height: 28),
+                    pw.SizedBox(width: 7),
+                    pw.Container(
+                      width: 1,
+                      height: 28,
+                      color: brandGreen,
                     ),
-                  ),
+                    pw.SizedBox(width: 7),
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'THE HARVEST PLACE JA',
+                            maxLines: 1,
+                            style: pw.TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: pw.FontWeight.bold,
+                              color: deepGreen,
+                            ),
+                          ),
+                          pw.SizedBox(height: 1),
+                          pw.Text(
+                            'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
+                            style: const pw.TextStyle(
+                              fontSize: 7,
+                              color: PdfColors.grey700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                pw.SizedBox(height: 2),
-                pw.Center(
-                  child: pw.Text(
-                    'Fresh - Local - Jamaican',
-                    style: const pw.TextStyle(fontSize: 8),
-                  ),
-                ),
-                pw.SizedBox(height: 7),
-                pw.Container(height: 1.2, color: PdfColors.black),
-                pw.SizedBox(height: 8),
+                pw.SizedBox(height: 6),
+                leafDivider(),
+                pw.SizedBox(height: 6),
                 pw.Row(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
@@ -6028,9 +6211,9 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                           ),
                           pw.SizedBox(height: 2),
                           pw.Text(
-                            safePdfText(orderDateLabel(order)),
+                            pdfSafe(orderDateLabel(order)),
                             style: const pw.TextStyle(
-                              fontSize: 8,
+                              fontSize: 7.5,
                               color: PdfColors.grey700,
                             ),
                           ),
@@ -6043,8 +6226,11 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                         horizontal: 8,
                       ),
                       decoration: pw.BoxDecoration(
-                        border: pw.Border.all(color: PdfColors.black, width: 1),
-                        borderRadius: pw.BorderRadius.circular(4),
+                        border: pw.Border.all(
+                          color: PdfColors.black,
+                          width: 1,
+                        ),
+                        borderRadius: pw.BorderRadius.circular(5),
                       ),
                       child: pw.Text(
                         order.formattedPaymentStatus.toUpperCase(),
@@ -6056,19 +6242,19 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                     ),
                   ],
                 ),
-                pw.SizedBox(height: 10),
+                pw.SizedBox(height: 8),
                 pw.Row(
                   children: [
                     pw.Expanded(
                       child: statusBox('Fulfillment', order.formattedType),
                     ),
-                    pw.SizedBox(width: 6),
+                    pw.SizedBox(width: 7),
                     pw.Expanded(
                       child: statusBox('Total', money(order.total)),
                     ),
                   ],
                 ),
-                pw.SizedBox(height: 9),
+                pw.SizedBox(height: 8),
                 sectionTitle('CUSTOMER DETAILS'),
                 pw.SizedBox(height: 5),
                 infoRow('Name', customerName),
@@ -6083,57 +6269,74 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                 ] else ...[
                   infoRow('Method', 'Farm Pickup'),
                 ],
-                infoRow('Scheduled', safePdfText(scheduledLabel(order))),
+                infoRow('Scheduled', pdfSafe(scheduledLabel(order))),
                 pw.SizedBox(height: 7),
                 sectionTitle('ITEMS TO PACK'),
-                pw.SizedBox(height: 5),
+                pw.SizedBox(height: 3),
                 if (itemLines.isEmpty)
                   pw.Text(
                     'No item details found.',
-                    style: const pw.TextStyle(fontSize: 9),
+                    style: const pw.TextStyle(fontSize: 7),
                   )
                 else
-                  ...itemLines.map(
-                    (line) => pw.Container(
-                      width: double.infinity,
-                      margin: const pw.EdgeInsets.only(bottom: 3),
-                      padding: const pw.EdgeInsets.symmetric(
-                        vertical: 4,
-                        horizontal: 6,
-                      ),
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(
-                          color: PdfColors.grey300,
-                          width: 0.7,
+                  ...List.generate(
+                    (itemLines.length / 2).ceil(),
+                    (index) {
+                      final leftIndex = index * 2;
+                      final rightIndex = leftIndex + 1;
+
+                      final leftItem = itemLines[leftIndex];
+                      final rightItem = rightIndex < itemLines.length
+                          ? itemLines[rightIndex]
+                          : null;
+
+                      return pw.Padding(
+                        padding: const pw.EdgeInsets.only(bottom: 2),
+                        child: pw.Row(
+                          children: [
+                            pw.Expanded(child: itemBox(leftItem)),
+                            pw.SizedBox(width: 4),
+                            pw.Expanded(
+                              child: rightItem == null
+                                  ? pw.SizedBox()
+                                  : itemBox(rightItem),
+                            ),
+                          ],
                         ),
-                        borderRadius: pw.BorderRadius.circular(3),
-                      ),
-                      child: pw.Text(
-                        '- $line',
-                        style: pw.TextStyle(
-                          fontSize: 8.5,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 pw.Spacer(),
                 pw.Container(height: 1, color: PdfColors.black),
-                pw.SizedBox(height: 5),
+                pw.SizedBox(height: 4),
                 pw.Center(
                   child: pw.Text(
-                    'Packing / Pickup / Delivery Label',
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
+                    'Fresh - Local - Jamaican',
+                    textAlign: pw.TextAlign.center,
+                    style: const pw.TextStyle(
+                      fontSize: 6,
+                      color: PdfColors.grey700,
                     ),
                   ),
                 ),
                 pw.SizedBox(height: 2),
-                pw.Center(
-                  child: pw.Text(
-                    'Attach to customer box, bag, or delivery package.',
-                    style: const pw.TextStyle(fontSize: 7),
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.symmetric(vertical: 3),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFF1F5C34),
+                    borderRadius: pw.BorderRadius.circular(3),
+                  ),
+                  child: pw.Center(
+                    child: pw.Text(
+                      'Thank you for shopping with The Harvest Place Ja',
+                      textAlign: pw.TextAlign.center,
+                      style: pw.TextStyle(
+                        fontSize: 6.8,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.white,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -8713,10 +8916,29 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                 final imageUrl = await uploadProductImageToStorage(pickedImage);
                 imageUrlController.text = imageUrl;
 
+                if (product != null && product.id.trim().isNotEmpty) {
+                  await supabase.from('products').update({
+                    'image_url': imageUrl,
+                    'updated_at': DateTime.now().toIso8601String(),
+                  }).eq('id', product.id);
+
+                  FarmDataCache.clearProducts();
+
+                  if (mounted) {
+                    refreshProducts();
+                  }
+                }
+
                 if (dialogContext.mounted) {
                   setDialogState(() => uploadingImage = false);
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Product image uploaded.')),
+                    SnackBar(
+                      content: Text(
+                        product == null
+                            ? 'Product image uploaded. Tap Save to finish.'
+                            : 'Product image uploaded and saved.',
+                      ),
+                    ),
                   );
                 }
               } catch (error) {
@@ -8724,9 +8946,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                   setDialogState(() => uploadingImage = false);
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
-                      content: Text(
-                        error.toString().replaceFirst('Exception: ', ''),
-                      ),
+                      content: Text('Image upload failed: $error'),
                     ),
                   );
                 }

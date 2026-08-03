@@ -393,7 +393,7 @@ Future<List<FarmOrder>> _fetchOrdersUncached() async {
   if (user == null) return [];
 
   const fields =
-      'id, order_status, fulfillment_type, subtotal, delivery_fee, discount_amount, total, payment_status, payment_method, notes, created_at';
+      'id, order_status, fulfillment_type, subtotal, delivery_fee, discount_amount, total, payment_status, payment_method, delivery_address, delivery_zone, scheduled_date, scheduled_time, notes, created_at, order_items(product_id, product_name, quantity, unit_price, line_total)';
 
   try {
     final response = await supabase
@@ -4244,25 +4244,57 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(saveRecentlyViewedForCurrentUser(product));
   }
 
-  void openProduct(Product product) {
-    _rememberViewedProduct(product);
+  Future<void> openProduct(Product product) async {
+  _rememberViewedProduct(product);
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProductDetailScreen(
-          product: product,
-          quantity: widget.quantityForProduct(product),
-          onAdd: () => _addProductToCart(product),
-          onRemove: () => _removeProductFromCart(product),
-          onAddProduct: _addProductToCart,
-          onViewed: _rememberViewedProduct,
-          onViewMyBox: widget.onViewMyBox,
-          onCheckout: widget.onCheckout,
-        ),
+  final nutrientToFilter = await Navigator.push<String>(
+    context,
+    MaterialPageRoute(
+      builder: (detailContext) => ProductDetailScreen(
+        product: product,
+        quantity: widget.quantityForProduct(product),
+
+        // Makes the nutrient chips clickable when opened from Home.
+        onNutrientTap: (nutrient) {
+          Navigator.of(detailContext).pop(nutrient);
+        },
+
+        onAdd: () => _addProductToCart(product),
+        onRemove: () => _removeProductFromCart(product),
+        onAddProduct: _addProductToCart,
+        onViewed: _rememberViewedProduct,
+        onViewMyBox: widget.onViewMyBox,
+        onCheckout: widget.onCheckout,
       ),
-    );
+    ),
+  );
+
+  if (!mounted ||
+      nutrientToFilter == null ||
+      nutrientToFilter.trim().isEmpty) {
+    return;
   }
+
+  final selectedNutrient = nutrientToFilter.trim();
+
+  setState(() {
+    selectedHomeCategory = 'All';
+    selectedHomeNutrient = selectedNutrient;
+    selectedHomeFilter = 'All items';
+
+    homeSearchController.clear();
+    homeSearchQuery = '';
+  });
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        'Showing products with $selectedNutrient.',
+      ),
+      behavior: SnackBarBehavior.floating,
+    ),
+  );
+}
 
   Widget productRail({
     required List<Product> products,
@@ -4290,7 +4322,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
           return InkWell(
             borderRadius: BorderRadius.circular(24),
-            onTap: () => openProduct(product),
+            onTap: () {
+  unawaited(openProduct(product));
+},
             child: SizedBox(
               width: 142,
               child: Opacity(
@@ -5879,41 +5913,90 @@ class _ShopScreenState extends State<ShopScreen> {
     return score;
   }
 
-  List<String> _nutrientBadgesForProduct(
-    Product product, {
-    String? selectedNutrient,
-  }) {
-    final badges = <String>[];
+  String _shopDisplayNutrientName(String value) {
+  switch (_cleanNutrientKey(value)) {
+    case 'magnesium':
+      return 'Magnesium';
+    case 'iron':
+      return 'Iron';
+    case 'fiber':
+    case 'fibre':
+      return 'Fiber';
+    case 'potassium':
+      return 'Potassium';
+    case 'vitamin c':
+    case 'vit c':
+      return 'Vitamin C';
+    case 'protein':
+      return 'Protein';
+    case 'calcium':
+      return 'Calcium';
+    case 'antioxidant':
+    case 'antioxidants':
+      return 'Antioxidants';
+    default:
+      final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
 
-    void addBadge(String level, String nutrient) {
-      final label = '$level $nutrient';
-      if (!badges.contains(label)) badges.add(label);
-    }
+      return clean
+          .split(' ')
+          .where((word) => word.isNotEmpty)
+          .map(
+            (word) =>
+                '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
+          )
+          .join(' ');
+  }
+}
 
-    final priority = selectedNutrient == null
-        ? shopNutrientOptions.where((item) => item != 'All').toList()
-        : [
-            selectedNutrient,
-            ...shopNutrientOptions.where(
-              (item) => item != 'All' && item != selectedNutrient,
-            ),
-          ];
+List<String> _nutrientBadgesForProduct(
+  Product product, {
+  String? selectedNutrient,
+  int? limit = 3,
+}) {
+  final badges = <String>[];
+  final seenNutrients = <String>{};
 
-    for (final nutrient in priority) {
-      if (_listHasNutrient(product.nutrientStrong, nutrient)) {
-        addBadge('Strong', nutrient);
-      } else if (_listHasNutrient(product.nutrientGood, nutrient)) {
-        addBadge('Good', nutrient);
-      } else if (_listHasNutrient(product.nutrientContains, nutrient)) {
-        addBadge('Contains', nutrient);
-      }
+  void addBadge(String level, String nutrient) {
+    final cleanNutrient = _shopDisplayNutrientName(nutrient);
+    final nutrientKey = _cleanNutrientKey(cleanNutrient);
 
-      if (badges.length >= 3) break;
-    }
+    if (cleanNutrient.isEmpty || nutrientKey.isEmpty) return;
+    if (!seenNutrients.add(nutrientKey)) return;
 
-    return badges;
+    final cleanLevel = switch (level.trim().toLowerCase()) {
+      'strong' => 'Strong',
+      'good' => 'Good',
+      _ => 'Contains',
+    };
+
+    badges.add('$cleanLevel $cleanNutrient');
   }
 
+  final priority = selectedNutrient == null
+      ? shopNutrientOptions.where((item) => item != 'All').toList()
+      : <String>[
+          selectedNutrient,
+          ...shopNutrientOptions.where(
+            (item) => item != 'All' && item != selectedNutrient,
+          ),
+        ];
+
+  for (final nutrient in priority) {
+    if (_listHasNutrient(product.nutrientStrong, nutrient)) {
+      addBadge('Strong', nutrient);
+    } else if (_listHasNutrient(product.nutrientGood, nutrient)) {
+      addBadge('Good', nutrient);
+    } else if (_listHasNutrient(product.nutrientContains, nutrient)) {
+      addBadge('Contains', nutrient);
+    }
+
+    if (limit != null && badges.length >= limit) {
+      break;
+    }
+  }
+
+  return badges;
+}
   List<Product> filteredProducts(String activeCategory) {
     final rawQuery = searchController.text.trim();
     final query = rawQuery.toLowerCase();
@@ -6492,88 +6575,138 @@ class _ShopScreenState extends State<ShopScreen> {
           )
         : sortedShopProducts(visibleCustomerProducts);
     final contentSections = <Widget>[
-      if (!loadingProducts && availableNowProducts.isNotEmpty) ...[
-        SectionHeader(
-          title: activeCategory == 'All' ? 'Fresh shop' : activeCategory,
-          subtitle: selectedShopFilter == 'All items'
-              ? 'Browse available and out-of-stock items clearly marked'
-              : selectedShopFilter,
-        ),
-        const SizedBox(height: 12),
-      ],
-      if (productLoadMessage != null) ...[
-        FarmCard(
-          child: Row(
-            children: [
-              const Icon(Icons.info_outline, color: FarmColors.green),
-              const SizedBox(width: 9),
-              Expanded(child: Text(productLoadMessage!)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-      ],
-      if (loadingProducts && products.isEmpty) ...[
-        const FarmSkeletonCard(height: 180),
-        const FarmSkeletonCard(height: 180),
-        const FarmSkeletonCard(height: 180),
-      ] else if (availableNowProducts.isEmpty) ...[
-        Padding(
-          padding: const EdgeInsets.only(top: 30),
-          child: FarmEmptyState(
-            icon: activeCategory == 'Favorites'
-                ? Icons.favorite_border_rounded
-                : Icons.storefront_outlined,
-            title: activeCategory == 'Favorites'
-                ? 'No favorites here yet'
-                : 'No products found',
-            message: activeCategory == 'All'
-                ? 'No products match your search. Try another category or clear the search.'
-                : activeCategory == 'Favorites'
-                    ? 'Tap the heart on products you love to save them here.'
-                    : 'No items are listed in $activeCategory right now. Try another category or clear the search.',
-          ),
-        ),
-      ] else ...[
-        ...availableNowProducts.map((product) {
-          final quantity = widget.quantityForProduct(product);
+  if (!loadingProducts && availableNowProducts.isNotEmpty) ...[
+    SectionHeader(
+      title: activeCategory == 'All' ? 'Fresh shop' : activeCategory,
+      subtitle: selectedShopFilter == 'All items'
+          ? 'Browse available and out-of-stock items clearly marked'
+          : selectedShopFilter,
+    ),
+    const SizedBox(height: 12),
+  ],
 
-          return SafeShopProductTile(
-            key: ValueKey('shop-${product.id}-${product.name}'),
-            product: product,
-            quantity: quantity,
-            nutrientBadges: _nutrientBadgesForProduct(
-              product,
-              selectedNutrient: _activeShopNutrient(),
+  if (productLoadMessage != null) ...[
+    FarmCard(
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline,
+            color: FarmColors.green,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(productLoadMessage!),
+          ),
+        ],
+      ),
+    ),
+    const SizedBox(height: 12),
+  ],
+
+  if (loadingProducts && products.isEmpty) ...[
+    const FarmSkeletonCard(height: 180),
+    const FarmSkeletonCard(height: 180),
+    const FarmSkeletonCard(height: 180),
+  ] else if (availableNowProducts.isEmpty) ...[
+    Padding(
+      padding: const EdgeInsets.only(top: 30),
+      child: FarmEmptyState(
+        icon: activeCategory == 'Favorites'
+            ? Icons.favorite_border_rounded
+            : Icons.storefront_outlined,
+        title: activeCategory == 'Favorites'
+            ? 'No favorites here yet'
+            : 'No products found',
+        message: activeCategory == 'All'
+            ? 'No products match your search. Try another category or clear the search.'
+            : activeCategory == 'Favorites'
+                ? 'Tap the heart on products you love to save them here.'
+                : 'No items are listed in $activeCategory right now. Try another category or clear the search.',
+      ),
+    ),
+  ] else ...[
+    ...availableNowProducts.map((product) {
+      final quantity = widget.quantityForProduct(product);
+      final activeNutrient = _activeShopNutrient();
+
+      final shopNutrientBadges = _nutrientBadgesForProduct(
+        product,
+        selectedNutrient: activeNutrient,
+      );
+
+      final detailNutrientBadges = _nutrientBadgesForProduct(
+        product,
+        selectedNutrient: activeNutrient,
+        limit: null,
+      );
+
+      return SafeShopProductTile(
+        key: ValueKey(
+          'shop-${product.id}-${product.name}',
+        ),
+        product: product,
+        quantity: quantity,
+        nutrientBadges: shopNutrientBadges,
+        isFavorite: _isFavoriteProduct(product),
+        onFavorite: () => _toggleFavoriteProduct(product),
+        onAdd: () => _addProductToCart(product),
+        onRemove: () => _removeProductFromCart(product),
+        onOpenDetails: () async {
+          _rememberViewedProduct(product);
+
+          final nutrientToFilter =
+              await Navigator.push<String>(
+            context,
+            MaterialPageRoute(
+              builder: (detailContext) => ProductDetailScreen(
+                product: product,
+                quantity: quantity,
+                nutrientBadges: detailNutrientBadges,
+               onNutrientTap: (nutrient) {
+  Navigator.of(detailContext).pop(nutrient);
+},
+                onAdd: () => _addProductToCart(product),
+                onRemove: () =>
+                    _removeProductFromCart(product),
+                onAddProduct: _addProductToCart,
+                onViewed: _rememberViewedProduct,
+                onViewMyBox: widget.onViewMyBox,
+                onCheckout: widget.onCheckout,
+              ),
             ),
-            isFavorite: _isFavoriteProduct(product),
-            onFavorite: () => _toggleFavoriteProduct(product),
-            onAdd: () => _addProductToCart(product),
-            onRemove: () => _removeProductFromCart(product),
-            onOpenDetails: () {
-              _rememberViewedProduct(product);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ProductDetailScreen(
-                    product: product,
-                    quantity: quantity,
-                    onAdd: () => _addProductToCart(product),
-                    onRemove: () => _removeProductFromCart(product),
-                    onAddProduct: _addProductToCart,
-                    onViewed: _rememberViewedProduct,
-                    onViewMyBox: widget.onViewMyBox,
-                    onCheckout: widget.onCheckout,
-                  ),
-                ),
-              );
-            },
           );
-        }),
-        const SizedBox(height: 90),
-      ],
-    ];
 
+          if (!mounted ||
+              nutrientToFilter == null ||
+              nutrientToFilter.trim().isEmpty) {
+            return;
+          }
+
+          setState(() {
+            selectedCategory = 'All';
+            selectedShopFilter = 'All items';
+            selectedShopNutrient =
+                nutrientToFilter.trim();
+            selectedSort = 'Featured';
+            searchController.clear();
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Showing products with '
+                '${nutrientToFilter.trim()}.',
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+      );
+    }),
+
+    const SizedBox(height: 90),
+  ],
+];
     return FarmPage(
       child: Column(
         children: [
@@ -8251,8 +8384,15 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
 
 class OrdersScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
+  final void Function(Product product)? onAddToCart;
+  final VoidCallback? onOpenMyBox;
 
-  const OrdersScreen({super.key, this.onBackToHome});
+  const OrdersScreen({
+    super.key,
+    this.onBackToHome,
+    this.onAddToCart,
+    this.onOpenMyBox,
+  });
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -8352,8 +8492,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                OrderDetailsScreen(orderId: order.id),
+                            builder: (_) => OrderDetailsScreen(
+                              orderId: order.id,
+                              onAddToCart: widget.onAddToCart,
+                              onOpenMyBox: widget.onOpenMyBox,
+                            ),
                           ),
                         );
                       },
@@ -8369,10 +8512,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 }
 
+class _ReorderPreviewLine {
+  final OrderDetailsItem previousItem;
+  final Product? product;
+  final String unavailableReason;
+  bool selected;
+
+  _ReorderPreviewLine({
+    required this.previousItem,
+    required this.product,
+    required this.unavailableReason,
+    required this.selected,
+  });
+
+  bool get isAvailable => product != null && product!.canAddToCart;
+
+  double get currentLineTotal {
+    final currentProduct = product;
+    if (currentProduct == null) return 0;
+
+    final quantity = previousItem.quantity < 1 ? 1 : previousItem.quantity;
+
+    return currentProduct.effectivePrice * quantity;
+  }
+}
+
 class OrderDetailsScreen extends StatefulWidget {
   final String orderId;
+  final void Function(Product product)? onAddToCart;
+  final VoidCallback? onOpenMyBox;
 
-  const OrderDetailsScreen({super.key, required this.orderId});
+  const OrderDetailsScreen({
+    super.key,
+    required this.orderId,
+    this.onAddToCart,
+    this.onOpenMyBox,
+  });
 
   @override
   State<OrderDetailsScreen> createState() => _OrderDetailsScreenState();
@@ -8380,7 +8555,7 @@ class OrderDetailsScreen extends StatefulWidget {
 
 class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   late Future<OrderDetails?> _orderFuture;
-
+  bool _loadingReorder = false;
   @override
   void initState() {
     super.initState();
@@ -8426,6 +8601,414 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     if (url == null || url.isEmpty) return null;
 
     return url;
+  }
+
+  Future<void> _openReorderPreview(
+    OrderDetails order,
+  ) async {
+    if (_loadingReorder) return;
+
+    final addToCart = widget.onAddToCart;
+
+    if (addToCart == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Reorder is not available from this screen right now.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _loadingReorder = true);
+
+    try {
+      final productIds = order.items
+          .map((item) => item.productId.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (productIds.isEmpty) {
+        throw Exception(
+          'The products from this order could not be identified.',
+        );
+      }
+
+      final response =
+          await supabase.from('products').select().inFilter('id', productIds);
+
+      final currentProducts = (response as List)
+          .map(
+            (row) => Product.fromSupabase(
+              Map<String, dynamic>.from(row as Map),
+            ),
+          )
+          .toList();
+
+      final productsById = <String, Product>{
+        for (final product in currentProducts) product.id.trim(): product,
+      };
+
+      final previewLines = order.items.map((previousItem) {
+        final productId = previousItem.productId.trim();
+        final product = productsById[productId];
+
+        String unavailableReason = '';
+
+        if (product == null) {
+          unavailableReason = 'No longer listed';
+        } else if (product.isOutOfStock) {
+          unavailableReason = 'Out of stock';
+        } else if (!product.canAddToCart) {
+          unavailableReason = 'Currently unavailable';
+        }
+
+        return _ReorderPreviewLine(
+          previousItem: previousItem,
+          product: product,
+          unavailableReason: unavailableReason,
+          selected: product != null && product.canAddToCart,
+        );
+      }).toList();
+
+      if (!mounted) return;
+
+      final availableLines =
+          previewLines.where((line) => line.isAvailable).toList();
+
+      if (availableLines.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'None of the products from this order are available right now.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final confirmedLines =
+          await showModalBottomSheet<List<_ReorderPreviewLine>>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: FarmColors.background,
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (sheetContext, setSheetState) {
+              final available =
+                  previewLines.where((line) => line.isAvailable).toList();
+
+              final unavailable =
+                  previewLines.where((line) => !line.isAvailable).toList();
+
+              final selected =
+                  available.where((line) => line.selected).toList();
+
+              final estimatedTotal = selected.fold<double>(
+                0,
+                (total, line) => total + line.currentLineTotal,
+              );
+
+              return FractionallySizedBox(
+                heightFactor: 0.88,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    18,
+                    14,
+                    18,
+                    18,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 46,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: FarmColors.line,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Reorder Review',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Prices and availability have been refreshed. '
+                        'Review the products before adding them to My Box.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Expanded(
+                        child: ListView(
+                          children: [
+                            const Text(
+                              'Available today',
+                              style: TextStyle(
+                                color: FarmColors.green,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            ...available.map((line) {
+                              final product = line.product!;
+                              final quantity = line.previousItem.quantity < 1
+                                  ? 1
+                                  : line.previousItem.quantity;
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: FarmColors.card,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: FarmColors.line,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: line.selected,
+                                      onChanged: (value) {
+                                        setSheetState(() {
+                                          line.selected = value ?? false;
+                                        });
+                                      },
+                                    ),
+                                    ProductVisual(
+                                      product: product,
+                                      size: 48,
+                                      showOrganicBadge: false,
+                                    ),
+                                    const SizedBox(width: 11),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            product.name,
+                                            style: const TextStyle(
+                                              color: FarmColors.ink,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            'Qty: $quantity • '
+                                            '${formatJmd(product.effectivePrice)} each',
+                                            style: const TextStyle(
+                                              color: FarmColors.mutedText,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      formatJmd(
+                                        line.currentLineTotal,
+                                      ),
+                                      style: const TextStyle(
+                                        color: FarmColors.green,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                            if (unavailable.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Unavailable today',
+                                style: TextStyle(
+                                  color: FarmColors.danger,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              ...unavailable.map(
+                                (line) => Container(
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.only(
+                                    bottom: 9,
+                                  ),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: FarmColors.cardSoft,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: FarmColors.line,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.block_outlined,
+                                        color: FarmColors.danger,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          line.previousItem.productName,
+                                          style: const TextStyle(
+                                            color: FarmColors.ink,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        line.unavailableReason,
+                                        style: const TextStyle(
+                                          color: FarmColors.danger,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: FarmColors.primarySoft,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: FarmColors.line,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Estimated total',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              formatJmd(estimatedTotal),
+                              style: const TextStyle(
+                                color: FarmColors.green,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(
+                            Icons.shopping_basket_outlined,
+                          ),
+                          label: const Text(
+                            'Add Selected to My Box',
+                          ),
+                          onPressed: selected.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.of(sheetContext).pop(
+                                    List<_ReorderPreviewLine>.from(
+                                      selected,
+                                    ),
+                                  );
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+
+      if (confirmedLines == null || confirmedLines.isEmpty) {
+        return;
+      }
+
+      for (final line in confirmedLines) {
+        final product = line.product;
+
+        if (product == null || !product.canAddToCart) {
+          continue;
+        }
+
+        final quantity =
+            line.previousItem.quantity < 1 ? 1 : line.previousItem.quantity;
+
+        for (var count = 0; count < quantity; count++) {
+          addToCart(product);
+          await saveCartItemForCurrentUser(product);
+        }
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Selected products were added to My Box.',
+          ),
+        ),
+      );
+
+      if (widget.onOpenMyBox != null) {
+        widget.onOpenMyBox!.call();
+
+        Navigator.of(context).popUntil(
+          (route) => route.isFirst,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not prepare this reorder: $error',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _loadingReorder = false);
+      }
+    }
   }
 
   Widget _customerBoxPhotoCard() {
@@ -8691,6 +9274,60 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
 
     try {
       final pdf = pw.Document();
+      String formatReceiptDate(String rawValue) {
+        final cleanValue = rawValue.trim();
+
+        if (cleanValue.isEmpty || cleanValue.toLowerCase() == 'not available') {
+          return 'Not available';
+        }
+
+        final parsedDate = DateTime.tryParse(cleanValue);
+
+        if (parsedDate == null) {
+          return cleanValue;
+        }
+
+        const months = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
+
+        final hour12 = parsedDate.hour % 12 == 0 ? 12 : parsedDate.hour % 12;
+
+        final minute = parsedDate.minute.toString().padLeft(2, '0');
+
+        final period = parsedDate.hour >= 12 ? 'PM' : 'AM';
+
+        return '${months[parsedDate.month - 1]} '
+            '${parsedDate.day}, '
+            '${parsedDate.year} - '
+            '$hour12:$minute $period';
+      }
+
+      pw.MemoryImage? receiptLogo;
+
+      try {
+        final logoData = await rootBundle.load('lib/assets/images/logo.png');
+
+        receiptLogo = pw.MemoryImage(
+          logoData.buffer.asUint8List(
+            logoData.offsetInBytes,
+            logoData.lengthInBytes,
+          ),
+        );
+      } catch (_) {
+        receiptLogo = null;
+      }
       final receiptOrder = await supabase
           .from('orders')
           .select('*, customers(*)')
@@ -8762,8 +9399,10 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         ],
         fallback: 'Not provided',
       );
-      final createdAt =
+      final createdAtRaw =
           safeText(() => order.createdAt, fallback: 'Not available');
+
+      final createdAt = formatReceiptDate(createdAtRaw);
       final scheduledFor =
           safeText(() => order.scheduledFor, fallback: 'Not available');
 
@@ -8775,64 +9414,121 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
           margin: const pw.EdgeInsets.all(34),
           build: (context) {
             return [
-              pw.Container(
-                width: double.infinity,
-                padding: const pw.EdgeInsets.all(18),
-                decoration: pw.BoxDecoration(
-                  color: PdfColor.fromInt(0xFFEFF7EF),
-                  borderRadius: pw.BorderRadius.circular(14),
-                  border: pw.Border.all(
-                    color: PdfColor.fromInt(0xFF1F6B3A),
-                    width: 1.2,
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // Company header
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.SizedBox(
+                        width: 72,
+                        height: 72,
+                        child: receiptLogo != null
+                            ? pw.Image(
+                                receiptLogo!,
+                                fit: pw.BoxFit.contain,
+                              )
+                            : pw.Container(
+                                alignment: pw.Alignment.center,
+                                child: pw.Text(
+                                  'HPJ',
+                                  style: pw.TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: pw.FontWeight.bold,
+                                    color: PdfColor.fromInt(0xFF1F6B3A),
+                                  ),
+                                ),
+                              ),
+                      ),
+
+                      pw.SizedBox(width: 12),
+
+                      // Vertical divider
+                      pw.Container(
+                        width: 2,
+                        height: 68,
+                        color: PdfColor.fromInt(0xFF1F6B3A),
+                      ),
+
+                      pw.SizedBox(width: 14),
+
+                      pw.Expanded(
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          mainAxisAlignment: pw.MainAxisAlignment.center,
+                          children: [
+                            pw.Text(
+                              'THE HARVEST PLACE JA',
+                              style: pw.TextStyle(
+                                fontSize: 22,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromInt(0xFF124D32),
+                              ),
+                            ),
+                            pw.SizedBox(height: 5),
+                            pw.Text(
+                              'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
+                              style: pw.TextStyle(
+                                fontSize: 10.5,
+                                color: PdfColor.fromInt(0xFF4B5450),
+                              ),
+                            ),
+                            pw.SizedBox(height: 4),
+                            pw.Text(
+                              'Fresh - Local - Jamaican',
+                              style: pw.TextStyle(
+                                fontSize: 9,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromInt(0xFF1F6B3A),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          'THE HARVEST PLACE JA',
+
+                  pw.SizedBox(height: 10),
+
+                  pw.Container(
+                    width: double.infinity,
+                    height: 2,
+                    color: PdfColor.fromInt(0xFF1F6B3A),
+                  ),
+
+                  pw.SizedBox(height: 8),
+
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          'OFFICIAL CUSTOMER RECEIPT',
                           style: pw.TextStyle(
-                            fontSize: 22,
+                            fontSize: 11,
                             fontWeight: pw.FontWeight.bold,
                             color: PdfColor.fromInt(0xFF1F6B3A),
+                            letterSpacing: 0.3,
                           ),
                         ),
-                        pw.SizedBox(height: 5),
-                        pw.Text(
-                          'Fresh - Local - Jamaican',
-                          style: const pw.TextStyle(fontSize: 10),
+                      ),
+                      pw.Text(
+                        'Receipt #$shortId',
+                        style: pw.TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromInt(0xFF33443A),
                         ),
-                        pw.SizedBox(height: 14),
-                        pw.Text(
-                          'Official Customer Receipt',
-                          style: pw.TextStyle(
-                            fontSize: 15,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Receipt #$shortId',
-                          style: pw.TextStyle(
-                            fontSize: 13,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.SizedBox(height: 6),
-                        pw.Text('Status: ${titleCase(status)}'),
-                        pw.Text('Payment: ${titleCase(paymentStatus)}'),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+
+                  pw.SizedBox(height: 18),
+
+                  // Receipt information
+                  // Clean green divider
+                ],
               ),
               pw.SizedBox(height: 20),
               pw.Row(
@@ -9105,6 +9801,35 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                   onRefresh: _refreshOrderDetails,
                 ),
                 const SizedBox(height: 12),
+                if ((order.status.trim().toLowerCase() == 'completed' ||
+                        order.status.trim().toLowerCase() == 'delivered') &&
+                    widget.onAddToCart != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: _loadingReorder
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.replay_rounded),
+                      label: Text(
+                        _loadingReorder
+                            ? 'Checking Products...'
+                            : 'Reorder This Order',
+                      ),
+                      onPressed: _loadingReorder
+                          ? null
+                          : () => _openReorderPreview(order),
+                    ),
+                  ),
+                if ((order.status.trim().toLowerCase() == 'completed' ||
+                        order.status.trim().toLowerCase() == 'delivered') &&
+                    widget.onAddToCart != null)
+                  const SizedBox(height: 12),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.picture_as_pdf_outlined),
                   label: const Text('Share / Save PDF Receipt'),
@@ -12165,10 +12890,364 @@ class _CustomerSubscriptionsScreenState
     );
   }
 }
+String _detailDisplayNutrientName(String value) {
+  final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  final key = clean.toLowerCase();
 
+  switch (key) {
+    case 'magnesium':
+      return 'Magnesium';
+    case 'iron':
+      return 'Iron';
+    case 'fiber':
+    case 'fibre':
+      return 'Fiber';
+    case 'potassium':
+      return 'Potassium';
+    case 'vitamin c':
+    case 'vit c':
+      return 'Vitamin C';
+    case 'protein':
+      return 'Protein';
+    case 'calcium':
+      return 'Calcium';
+    case 'antioxidant':
+    case 'antioxidants':
+      return 'Antioxidants';
+    default:
+      return clean
+          .split(' ')
+          .where((word) => word.isNotEmpty)
+          .map(
+            (word) =>
+                '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
+          )
+          .join(' ');
+  }
+}
+
+String _normaliseDetailNutrientBadgeLabel(String value) {
+  final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (clean.isEmpty) return '';
+
+  final lower = clean.toLowerCase();
+
+  String level;
+  String nutrient;
+
+  if (lower.startsWith('strong ')) {
+    level = 'Strong';
+    nutrient = clean.substring(7);
+  } else if (lower.startsWith('good ')) {
+    level = 'Good';
+    nutrient = clean.substring(5);
+  } else if (lower.startsWith('contains ')) {
+    level = 'Contains';
+    nutrient = clean.substring(9);
+  } else {
+    level = 'Contains';
+    nutrient = clean;
+  }
+
+  final displayNutrient = _detailDisplayNutrientName(nutrient);
+
+  if (displayNutrient.isEmpty) return '';
+
+  return '$level $displayNutrient';
+}
+
+class _DetailNutrientBadge {
+  final String level;
+  final String nutrient;
+
+  const _DetailNutrientBadge({
+    required this.level,
+    required this.nutrient,
+  });
+
+  String get label => '$level $nutrient';
+
+  Color get foregroundColor {
+    switch (level) {
+      case 'Strong':
+        return const Color(0xFF155D32);
+      case 'Good':
+        return const Color(0xFF2F7D4A);
+      default:
+        return const Color(0xFF557A5D);
+    }
+  }
+
+  Color get backgroundColor {
+    switch (level) {
+      case 'Strong':
+        return const Color(0xFFDDEFE3);
+      case 'Good':
+        return const Color(0xFFEAF5EC);
+      default:
+        return const Color(0xFFF2F7F2);
+    }
+  }
+
+  Color get borderColor {
+    switch (level) {
+      case 'Strong':
+        return const Color(0xFFA8D5B6);
+      case 'Good':
+        return const Color(0xFFC4E3CC);
+      default:
+        return const Color(0xFFD8E7DA);
+    }
+  }
+
+  static _DetailNutrientBadge? tryParse(String value) {
+    final clean = _normaliseDetailNutrientBadgeLabel(value);
+
+    if (clean.isEmpty) return null;
+
+    final firstSpace = clean.indexOf(' ');
+
+    if (firstSpace <= 0 || firstSpace >= clean.length - 1) {
+      return null;
+    }
+
+    return _DetailNutrientBadge(
+      level: clean.substring(0, firstSpace),
+      nutrient: clean.substring(firstSpace + 1),
+    );
+  }
+}
+class _ProductNutritionHighlightsCard extends StatefulWidget {
+  final List<String> badges;
+  final ValueChanged<String>? onNutrientTap;
+
+  const _ProductNutritionHighlightsCard({
+    required this.badges,
+    this.onNutrientTap,
+  });
+
+  @override
+  State<_ProductNutritionHighlightsCard> createState() =>
+      _ProductNutritionHighlightsCardState();
+}
+
+class _ProductNutritionHighlightsCardState
+    extends State<_ProductNutritionHighlightsCard> {
+  bool expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final seen = <String>{};
+
+    final nutrients = widget.badges
+        .map(_DetailNutrientBadge.tryParse)
+        .whereType<_DetailNutrientBadge>()
+        .where((item) {
+          final key = item.nutrient.trim().toLowerCase();
+          return key.isNotEmpty && seen.add(key);
+        })
+        .toList();
+
+    if (nutrients.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final canExpand = nutrients.length > 3;
+
+    final visibleNutrients =
+        expanded ? nutrients : nutrients.take(3).toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: FarmColors.green.withOpacity(0.12),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: FarmColors.green.withOpacity(0.12),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.eco_outlined,
+                  color: FarmColors.green,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Nutrition highlights',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Tap a nutrient to view similar products.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+           children: visibleNutrients.map((item) {
+  final canTap = widget.onNutrientTap != null;
+
+  return Tooltip(
+    message: canTap
+    ? 'View similar products with ${item.nutrient}'
+    : item.label,
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: canTap
+            ? () => widget.onNutrientTap!(item.nutrient)
+            : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 11,
+            vertical: 8,
+          ),
+          decoration: BoxDecoration(
+            color: item.backgroundColor,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: item.borderColor,
+              width: item.level == 'Strong' ? 1.2 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.eco_outlined,
+                size: 14,
+                color: item.foregroundColor,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                item.label,
+                style: TextStyle(
+                  color: item.foregroundColor,
+                  fontSize: 12,
+                  fontWeight: item.level == 'Strong'
+                      ? FontWeight.w900
+                      : FontWeight.w800,
+                ),
+              ),
+              if (canTap) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 14,
+                  color: item.foregroundColor,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}).toList(),
+          ),
+          if (canExpand) ...[
+            const SizedBox(height: 6),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  expanded = !expanded;
+                });
+              },
+              icon: Icon(
+                expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 18,
+              ),
+              label: Text(
+                expanded
+                    ? 'Show less'
+                    : '+${nutrients.length - 3} more',
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: FarmColors.green,
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Divider(
+            height: 1,
+            color: FarmColors.line.withOpacity(0.75),
+          ),
+          const SizedBox(height: 10),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                size: 16,
+                color: FarmColors.mutedText,
+              ),
+              SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'Nutrition highlights are general product guidance and may vary by variety and serving size.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.2,
+                    height: 1.3,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
 class ProductDetailScreen extends StatelessWidget {
   final Product product;
   final int quantity;
+
+  final List<String> nutrientBadges;
+  final ValueChanged<String>? onNutrientTap;
+
   final VoidCallback onAdd;
   final VoidCallback onRemove;
   final void Function(Product product)? onAddProduct;
@@ -12180,6 +13259,8 @@ class ProductDetailScreen extends StatelessWidget {
     super.key,
     required this.product,
     required this.quantity,
+    this.nutrientBadges = const <String>[],
+    this.onNutrientTap,
     required this.onAdd,
     required this.onRemove,
     this.onAddProduct,
@@ -12204,6 +13285,46 @@ class ProductDetailScreen extends StatelessWidget {
         : parts.join(' • ');
   }
 
+ List<String> get displayNutrientBadges {
+  final source = nutrientBadges.isNotEmpty
+      ? nutrientBadges
+      : <String>[
+          ...product.nutrientStrong.map(
+            (nutrient) => 'Strong $nutrient',
+          ),
+          ...product.nutrientGood.map(
+            (nutrient) => 'Good $nutrient',
+          ),
+          ...product.nutrientContains.map(
+            (nutrient) => 'Contains $nutrient',
+          ),
+        ];
+
+  final seen = <String>{};
+  final output = <String>[];
+
+  for (final badgeLabel in source) {
+    final cleanLabel =
+        _normaliseDetailNutrientBadgeLabel(badgeLabel);
+
+    if (cleanLabel.isEmpty) continue;
+
+    final parsed = _DetailNutrientBadge.tryParse(cleanLabel);
+    if (parsed == null) continue;
+
+    final nutrientKey = parsed.nutrient
+        .trim()
+        .toLowerCase();
+
+    if (nutrientKey.isEmpty) continue;
+
+    if (seen.add(nutrientKey)) {
+      output.add(parsed.label);
+    }
+  }
+
+  return output;
+}
   Widget badge({
     required String label,
     IconData? icon,
@@ -12436,6 +13557,10 @@ class ProductDetailScreen extends StatelessWidget {
                           label: unit,
                           icon: Icons.straighten_outlined,
                         ),
+
+                      // Show the same nutrient information seen in Shop.
+                     
+
                       if (product.isOutOfStock)
                         badge(
                           label: 'Out of stock',
@@ -12444,6 +13569,15 @@ class ProductDetailScreen extends StatelessWidget {
                         ),
                     ],
                   ),
+
+                  if (displayNutrientBadges.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    _ProductNutritionHighlightsCard(
+                      badges: displayNutrientBadges,
+                      onNutrientTap: onNutrientTap,
+                    ),
+                  ],
+
                   const SizedBox(height: 16),
                   DiscountPriceText(product: product),
                 ],

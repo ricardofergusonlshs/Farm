@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.theharvestplaceja.app"
+    namespace = "com.harvestplaceja.myapp"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
@@ -20,11 +20,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.theharvestplaceja.app"
+        // Must match the existing app registered in Google Play.
+        applicationId = "com.harvestplaceja.myapp"
+
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
 
-        // Google Play requires a higher version code for every upload.
+        // Increase for every new Google Play upload.
         versionCode = 31
         versionName = "1.0.4"
     }

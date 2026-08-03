@@ -2,10 +2,11 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.harvestplaceja.myapp"
+    namespace = "com.theharvestplaceja.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
@@ -19,13 +20,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.harvestplaceja.myapp"
+        applicationId = "com.theharvestplaceja.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
 
-        // Google Play requires this to increase for every new upload.
+        // Google Play requires a higher version code for every upload.
         versionCode = 30
-        versionName = "1.0.3"
+        versionName = "1.0.4"
     }
 
     val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH")
@@ -54,7 +55,9 @@ android {
         release {
             if (!hasCodemagicSigning) {
                 throw GradleException(
-                    "Release signing variables are missing. Set CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, and CM_KEY_PASSWORD in Codemagic."
+                    "Release signing variables are missing. " +
+                        "Set CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD, " +
+                        "CM_KEY_ALIAS, and CM_KEY_PASSWORD in Codemagic."
                 )
             }
 

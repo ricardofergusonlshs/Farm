@@ -2119,9 +2119,15 @@ class _MainNavigationState extends State<MainNavigation> {
               onAddToCart: increaseProductQuantity,
               onShopTap: () => setState(() => selectedIndex = 1),
               onOrderPlaced: () {
+                if (!mounted) return;
+
                 setState(() {
-                  selectedIndex = 3;
+                  cart.clear();
                 });
+
+                persistCart();
+                FarmDataCache.clearProducts();
+                FarmDataCache.clearOrders();
               },
               onInventoryChanged: refreshInventoryViews,
             )),
@@ -2205,14 +2211,14 @@ class _MainNavigationState extends State<MainNavigation> {
             subtotal: subtotalForCartLines(lines),
             onOrderPlaced: () {
               if (!mounted) return;
+
               setState(() {
                 cart.clear();
-                persistCart();
-                FarmDataCache.clearProducts();
-                FarmDataCache.clearOrders();
-                authViewVersion++;
-                selectedIndex = ordersTabIndex;
               });
+
+              persistCart();
+              FarmDataCache.clearProducts();
+              FarmDataCache.clearOrders();
             },
             onInventoryChanged: refreshInventoryViews,
           ),
@@ -2256,14 +2262,25 @@ class _MainNavigationState extends State<MainNavigation> {
         onAddToCart: increaseProductQuantity,
         onShopTap: () => setState(() => selectedIndex = 1),
         onOrderPlaced: () {
+          if (!mounted) return;
+
           setState(() {
-            selectedIndex = 3;
+            cart.clear();
           });
+
+          persistCart();
+          FarmDataCache.clearProducts();
+          FarmDataCache.clearOrders();
         },
         onInventoryChanged: refreshInventoryViews,
       ),
       OrdersScreen(
         key: ValueKey('orders-$authViewKey'),
+        onAddToCart: increaseProductQuantity,
+        onOpenMyBox: () {
+          if (!mounted) return;
+          setState(() => selectedIndex = 2);
+        },
         onBackToHome: () {
           if (!mounted) return;
           setState(() => selectedIndex = homeTabIndex);

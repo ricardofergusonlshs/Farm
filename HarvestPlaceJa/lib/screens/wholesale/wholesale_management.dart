@@ -64,6 +64,7 @@ class MarketplaceProgramSettings {
   final bool wholesaleWorkspaceEnabled;
   final bool farmerApplicationsEnabled;
   final bool farmerWorkspaceEnabled;
+  final bool customerMarketplaceEnabled;
   final DateTime? updatedAt;
 
   const MarketplaceProgramSettings({
@@ -71,6 +72,7 @@ class MarketplaceProgramSettings {
     required this.wholesaleWorkspaceEnabled,
     required this.farmerApplicationsEnabled,
     required this.farmerWorkspaceEnabled,
+    required this.customerMarketplaceEnabled,
     this.updatedAt,
   });
 
@@ -79,6 +81,8 @@ class MarketplaceProgramSettings {
     wholesaleWorkspaceEnabled: true,
     farmerApplicationsEnabled: true,
     farmerWorkspaceEnabled: true,
+    // Launch mode: Farmer + Wholesale are live first.
+    customerMarketplaceEnabled: false,
   );
 
   factory MarketplaceProgramSettings.fromSupabase(
@@ -90,6 +94,7 @@ class MarketplaceProgramSettings {
       wholesaleWorkspaceEnabled: data['wholesale_workspace_enabled'] != false,
       farmerApplicationsEnabled: data['farmer_applications_enabled'] != false,
       farmerWorkspaceEnabled: data['farmer_workspace_enabled'] != false,
+      customerMarketplaceEnabled: data['customer_marketplace_enabled'] == true,
       updatedAt: parseProductDate(data['updated_at']),
     );
   }
@@ -100,7 +105,7 @@ Future<MarketplaceProgramSettings> fetchMarketplaceProgramSettings() async {
     final response = await supabase
         .from('marketplace_program_settings')
         .select(
-          'wholesale_applications_enabled, wholesale_workspace_enabled, farmer_applications_enabled, farmer_workspace_enabled, updated_at',
+          'wholesale_applications_enabled, wholesale_workspace_enabled, farmer_applications_enabled, farmer_workspace_enabled, customer_marketplace_enabled, updated_at',
         )
         .eq('id', 'default')
         .maybeSingle();
@@ -111,8 +116,29 @@ Future<MarketplaceProgramSettings> fetchMarketplaceProgramSettings() async {
       Map<String, dynamic>.from(response as Map),
     );
   } catch (error) {
-    farmDebugLog('Program settings lookup skipped safely: $error');
-    return MarketplaceProgramSettings.fallback;
+    // Backward-compatible read while migration 008 is being applied.
+    farmDebugLog(
+      'Customer marketplace launch flag unavailable. Using legacy programme settings safely: $error',
+    );
+
+    try {
+      final legacyResponse = await supabase
+          .from('marketplace_program_settings')
+          .select(
+            'wholesale_applications_enabled, wholesale_workspace_enabled, farmer_applications_enabled, farmer_workspace_enabled, updated_at',
+          )
+          .eq('id', 'default')
+          .maybeSingle();
+
+      if (legacyResponse == null) return MarketplaceProgramSettings.fallback;
+
+      return MarketplaceProgramSettings.fromSupabase(
+        Map<String, dynamic>.from(legacyResponse as Map),
+      );
+    } catch (legacyError) {
+      farmDebugLog('Program settings lookup skipped safely: $legacyError');
+      return MarketplaceProgramSettings.fallback;
+    }
   }
 }
 
@@ -136,6 +162,42 @@ Future<void> ownerUpdateMarketplaceProgramSettings({
       'p_farmer_workspace_enabled': farmerWorkspaceEnabled,
     },
   );
+}
+
+
+Future<void> ownerSetCustomerMarketplaceEnabled(bool enabled) async {
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (role != 'owner') {
+    throw Exception('Only the owner can change the customer marketplace launch status.');
+  }
+
+  await supabase.rpc(
+    'owner_set_customer_marketplace_enabled',
+    params: {'p_enabled': enabled},
+  );
+}
+
+Future<void> registerCustomerMarketplaceLaunchInterest() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    throw Exception('Sign in to receive the customer marketplace launch alert.');
+  }
+
+  await supabase.from('customer_marketplace_launch_interest').upsert(
+    {
+      'user_id': user.id,
+      'email': user.email?.trim().toLowerCase(),
+      'updated_at': DateTime.now().toIso8601String(),
+    },
+    onConflict: 'user_id',
+  );
+
+  // Keep the user's general notification preference aligned with the request.
+  try {
+    await saveNotificationPreference(enabled: true);
+  } catch (error) {
+    farmDebugLog('Launch-interest notification preference sync skipped: $error');
+  }
 }
 
 class _MarketplaceProgramNotice extends StatelessWidget {
@@ -537,6 +599,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
   bool wholesaleWorkspaceEnabled = true;
   bool farmerApplicationsEnabled = true;
   bool farmerWorkspaceEnabled = true;
+  bool customerMarketplaceEnabled = false;
 
   @override
   void initState() {
@@ -552,6 +615,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
     wholesaleWorkspaceEnabled = settings.wholesaleWorkspaceEnabled;
     farmerApplicationsEnabled = settings.farmerApplicationsEnabled;
     farmerWorkspaceEnabled = settings.farmerWorkspaceEnabled;
+    customerMarketplaceEnabled = settings.customerMarketplaceEnabled;
 
     return _OwnerProgramSettingsSnapshot(
       role: role,
@@ -577,6 +641,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
         farmerApplicationsEnabled: farmerApplicationsEnabled,
         farmerWorkspaceEnabled: farmerWorkspaceEnabled,
       );
+      await ownerSetCustomerMarketplaceEnabled(customerMarketplaceEnabled);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -639,7 +704,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Pause new applications without deleting existing accounts. Workspace switches temporarily stop operational access.',
+                      'Control which HPJ workspaces are live. Farmer and Wholesale can launch first while Customer shows a polished Coming Soon page.',
                       style: TextStyle(
                         color: FarmColors.mutedText,
                         height: 1.4,
@@ -735,6 +800,37 @@ class _OwnerMarketplaceProgramSettingsPanelState
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
+              FarmCard(
+                padding: const EdgeInsets.all(8),
+                child: SwitchListTile.adaptive(
+                  value: customerMarketplaceEnabled,
+                  title: const Text(
+                    'Customer marketplace live',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: Text(
+                    customerMarketplaceEnabled
+                        ? 'Customers can open Shop, My Box and ordering.'
+                        : 'Customers see a Coming Soon launch page. Farmer and Wholesale remain active.',
+                  ),
+                  secondary: Icon(
+                    customerMarketplaceEnabled
+                        ? Icons.storefront_rounded
+                        : Icons.schedule_rounded,
+                    color: customerMarketplaceEnabled
+                        ? FarmColors.primary
+                        : FarmColors.mutedText,
+                  ),
+                  onChanged: saving
+                      ? null
+                      : (value) {
+                          setState(() {
+                            customerMarketplaceEnabled = value;
+                          });
+                        },
+                ),
+              ),
               const SizedBox(height: 14),
               PrimaryFarmButton(
                 label: saving ? 'Saving...' : 'Save Access Settings',
@@ -751,7 +847,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Turning off applications does not affect approved users. Turning off a workspace pauses access but keeps profiles, approvals, orders, and history stored.',
+                        'Turning off Farmer or Wholesale access keeps profiles, approvals, orders and history stored. Turning off Customer only replaces shopping with the Coming Soon page; no customer code or data is deleted.',
                         style: TextStyle(
                           color: FarmColors.mutedText,
                           height: 1.4,
@@ -6275,37 +6371,38 @@ Future<WholesaleReceivingBatch> completeWholesaleReceivingBatch(
     );
   }
 
-  final response = await supabase
-      .from(
-        'wholesale_receiving_batches',
-      )
-      .update({
-        'status': 'completed',
-      })
-      .eq(
-        'id',
-        batch.id,
-      )
-      .eq(
-        'status',
-        'inspected',
-      )
-      .select(
-        _wholesaleReceivingSelectFields,
-      )
-      .maybeSingle();
-
-  if (response == null) {
-    throw Exception(
-      'This receiving batch could not be completed.',
+  try {
+    final response = await supabase.rpc(
+      'admin_complete_wholesale_receiving_batch',
+      params: {
+        'p_receiving_batch_id': batch.id,
+      },
     );
-  }
 
-  return WholesaleReceivingBatch.fromSupabase(
-    Map<String, dynamic>.from(
-      response as Map,
-    ),
-  );
+    Map<String, dynamic>? row;
+
+    if (response is Map) {
+      row = Map<String, dynamic>.from(response);
+    } else if (response is List && response.isNotEmpty) {
+      final first = response.first;
+      if (first is Map) {
+        row = Map<String, dynamic>.from(first);
+      }
+    }
+
+    if (row == null || row.isEmpty) {
+      throw Exception(
+        'This receiving batch could not be completed.',
+      );
+    }
+
+    return WholesaleReceivingBatch.fromSupabase(row);
+  } catch (error) {
+    farmDebugLog(
+      'Wholesale receiving completion failed for ${batch.id}: $error',
+    );
+    rethrow;
+  }
 }
 
 // =====================================================
@@ -29962,6 +30059,10 @@ class _AdminWholesaleManagementTabState
         ),
       );
     } catch (error) {
+      farmDebugLog(
+        'Complete Receiving action failed for ${batch.id}: $error',
+      );
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -36912,7 +37013,12 @@ class _OwnerWorkspaceSwitcherScreenState
     return preference?.tabFor(workspace) ?? 0;
   }
 
-  void _openCustomer() {
+  void _openCustomer(bool marketplaceEnabled) {
+    if (!marketplaceEnabled) {
+      _switchRoot(const CustomerMarketplaceComingSoonScreen());
+      return;
+    }
+
     final callback = widget.onShopTap;
 
     if (callback != null) {
@@ -36956,6 +37062,44 @@ class _OwnerWorkspaceSwitcherScreenState
     );
   }
 
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Sign out of HPJ?'),
+          content: const Text(
+            'You will need to sign in again to open your approved workspaces.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sign Out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    await supabase.auth.signOut();
+    FarmDataCache.clearAll();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const AuthGate(),
+      ),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const pageBackground = Color(0xFFF7F4EE);
@@ -36973,8 +37117,41 @@ class _OwnerWorkspaceSwitcherScreenState
             Icons.close_rounded,
           ),
         ),
-        title: const Text(
-          'Switch Workspace',
+        titleSpacing: 2,
+        title: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 34,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFFE5E0D7),
+                ),
+              ),
+              child: Image.asset(
+                'lib/assets/images/logo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.eco_outlined,
+                  color: Color(0xFF0B4C36),
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Workspaces',
+              style: TextStyle(
+                color: Color(0xFF173E31),
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.35,
+              ),
+            ),
+          ],
         ),
         actions: [
           IconButton(
@@ -36982,6 +37159,13 @@ class _OwnerWorkspaceSwitcherScreenState
             onPressed: _reload,
             icon: const Icon(
               Icons.refresh_rounded,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Sign out',
+            onPressed: _signOut,
+            icon: const Icon(
+              Icons.logout_rounded,
             ),
           ),
           const SizedBox(width: 4),
@@ -37002,7 +37186,7 @@ class _OwnerWorkspaceSwitcherScreenState
             if (access == null) {
               return _WorkspaceLoadErrorView(
                 onRetry: _reload,
-                onCustomerSelected: _openCustomer,
+                onCustomerSelected: () => _openCustomer(false),
                 onSignOut: () async {
                   await supabase.auth.signOut();
                   FarmDataCache.clearAll();
@@ -37021,7 +37205,11 @@ class _OwnerWorkspaceSwitcherScreenState
               access.staffRole,
             );
 
-            final customerCurrent = _isCurrent('customer');
+            final customerEnabled =
+                access.programSettings.customerMarketplaceEnabled;
+
+            final customerCurrent =
+                customerEnabled && _isCurrent('customer');
             final wholesaleCurrent = _isCurrent('wholesale');
             final farmerCurrent = _isCurrent('farmer');
             final staffCurrent = _isCurrent('staff');
@@ -37100,55 +37288,63 @@ class _OwnerWorkspaceSwitcherScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'YOUR WORKSPACES',
+                                'YOUR HPJ ACCOUNT',
                                 style: TextStyle(
-                                  color: Color(0xFF707B76),
-                                  fontSize: 10,
+                                  color: Color(0xFF758079),
+                                  fontSize: 9.5,
                                   fontWeight: FontWeight.w900,
-                                  letterSpacing: 2.2,
+                                  letterSpacing: 2.0,
                                 ),
                               ),
                               const SizedBox(height: 7),
                               const Text(
-                                'Switch workspace',
+                                'Choose your workspace',
                                 style: TextStyle(
                                   color: Color(0xFF103F2F),
-                                  fontSize: 28,
+                                  fontSize: 27,
                                   height: 1.0,
                                   fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.75,
+                                  letterSpacing: -0.7,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               const Text(
-                                'Choose where you want to work. Your login and approved permissions stay the same.',
+                                'Open the tools available to your account. Your login and approved permissions stay connected.',
                                 style: TextStyle(
                                   color: Color(0xFF68716D),
-                                  fontSize: 12.4,
-                                  height: 1.4,
+                                  fontSize: 12.1,
+                                  height: 1.42,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 18),
-                              _BalancedWorkspaceGrid(
+                              _EliteWorkspaceGrid(
                                 children: [
-                                  _BalancedPhotoWorkspaceCard(
+                                  _EliteWorkspaceCard(
                                     photoUrl: _customerPhoto,
                                     title: 'Customer Shopping',
-                                    subtitle: 'Shop fresh produce',
-                                    status: customerCurrent
-                                        ? 'Current'
-                                        : 'Available',
-                                    statusColor: const Color(0xFF2C754A),
+                                    subtitle: customerEnabled
+                                        ? 'Shop fresh produce'
+                                        : 'Fresh Jamaican produce coming soon',
+                                    status: customerEnabled
+                                        ? (customerCurrent
+                                            ? 'Current'
+                                            : 'Available')
+                                        : 'Coming Soon',
+                                    statusColor: customerEnabled
+                                        ? const Color(0xFF2C754A)
+                                        : const Color(0xFF9A6A1C),
                                     isCurrent: customerCurrent,
-                                    actionLabel: customerCurrent
-                                        ? 'You are here'
-                                        : 'Open',
+                                    actionLabel: customerEnabled
+                                        ? (customerCurrent
+                                            ? 'You are here'
+                                            : 'Open')
+                                        : 'View',
                                     onTap: customerCurrent
                                         ? _closeSwitcher
-                                        : _openCustomer,
+                                        : () => _openCustomer(customerEnabled),
                                   ),
-                                  _BalancedPhotoWorkspaceCard(
+                                  _EliteWorkspaceCard(
                                     photoUrl: _wholesalePhoto,
                                     title: 'Wholesale Business',
                                     subtitle: access.isApprovedWholesale
@@ -37169,7 +37365,7 @@ class _OwnerWorkspaceSwitcherScreenState
                                         ? _closeSwitcher
                                         : _openWholesale,
                                   ),
-                                  _BalancedPhotoWorkspaceCard(
+                                  _EliteWorkspaceCard(
                                     photoUrl: _farmerPhoto,
                                     title: 'Farmer Partner',
                                     subtitle: access.isApprovedFarmer
@@ -37191,7 +37387,7 @@ class _OwnerWorkspaceSwitcherScreenState
                                         : _openFarmer,
                                   ),
                                   if (hasStaffAccess)
-                                    _BalancedPhotoWorkspaceCard(
+                                    _EliteWorkspaceCard(
                                       photoUrl: _staffPhoto,
                                       title: 'HPJ Staff & Operations',
                                       subtitle: _balancedStaffSubtitle(
@@ -37212,11 +37408,11 @@ class _OwnerWorkspaceSwitcherScreenState
                                 ],
                               ),
                               const SizedBox(height: 16),
-                              const _ProfessionalAccountNote(),
-                              const SizedBox(height: 14),
-                              const _ProfessionalBenefitsFooter(),
+                              const _EliteAccountSummary(),
                               const SizedBox(height: 12),
-                              const _WorkspaceLegalFooter(),
+                              const _EliteWorkspaceInfoLinks(),
+                              const SizedBox(height: 10),
+                              const _WorkspaceSwitcherLegalFooter(),
                             ],
                           ),
                         ),
@@ -37229,6 +37425,1171 @@ class _OwnerWorkspaceSwitcherScreenState
           },
         ),
       ),
+    );
+  }
+}
+
+
+
+class _EliteWorkspaceGrid extends StatelessWidget {
+  final List<Widget> children;
+
+  const _EliteWorkspaceGrid({
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final oneColumn = constraints.maxWidth < 330;
+        final gap = 12.0;
+        final width = oneColumn
+            ? constraints.maxWidth
+            : (constraints.maxWidth - gap) / 2;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: 12,
+          children: children
+              .map(
+                (child) => SizedBox(
+                  width: width,
+                  child: child,
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _EliteWorkspaceCard extends StatelessWidget {
+  final String photoUrl;
+  final String title;
+  final String subtitle;
+  final String status;
+  final Color statusColor;
+  final VoidCallback onTap;
+  final bool isCurrent;
+  final String actionLabel;
+
+  const _EliteWorkspaceCard({
+    required this.photoUrl,
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.statusColor,
+    required this.onTap,
+    this.isCurrent = false,
+    this.actionLabel = 'Open',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const forest = Color(0xFF0B4C36);
+    const ink = Color(0xFF183D30);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 205;
+        final cardHeight = compact ? 216.0 : 222.0;
+        final imageHeight = compact ? 90.0 : 96.0;
+
+        return Semantics(
+          button: true,
+          label: '$title. $subtitle. $status.',
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                height: cardHeight,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFEFB),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isCurrent
+                        ? forest
+                        : const Color(0xFFE2DED5),
+                    width: isCurrent ? 1.6 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF183D30).withOpacity(0.055),
+                      blurRadius: 18,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: imageHeight,
+                      width: double.infinity,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            photoUrl,
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            filterQuality: FilterQuality.medium,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return const ColoredBox(
+                                color: Color(0xFFE9EEE9),
+                              );
+                            },
+                            errorBuilder: (_, __, ___) {
+                              return const ColoredBox(
+                                color: Color(0xFFE9EEE9),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.storefront_outlined,
+                                    color: forest,
+                                    size: 27,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x00000000),
+                                    Color(0x0D000000),
+                                    Color(0x52000000),
+                                  ],
+                                  stops: [0, 0.62, 1],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 9,
+                            right: 9,
+                            child: _EliteStatusPill(
+                              label: status,
+                              color: statusColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          compact ? 12 : 13,
+                          11,
+                          compact ? 10 : 12,
+                          10,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: ink,
+                                fontSize: compact ? 13.7 : 14.5,
+                                height: 1.05,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: const Color(0xFF6B746F),
+                                fontSize: compact ? 9.7 : 10.2,
+                                height: 1.28,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Text(
+                                  actionLabel,
+                                  style: TextStyle(
+                                    color: forest,
+                                    fontSize: compact ? 9.8 : 10.4,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEAF3EC),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Icon(
+                                    isCurrent
+                                        ? Icons.check_rounded
+                                        : Icons.arrow_outward_rounded,
+                                    color: forest,
+                                    size: 15.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _EliteStatusPill extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _EliteStatusPill({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 88),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.78),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 7,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 4,
+            height: 4,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 8.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EliteAccountSummary extends StatelessWidget {
+  const _EliteAccountSummary();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(15, 13, 15, 13),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5EF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFDCE5D9),
+        ),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'One HPJ account',
+            style: TextStyle(
+              color: Color(0xFF104531),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          SizedBox(height: 3),
+          Text(
+            'Your approved access stays connected across every workspace.',
+            style: TextStyle(
+              color: Color(0xFF68716D),
+              fontSize: 10.5,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EliteWorkspaceInfoLinks extends StatelessWidget {
+  const _EliteWorkspaceInfoLinks();
+
+  void _open(BuildContext context, Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => screen,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <({IconData icon, String title, String subtitle, Widget screen})>[
+      (
+        icon: Icons.shield_outlined,
+        title: 'Trust',
+        subtitle: 'Security',
+        screen: const TrustCenterScreen(),
+      ),
+      (
+        icon: Icons.info_outline_rounded,
+        title: 'About',
+        subtitle: 'Our story',
+        screen: const AboutHpjScreen(),
+      ),
+      (
+        icon: Icons.support_agent_rounded,
+        title: 'Support',
+        subtitle: 'Get help',
+        screen: const SupportScreen(
+          initialSubject: 'Customer care',
+        ),
+      ),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 5,
+        vertical: 7,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFEFB),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFE6E1D8),
+        ),
+      ),
+      child: Row(
+        children: [
+          for (var index = 0; index < items.length; index++) ...[
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _open(
+                  context,
+                  items[index].screen,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 3,
+                    vertical: 7,
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEAF2ED),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(
+                          items[index].icon,
+                          color: const Color(0xFF0B4C36),
+                          size: 17,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        items[index].title,
+                        style: const TextStyle(
+                          color: Color(0xFF174334),
+                          fontSize: 9.4,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        items[index].subtitle,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF79817D),
+                          fontSize: 8.0,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (index != items.length - 1)
+              Container(
+                width: 1,
+                height: 43,
+                color: const Color(0xFFE8E4DC),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSwitcherLegalFooter extends StatelessWidget {
+  const _WorkspaceSwitcherLegalFooter();
+
+  void _open(BuildContext context, Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => screen,
+      ),
+    );
+  }
+
+  Widget _item(
+    BuildContext context,
+    String label,
+    Widget screen,
+  ) {
+    return Expanded(
+      child: TextButton(
+        onPressed: () => _open(context, screen),
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 2,
+            vertical: 5,
+          ),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(
+            color: Color(0xFF68716D),
+            fontSize: 9.1,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 2),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _item(
+                context,
+                'Terms',
+                const TermsOfServiceScreen(),
+              ),
+              _item(
+                context,
+                'Privacy',
+                const PrivacyPolicyScreen(),
+              ),
+              _item(
+                context,
+                'Refunds',
+                const RefundPolicyScreen(),
+              ),
+              _item(
+                context,
+                'FAQ',
+                const HpjFaqScreen(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 1),
+          Text(
+            '${AppConfig.appName} • v${AppConfig.appVersion}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF9A9F9B),
+              fontSize: 8.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HpjFaqScreen extends StatelessWidget {
+  const HpjFaqScreen({super.key});
+
+  static const _items = <({String question, String answer})>[
+    (
+      question: 'When will Customer Shopping open?',
+      answer:
+          'Customer Shopping is being prepared for launch. When the marketplace is not yet live, open Customer Shopping and use Notify Me to request a launch alert.',
+    ),
+    (
+      question: 'Why does Customer Shopping show Coming Soon?',
+      answer:
+          'HPJ can launch workspaces in stages. Farmer and Wholesale may be available while the customer marketplace is still being prepared.',
+    ),
+    (
+      question: 'Will I need another account when Customer Shopping opens?',
+      answer:
+          'No. Your existing HPJ login remains your account. Approved workspace access stays connected to the same login.',
+    ),
+    (
+      question: 'How do I switch between HPJ workspaces?',
+      answer:
+          'Open Workspaces and select any workspace available to your account. Your approved permissions and account access remain connected.',
+    ),
+    (
+      question: 'How do I apply for Farmer or Wholesale access?',
+      answer:
+          'Open the Farmer Partner or Wholesale Business workspace. If applications are open and you do not already have access, HPJ will guide you through the application process.',
+    ),
+    (
+      question: 'Why does a workspace say Apply, Paused or Approved?',
+      answer:
+          'Apply means you can request access, Approved means your account has access, and Paused means that programme or workspace is temporarily unavailable.',
+    ),
+    (
+      question: 'How will I receive the Customer Shopping launch alert?',
+      answer:
+          'Use Notify Me on the Coming Soon page while signed in. HPJ records your launch interest and keeps your notification preference aligned with that request.',
+    ),
+    (
+      question: 'Where can I get help with my account?',
+      answer:
+          'Use Support from the Workspaces page for account or access help. Policy information is also available under Terms, Privacy and Refunds.',
+    ),
+    (
+      question: 'Where can I read the refund rules?',
+      answer:
+          'Open Refunds at the bottom of the Workspaces page to read the current HPJ Refund Policy.',
+    ),
+    (
+      question: 'How does HPJ protect my account information?',
+      answer:
+          'Open Trust from the Workspaces page for HPJ security and account-safety information, and review Privacy for information about data handling.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F4EE),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF7F4EE),
+        surfaceTintColor: Colors.transparent,
+        titleSpacing: 4,
+        title: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 31,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(
+                  color: const Color(0xFFE5E0D7),
+                ),
+              ),
+              child: Image.asset(
+                'lib/assets/images/logo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.eco_outlined,
+                  color: Color(0xFF0B4C36),
+                  size: 18,
+                ),
+              ),
+            ),
+            const SizedBox(width: 9),
+            const Text(
+              'Help & FAQ',
+              style: TextStyle(
+                color: Color(0xFF173E31),
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            36,
+          ),
+          children: [
+            const Text(
+              'QUICK ANSWERS',
+              style: TextStyle(
+                color: Color(0xFF758079),
+                fontSize: 9.3,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.9,
+              ),
+            ),
+            const SizedBox(height: 7),
+            const Text(
+              'How can we help?',
+              style: TextStyle(
+                color: Color(0xFF103F2F),
+                fontSize: 26,
+                height: 1.0,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.6,
+              ),
+            ),
+            const SizedBox(height: 7),
+            const Text(
+              'Answers to common questions about HPJ accounts, workspaces and the Customer Shopping launch.',
+              style: TextStyle(
+                color: Color(0xFF68716D),
+                fontSize: 11.3,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFEFB),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: const Color(0xFFE4E0D7),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  for (var index = 0; index < _items.length; index++) ...[
+                    Theme(
+                      data: Theme.of(context).copyWith(
+                        dividerColor: Colors.transparent,
+                      ),
+                      child: ExpansionTile(
+                        tilePadding: const EdgeInsets.symmetric(
+                          horizontal: 15,
+                          vertical: 2,
+                        ),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          15,
+                          0,
+                          15,
+                          14,
+                        ),
+                        iconColor: const Color(0xFF0B4C36),
+                        collapsedIconColor: const Color(0xFF6F7973),
+                        title: Text(
+                          _items[index].question,
+                          style: const TextStyle(
+                            color: Color(0xFF183D30),
+                            fontSize: 11.2,
+                            height: 1.3,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _items[index].answer,
+                              style: const TextStyle(
+                                color: Color(0xFF68716D),
+                                fontSize: 10.2,
+                                height: 1.45,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (index != _items.length - 1)
+                      const Divider(
+                        height: 1,
+                        indent: 15,
+                        endIndent: 15,
+                        color: Color(0xFFE9E5DE),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SupportScreen(
+                      initialSubject: 'Customer care',
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(
+                Icons.support_agent_rounded,
+                size: 18,
+              ),
+              label: const Text('Contact Support'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class CustomerMarketplaceComingSoonScreen extends StatefulWidget {
+  const CustomerMarketplaceComingSoonScreen({super.key});
+
+  @override
+  State<CustomerMarketplaceComingSoonScreen> createState() =>
+      _CustomerMarketplaceComingSoonScreenState();
+}
+
+class _CustomerMarketplaceComingSoonScreenState
+    extends State<CustomerMarketplaceComingSoonScreen> {
+  static const String _heroPhoto =
+      'https://images.unsplash.com/photo-1542838132-92c53300491e'
+      '?auto=format&fit=crop&w=1600&q=82';
+
+  bool savingInterest = false;
+  bool interestSaved = false;
+
+  Future<void> _notifyMe() async {
+    if (!isLoggedIn) {
+      final signedIn = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => const LoginScreen(returnToPrevious: true),
+        ),
+      );
+      if (!mounted) return;
+      if (signedIn != true && !isLoggedIn) return;
+    }
+
+    setState(() => savingInterest = true);
+    try {
+      await registerCustomerMarketplaceLaunchInterest();
+      if (!mounted) return;
+      setState(() => interestSaved = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'You’re on the Customer Marketplace launch list.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => savingInterest = false);
+    }
+  }
+
+  void _openWorkspaceSwitcher() {
+    if (!isLoggedIn) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const LoginScreen(returnToPrevious: true),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const OwnerWorkspaceSwitcherScreen(
+          currentWorkspace: 'customer',
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const background = Color(0xFFFAF8F1);
+
+    return Scaffold(
+      backgroundColor: background,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontal = constraints.maxWidth >= 760 ? 40.0 : 18.0;
+            final maxWidth = constraints.maxWidth >= 760 ? 660.0 : 560.0;
+
+            return ListView(
+              padding: EdgeInsets.fromLTRB(horizontal, 12, horizontal, 30),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              tooltip: 'Back',
+                              onPressed: () {
+                                final navigator = Navigator.of(context);
+                                if (navigator.canPop()) {
+                                  navigator.maybePop();
+                                } else {
+                                  _openWorkspaceSwitcher();
+                                }
+                              },
+                              icon: const Icon(Icons.arrow_back_rounded),
+                            ),
+                            const Spacer(),
+                            if (isLoggedIn)
+                              IconButton(
+                                tooltip: 'Switch workspace',
+                                onPressed: _openWorkspaceSwitcher,
+                                icon: const Icon(Icons.apps_rounded),
+                              ),
+                          ],
+                        ),
+                        SizedBox(
+                          height: 88,
+                          child: Image.asset(
+                            'lib/assets/images/logo.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.eco_rounded,
+                              color: FarmColors.primary,
+                              size: 58,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Fresh Jamaican Produce Marketplace',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF123E2F),
+                            fontSize: 25,
+                            height: 1.1,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.45,
+                          ),
+                        ),
+                        const SizedBox(height: 15),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(26),
+                          child: SizedBox(
+                            height: 230,
+                            width: double.infinity,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.network(
+                                  _heroPhoto,
+                                  fit: BoxFit.cover,
+                                  filterQuality: FilterQuality.medium,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: const Color(0xFFE6EFE0),
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.local_florist_rounded,
+                                      color: FarmColors.primary,
+                                      size: 64,
+                                    ),
+                                  ),
+                                ),
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        const Color(0xFF123E2F)
+                                            .withOpacity(0.50),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const Positioned(
+                                  left: 18,
+                                  bottom: 16,
+                                  child: _ComingSoonPill(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
+                          decoration: BoxDecoration(
+                            color: FarmColors.card,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: FarmColors.line),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.035),
+                                blurRadius: 22,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEAF3E5),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: FarmColors.line),
+                                ),
+                                child: const Icon(
+                                  Icons.shopping_cart_outlined,
+                                  color: FarmColors.primary,
+                                  size: 34,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              const Text(
+                                'Customer ordering is coming soon',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Color(0xFF123E2F),
+                                  fontSize: 22,
+                                  height: 1.12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 9),
+                              const Text(
+                                'We’re launching our farmer and wholesale network first so customers get stronger availability, dependable quality and reliable delivery when shopping opens.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 12.4,
+                                  height: 1.48,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              const _ComingSoonFeatureRow(
+                                icon: Icons.agriculture_outlined,
+                                title: 'Trusted Jamaican farms',
+                                message:
+                                    'Fresh produce sourced through the HPJ farmer network.',
+                              ),
+                              const SizedBox(height: 10),
+                              const _ComingSoonFeatureRow(
+                                icon: Icons.shopping_basket_outlined,
+                                title: 'Fresh seasonal produce',
+                                message:
+                                    'Browse fruits, vegetables, herbs and Jamaican staples.',
+                              ),
+                              const SizedBox(height: 10),
+                              const _ComingSoonFeatureRow(
+                                icon: Icons.local_shipping_outlined,
+                                title: 'Reliable fulfillment',
+                                message:
+                                    'Track orders from checkout through pickup or delivery.',
+                              ),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed:
+                                      savingInterest ? null : _notifyMe,
+                                  icon: Icon(
+                                    interestSaved
+                                        ? Icons.check_circle_outline_rounded
+                                        : Icons.notifications_none_rounded,
+                                  ),
+                                  label: Text(
+                                    savingInterest
+                                        ? 'Saving...'
+                                        : interestSaved
+                                            ? 'Launch Alert Saved'
+                                            : 'Notify Me When It Launches',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _openWorkspaceSwitcher,
+                                  icon: const Icon(Icons.arrow_back_rounded),
+                                  label: Text(
+                                    isLoggedIn
+                                        ? 'Back to Workspace'
+                                        : 'Sign In / Join HPJ',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ComingSoonPill extends StatelessWidget {
+  const _ComingSoonPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule_rounded, size: 16, color: FarmColors.primary),
+          SizedBox(width: 6),
+          Text(
+            'COMING SOON',
+            style: TextStyle(
+              color: FarmColors.primary,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ComingSoonFeatureRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+
+  const _ComingSoonFeatureRow({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF3E5),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: FarmColors.primary, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                message,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.8,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

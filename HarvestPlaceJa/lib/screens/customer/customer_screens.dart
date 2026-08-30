@@ -14702,11 +14702,13 @@ class ProductCollectionScreen extends StatelessWidget {
 class FarmNotificationButton extends StatelessWidget {
   final double size;
   final bool showBadge;
+  final Color badgeColor;
 
   const FarmNotificationButton({
     super.key,
     this.size = 38,
     this.showBadge = true,
+    this.badgeColor = FarmColors.danger,
   });
 
   @override
@@ -14761,7 +14763,7 @@ class FarmNotificationButton extends StatelessWidget {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: FarmColors.danger,
+                      color: badgeColor,
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(color: Colors.white, width: 1.5),
                     ),

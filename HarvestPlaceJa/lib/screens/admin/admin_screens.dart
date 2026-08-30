@@ -107,17 +107,49 @@ Future<List<NotificationTarget>> fetchAdminNotificationTargets() async {
   void addTarget({String? userId, String? email}) {
     final cleanUserId = userId?.trim();
     final cleanEmail = email?.trim().toLowerCase();
+
     if ((cleanUserId == null || cleanUserId.isEmpty) &&
         (cleanEmail == null || cleanEmail.isEmpty)) {
       return;
     }
+
     final key = '${cleanUserId ?? ''}|${cleanEmail ?? ''}';
     if (!seen.add(key)) return;
-    targets.add(NotificationTarget(userId: cleanUserId, userEmail: cleanEmail));
+
+    targets.add(
+      NotificationTarget(
+        userId: cleanUserId,
+        userEmail: cleanEmail,
+      ),
+    );
+  }
+
+  try {
+    final response = await supabase
+        .from('staff_users')
+        .select('user_id, email, role, is_active')
+        .eq('is_active', true);
+
+    for (final item in response as List) {
+      final row = Map<String, dynamic>.from(item as Map);
+      final role = normalizeStaffRole(row['role']?.toString());
+
+      if (!const <String>{'owner', 'manager', 'support'}.contains(role)) {
+        continue;
+      }
+
+      addTarget(
+        userId: row['user_id']?.toString(),
+        email: row['email']?.toString(),
+      );
+    }
+  } catch (error) {
+    farmDebugLog('Staff notification target lookup skipped: $error');
   }
 
   Future<void> readAdmins(String selectFields) async {
     final response = await supabase.from('admin_users').select(selectFields);
+
     for (final item in response as List) {
       final row = Map<String, dynamic>.from(item as Map);
       addTarget(
@@ -129,16 +161,14 @@ Future<List<NotificationTarget>> fetchAdminNotificationTargets() async {
 
   try {
     await readAdmins('user_id, email');
-  } catch (firstError) {
+  } catch (_) {
     try {
       await readAdmins('id, email');
-    } catch (secondError) {
+    } catch (_) {
       try {
         await readAdmins('email');
-      } catch (thirdError) {
-        farmDebugLog(
-          'Admin notification target lookup skipped: $firstError / $secondError / $thirdError',
-        );
+      } catch (error) {
+        farmDebugLog('Legacy admin target lookup skipped: $error');
       }
     }
   }

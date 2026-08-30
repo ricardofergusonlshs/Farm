@@ -1,11 +1,22 @@
 part of harvest_place_app;
 
+// Root navigator used by Android push-notification taps. Keeping one app-level
+// key lets HPJ open the exact secured destination even when the notification
+// launches the app from a terminated state.
+final GlobalKey<NavigatorState> hpjRootNavigatorKey =
+    GlobalKey<NavigatorState>();
+
 class FamilyFarmApp extends StatelessWidget {
   const FamilyFarmApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(PushNotificationService.flushPendingNavigation());
+    });
+
     return MaterialApp(
+      navigatorKey: hpjRootNavigatorKey,
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
@@ -195,11 +206,23 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
+  Future<OwnerWorkspaceAccessSnapshot>? _workspaceAccessFuture;
+  Future<HpjNavigationPreference?>? _navigationPreferenceFuture;
+
   // Supabase auth links open the same Flutter web app page. The app must
   // route password-reset links and signup confirmation links internally.
   bool hasEnteredMarket = AppConfig.hasPasswordRecoveryCallback ||
       AppConfig.hasEmailConfirmationCallback ||
       isLoggedIn;
+
+  // Signed-in users resolve to their remembered safe workspace/tab. On a true
+  // first login HPJ chooses Customer Home, Farmer Feed, or Wholesale Feed;
+  // Staff/Admin is never an automatic startup destination. Guests bypass this
+  // resolver so a checkout/login flow is never interrupted mid-order.
+  bool shouldChooseWorkspace = isLoggedIn &&
+      !AppConfig.hasPasswordRecoveryCallback &&
+      !AppConfig.hasEmailConfirmationCallback;
+
   bool isPasswordRecovery = AppConfig.hasPasswordRecoveryCallback;
   bool isEmailConfirmation = AppConfig.hasEmailConfirmationCallback;
   String? passwordRecoveryError;
@@ -213,6 +236,11 @@ class _AuthGateState extends State<AuthGate> {
   void initState() {
     super.initState();
 
+    if (shouldChooseWorkspace) {
+      _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
+      _navigationPreferenceFuture = fetchHpjNavigationPreference();
+    }
+
     _authSubscription = supabase.auth.onAuthStateChange.listen((data) {
       if (!mounted) return;
 
@@ -221,6 +249,7 @@ class _AuthGateState extends State<AuthGate> {
           isPasswordRecovery = true;
           isEmailConfirmation = false;
           hasEnteredMarket = true;
+          shouldChooseWorkspace = false;
           passwordRecoveryError = null;
         });
         return;
@@ -238,6 +267,7 @@ class _AuthGateState extends State<AuthGate> {
           isPasswordRecovery = true;
           isEmailConfirmation = false;
           hasEnteredMarket = true;
+          shouldChooseWorkspace = false;
           passwordRecoveryError = null;
         });
       });
@@ -284,6 +314,7 @@ class _AuthGateState extends State<AuthGate> {
         isPasswordRecovery = true;
         isEmailConfirmation = false;
         hasEnteredMarket = true;
+        shouldChooseWorkspace = false;
         passwordRecoveryError = null;
       });
       return;
@@ -302,6 +333,7 @@ class _AuthGateState extends State<AuthGate> {
         isEmailConfirmation = true;
         isPasswordRecovery = false;
         hasEnteredMarket = true;
+        shouldChooseWorkspace = false;
         emailConfirmationError = null;
         emailConfirmationMessage = null;
       });
@@ -337,9 +369,12 @@ class _AuthGateState extends State<AuthGate> {
       setState(() {
         isEmailConfirmation = false;
         hasEnteredMarket = true;
+        shouldChooseWorkspace = true;
+        _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
+        _navigationPreferenceFuture = fetchHpjNavigationPreference();
         emailConfirmationError = null;
         emailConfirmationMessage =
-            'Email confirmed. You can continue shopping.';
+            'Email confirmed. Welcome to The Harvest Place Ja.';
       });
     } catch (error) {
       AppConfig.cleanAuthCallbackUrl();
@@ -348,6 +383,7 @@ class _AuthGateState extends State<AuthGate> {
       setState(() {
         isEmailConfirmation = false;
         hasEnteredMarket = false;
+        shouldChooseWorkspace = false;
         emailConfirmationError = friendlyAppError(error);
       });
     }
@@ -355,13 +391,39 @@ class _AuthGateState extends State<AuthGate> {
 
   void enterMarket() {
     if (!mounted) return;
-    setState(() => hasEnteredMarket = true);
+    setState(() {
+      hasEnteredMarket = true;
+      shouldChooseWorkspace = isLoggedIn;
+      _workspaceAccessFuture =
+          isLoggedIn ? fetchOwnerWorkspaceAccessSnapshot() : null;
+      _navigationPreferenceFuture =
+          isLoggedIn ? fetchHpjNavigationPreference() : null;
+    });
   }
 
   Future<void> enterMarketAsGuest() async {
     await clearPrivateSessionStateForGuestBrowsing();
     if (!mounted) return;
-    setState(() => hasEnteredMarket = true);
+    setState(() {
+      hasEnteredMarket = true;
+      shouldChooseWorkspace = false;
+    });
+  }
+
+  void _enterCustomerWorkspace() {
+    if (!mounted) return;
+    unawaited(
+      saveHpjNavigationPreference(
+        workspace: 'customer',
+        tab: 0,
+      ),
+    );
+    setState(() {
+      hasEnteredMarket = true;
+      shouldChooseWorkspace = false;
+      _workspaceAccessFuture = null;
+      _navigationPreferenceFuture = null;
+    });
   }
 
   Future<void> openAuth({bool createAccount = false}) async {
@@ -377,8 +439,101 @@ class _AuthGateState extends State<AuthGate> {
 
     if (!mounted) return;
     if (didSignIn == true || isLoggedIn) {
-      setState(() => hasEnteredMarket = true);
+      setState(() {
+        hasEnteredMarket = true;
+        shouldChooseWorkspace = true;
+        _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
+        _navigationPreferenceFuture = fetchHpjNavigationPreference();
+      });
     }
+  }
+
+  Widget _preferredSignedInScreen(
+    OwnerWorkspaceAccessSnapshot access,
+    HpjNavigationPreference? preference,
+  ) {
+    if (preference != null) {
+      switch (preference.lastWorkspace) {
+        case 'farmer':
+          if (access.farmerProfile != null) {
+            return FarmerAccessGate(
+              initialTab: preference.farmerTab,
+            );
+          }
+          break;
+        case 'wholesale':
+          if (access.businessAccount != null) {
+            return BusinessWholesaleHubScreen(
+              initialTab: preference.wholesaleTab,
+            );
+          }
+          break;
+        case 'customer':
+        default:
+          return MainNavigation(
+            initialIndex: preference.customerTab,
+          );
+      }
+    }
+
+    // First-login rule: never auto-open Staff/Admin. A farmer-first account
+    // starts in Farmer (Feed once approved), a business-first account starts
+    // in Wholesale (Feed once approved), and everyone else starts at Home.
+    final metadata =
+        supabase.auth.currentUser?.userMetadata ?? const <String, dynamic>{};
+    final role = (metadata['role'] ?? '').toString().trim().toLowerCase();
+    final accountType =
+        (metadata['account_type'] ?? '').toString().trim().toLowerCase();
+
+    if (role == 'farmer') {
+      return const FarmerAccessGate(initialTab: 0);
+    }
+
+    if (accountType == 'business' || accountType == 'wholesale') {
+      return const BusinessWholesaleHubScreen(initialTab: 0);
+    }
+
+    return const MainNavigation(initialIndex: 0);
+  }
+
+  Widget _routeSignedInUser() {
+    final accessFuture =
+        _workspaceAccessFuture ??= fetchOwnerWorkspaceAccessSnapshot();
+    final preferenceFuture =
+        _navigationPreferenceFuture ??= fetchHpjNavigationPreference();
+
+    return FutureBuilder<OwnerWorkspaceAccessSnapshot>(
+      future: accessFuture,
+      builder: (context, accessSnapshot) {
+        if (accessSnapshot.connectionState == ConnectionState.waiting &&
+            accessSnapshot.data == null) {
+          return const _SmartEntryLoadingView();
+        }
+
+        final access = accessSnapshot.data;
+
+        // If role lookup fails, never block a signed-in user. Customer Home is
+        // always the safe fallback and Staff/Admin is never auto-opened.
+        if (access == null) {
+          return const MainNavigation(initialIndex: 0);
+        }
+
+        return FutureBuilder<HpjNavigationPreference?>(
+          future: preferenceFuture,
+          builder: (context, preferenceSnapshot) {
+            if (preferenceSnapshot.connectionState == ConnectionState.waiting &&
+                !preferenceSnapshot.hasData) {
+              return const _SmartEntryLoadingView();
+            }
+
+            return _preferredSignedInScreen(
+              access,
+              preferenceSnapshot.data,
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -398,6 +553,11 @@ class _AuthGateState extends State<AuthGate> {
           setState(() {
             isPasswordRecovery = false;
             hasEnteredMarket = true;
+            shouldChooseWorkspace = isLoggedIn;
+            _workspaceAccessFuture =
+                isLoggedIn ? fetchOwnerWorkspaceAccessSnapshot() : null;
+            _navigationPreferenceFuture =
+                isLoggedIn ? fetchHpjNavigationPreference() : null;
           });
         },
       );
@@ -446,7 +606,1384 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
+    if (isLoggedIn && shouldChooseWorkspace) {
+      return _routeSignedInUser();
+    }
+
     return const MainNavigation();
+  }
+}
+
+class _SmartEntryLoadingView extends StatelessWidget {
+  const _SmartEntryLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: FarmColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                  ),
+                ),
+                SizedBox(height: 14),
+                Text(
+                  'Opening HPJ…',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PostLoginWorkspaceSelector extends StatefulWidget {
+  final VoidCallback? onCustomerSelected;
+
+  const PostLoginWorkspaceSelector({
+    super.key,
+    this.onCustomerSelected,
+  });
+
+  @override
+  State<PostLoginWorkspaceSelector> createState() =>
+      _PostLoginWorkspaceSelectorState();
+}
+
+class _PostLoginWorkspaceSelectorState
+    extends State<PostLoginWorkspaceSelector> {
+  late Future<OwnerWorkspaceAccessSnapshot> _future;
+
+  static const String _heroPhoto =
+      'https://images.unsplash.com/photo-1767452433319-12b4d7e6ec91'
+      '?auto=format&fit=crop&w=1800&q=82';
+
+  static const String _customerPhoto =
+      'https://images.unsplash.com/photo-1775825772432-58a1a31dcf40'
+      '?auto=format&fit=crop&w=1200&q=82';
+
+  static const String _wholesalePhoto =
+      'https://images.unsplash.com/photo-1769355104335-acef3aa4c9b6'
+      '?auto=format&fit=crop&w=1200&q=82';
+
+  static const String _farmerPhoto =
+      'https://images.unsplash.com/photo-1767590954924-9ff1057b9f65'
+      '?auto=format&fit=crop&w=1200&q=82';
+
+  static const String _staffPhoto =
+      'https://images.unsplash.com/photo-1770992225308-154250075727'
+      '?auto=format&fit=crop&w=1200&q=82';
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchOwnerWorkspaceAccessSnapshot();
+  }
+
+  Future<void> _reload() async {
+    final next = fetchOwnerWorkspaceAccessSnapshot();
+    if (mounted) {
+      setState(() => _future = next);
+    }
+    await next;
+  }
+
+  void _open(Widget screen) {
+    // A chosen workspace becomes the navigation root. This prevents the
+    // device/app Back button from ever revealing the workspace selector.
+    // Users switch workspaces only from the explicit Switch Workspace action.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => screen),
+      (route) => false,
+    );
+  }
+
+  Future<void> _signOut() async {
+    await supabase.auth.signOut();
+    FarmDataCache.clearAll();
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const AuthGate(),
+      ),
+      (route) => false,
+    );
+  }
+
+  void _openCustomerWorkspace() {
+    final callback = widget.onCustomerSelected;
+    if (callback != null) {
+      callback();
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const MainNavigation(),
+      ),
+      (route) => false,
+    );
+  }
+
+  String get _firstName {
+    final user = supabase.auth.currentUser;
+    final metadata = user?.userMetadata ?? const <String, dynamic>{};
+
+    final fullName = (metadata['full_name'] ?? '').toString().trim();
+    if (fullName.isNotEmpty) {
+      return fullName.split(RegExp(r'\s+')).first;
+    }
+
+    final email = user?.email?.trim() ?? '';
+    if (email.contains('@')) {
+      final local = email.split('@').first.trim();
+      if (local.isNotEmpty) {
+        return local[0].toUpperCase() +
+            (local.length > 1 ? local.substring(1) : '');
+      }
+    }
+
+    return 'there';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const pageBackground = Color(0xFFF7F4EE);
+
+    return Scaffold(
+      backgroundColor: pageBackground,
+      body: SafeArea(
+        child: FutureBuilder<OwnerWorkspaceAccessSnapshot>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                snapshot.data == null) {
+              return const _WorkspaceLoadingView();
+            }
+
+            if (snapshot.hasError || snapshot.data == null) {
+              return _WorkspaceLoadErrorView(
+                onRetry: _reload,
+                onCustomerSelected: _openCustomerWorkspace,
+                onSignOut: _signOut,
+              );
+            }
+
+            final access = snapshot.data!;
+            final business = access.businessAccount;
+            final farmer = access.farmerProfile;
+            final settings = access.programSettings;
+            final staffRole = normalizeStaffRole(access.staffRole);
+            final hasStaffAccess = isStaffRoleActive(staffRole);
+
+            final businessStatus = business == null
+                ? settings.wholesaleApplicationsEnabled
+                    ? 'Apply'
+                    : 'Paused'
+                : business.isApproved
+                    ? settings.wholesaleWorkspaceEnabled
+                        ? 'Approved'
+                        : 'Paused'
+                    : businessAccountStatusLabel(business.status);
+
+            final businessStatusColor = business?.isApproved == true
+                ? const Color(0xFF2C754A)
+                : business == null && !settings.wholesaleApplicationsEnabled
+                    ? const Color(0xFF78817D)
+                    : businessAccountStatusColor(business?.status);
+
+            final farmerStatus = farmer == null
+                ? settings.farmerApplicationsEnabled
+                    ? 'Apply'
+                    : 'Paused'
+                : farmer.isApproved
+                    ? settings.farmerWorkspaceEnabled
+                        ? 'Approved'
+                        : 'Paused'
+                    : farmer.statusLabel;
+
+            final farmerStatusColor = farmer?.isApproved == true
+                ? const Color(0xFF2C754A)
+                : farmer == null && !settings.farmerApplicationsEnabled
+                    ? const Color(0xFF78817D)
+                    : FarmColors.warning;
+
+            return RefreshIndicator(
+              onRefresh: _reload,
+              color: const Color(0xFF0B4C36),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isTablet = constraints.maxWidth >= 760;
+                  final horizontal = isTablet ? 34.0 : 14.0;
+                  final maxContentWidth =
+                      constraints.maxWidth > 980 ? 920.0 : constraints.maxWidth;
+
+                  return ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                      horizontal,
+                      0,
+                      horizontal,
+                      30,
+                    ),
+                    children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: maxContentWidth,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _RealPhotoWorkspaceHero(
+                                firstName: _firstName,
+                                photoUrl: _heroPhoto,
+                                compact: !isTablet,
+                                onRefresh: _reload,
+                                onSignOut: _signOut,
+                              ),
+                              const SizedBox(height: 16),
+                              const _ProfessionalVerifiedBanner(),
+                              const SizedBox(height: 28),
+                              const Text(
+                                'YOUR WORKSPACES',
+                                style: TextStyle(
+                                  color: Color(0xFF707B76),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 2.2,
+                                ),
+                              ),
+                              const SizedBox(height: 7),
+                              const Text(
+                                'Choose your workspace',
+                                style: TextStyle(
+                                  color: Color(0xFF103F2F),
+                                  fontSize: 28,
+                                  height: 1.0,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.75,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Access the right tools for what you want to do today.',
+                                style: TextStyle(
+                                  color: Color(0xFF68716D),
+                                  fontSize: 12.4,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              _BalancedWorkspaceGrid(
+                                children: [
+                                  _BalancedPhotoWorkspaceCard(
+                                    photoUrl: _customerPhoto,
+                                    title: 'Customer Shopping',
+                                    subtitle: 'Shop fresh produce',
+                                    status: 'Available',
+                                    statusColor: const Color(0xFF2C754A),
+                                    onTap: _openCustomerWorkspace,
+                                  ),
+                                  _BalancedPhotoWorkspaceCard(
+                                    photoUrl: _wholesalePhoto,
+                                    title: 'Wholesale Business',
+                                    subtitle: business?.isApproved == true
+                                        ? 'Buy for your business'
+                                        : 'Apply for wholesale access or review your status.',
+                                    status: businessStatus,
+                                    statusColor: businessStatusColor,
+                                    onTap: () => _open(
+                                      const BusinessWholesaleHubScreen(),
+                                    ),
+                                  ),
+                                  _BalancedPhotoWorkspaceCard(
+                                    photoUrl: _farmerPhoto,
+                                    title: 'Farmer Partner',
+                                    subtitle: farmer?.isApproved == true
+                                        ? 'Supply HPJ'
+                                        : 'Apply to supply HPJ or review your status.',
+                                    status: farmerStatus,
+                                    statusColor: farmerStatusColor,
+                                    onTap: () => _open(
+                                      const FarmerAccessGate(),
+                                    ),
+                                  ),
+                                  if (hasStaffAccess)
+                                    _BalancedPhotoWorkspaceCard(
+                                      photoUrl: _staffPhoto,
+                                      title: 'HPJ Staff & Operations',
+                                      subtitle:
+                                          _balancedStaffSubtitle(staffRole),
+                                      status: staffRoleDisplayLabel(staffRole),
+                                      statusColor: const Color(0xFF526763),
+                                      onTap: () => _open(
+                                        const AdminDashboardScreen(),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              const _ProfessionalAccountNote(),
+                              const SizedBox(height: 14),
+                              const _ProfessionalBenefitsFooter(),
+                              const SizedBox(height: 12),
+                              const _WorkspaceLegalFooter(),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+String _balancedStaffSubtitle(String role) {
+  switch (normalizeStaffRole(role)) {
+    case 'owner':
+      return 'Manage operations';
+    case 'manager':
+      return 'Manage operations';
+    case 'packer':
+      return 'Packing & fulfilment';
+    case 'delivery':
+      return 'Deliveries';
+    case 'inventory':
+      return 'Inventory & warehouse';
+    case 'support':
+      return 'Customer support';
+    default:
+      return 'HPJ operations';
+  }
+}
+
+class _RealPhotoWorkspaceHero extends StatelessWidget {
+  final String firstName;
+  final String photoUrl;
+  final bool compact;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function() onSignOut;
+
+  const _RealPhotoWorkspaceHero({
+    required this.firstName,
+    required this.photoUrl,
+    required this.compact,
+    required this.onRefresh,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: compact ? 306 : 302,
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(compact ? 0 : 28),
+          bottomRight: Radius.circular(compact ? 0 : 28),
+        ),
+        color: const Color(0xFF174334),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF15392E).withOpacity(0.14),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            photoUrl,
+            fit: BoxFit.cover,
+            alignment: const Alignment(0.15, 0),
+            filterQuality: FilterQuality.medium,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return const ColoredBox(
+                color: Color(0xFF214D3B),
+              );
+            },
+            errorBuilder: (_, __, ___) {
+              return const ColoredBox(
+                color: Color(0xFF214D3B),
+              );
+            },
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  const Color(0xFF092F24).withOpacity(0.86),
+                  const Color(0xFF092F24).withOpacity(0.50),
+                  const Color(0xFF092F24).withOpacity(0.10),
+                ],
+                stops: const [0, 0.48, 0.84],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.06),
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.15),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: 16,
+            child: Row(
+              children: [
+                Container(
+                  width: 94,
+                  height: 56,
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.78),
+                    ),
+                  ),
+                  child: Image.asset(
+                    'lib/assets/images/logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.eco_outlined,
+                      color: Color(0xFF0C4C36),
+                      size: 30,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                _PhotoHeroAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onTap: () {
+                    onRefresh();
+                  },
+                ),
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  tooltip: 'Account',
+                  onSelected: (value) {
+                    if (value == 'sign_out') {
+                      onSignOut();
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<String>(
+                      value: 'sign_out',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.logout_rounded,
+                            size: 19,
+                          ),
+                          SizedBox(width: 8),
+                          Text('Sign out'),
+                        ],
+                      ),
+                    ),
+                  ],
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.94),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.person_rounded,
+                      color: Color(0xFF0C4C36),
+                      size: 23,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 20,
+            right: compact ? 34 : 260,
+            bottom: 25,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Welcome back,',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    height: 1.0,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.35,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  firstName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 39,
+                    height: 0.96,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1.1,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Together we grow a healthier Jamaica.',
+                  maxLines: 2,
+                  style: TextStyle(
+                    color: Color(0xFFF2F4EF),
+                    fontSize: 13.3,
+                    height: 1.35,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PhotoHeroAction extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _PhotoHeroAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white.withOpacity(0.94),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(
+              icon,
+              color: const Color(0xFF0C4C36),
+              size: 21,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfessionalVerifiedBanner extends StatelessWidget {
+  const _ProfessionalVerifiedBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 15,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A553A),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF153D31).withOpacity(0.13),
+            blurRadius: 22,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 49,
+            height: 49,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.14),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.verified_user_rounded,
+              color: Colors.white,
+              size: 25,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your account is verified and secure',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.6,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'All approved workspaces stay connected to your HPJ account.',
+                  style: TextStyle(
+                    color: Color(0xFFD4E3DB),
+                    fontSize: 11.2,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(
+            Icons.lock_outline_rounded,
+            color: Color(0xFFE3E9E5),
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BalancedWorkspaceGrid extends StatelessWidget {
+  final List<Widget> children;
+
+  const _BalancedWorkspaceGrid({
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Two large visual tiles on normal phones and tablets.
+        // Only fall back to one column on exceptionally narrow layouts.
+        final oneColumn = constraints.maxWidth < 330;
+        final columns = oneColumn ? 1 : 2;
+        final gap = oneColumn ? 12.0 : 12.0;
+        final width = oneColumn
+            ? constraints.maxWidth
+            : (constraints.maxWidth - gap) / columns;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: 12,
+          children: children
+              .map(
+                (child) => SizedBox(
+                  width: width,
+                  child: child,
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _BalancedPhotoWorkspaceCard extends StatelessWidget {
+  final String photoUrl;
+  final String title;
+  final String subtitle;
+  final String status;
+  final Color statusColor;
+  final VoidCallback onTap;
+  final bool isCurrent;
+  final String actionLabel;
+
+  const _BalancedPhotoWorkspaceCard({
+    required this.photoUrl,
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.statusColor,
+    required this.onTap,
+    this.isCurrent = false,
+    this.actionLabel = 'Open',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const forest = Color(0xFF0B4C36);
+    const ink = Color(0xFF183D30);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 210;
+        final cardHeight = compact ? 214.0 : 224.0;
+        final imageHeight = compact ? 94.0 : 104.0;
+
+        return Semantics(
+          button: true,
+          label: '$title. $subtitle. $status.',
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(23),
+              onTap: onTap,
+              child: Container(
+                height: cardHeight,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: isCurrent
+                      ? const Color(0xFFF1F8F1)
+                      : const Color(0xFFFFFEFB),
+                  borderRadius: BorderRadius.circular(23),
+                  border: Border.all(
+                    color: isCurrent ? forest : const Color(0xFFE0DDD4),
+                    width: isCurrent ? 1.7 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF183D30).withOpacity(
+                        isCurrent ? 0.12 : 0.08,
+                      ),
+                      blurRadius: isCurrent ? 24 : 20,
+                      offset: const Offset(0, 9),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: imageHeight,
+                      width: double.infinity,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            photoUrl,
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            filterQuality: FilterQuality.medium,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return const ColoredBox(
+                                color: Color(0xFFE8EFEA),
+                              );
+                            },
+                            errorBuilder: (_, __, ___) {
+                              return const ColoredBox(
+                                color: Color(0xFFE8EFEA),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.grid_view_rounded,
+                                    color: forest,
+                                    size: 30,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x00000000),
+                                    Color(0x1A000000),
+                                    Color(0x66000000),
+                                  ],
+                                  stops: [0, 0.62, 1],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 10,
+                            right: 10,
+                            child: _BalancedStatusPill(
+                              label: status,
+                              color: statusColor,
+                              onPhoto: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          compact ? 12 : 14,
+                          12,
+                          compact ? 10 : 12,
+                          11,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: ink,
+                                fontSize: compact ? 14.2 : 15.2,
+                                height: 1.05,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.25,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: const Color(0xFF69736E),
+                                fontSize: compact ? 10.2 : 10.7,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Text(
+                                  actionLabel,
+                                  style: TextStyle(
+                                    color: forest,
+                                    fontSize: compact ? 10.2 : 10.8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEAF3EC),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Icon(
+                                    isCurrent
+                                        ? Icons.check_rounded
+                                        : Icons.arrow_forward_rounded,
+                                    color: forest,
+                                    size: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _BalancedStatusPill extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool onPhoto;
+
+  const _BalancedStatusPill({
+    required this.label,
+    required this.color,
+    this.onPhoto = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(
+        maxWidth: 84,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color:
+            onPhoto ? Colors.white.withOpacity(0.94) : color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(999),
+        border:
+            onPhoto ? Border.all(color: Colors.white.withOpacity(0.70)) : null,
+        boxShadow: onPhoto
+            ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 4,
+            height: 4,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 8.8,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfessionalAccountNote extends StatelessWidget {
+  const _ProfessionalAccountNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 15,
+        vertical: 14,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F4EC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFD9E2D5),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF183D30).withOpacity(0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.78),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.eco_outlined,
+              color: Color(0xFF0B4C36),
+              size: 23,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'One account. Many possibilities.',
+                  style: TextStyle(
+                    color: Color(0xFF104531),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Switch workspaces without changing your approved permissions.',
+                  style: TextStyle(
+                    color: Color(0xFF65706B),
+                    fontSize: 10.9,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfessionalBenefitsFooter extends StatelessWidget {
+  const _ProfessionalBenefitsFooter();
+
+  void _open(BuildContext context, Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => screen),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final benefits = [
+      _ProfessionalBenefit(
+        icon: Icons.shield_outlined,
+        title: 'Secure',
+        subtitle: 'Trust Center',
+        onTap: () => _open(context, const TrustCenterScreen()),
+      ),
+      _ProfessionalBenefit(
+        icon: Icons.eco_outlined,
+        title: 'About',
+        subtitle: 'Our story',
+        onTap: () => _open(context, const AboutHpjScreen()),
+      ),
+      _ProfessionalBenefit(
+        icon: Icons.contact_support_outlined,
+        title: 'Contact',
+        subtitle: 'Reach HPJ',
+        onTap: () => _open(context, const ContactHpjScreen()),
+      ),
+      _ProfessionalBenefit(
+        icon: Icons.chat_bubble_outline_rounded,
+        title: 'Chat',
+        subtitle: 'Customer Care',
+        onTap: () => _open(
+          context,
+          const SupportScreen(initialSubject: 'Customer care'),
+        ),
+      ),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFAF6),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE7E4DE)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF183D30).withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (var index = 0; index < benefits.length; index++) ...[
+            Expanded(child: benefits[index]),
+            if (index != benefits.length - 1)
+              Container(
+                width: 1,
+                height: 48,
+                color: const Color(0xFFE7E4DE),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceLegalFooter extends StatelessWidget {
+  const _WorkspaceLegalFooter();
+
+  void _open(BuildContext context, Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => screen),
+    );
+  }
+
+  Widget _link(
+    BuildContext context,
+    String label,
+    Widget screen,
+  ) {
+    return TextButton(
+      onPressed: () => _open(context, screen),
+      style: TextButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF66706B),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
+      child: Column(
+        children: [
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 2,
+            runSpacing: 0,
+            children: [
+              _link(context, 'About', const AboutHpjScreen()),
+              _link(context, 'Contact', const ContactHpjScreen()),
+              _link(context, 'Terms', const TermsOfServiceScreen()),
+              _link(context, 'Privacy', const PrivacyPolicyScreen()),
+              _link(context, 'Refunds', const RefundPolicyScreen()),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${AppConfig.appName} • v${AppConfig.appVersion}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF969C98),
+              fontSize: 8.6,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfessionalBenefit extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ProfessionalBenefit({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '$title. $subtitle.',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+            child: Column(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2ED),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: const Color(0xFF0B4C36),
+                    size: 19,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF104531),
+                    fontSize: 10.4,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF7D8782),
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceLoadingView extends StatelessWidget {
+  const _WorkspaceLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            CircularProgressIndicator(),
+            SizedBox(height: 14),
+            Text(
+              'Preparing your workspaces...',
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceLoadErrorView extends StatelessWidget {
+  final Future<void> Function() onRetry;
+  final VoidCallback onCustomerSelected;
+  final Future<void> Function() onSignOut;
+
+  const _WorkspaceLoadErrorView({
+    required this.onRetry,
+    required this.onCustomerSelected,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(22),
+      children: [
+        const SizedBox(height: 28),
+        const Icon(
+          Icons.hub_outlined,
+          size: 54,
+          color: FarmColors.green,
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'Your workspace list needs a refresh',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Your customer shop is still available. Try again to reload wholesale, farmer and staff access.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            height: 1.4,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 22),
+        PrimaryFarmButton(
+          label: 'Continue as Customer',
+          onPressed: onCustomerSelected,
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Try Again'),
+        ),
+        TextButton(
+          onPressed: onSignOut,
+          child: const Text('Sign out'),
+        ),
+      ],
+    );
   }
 }
 
@@ -511,32 +2048,38 @@ class PublicLandingScreen extends StatelessWidget {
       body: SafeArea(
         child: ListView(
           physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(20, 18, 20, 28 + bottomPadding),
+          padding: EdgeInsets.fromLTRB(
+            22,
+            22,
+            22,
+            24 + bottomPadding,
+          ),
           children: [
-            const SizedBox(height: 4),
             Center(
               child: Container(
-                padding: const EdgeInsets.all(12),
+                width: 98,
+                height: 98,
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
-                  border: Border.all(color: FarmColors.line),
+                  border: Border.all(
+                    color: FarmColors.line,
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: FarmColors.shadow.withOpacity(0.08),
-                      blurRadius: 22,
-                      offset: const Offset(0, 12),
+                      color: FarmColors.shadow.withOpacity(0.07),
+                      blurRadius: 20,
+                      offset: const Offset(0, 9),
                     ),
                   ],
                 ),
                 child: Image.asset(
                   'lib/assets/images/logo.png',
-                  height: 78,
-                  width: 78,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(
                     Icons.eco_outlined,
-                    size: 58,
+                    size: 54,
                     color: FarmColors.primary,
                   ),
                 ),
@@ -547,25 +2090,26 @@ class PublicLandingScreen extends StatelessWidget {
               'The Harvest Place Ja',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 31,
+                color: FarmColors.ink,
+                fontSize: 29,
+                height: 1.04,
                 fontWeight: FontWeight.w900,
-                letterSpacing: -0.8,
-                height: 1.05,
+                letterSpacing: -0.7,
               ),
             ),
-            const SizedBox(height: 9),
-            Text(
-              'Fresh local food, simple ordering, and farm updates you can trust.',
+            const SizedBox(height: 8),
+            const Text(
+              'Fresh Jamaican produce, simple ordering, and trusted farm connections.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 15.5,
                 color: FarmColors.mutedText,
-                fontWeight: FontWeight.w700,
+                fontSize: 14.1,
                 height: 1.35,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 18),
-            _LandingHeroCard(onEnterMarket: onEnterMarket),
+            const SizedBox(height: 20),
+            const _LandingHeroCard(),
             const SizedBox(height: 16),
             const Wrap(
               alignment: WrapAlignment.center,
@@ -574,7 +2118,7 @@ class PublicLandingScreen extends StatelessWidget {
               children: [
                 _LandingTrustPill(
                   icon: Icons.visibility_outlined,
-                  label: 'Browse first',
+                  label: 'Browse freely',
                 ),
                 _LandingTrustPill(
                   icon: Icons.lock_outline,
@@ -586,28 +2130,7 @@ class PublicLandingScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-            const _LandingFeatureTile(
-              icon: Icons.storefront_outlined,
-              title: 'Shop fresh harvests',
-              subtitle:
-                  'See what is available, low stock, or currently unavailable before you order.',
-            ),
-            const SizedBox(height: 10),
-            const _LandingFeatureTile(
-              icon: Icons.local_shipping_outlined,
-              title: 'Pickup or delivery',
-              subtitle:
-                  'Choose the fulfillment option that works best for your schedule.',
-            ),
-            const SizedBox(height: 10),
-            const _LandingFeatureTile(
-              icon: Icons.repeat_outlined,
-              title: 'Build your weekly box',
-              subtitle:
-                  'Save favorite repeat items and confirm them when you are ready.',
-            ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 20),
             PrimaryFarmButton(
               label: 'Enter Market',
               onPressed: onEnterMarket,
@@ -615,34 +2138,47 @@ class PublicLandingScreen extends StatelessWidget {
             const SizedBox(height: 10),
             OutlinedButton.icon(
               icon: const Icon(Icons.person_outline),
-              label: const Text('Log in or Create Account'),
+              label: const Text(
+                'Log in or Create Account',
+              ),
               onPressed: onAuth,
             ),
-            const SizedBox(height: 10),
-            Text(
-              'No account needed to browse. Sign in only when you are ready to checkout or manage orders.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: FarmColors.mutedText,
-                fontWeight: FontWeight.w700,
-                fontSize: 12.5,
-                height: 1.35,
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F4EC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(
+                    0xFFDCE4D8,
+                  ),
+                ),
+              ),
+              child: const Text(
+                'Farmer or wholesale business? Log in with the same HPJ account to access your approved workspace.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF5F6D65),
+                  fontSize: 10.2,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-            const SizedBox(height: 10),
-            TextButton.icon(
-              icon: const Icon(Icons.lock_reset_outlined),
-              label: const Text('Forgot password?'),
+            const SizedBox(height: 8),
+            TextButton(
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const ForgotPasswordScreen(),
                   ),
                 );
               },
+              child: const Text('Forgot password?'),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 4,
@@ -670,113 +2206,52 @@ class PublicLandingScreen extends StatelessWidget {
 }
 
 class _LandingHeroCard extends StatelessWidget {
-  final VoidCallback onEnterMarket;
-
-  const _LandingHeroCard({required this.onEnterMarket});
+  const _LandingHeroCard();
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onEnterMarket,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(30),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              FarmColors.primaryDark,
-              FarmColors.primary,
-              FarmColors.olive,
-            ],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        18,
+        18,
+        18,
+        17,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        color: FarmColors.primaryDark,
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.primary.withOpacity(0.16),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: FarmColors.primary.withOpacity(0.20),
-              blurRadius: 26,
-              offset: const Offset(0, 16),
+        ],
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Fresh from Jamaican farms to you',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 21,
+              height: 1.08,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.35,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: Colors.white.withOpacity(0.18)),
-                  ),
-                  child: const Icon(
-                    Icons.shopping_basket_outlined,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Your farm market in your pocket',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          height: 1.08,
-                          letterSpacing: -0.4,
-                        ),
-                      ),
-                      SizedBox(height: 6),
-                      Text(
-                        'Browse fresh picks, build your box, and get clear updates from order to pickup or delivery.',
-                        style: TextStyle(
-                          color: Color(0xFFEAF5E7),
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          ),
+          SizedBox(height: 7),
+          Text(
+            'Browse what is available, build your box, and order for pickup or delivery.',
+            style: TextStyle(
+              color: Color(0xFFE2EEE7),
+              fontSize: 12.7,
+              height: 1.38,
+              fontWeight: FontWeight.w600,
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withOpacity(0.16)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.touch_app_outlined, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Tap Enter Market to start browsing now.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12.8,
-                      ),
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward_rounded,
-                      color: Colors.white, size: 18),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -819,80 +2294,6 @@ class _LandingTrustPill extends StatelessWidget {
   }
 }
 
-class _LandingFeatureTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const _LandingFeatureTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: FarmColors.line),
-        boxShadow: [
-          BoxShadow(
-            color: FarmColors.shadow.withOpacity(0.045),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            height: 42,
-            width: 42,
-            decoration: BoxDecoration(
-              color: FarmColors.lightGreen,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: FarmColors.green, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14.2,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: FarmColors.mutedText,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.2,
-                    height: 1.25,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _LandingPolicyLink extends StatelessWidget {
   final String label;
   final WidgetBuilder builder;
@@ -921,6 +2322,96 @@ class _LandingPolicyLink extends StatelessWidget {
   }
 }
 
+class _HpjTurnstilePanel extends StatelessWidget {
+  final TurnstileController controller;
+  final String action;
+  final ValueChanged<String?> onTokenChanged;
+
+  const _HpjTurnstilePanel({
+    required this.controller,
+    required this.action,
+    required this.onTokenChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AppConfig.turnstileConfigured) {
+      return const SizedBox.shrink();
+    }
+
+    return Semantics(
+      label: 'Security check',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: FarmColors.line),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  color: FarmColors.primary,
+                  size: 19,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Security check',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: CloudflareTurnstile(
+                siteKey: AppConfig.turnstileSiteKey,
+                baseUrl: AppConfig.turnstileBaseUrl,
+                action: action,
+                controller: controller,
+                options: TurnstileOptions(
+                  size: TurnstileSize.flexible,
+                  theme: TurnstileTheme.light,
+                  language: 'en',
+                  retryAutomatically: true,
+                  refreshExpired: TurnstileRefreshExpired.auto,
+                  refreshTimeout: TurnstileRefreshTimeout.auto,
+                ),
+                onTokenReceived: (token) => onTokenChanged(token),
+                onTokenExpired: () => onTokenChanged(null),
+                onError: (error) {
+                  farmDebugLog('Turnstile error: ${error.message}');
+                  onTokenChanged(null);
+                },
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'HPJ uses a privacy-friendly security check to block automated abuse.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 10.5,
+                height: 1.25,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ForgotPasswordScreen extends StatefulWidget {
   final String initialEmail;
 
@@ -932,7 +2423,9 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   late final TextEditingController emailController;
+  final TurnstileController _captchaController = TurnstileController();
   bool loading = false;
+  String? _captchaToken;
 
   @override
   void initState() {
@@ -942,8 +2435,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   void dispose() {
+    _captchaController.dispose();
     emailController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshCaptcha() async {
+    if (!AppConfig.turnstileConfigured) return;
+    if (mounted) setState(() => _captchaToken = null);
+    try {
+      await _captchaController.refreshToken();
+    } catch (error) {
+      farmDebugLog('Turnstile refresh failed: $error');
+    }
   }
 
   Future<void> sendResetLink() async {
@@ -955,12 +2459,26 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       return;
     }
 
+    if (AppConfig.turnstileConfigured &&
+        (_captchaToken == null || _captchaToken!.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please complete the security check first.'),
+        ),
+      );
+      return;
+    }
+
+    var resetSent = false;
     setState(() => loading = true);
     try {
       await supabase.auth.resetPasswordForEmail(
         email,
         redirectTo: AppConfig.passwordResetRedirectTo,
+        captchaToken:
+            AppConfig.turnstileConfigured ? _captchaToken?.trim() : null,
       );
+      resetSent = true;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -970,12 +2488,30 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
       );
       Navigator.pop(context);
+    } on AuthException catch (error) {
+      if (!mounted) return;
+      farmDebugLog('Password reset auth error: ${error.message}');
+      final lower = error.message.toLowerCase();
+      final message = lower.contains('captcha') || lower.contains('challenge')
+          ? 'The security check expired or could not be verified. Please try again.'
+          : lower.contains('rate limit') || lower.contains('too many')
+              ? 'Too many reset attempts. Please wait a few minutes and try again.'
+              : 'Could not send the reset link. Please check the email and try again.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     } catch (error) {
       if (!mounted) return;
+      farmDebugLog('Password reset failed: $error');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Password reset failed: $error')),
+        const SnackBar(
+          content: Text('Could not send the reset link. Please try again.'),
+        ),
       );
     } finally {
+      if (!resetSent && mounted) {
+        await _refreshCaptcha();
+      }
       if (mounted) setState(() => loading = false);
     }
   }
@@ -1022,10 +2558,27 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 18),
+            if (AppConfig.turnstileConfigured) ...[
+              _HpjTurnstilePanel(
+                controller: _captchaController,
+                action: 'hpj_password_reset',
+                onTokenChanged: (token) {
+                  if (!mounted) return;
+                  setState(() => _captchaToken = token);
+                },
+              ),
+              const SizedBox(height: 18),
+            ] else ...[
+              const SizedBox(height: 4),
+            ],
             PrimaryFarmButton(
               label: loading ? 'Sending reset link...' : 'Send reset link',
-              onPressed: loading ? null : sendResetLink,
+              onPressed: loading ||
+                      (AppConfig.turnstileConfigured &&
+                          (_captchaToken == null || _captchaToken!.isEmpty))
+                  ? null
+                  : sendResetLink,
             ),
             const SizedBox(height: 12),
             TextButton(
@@ -1265,6 +2818,25 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
     }
   }
 
+  void _leavePasswordScreen() {
+    if (AppConfig.hasPasswordRecoveryCallback) {
+      AppConfig.cleanPasswordRecoveryUrl();
+    }
+
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const LoginScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
   Future<void> updatePassword() async {
     final password = passwordController.text.trim();
     final confirmPassword = confirmPasswordController.text.trim();
@@ -1335,7 +2907,19 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            const SizedBox(height: 28),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: loading ? null : _leavePasswordScreen,
+                icon: const Icon(Icons.arrow_back_rounded),
+                label: Text(
+                  AppConfig.hasPasswordRecoveryCallback
+                      ? 'Back to Sign In'
+                      : 'Back to Settings',
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
             Center(
               child: Image.asset(
                 'lib/assets/images/logo.png',
@@ -1474,9 +3058,37 @@ class _LoginScreenState extends State<LoginScreen> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final fullNameController = TextEditingController();
+  final businessNameController = TextEditingController();
+  final businessPhoneController = TextEditingController();
+  final businessParishController = TextEditingController();
+  final TurnstileController _captchaController = TurnstileController();
+
   bool loading = false;
+  String? _captchaToken;
+  bool hidePassword = true;
   bool isRegister = false;
   String selectedRole = 'customer';
+  String selectedCustomerAccountType = 'retail';
+  String selectedBusinessType = 'Restaurant / Food Service';
+  String? pendingConfirmationEmail;
+  bool resendingConfirmation = false;
+
+  static const List<String> _businessTypes = <String>[
+    'Restaurant / Food Service',
+    'Hotel / Guesthouse',
+    'School / Institution',
+    'Supermarket / Shop',
+    'Caterer',
+    'Juice Bar',
+    'Food Vendor',
+    'Church / Community Group',
+    'Other',
+  ];
+
+  bool get isBusinessRegistration =>
+      isRegister &&
+      selectedRole == 'customer' &&
+      selectedCustomerAccountType == 'business';
 
   @override
   void initState() {
@@ -1489,13 +3101,92 @@ class _LoginScreenState extends State<LoginScreen> {
     emailController.dispose();
     passwordController.dispose();
     fullNameController.dispose();
+    businessNameController.dispose();
+    businessPhoneController.dispose();
+    businessParishController.dispose();
+    _captchaController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshCaptcha() async {
+    if (!AppConfig.turnstileConfigured) return;
+    if (mounted) setState(() => _captchaToken = null);
+    try {
+      await _captchaController.refreshToken();
+    } catch (error) {
+      farmDebugLog('Turnstile refresh failed: $error');
+    }
+  }
+
+  String _confirmationEmailErrorMessage(AuthException error) {
+    final lower = error.message.trim().toLowerCase();
+
+    if (lower.contains('email address not authorized') ||
+        lower.contains('not authorized')) {
+      return 'Confirmation email delivery is not configured for this address yet. Please contact HPJ support.';
+    }
+
+    if (lower.contains('rate limit') ||
+        lower.contains('over_email_send_rate_limit') ||
+        lower.contains('too many')) {
+      return 'The email service has reached its temporary sending limit. Please wait and try again.';
+    }
+
+    return 'Could not resend the confirmation email. Please try again shortly.';
+  }
+
+  Future<void> _resendConfirmationEmail() async {
+    final email = (pendingConfirmationEmail ?? emailController.text)
+        .trim()
+        .toLowerCase();
+
+    if (email.isEmpty || resendingConfirmation) return;
+
+    setState(() => resendingConfirmation = true);
+
+    try {
+      await supabase.auth.resend(
+        type: OtpType.signup,
+        email: email,
+        emailRedirectTo: AppConfig.emailConfirmationRedirectTo,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Confirmation email sent again to $email. Check your inbox and spam/junk folder.',
+          ),
+        ),
+      );
+    } on AuthException catch (error) {
+      farmDebugLog('Confirmation email resend error: ${error.message}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_confirmationEmailErrorMessage(error))),
+      );
+    } catch (error) {
+      farmDebugLog('Unexpected confirmation resend error: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not resend the confirmation email. Please check your connection and try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => resendingConfirmation = false);
+    }
   }
 
   Future<void> submit() async {
     final email = emailController.text.trim().toLowerCase();
     final password = passwordController.text;
     final fullName = fullNameController.text.trim();
+    final businessName = businessNameController.text.trim();
+    final businessPhone = businessPhoneController.text.trim();
+    final businessParish = businessParishController.text.trim();
 
     if (email.isEmpty ||
         password.trim().isEmpty ||
@@ -1506,16 +3197,51 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (isBusinessRegistration &&
+        (businessName.isEmpty ||
+            businessPhone.isEmpty ||
+            businessParish.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Business name, business phone, and parish are required.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (AppConfig.turnstileConfigured &&
+        (_captchaToken == null || _captchaToken!.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please complete the security check first.'),
+        ),
+      );
+      return;
+    }
+
+    var leavingAuthScreen = false;
     setState(() => loading = true);
     try {
       if (isRegister) {
+        final accountType =
+            selectedRole == 'customer' ? selectedCustomerAccountType : 'farmer';
+
         final response = await supabase.auth.signUp(
           email: email,
           password: password,
           emailRedirectTo: AppConfig.emailConfirmationRedirectTo,
+          captchaToken:
+              AppConfig.turnstileConfigured ? _captchaToken?.trim() : null,
           data: {
             'full_name': fullName,
             'role': selectedRole,
+            'account_type': accountType,
+            if (isBusinessRegistration) 'business_name': businessName,
+            if (isBusinessRegistration) 'business_type': selectedBusinessType,
+            if (isBusinessRegistration) 'business_phone': businessPhone,
+            if (isBusinessRegistration) 'business_parish': businessParish,
           },
         );
 
@@ -1525,9 +3251,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (response.session == null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Account created. Please check your email and tap the confirmation link before signing in.',
+                isBusinessRegistration
+                    ? 'Business account created. Confirm your email, then sign in to review your wholesale application.'
+                    : selectedRole == 'farmer'
+                        ? 'Farmer account created. Confirm your email, then sign in and choose Farmer Partner to finish your application.'
+                        : 'Account created. Please check your email and tap the confirmation link before signing in.',
               ),
             ),
           );
@@ -1535,19 +3265,35 @@ class _LoginScreenState extends State<LoginScreen> {
           setState(() {
             isRegister = false;
             passwordController.clear();
+            pendingConfirmationEmail = email;
           });
           return;
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Account created. You are signed in.')),
+          SnackBar(
+            content: Text(
+              isBusinessRegistration
+                  ? 'Business account created. Your wholesale application is pending review.'
+                  : selectedRole == 'farmer'
+                      ? 'Account created. Complete your farmer application next.'
+                      : 'Account created. You are signed in.',
+            ),
+          ),
         );
 
+        leavingAuthScreen = true;
         if (widget.returnToPrevious) {
           Navigator.of(context).pop(true);
         } else {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const MainNavigation()),
+            MaterialPageRoute(
+              builder: (_) => selectedRole == 'farmer'
+                  ? const FarmerAccessGate(initialTab: 0)
+                  : isBusinessRegistration
+                      ? const BusinessWholesaleHubScreen(initialTab: 0)
+                      : const MainNavigation(initialIndex: 0),
+            ),
             (route) => false,
           );
         }
@@ -1555,16 +3301,21 @@ class _LoginScreenState extends State<LoginScreen> {
         await supabase.auth.signInWithPassword(
           email: email,
           password: password,
+          captchaToken:
+              AppConfig.turnstileConfigured ? _captchaToken?.trim() : null,
         );
 
         FarmDataCache.clearAll();
 
         if (!mounted) return;
+        leavingAuthScreen = true;
         if (widget.returnToPrevious) {
           Navigator.of(context).pop(true);
         } else {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const MainNavigation()),
+            MaterialPageRoute(
+              builder: (_) => const AuthGate(),
+            ),
             (route) => false,
           );
         }
@@ -1595,12 +3346,124 @@ class _LoginScreenState extends State<LoginScreen> {
         SnackBar(content: Text(message)),
       );
     } finally {
+      if (!leavingAuthScreen && mounted) {
+        await _refreshCaptcha();
+      }
       if (mounted) setState(() => loading = false);
     }
   }
 
+  Widget _registrationChoiceCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: loading ? null : onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: FarmColors.line),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: FarmColors.primary, size: 22),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11.5,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 15,
+                color: FarmColors.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _usePersonalRegistration() {
+    setState(() {
+      selectedRole = 'customer';
+      selectedCustomerAccountType = 'retail';
+    });
+  }
+
+  void _useBusinessRegistration() {
+    setState(() {
+      selectedRole = 'customer';
+      selectedCustomerAccountType = 'business';
+    });
+  }
+
+  void _useFarmerRegistration() {
+    setState(() {
+      selectedRole = 'farmer';
+      selectedCustomerAccountType = 'retail';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isFarmerRegistration = isRegister && selectedRole == 'farmer';
+    final isPersonalRegistration =
+        isRegister && !isBusinessRegistration && !isFarmerRegistration;
+
+    final heading = !isRegister
+        ? 'Welcome back'
+        : isBusinessRegistration
+            ? 'Create your business account'
+            : isFarmerRegistration
+                ? 'Join as a Farmer'
+                : 'Create your HPJ account';
+
+    final subtitle = !isRegister
+        ? 'Sign in to continue with The Harvest Place Ja.'
+        : isBusinessRegistration
+            ? 'One HPJ login for wholesale shopping, planning and orders.'
+            : isFarmerRegistration
+                ? 'Create your HPJ account first. Then complete the short farmer application.'
+                : 'Fresh Jamaican produce, made easier.';
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: widget.returnToPrevious
@@ -1610,107 +3473,484 @@ class _LoginScreenState extends State<LoginScreen> {
             )
           : null,
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(22),
-          children: [
-            const SizedBox(height: 28),
-            const HeroCard(),
-            const SizedBox(height: 26),
-            Text(
-              isRegister ? 'Create your account' : 'Welcome back',
-              style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isRegister
-                  ? 'Sign up as a customer.'
-                  : 'Login to continue shopping fresh farm produce.',
-              style: TextStyle(color: FarmColors.mutedText),
-            ),
-            const SizedBox(height: 22),
-            if (isRegister) ...[
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: 'customer',
-                    icon: Icon(Icons.person_outline),
-                    label: Text('Customer'),
-                  ),
-                  ButtonSegment(
-                    value: 'farmer',
-                    icon: Icon(Icons.agriculture_outlined),
-                    label: Text('Farmer'),
-                  ),
-                ],
-                selected: {selectedRole},
-                onSelectionChanged: (values) {
-                  setState(() => selectedRole = values.first);
-                },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = constraints.maxWidth >= 700 ? 24.0 : 18.0;
+
+            return ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                22,
+                horizontalPadding,
+                34,
               ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: fullNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full name',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-              ),
-              const SizedBox(height: 14),
-            ],
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.email_outlined),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-            ),
-            if (!isRegister) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  icon: const Icon(Icons.lock_reset_outlined, size: 18),
-                  label: const Text('Forgot Password?'),
-                  onPressed: loading
-                      ? null
-                      : () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ForgotPasswordScreen(
-                                initialEmail: emailController.text.trim(),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 540),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 74,
+                            height: 74,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: FarmColors.line),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: FarmColors.shadow.withOpacity(0.06),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 7),
+                                ),
+                              ],
+                            ),
+                            child: Image.asset(
+                              'lib/assets/images/logo.png',
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.eco_outlined,
+                                size: 44,
+                                color: FarmColors.primary,
                               ),
                             ),
-                          );
-                        },
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          heading,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 28,
+                            height: 1.05,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.6,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          subtitle,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 13,
+                            height: 1.4,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        if (isRegister && !isPersonalRegistration) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 13,
+                              vertical: 11,
+                            ),
+                            decoration: BoxDecoration(
+                              color: FarmColors.primarySoft,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: FarmColors.line),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isBusinessRegistration
+                                      ? Icons.storefront_outlined
+                                      : Icons.agriculture_outlined,
+                                  color: FarmColors.primary,
+                                  size: 21,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    isBusinessRegistration
+                                        ? 'Business account'
+                                        : 'Farmer partner account',
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed:
+                                      loading ? null : _usePersonalRegistration,
+                                  child: const Text('Use personal'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        FarmCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (isRegister) ...[
+                                TextField(
+                                  controller: fullNameController,
+                                  textCapitalization: TextCapitalization.words,
+                                  autofillHints: const [AutofillHints.name],
+                                  textInputAction: TextInputAction.next,
+                                  decoration: InputDecoration(
+                                    labelText: isBusinessRegistration
+                                        ? 'Contact person *'
+                                        : 'Full name',
+                                    prefixIcon:
+                                        const Icon(Icons.person_outline),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              if (isBusinessRegistration) ...[
+                                TextField(
+                                  controller: businessNameController,
+                                  textCapitalization: TextCapitalization.words,
+                                  textInputAction: TextInputAction.next,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Business name *',
+                                    prefixIcon: Icon(Icons.store_outlined),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                DropdownButtonFormField<String>(
+                                  value: selectedBusinessType,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Business type',
+                                    prefixIcon: Icon(Icons.category_outlined),
+                                  ),
+                                  items: _businessTypes
+                                      .map(
+                                        (type) => DropdownMenuItem<String>(
+                                          value: type,
+                                          child: Text(type),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: loading
+                                      ? null
+                                      : (value) {
+                                          if (value != null) {
+                                            setState(() =>
+                                                selectedBusinessType = value);
+                                          }
+                                        },
+                                ),
+                                const SizedBox(height: 14),
+                                TextField(
+                                  controller: businessPhoneController,
+                                  keyboardType: TextInputType.phone,
+                                  autofillHints: const [
+                                    AutofillHints.telephoneNumber,
+                                  ],
+                                  textInputAction: TextInputAction.next,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Business phone *',
+                                    prefixIcon: Icon(Icons.phone_outlined),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                TextField(
+                                  controller: businessParishController,
+                                  textCapitalization: TextCapitalization.words,
+                                  textInputAction: TextInputAction.next,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Business parish *',
+                                    prefixIcon: Icon(Icons.map_outlined),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              TextField(
+                                controller: emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                autofillHints: const [AutofillHints.email],
+                                textInputAction: TextInputAction.next,
+                                decoration: const InputDecoration(
+                                  labelText: 'Email',
+                                  prefixIcon: Icon(Icons.email_outlined),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              TextField(
+                                controller: passwordController,
+                                obscureText: hidePassword,
+                                autofillHints: isRegister
+                                    ? const [AutofillHints.newPassword]
+                                    : const [AutofillHints.password],
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: loading ? null : (_) => submit(),
+                                decoration: InputDecoration(
+                                  labelText: 'Password',
+                                  prefixIcon: const Icon(Icons.lock_outline),
+                                  suffixIcon: IconButton(
+                                    tooltip: hidePassword
+                                        ? 'Show password'
+                                        : 'Hide password',
+                                    onPressed: () {
+                                      setState(
+                                          () => hidePassword = !hidePassword);
+                                    },
+                                    icon: Icon(
+                                      hidePassword
+                                          ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (isFarmerRegistration) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: FarmColors.primarySoft,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.agriculture_outlined,
+                                        color: FarmColors.primary,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 9),
+                                      Expanded(
+                                        child: Text(
+                                          'After sign-in, HPJ will guide you through the short farmer application.',
+                                          style: TextStyle(
+                                            color: FarmColors.ink,
+                                            fontSize: 11.5,
+                                            height: 1.35,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              if (isBusinessRegistration) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: FarmColors.primarySoft,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Text(
+                                    'Wholesale pricing is activated after approval. You can still shop normally while your application is reviewed.',
+                                    style: TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 11.5,
+                                      height: 1.35,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        if (AppConfig.turnstileConfigured) ...[
+                          const SizedBox(height: 14),
+                          _HpjTurnstilePanel(
+                            controller: _captchaController,
+                            action: 'hpj_auth',
+                            onTokenChanged: (token) {
+                              if (!mounted) return;
+                              setState(() => _captchaToken = token);
+                            },
+                          ),
+                        ],
+                        if (!isRegister &&
+                            pendingConfirmationEmail != null) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: FarmColors.primarySoft,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: FarmColors.line),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.mark_email_unread_outlined,
+                                      color: FarmColors.primary,
+                                      size: 22,
+                                    ),
+                                    SizedBox(width: 9),
+                                    Expanded(
+                                      child: Text(
+                                        'Confirm your email',
+                                        style: TextStyle(
+                                          color: FarmColors.ink,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 7),
+                                Text(
+                                  'We created the account for ${pendingConfirmationEmail!}. Open the confirmation email before signing in. Check Spam or Junk if it is not in your inbox.',
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 12,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                TextButton.icon(
+                                  onPressed: resendingConfirmation
+                                      ? null
+                                      : _resendConfirmationEmail,
+                                  icon: resendingConfirmation
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.refresh_rounded),
+                                  label: Text(
+                                    resendingConfirmation
+                                        ? 'Sending...'
+                                        : 'Resend confirmation email',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (!isRegister) ...[
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              icon: const Icon(Icons.lock_reset_outlined,
+                                  size: 18),
+                              label: const Text('Forgot Password?'),
+                              onPressed: loading
+                                  ? null
+                                  : () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => ForgotPasswordScreen(
+                                            initialEmail:
+                                                emailController.text.trim(),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        PrimaryFarmButton(
+                          label: loading
+                              ? 'Please wait...'
+                              : (isRegister
+                                  ? isBusinessRegistration
+                                      ? 'Create Business Account'
+                                      : isFarmerRegistration
+                                          ? 'Create Farmer Account'
+                                          : 'Create Account'
+                                  : 'Login'),
+                          onPressed: loading ||
+                                  (AppConfig.turnstileConfigured &&
+                                      (_captchaToken == null ||
+                                          _captchaToken!.isEmpty))
+                              ? null
+                              : submit,
+                        ),
+                        const SizedBox(height: 4),
+                        TextButton(
+                          onPressed: loading
+                              ? null
+                              : () {
+                                  setState(() {
+                                    isRegister = !isRegister;
+                                    hidePassword = true;
+                                    _captchaToken = null;
+                                    if (isRegister) {
+                                      selectedRole = 'customer';
+                                      selectedCustomerAccountType = 'retail';
+                                      pendingConfirmationEmail = null;
+                                    }
+                                  });
+                                  if (AppConfig.turnstileConfigured) {
+                                    _captchaController
+                                        .refreshToken()
+                                        .catchError(
+                                      (error) {
+                                        farmDebugLog(
+                                          'Turnstile refresh failed: $error',
+                                        );
+                                      },
+                                    );
+                                  }
+                                },
+                          child: Text(
+                            isRegister
+                                ? 'Already have an account? Log in'
+                                : 'New to HPJ? Create account',
+                          ),
+                        ),
+                        if (isPersonalRegistration) ...[
+                          const SizedBox(height: 14),
+                          Row(
+                            children: const [
+                              Expanded(child: Divider()),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 10),
+                                child: Text(
+                                  'JOINING HPJ FOR SOMETHING ELSE?',
+                                  style: TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: Divider()),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          _registrationChoiceCard(
+                            icon: Icons.storefront_outlined,
+                            title: 'Business account',
+                            subtitle: 'Wholesale buying for your business',
+                            onTap: _useBusinessRegistration,
+                          ),
+                          const SizedBox(height: 9),
+                          _registrationChoiceCard(
+                            icon: Icons.agriculture_outlined,
+                            title: 'Farmer partner',
+                            subtitle: 'Apply to supply produce to HPJ',
+                            onTap: _useFarmerRegistration,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
-            const SizedBox(height: 14),
-            PrimaryFarmButton(
-              label: loading
-                  ? 'Please wait...'
-                  : (isRegister ? 'Create Account' : 'Login'),
-              onPressed: loading ? null : submit,
-            ),
-            TextButton(
-              onPressed: loading
-                  ? null
-                  : () => setState(() => isRegister = !isRegister),
-              child: Text(isRegister
-                  ? 'Already have an account? Login'
-                  : 'Create account'),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1718,7 +3958,12 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
+  final int initialIndex;
+
+  const MainNavigation({
+    super.key,
+    this.initialIndex = 0,
+  });
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -1729,9 +3974,7 @@ class _MainNavigationState extends State<MainNavigation> {
   static const int shopTabIndex = 1;
   static const int myBoxTabIndex = 2;
   static const int ordersTabIndex = 3;
-  static const int adminTabIndex = 4;
-
-  int get accountTabIndex => showAdmin ? 5 : 4;
+  static const int accountTabIndex = 4;
 
   int selectedIndex = 0;
   String selectedShopCategory = 'All';
@@ -1743,13 +3986,13 @@ class _MainNavigationState extends State<MainNavigation> {
       'natural_harvest_recently_viewed_product_ids';
 
   final List<Product> recentlyViewedProducts = [];
-  bool checkingAdmin = true;
-  bool showAdmin = false;
   dynamic inventoryRealtimeChannel;
   dynamic notificationRealtimeChannel;
   Timer? inventoryRefreshDebounce;
   StreamSubscription<AuthState>? authStateSubscription;
   final Set<String> seenRealtimeNotificationIds = <String>{};
+  final Map<String, DateTime> realtimeNotificationCooldowns =
+      <String, DateTime>{};
 
   int get cartItemCount => cart.length;
 
@@ -1768,9 +4011,16 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   void initState() {
     super.initState();
+    selectedIndex = widget.initialIndex.clamp(0, 4).toInt();
+    unawaited(
+      saveHpjNavigationPreference(
+        workspace: 'customer',
+        tab: selectedIndex,
+      ),
+    );
     cart.addAll(OfflineCartStore.restore());
+    unawaited(_restorePersistentCart());
     loadRecentlyViewedProducts();
-    loadAdminStatus();
     subscribeToInventoryUpdates();
     subscribeToNotificationUpdates();
     authStateSubscription = supabase.auth.onAuthStateChange.listen((_) async {
@@ -1783,17 +4033,13 @@ class _MainNavigationState extends State<MainNavigation> {
         unsubscribeFromNotificationUpdates();
         setState(() {
           authViewVersion++;
-          showAdmin = false;
-          checkingAdmin = false;
-          if (selectedIndex == accountTabIndex ||
-              selectedIndex == adminTabIndex) {
+          if (selectedIndex == accountTabIndex) {
             selectedIndex = homeTabIndex;
           }
         });
         return;
       }
 
-      await loadAdminStatus();
       subscribeToNotificationUpdates();
       if (mounted) {
         setState(() {
@@ -1879,6 +4125,21 @@ class _MainNavigationState extends State<MainNavigation> {
                 return;
               }
 
+              // Quiet duplicate bursts without hiding distinct order/payment events.
+              final cooldownKey = <String>[
+                notice.type.trim().toLowerCase(),
+                (notice.orderId ?? '').trim().toLowerCase(),
+                notice.title.trim().toLowerCase(),
+              ].join('|');
+              final now = DateTime.now();
+              final lastShown = realtimeNotificationCooldowns[cooldownKey];
+              if (lastShown != null &&
+                  now.difference(lastShown) < const Duration(seconds: 90)) {
+                farmDebugLog('Browser notification grouped to reduce noise.');
+                return;
+              }
+              realtimeNotificationCooldowns[cooldownKey] = now;
+
               FarmDataCache.notifications = null;
 
               showBrowserNotification(
@@ -1910,24 +4171,56 @@ class _MainNavigationState extends State<MainNavigation> {
       notificationRealtimeChannel = null;
     }
     seenRealtimeNotificationIds.clear();
+    realtimeNotificationCooldowns.clear();
   }
 
-  Future<void> loadAdminStatus() async {
-    if (!isLoggedIn) {
-      if (!mounted) return;
-      setState(() {
-        showAdmin = false;
-        checkingAdmin = false;
-      });
-      return;
-    }
+  Future<void> _restorePersistentCart() async {
+    if (cart.isNotEmpty) return;
 
-    final result = await isCurrentUserAdminFromDatabase();
-    if (!mounted) return;
-    setState(() {
-      showAdmin = result;
-      checkingAdmin = false;
-    });
+    try {
+      final savedIds = await OfflineCartStore.restorePersistentProductIds();
+      if (savedIds.isEmpty) return;
+
+      final counts = <String, int>{};
+      for (final rawId in savedIds) {
+        final id = rawId.trim();
+        if (id.isEmpty) continue;
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
+
+      final fetched = <String, Product>{};
+      for (final id in counts.keys) {
+        final product = await fetchProductById(id);
+        if (product != null && isVisibleCustomerProduct(product)) {
+          fetched[id] = product;
+        }
+      }
+
+      if (!mounted || fetched.isEmpty || cart.isNotEmpty) return;
+
+      final restored = <Product>[];
+      for (final entry in counts.entries) {
+        final product = fetched[entry.key];
+        if (product == null) continue;
+        final allowedQuantity = product.canAddToCart
+            ? entry.value.clamp(0, product.stockQuantity).toInt()
+            : 0;
+        for (var i = 0; i < allowedQuantity; i++) {
+          restored.add(product);
+        }
+      }
+
+      if (restored.isEmpty) return;
+      setState(() {
+        cart
+          ..clear()
+          ..addAll(restored);
+      });
+      persistCart();
+    } catch (error) {
+      // Keep the saved IDs. HPJ can restore them on a later online launch.
+      farmDebugLog('Persistent My Box restore deferred: $error');
+    }
   }
 
   void persistCart() {
@@ -2083,6 +4376,18 @@ class _MainNavigationState extends State<MainNavigation> {
 
   void removeFromCart(Product product) => decreaseProductQuantity(product);
 
+  void _selectCustomerTab(int index) {
+    if (!mounted) return;
+    final safeIndex = index.clamp(0, 4).toInt();
+    setState(() => selectedIndex = safeIndex);
+    unawaited(
+      saveHpjNavigationPreference(
+        workspace: 'customer',
+        tab: safeIndex,
+      ),
+    );
+  }
+
   Future<void> openSignInFromTab() async {
     final didSignIn = await Navigator.push<bool>(
       context,
@@ -2093,10 +4398,7 @@ class _MainNavigationState extends State<MainNavigation> {
 
     if (!mounted) return;
     if (didSignIn == true || isLoggedIn) {
-      await loadAdminStatus();
-      if (!mounted) return;
-      // After the admin check finishes, Account may have shifted to index 5.
-      setState(() => selectedIndex = accountTabIndex);
+      _selectCustomerTab(accountTabIndex);
     } else {
       setState(() {});
     }
@@ -2117,7 +4419,7 @@ class _MainNavigationState extends State<MainNavigation> {
               cart: cart,
               onRemoveFromCart: removeFromCart,
               onAddToCart: increaseProductQuantity,
-              onShopTap: () => setState(() => selectedIndex = 1),
+              onShopTap: () => _selectCustomerTab(shopTabIndex),
               onOrderPlaced: () {
                 if (!mounted) return;
 
@@ -2137,12 +4439,6 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    if (checkingAdmin) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
     void goToShop({String? category}) {
       if (!mounted) return;
 
@@ -2154,6 +4450,12 @@ class _MainNavigationState extends State<MainNavigation> {
         }
         selectedIndex = shopTabIndex;
       });
+      unawaited(
+        saveHpjNavigationPreference(
+          workspace: 'customer',
+          tab: shopTabIndex,
+        ),
+      );
     }
 
     final goToShopHome = () => goToShop();
@@ -2161,9 +4463,7 @@ class _MainNavigationState extends State<MainNavigation> {
     void goToMyBoxFromProductDetail() {
       Navigator.of(context).popUntil((route) => route.isFirst);
       if (!mounted) return;
-      setState(() {
-        selectedIndex = myBoxTabIndex;
-      });
+      _selectCustomerTab(myBoxTabIndex);
     }
 
     List<CartLine> currentCartLines() {
@@ -2260,7 +4560,7 @@ class _MainNavigationState extends State<MainNavigation> {
         cart: cart,
         onRemoveFromCart: removeFromCart,
         onAddToCart: increaseProductQuantity,
-        onShopTap: () => setState(() => selectedIndex = 1),
+        onShopTap: () => _selectCustomerTab(shopTabIndex),
         onOrderPlaced: () {
           if (!mounted) return;
 
@@ -2279,32 +4579,21 @@ class _MainNavigationState extends State<MainNavigation> {
         onAddToCart: increaseProductQuantity,
         onOpenMyBox: () {
           if (!mounted) return;
-          setState(() => selectedIndex = 2);
+          _selectCustomerTab(myBoxTabIndex);
         },
         onBackToHome: () {
           if (!mounted) return;
-          setState(() => selectedIndex = homeTabIndex);
+          _selectCustomerTab(homeTabIndex);
         },
       ),
-      if (showAdmin)
-        AdminDashboardScreen(
-          onHomeTap: () {
-            if (!mounted) return;
-            setState(() => selectedIndex = homeTabIndex);
-          },
-        ),
       AccountScreen(
         favoriteProducts: favoriteProducts,
         recentlyViewedProducts: recentlyViewedProducts,
         onShopTap: goToShopHome,
-        showAdmin: showAdmin,
+        onAddToCart: increaseProductQuantity,
         onSignedOut: () {
           if (!mounted) return;
-          setState(() {
-            selectedIndex = homeTabIndex;
-            showAdmin = false;
-            checkingAdmin = false;
-          });
+          _selectCustomerTab(homeTabIndex);
         },
       ),
     ];
@@ -2331,12 +4620,6 @@ class _MainNavigationState extends State<MainNavigation> {
         selectedIcon: Icon(Icons.receipt_long_rounded, size: 28),
         label: 'Orders',
       ),
-      if (showAdmin)
-        const FarmBottomOption(
-          icon: Icon(Icons.local_offer_outlined, size: 28),
-          selectedIcon: Icon(Icons.local_offer_rounded, size: 28),
-          label: 'Admin',
-        ),
       const FarmBottomOption(
         icon: Icon(Icons.person_outline_rounded, size: 28),
         selectedIcon: Icon(Icons.person_rounded, size: 28),
@@ -2356,25 +4639,13 @@ class _MainNavigationState extends State<MainNavigation> {
           if (!mounted) return;
 
           final tappedAccountTab = index == accountTabIndex;
-          final tappedAdminTab = showAdmin && index == adminTabIndex;
 
           if (tappedAccountTab && !isLoggedIn) {
             await openSignInFromTab();
             return;
           }
 
-          if (tappedAdminTab) {
-            await loadAdminStatus();
-            if (!showAdmin) {
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Admin permission required.')),
-              );
-              return;
-            }
-          }
-
-          setState(() => selectedIndex = index);
+          _selectCustomerTab(index);
         },
       ),
     );

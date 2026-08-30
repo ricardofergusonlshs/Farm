@@ -345,20 +345,29 @@ Future<bool> farmNotificationAlreadyExists({
   String? userId,
   String? userEmail,
   String? orderId,
+  String? dedupeKey,
 }) async {
   final cleanOrderId = orderId?.trim();
-  if (cleanOrderId == null || cleanOrderId.isEmpty) return false;
-
+  final cleanDedupeKey = dedupeKey?.trim();
   final cleanUserId = userId?.trim();
   final cleanEmail = userEmail?.trim().toLowerCase();
 
+  if ((cleanOrderId == null || cleanOrderId.isEmpty) &&
+      (cleanDedupeKey == null || cleanDedupeKey.isEmpty)) {
+    return false;
+  }
+
   try {
-    var query = supabase
-        .from('notifications')
-        .select('id')
-        .eq('order_id', cleanOrderId)
-        .eq('type', type)
-        .eq('title', title);
+    var query = supabase.from('notifications').select('id');
+
+    if (cleanDedupeKey != null && cleanDedupeKey.isNotEmpty) {
+      query = query.eq('dedupe_key', cleanDedupeKey);
+    } else {
+      query = query
+          .eq('order_id', cleanOrderId!)
+          .eq('type', type)
+          .eq('title', title);
+    }
 
     if (cleanUserId != null && cleanUserId.isNotEmpty) {
       query = query.eq('user_id', cleanUserId);
@@ -369,8 +378,8 @@ Future<bool> farmNotificationAlreadyExists({
     final existing = await query.limit(1);
     return (existing as List).isNotEmpty;
   } catch (error) {
-    // Older notification tables may not have order_id/user_id. In that case,
-    // keep the existing compatibility path and let the insert/fallback run.
+    // Older notification tables may not have action/dedupe/order columns.
+    // Keep the existing compatibility path and let the insert/fallback run.
     debugPrintOnce(
       'notification_duplicate_lookup_unavailable',
       'Notification duplicate lookup skipped. Continuing with normal insert.',
@@ -1471,6 +1480,7 @@ bool areSameProductLists(List<Product> a, List<Product> b) {
 
 Future<void> clearPrivateSessionStateForGuestBrowsing() async {
   FarmDataCache.clearAll();
+  hpjCurrentUserExperiencePreferences = UserExperiencePreferences.defaults;
 
   if (hasSupabaseSession) {
     try {
@@ -1957,22 +1967,35 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
 
   final result = <Product>[];
   final seen = <String>{};
+  final purchaseCount = <String, int>{};
+  final recencyRank = <String, int>{};
 
-  for (final row in itemRows) {
+  for (var index = 0; index < itemRows.length; index++) {
+    final row = itemRows[index];
     final productId = (row['product_id'] ?? '').toString().trim();
     final productName = (row['product_name'] ?? '').toString().trim();
     final product =
         productsById[productId] ?? productsByName[productName.toLowerCase()];
 
-    if (product == null) continue;
-    if (!isVisibleCustomerProduct(product)) continue;
+    if (product == null || !isVisibleCustomerProduct(product)) continue;
+    purchaseCount[product.id] = (purchaseCount[product.id] ?? 0) + 1;
+    recencyRank.putIfAbsent(product.id, () => index);
     if (!seen.add(product.id)) continue;
-
     result.add(product);
-    if (result.length >= 10) break;
   }
 
-  return result;
+  result.sort((a, b) {
+    final countCompare =
+        (purchaseCount[b.id] ?? 0).compareTo(purchaseCount[a.id] ?? 0);
+    if (countCompare != 0) return countCompare;
+    final recencyCompare =
+        (recencyRank[a.id] ?? 999999).compareTo(recencyRank[b.id] ?? 999999);
+    if (recencyCompare != 0) return recencyCompare;
+    if (a.canAddToCart != b.canAddToCart) return a.canAddToCart ? -1 : 1;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+
+  return result.take(10).toList();
 }
 
 String? notificationOrderShortId(FarmNotification notification) {
@@ -1988,6 +2011,9 @@ Future<void> createFarmNotification({
   String? userEmail,
   String? userId,
   String? orderId,
+  String? actionType,
+  String? actionId,
+  String? dedupeKey,
 }) async {
   final explicitUserEmail = userEmail != null && userEmail.trim().isNotEmpty;
   final targetUserId =
@@ -1996,6 +2022,14 @@ Future<void> createFarmNotification({
   final targetEmail =
       (userEmail ?? supabase.auth.currentUser?.email)?.trim().toLowerCase();
   final cleanOrderId = orderId?.trim();
+  final explicitActionType = actionType?.trim() ?? '';
+  final explicitActionId = actionId?.trim() ?? '';
+  final resolvedActionType = explicitActionType.isNotEmpty
+      ? explicitActionType
+      : (cleanOrderId != null && cleanOrderId.isNotEmpty ? 'order' : '');
+  final resolvedActionId = explicitActionId.isNotEmpty
+      ? explicitActionId
+      : (resolvedActionType == 'order' ? (cleanOrderId ?? '') : '');
 
   // Never create anonymous/global private notifications from the client.
   // Use an admin Edge Function for broadcast notifications.
@@ -2017,6 +2051,10 @@ Future<void> createFarmNotification({
     'is_read': false,
     if (cleanOrderId != null && cleanOrderId.isNotEmpty)
       'order_id': cleanOrderId,
+    if (resolvedActionType.isNotEmpty) 'action_type': resolvedActionType,
+    if (resolvedActionId.isNotEmpty) 'action_id': resolvedActionId,
+    if (dedupeKey != null && dedupeKey.trim().isNotEmpty)
+      'dedupe_key': dedupeKey.trim(),
   };
 
   if (await farmNotificationAlreadyExists(
@@ -2025,6 +2063,7 @@ Future<void> createFarmNotification({
     userId: targetUserId,
     userEmail: targetEmail,
     orderId: cleanOrderId,
+    dedupeKey: dedupeKey,
   )) {
     showBrowserNotificationForTarget(
       title: title,
@@ -2039,6 +2078,10 @@ Future<void> createFarmNotification({
 
   try {
     await supabase.from('notifications').insert(notificationPayload);
+
+// Notification data changed — force the inbox to reload next time.
+    FarmDataCache.notifications = null;
+
     showBrowserNotificationForTarget(
       title: title,
       message: message,
@@ -2063,8 +2106,15 @@ Future<void> createFarmNotification({
       if (targetEmail == null || targetEmail.isEmpty) return;
       final legacyPayload = Map<String, dynamic>.from(notificationPayload)
         ..remove('user_id')
-        ..remove('order_id');
+        ..remove('order_id')
+        ..remove('action_type')
+        ..remove('action_id')
+        ..remove('dedupe_key');
       await supabase.from('notifications').insert(legacyPayload);
+
+// Notification data changed — clear cached inbox.
+      FarmDataCache.notifications = null;
+
       showBrowserNotificationForTarget(
         title: title,
         message: message,
@@ -2328,8 +2378,39 @@ Future<List<FarmNotification>> fetchFarmNotifications(
 }
 
 Future<int> fetchUnreadNotificationCount() async {
-  final notifications = await fetchFarmNotifications();
-  return notifications.where((notice) => !notice.isRead).length;
+  final user = supabase.auth.currentUser;
+
+  if (user == null) return 0;
+
+  try {
+    final response = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+
+    return (response as List).length;
+  } catch (userIdError) {
+    final userEmail = (user.email ?? '').trim().toLowerCase();
+
+    if (userEmail.isEmpty) return 0;
+
+    try {
+      final response = await supabase
+          .from('notifications')
+          .select('id')
+          .eq('user_email', userEmail)
+          .eq('is_read', false);
+
+      return (response as List).length;
+    } catch (emailError) {
+      farmDebugLog(
+        'Unread notification count skipped: $emailError',
+      );
+
+      return 0;
+    }
+  }
 }
 
 Future<void> markNotificationsRead() async {
@@ -2340,13 +2421,21 @@ Future<void> markNotificationsRead() async {
     await supabase
         .from('notifications')
         .update({'is_read': true}).eq('user_id', user.id);
+
+    // Force notification screen to reload fresh data.
+    FarmDataCache.notifications = null;
   } catch (userIdError) {
     try {
       final userEmail = (user.email ?? '').trim().toLowerCase();
+
       if (userEmail.isEmpty) return;
+
       await supabase
           .from('notifications')
           .update({'is_read': true}).eq('user_email', userEmail);
+
+      // Force notification screen to reload fresh data.
+      FarmDataCache.notifications = null;
     } catch (emailError) {
       debugPrintOnce(
         'mark_notifications_read_skipped',
@@ -2427,6 +2516,8 @@ Future<void> notifySubscribedCustomersProductReady(Product product) async {
         type: 'product_ready',
         userId: userId,
         userEmail: email,
+        actionType: 'customer_product',
+        actionId: product.id,
       );
 
       final normalizedEmail = email?.trim().toLowerCase();
@@ -2943,6 +3034,24 @@ Future<Map<String, dynamic>?> adminUpdateProduct({
   }
 }
 
+Future<void> markProductHarvestedNow(
+  String productId,
+) async {
+  await requireAdminAccess();
+
+  final cleanId = productId.trim();
+  if (cleanId.isEmpty) return;
+
+  final now = DateTime.now().toUtc();
+
+  await supabase.from('products').update({
+    'harvested_at': now.toIso8601String(),
+    'harvest_date': now.toIso8601String().split('T').first,
+  }).eq('id', cleanId);
+
+  FarmDataCache.clearProducts();
+}
+
 Future<void> updateProductNutritionTags({
   required String productId,
   List<String> nutrientStrong = const <String>[],
@@ -3437,8 +3546,9 @@ Future<List<FarmerOrderSummary>> fetchFarmerOrderSummaries(
         .select(
             'order_id, product_name, quantity, line_total, farmer_earning_amount, farmer_id')
         .eq('farmer_id', farmerId)
+        .order('is_read', ascending: true)
         .order('created_at', ascending: false)
-        .limit(50);
+        .limit(200);
     return (response as List)
         .map((item) =>
             FarmerOrderSummary.fromSupabase(Map<String, dynamic>.from(item)))
@@ -3452,19 +3562,42 @@ Future<List<FarmerOrderSummary>> fetchFarmerOrderSummaries(
 Future<FarmerProfile?> fetchCurrentFarmerProfile() async {
   final user = supabase.auth.currentUser;
   if (user == null) return null;
-  try {
-    final response = await supabase
-        .from('farmer_profiles')
-        .select(
-            'id, user_id, email, farm_name, farmer_name, phone, parish, address, bio, verification_status, payout_method, payout_details, created_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
-    if (response == null) return null;
-    return FarmerProfile.fromSupabase(Map<String, dynamic>.from(response));
-  } catch (error) {
-    farmDebugLog('Farmer profile unavailable: $error');
-    return null;
+
+  // Farmer profile tables created during earlier HPJ phases may not yet have
+  // every optional field. Read the richest shape first, then gracefully fall
+  // back to the core profile instead of treating a missing optional column as
+  // "no farmer profile".
+  const fieldSets = <String>[
+    'id, user_id, email, farm_name, farmer_name, phone, parish, address, bio, verification_status, payout_method, payout_details, created_at',
+    'id, user_id, email, farm_name, farmer_name, phone, parish, address, bio, verification_status, created_at',
+    'id, user_id, farm_name, farmer_name, phone, parish, verification_status, created_at',
+    'id, user_id, farm_name, farmer_name, phone, parish',
+  ];
+
+  Object? lastError;
+
+  for (final fields in fieldSets) {
+    try {
+      final response = await supabase
+          .from('farmer_profiles')
+          .select(fields)
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response == null) return null;
+      return FarmerProfile.fromSupabase(
+        Map<String, dynamic>.from(response as Map),
+      );
+    } catch (error) {
+      lastError = error;
+    }
   }
+
+  farmDebugLog(
+      'Farmer profile unavailable after compatibility reads: $lastError');
+  return null;
 }
 
 Future<List<FarmerProfile>> fetchFarmerProfiles() async {
@@ -3497,42 +3630,580 @@ Future<void> saveFarmerProfile({
   required String payoutDetails,
 }) async {
   final user = supabase.auth.currentUser;
-  if (user == null) return;
-  final payload = {
-    'user_id': user.id,
-    'email': user.email,
-    'farm_name': farmName,
-    'farmer_name': farmerName,
-    'phone': phone,
-    'parish': parish,
-    'address': address,
-    'bio': bio,
-    'verification_status': 'pending',
-    'payout_method': payoutMethod,
-    'payout_details': payoutDetails,
-  };
-  final existing = await fetchCurrentFarmerProfile();
-  if (existing == null || existing.id.isEmpty) {
-    await supabase.from('farmer_profiles').insert(payload);
-  } else {
-    await supabase
-        .from('farmer_profiles')
-        .update(payload)
-        .eq('id', existing.id);
+
+  if (user == null) {
+    throw Exception(
+      'Please sign in before submitting a farmer application.',
+    );
   }
 
+  final existing = await fetchCurrentFarmerProfile();
+  final settings = await fetchMarketplaceProgramSettings();
+
+  // Closing applications blocks only brand-new applications. Existing farmer
+  // profiles can still be updated.
+  if (existing == null && !settings.farmerApplicationsEnabled) {
+    throw Exception(
+      'Farmer applications are temporarily paused.',
+    );
+  }
+
+  final cleanFarmName = farmName.trim();
+  final cleanFarmerName = farmerName.trim();
+  final cleanPhone = phone.trim();
+  final cleanParish = parish.trim();
+
+  if (cleanFarmName.isEmpty ||
+      cleanFarmerName.isEmpty ||
+      cleanPhone.isEmpty ||
+      cleanParish.isEmpty) {
+    throw Exception(
+      'Farm name, farmer name, phone, and parish are required.',
+    );
+  }
+
+  final params = <String, dynamic>{
+    'p_farm_name': cleanFarmName,
+    'p_farmer_name': cleanFarmerName,
+    'p_phone': cleanPhone,
+    'p_parish': cleanParish,
+    'p_address': address.trim(),
+    'p_bio': bio.trim(),
+    'p_payout_method': payoutMethod.trim(),
+    'p_payout_details': payoutDetails.trim(),
+  };
+
+  try {
+    // Server-authoritative save. The migration supplied with this release
+    // creates submit_farmer_application() as a SECURITY DEFINER function so a
+    // legitimate signed-in user is not blocked by inconsistent legacy RLS
+    // policies or optional-column drift.
+    await supabase.rpc(
+      'submit_farmer_application',
+      params: params,
+    );
+  } catch (rpcError) {
+    final text = rpcError.toString().toLowerCase();
+    final rpcMissing = text.contains('pgrst202') ||
+        text.contains('42883') ||
+        text.contains('function') && text.contains('does not exist');
+
+    if (!rpcMissing) {
+      farmDebugLog('Farmer application RPC failed: $rpcError');
+      rethrow;
+    }
+
+    // Compatibility fallback for a build launched before the migration has
+    // been applied. Save only the core fields first; optional fields are then
+    // best-effort so an older table cannot reject the whole application just
+    // because payout/address columns are absent.
+    farmDebugLog(
+      'Farmer application RPC not installed yet; using compatibility save.',
+    );
+
+    final corePayload = <String, dynamic>{
+      'user_id': user.id,
+      'farm_name': cleanFarmName,
+      'farmer_name': cleanFarmerName,
+      'phone': cleanPhone,
+      'parish': cleanParish,
+    };
+
+    if (existing == null || existing.id.isEmpty) {
+      await supabase.from('farmer_profiles').insert(corePayload);
+    } else {
+      await supabase
+          .from('farmer_profiles')
+          .update(corePayload)
+          .eq('id', existing.id);
+    }
+
+    final optionalPayload = <String, dynamic>{
+      'email': user.email,
+      'address': address.trim(),
+      'bio': bio.trim(),
+      'payout_method': payoutMethod.trim(),
+      'payout_details': payoutDetails.trim(),
+      if (existing == null || existing.id.isEmpty)
+        'verification_status': 'pending',
+    };
+
+    try {
+      if (existing == null || existing.id.isEmpty) {
+        await supabase
+            .from('farmer_profiles')
+            .update(optionalPayload)
+            .eq('user_id', user.id);
+      } else {
+        await supabase
+            .from('farmer_profiles')
+            .update(optionalPayload)
+            .eq('id', existing.id);
+      }
+    } catch (optionalError) {
+      farmDebugLog(
+        'Farmer optional profile fields were skipped safely: $optionalError',
+      );
+    }
+  }
+
+  // Notification delivery is intentionally non-blocking. A successfully saved
+  // farmer application must never be reported to the user as failed just
+  // because an admin notification could not be created.
   await createAdminNotification(
-    title: 'Farmer profile submitted',
-    message: '$farmerName submitted or updated a farmer profile for $farmName.',
-    type: 'admin',
+    title:
+        existing == null ? 'New farmer application' : 'Farmer profile updated',
+    message: existing == null
+        ? '$cleanFarmName submitted a farmer partner application.'
+        : '$cleanFarmName updated their farmer profile.',
+    type: 'farmer',
   );
 }
 
-Future<void> updateFarmerVerification(String farmerId, String status) async {
+Future<void> updateFarmerVerification(
+  String farmerId,
+  String status,
+) async {
   await requireAdminAccess();
-  await supabase
-      .from('farmer_profiles')
-      .update({'verification_status': status}).eq('id', farmerId);
+
+  await supabase.from('farmer_profiles').update({
+    'verification_status': status,
+  }).eq('id', farmerId);
+}
+// =====================================================
+// HPJ FARMER SUPPLY NETWORK
+// =====================================================
+
+const String _farmerSupplyForecastFields =
+    'id, farmer_id, crop_name, category, '
+    'quantity_growing, expected_quantity, '
+    'harvested_quantity, hpj_confirmed_quantity, '
+    'unit, expected_harvest_date, harvested_at, '
+    'status, notes, created_at, updated_at';
+
+const Set<String> _farmerEditableSupplyStatuses = {
+  'planning',
+  'growing',
+  'expected',
+  'harvest_ready',
+  'harvested',
+  'cancelled',
+};
+// =====================================================
+// FETCH SUPPLY FOR ONE FARMER
+// =====================================================
+
+Future<List<FarmerSupplyForecast>> fetchFarmerSupplyForecasts(
+  String farmerId,
+) async {
+  final cleanFarmerId = farmerId.trim();
+
+  if (cleanFarmerId.isEmpty) {
+    return const <FarmerSupplyForecast>[];
+  }
+
+  try {
+    final response = await supabase
+        .from('farmer_supply_forecasts')
+        .select(_farmerSupplyForecastFields)
+        .eq('farmer_id', cleanFarmerId)
+        .order(
+          'created_at',
+          ascending: false,
+        );
+
+    return (response as List)
+        .map(
+          (item) => FarmerSupplyForecast.fromSupabase(
+            Map<String, dynamic>.from(
+              item as Map,
+            ),
+          ),
+        )
+        .toList();
+  } catch (error) {
+    farmDebugLog(
+      'Farmer supply forecasts unavailable: $error',
+    );
+
+    return const <FarmerSupplyForecast>[];
+  }
+}
+
+// =====================================================
+// FETCH CURRENT SIGNED-IN FARMER SUPPLY
+// =====================================================
+
+Future<List<FarmerSupplyForecast>> fetchCurrentFarmerSupplyForecasts() async {
+  final farmer = await fetchCurrentFarmerProfile();
+
+  if (farmer == null || farmer.id.trim().isEmpty) {
+    return const <FarmerSupplyForecast>[];
+  }
+
+  return fetchFarmerSupplyForecasts(
+    farmer.id,
+  );
+}
+// =====================================================
+// UPDATE FARMER SUPPLY FORECAST
+// =====================================================
+
+Future<FarmerSupplyForecast> updateFarmerSupplyForecast({
+  required String forecastId,
+  String? cropName,
+  String? category,
+  double? quantityGrowing,
+  double? expectedQuantity,
+  double? harvestedQuantity,
+  String? unit,
+  DateTime? expectedHarvestDate,
+  DateTime? harvestedAt,
+  String? status,
+  String? notes,
+}) async {
+  final farmer = await fetchCurrentFarmerProfile();
+
+  if (farmer == null) {
+    throw Exception(
+      'Farmer profile not found.',
+    );
+  }
+
+  if (!farmer.isApproved) {
+    throw Exception(
+      'Your farmer profile must be approved.',
+    );
+  }
+
+  final cleanForecastId = forecastId.trim();
+
+  if (cleanForecastId.isEmpty) {
+    throw Exception(
+      'Supply report ID is required.',
+    );
+  }
+
+  if (quantityGrowing != null && quantityGrowing < 0) {
+    throw Exception(
+      'Quantity growing cannot be negative.',
+    );
+  }
+
+  if (expectedQuantity != null && expectedQuantity < 0) {
+    throw Exception(
+      'Expected quantity cannot be negative.',
+    );
+  }
+
+  if (harvestedQuantity != null && harvestedQuantity < 0) {
+    throw Exception(
+      'Harvested quantity cannot be negative.',
+    );
+  }
+
+  final payload = <String, dynamic>{};
+
+  if (cropName != null) {
+    final cleanCrop = cropName.trim();
+
+    if (cleanCrop.isEmpty) {
+      throw Exception(
+        'Crop name cannot be empty.',
+      );
+    }
+
+    payload['crop_name'] = cleanCrop;
+  }
+
+  if (category != null) {
+    payload['category'] = category.trim().isEmpty ? null : category.trim();
+  }
+
+  if (quantityGrowing != null) {
+    payload['quantity_growing'] = quantityGrowing;
+  }
+
+  if (expectedQuantity != null) {
+    payload['expected_quantity'] = expectedQuantity;
+  }
+
+  if (harvestedQuantity != null) {
+    payload['harvested_quantity'] = harvestedQuantity;
+  }
+
+  if (unit != null) {
+    final cleanUnit = unit.trim();
+
+    if (cleanUnit.isEmpty) {
+      throw Exception(
+        'Unit cannot be empty.',
+      );
+    }
+
+    payload['unit'] = cleanUnit;
+  }
+
+  if (expectedHarvestDate != null) {
+    payload['expected_harvest_date'] =
+        expectedHarvestDate.toIso8601String().split('T').first;
+  }
+
+  if (notes != null) {
+    payload['notes'] = notes.trim().isEmpty ? null : notes.trim();
+  }
+
+  if (status != null) {
+    final cleanStatus = status.trim().toLowerCase();
+
+    if (!_farmerEditableSupplyStatuses.contains(cleanStatus)) {
+      throw Exception(
+        'Farmers cannot use this supply status.',
+      );
+    }
+
+    payload['status'] = cleanStatus;
+
+    if (cleanStatus == 'harvested') {
+      payload['harvested_at'] =
+          (harvestedAt ?? DateTime.now()).toUtc().toIso8601String();
+    }
+  } else if (harvestedAt != null) {
+    payload['harvested_at'] = harvestedAt.toUtc().toIso8601String();
+  }
+
+  if (payload.isEmpty) {
+    throw Exception(
+      'No supply changes were provided.',
+    );
+  }
+
+  final response = await supabase
+      .from('farmer_supply_forecasts')
+      .update(payload)
+      .eq(
+        'id',
+        cleanForecastId,
+      )
+      .eq(
+        'farmer_id',
+        farmer.id,
+      )
+      .select(
+        _farmerSupplyForecastFields,
+      )
+      .maybeSingle();
+
+  if (response == null) {
+    throw Exception(
+      'Supply report could not be updated.',
+    );
+  }
+
+  return FarmerSupplyForecast.fromSupabase(
+    Map<String, dynamic>.from(
+      response,
+    ),
+  );
+}
+// =====================================================
+// CANCEL FARMER SUPPLY FORECAST
+// =====================================================
+
+Future<FarmerSupplyForecast> cancelFarmerSupplyForecast(
+  String forecastId,
+) {
+  return updateFarmerSupplyForecast(
+    forecastId: forecastId,
+    status: 'cancelled',
+  );
+}
+// =====================================================
+// ADMIN — ALL FARMER SUPPLY FORECASTS
+// Used for supply vs demand matching
+// =====================================================
+
+Future<List<FarmerSupplyForecast>> fetchAdminFarmerSupplyForecasts() async {
+  await requireAdminAccess();
+
+  try {
+    final response = await supabase
+        .from('farmer_supply_forecasts')
+        .select(_farmerSupplyForecastFields)
+        .not(
+          'status',
+          'in',
+          '(completed,cancelled)',
+        )
+        .order(
+          'expected_harvest_date',
+          ascending: true,
+        )
+        .limit(500);
+
+    return (response as List)
+        .map(
+          (item) => FarmerSupplyForecast.fromSupabase(
+            Map<String, dynamic>.from(
+              item as Map,
+            ),
+          ),
+        )
+        .toList();
+  } catch (error) {
+    farmDebugLog(
+      'Admin farmer supply load failed: $error',
+    );
+
+    rethrow;
+  }
+}
+
+// =====================================================
+// ADMIN — VERIFY / CONFIRM FARMER SUPPLY
+//
+// Farmer reports remain planning signals until HPJ verifies
+// a quantity. Only the confirmed quantity can be reserved
+// against wholesale procurement requirements.
+// =====================================================
+
+Future<FarmerSupplyForecast> adminConfirmFarmerSupplyForecast({
+  required FarmerSupplyForecast supply,
+  required double confirmedQuantity,
+}) async {
+  await requireAdminAccess();
+
+  if (confirmedQuantity <= 0 ||
+      confirmedQuantity.isNaN ||
+      confirmedQuantity.isInfinite) {
+    throw Exception(
+      'Enter a valid HPJ-confirmed quantity.',
+    );
+  }
+
+  final maximumReported = <double>[
+    supply.harvestedQuantity ?? 0,
+    supply.expectedQuantity ?? 0,
+    supply.quantityGrowing ?? 0,
+  ].fold<double>(0, (best, value) => value > best ? value : best);
+
+  if (maximumReported > 0 && confirmedQuantity > maximumReported) {
+    throw Exception(
+      'Confirmed quantity cannot be greater than the farmer-reported quantity.',
+    );
+  }
+
+  final response = await supabase.rpc(
+    'admin_confirm_farmer_supply_forecast',
+    params: {
+      'p_supply_id': supply.id,
+      'p_confirmed_quantity': confirmedQuantity,
+    },
+  );
+
+  if (response is! Map) {
+    throw Exception(
+      'Farmer supply could not be confirmed. Refresh and try again.',
+    );
+  }
+
+  return FarmerSupplyForecast.fromSupabase(
+    Map<String, dynamic>.from(response),
+  );
+}
+
+// =====================================================
+// CREATE FARMER SUPPLY FORECAST
+// =====================================================
+
+Future<FarmerSupplyForecast> createFarmerSupplyForecast({
+  required String cropName,
+  String? category,
+  double? quantityGrowing,
+  double? expectedQuantity,
+  String unit = 'lb',
+  DateTime? expectedHarvestDate,
+  String status = 'growing',
+  String? notes,
+}) async {
+  final farmer = await fetchCurrentFarmerProfile();
+
+  if (farmer == null) {
+    throw Exception(
+      'A farmer profile is required before reporting supply.',
+    );
+  }
+
+  if (!farmer.isApproved) {
+    throw Exception(
+      'Your farmer profile must be approved before reporting supply.',
+    );
+  }
+
+  final cleanCropName = cropName.trim();
+
+  final cleanUnit = unit.trim();
+
+  final cleanStatus = status.trim().toLowerCase();
+
+  if (cleanCropName.isEmpty) {
+    throw Exception(
+      'Crop name is required.',
+    );
+  }
+
+  if (cleanUnit.isEmpty) {
+    throw Exception(
+      'Unit is required.',
+    );
+  }
+
+  if (!_farmerEditableSupplyStatuses.contains(cleanStatus)) {
+    throw Exception(
+      'Invalid farmer supply status.',
+    );
+  }
+
+  if (quantityGrowing != null && quantityGrowing < 0) {
+    throw Exception(
+      'Quantity growing cannot be negative.',
+    );
+  }
+
+  if (expectedQuantity != null && expectedQuantity < 0) {
+    throw Exception(
+      'Expected quantity cannot be negative.',
+    );
+  }
+
+  final payload = <String, dynamic>{
+    'farmer_id': farmer.id,
+    'crop_name': cleanCropName,
+    'category':
+        category == null || category.trim().isEmpty ? null : category.trim(),
+    'quantity_growing': quantityGrowing,
+    'expected_quantity': expectedQuantity,
+    'unit': cleanUnit,
+    'expected_harvest_date': expectedHarvestDate == null
+        ? null
+        : expectedHarvestDate.toIso8601String().split('T').first,
+    'status': cleanStatus,
+    'notes': notes == null || notes.trim().isEmpty ? null : notes.trim(),
+  };
+
+  final response = await supabase
+      .from('farmer_supply_forecasts')
+      .insert(payload)
+      .select(
+        _farmerSupplyForecastFields,
+      )
+      .single();
+
+  return FarmerSupplyForecast.fromSupabase(
+    Map<String, dynamic>.from(
+      response,
+    ),
+  );
 }
 
 Future<List<Product>> fetchFarmerProducts(String farmerId) async {
@@ -3700,20 +4371,74 @@ Future<void> updateProductApproval(String productId, String status) async {
     adminNote: 'Admin changed product approval to $status from app',
   );
 }
+// =====================================================
+// WHOLESALE FARMER PAYOUT
+// Creates one pending payout from a completed
+// warehouse receiving batch.
+// =====================================================
+
+Future<String> createWholesaleFarmerPayout(
+  String receivingBatchId,
+) async {
+  await requireAdminAccess();
+
+  final cleanId = receivingBatchId.trim();
+
+  if (cleanId.isEmpty) {
+    throw Exception(
+      'Receiving batch is required.',
+    );
+  }
+
+  final response = await supabase.rpc(
+    'create_wholesale_farmer_payout',
+    params: {
+      'p_receiving_batch_id': cleanId,
+    },
+  );
+
+  final payoutId = response?.toString().trim() ?? '';
+
+  if (payoutId.isEmpty) {
+    throw Exception(
+      'The farmer payout could not be prepared.',
+    );
+  }
+
+  return payoutId;
+}
 
 Future<List<FarmerPayout>> fetchFarmerPayouts({String? farmerId}) async {
   try {
-    dynamic query = supabase
-        .from('farmer_payouts')
-        .select(
-            'id, farmer_id, order_id, gross_amount, commission_amount, net_amount, payout_status, payout_method, payout_reference, released_at, created_at')
-        .order('created_at', ascending: false);
-    if (farmerId != null && farmerId.isNotEmpty)
+    dynamic query = supabase.from('farmer_payouts').select(
+          'id, farmer_id, order_id, '
+          'gross_amount, commission_amount, net_amount, '
+          'payout_status, payout_method, payout_reference, '
+          'source_type, receiving_batch_id, wholesale_request_id, '
+          'product_name, payout_quantity, payout_unit, '
+          'farmer_unit_cost, notes, '
+          'released_at, created_at',
+        );
+
+    // Apply filters before transform methods such as order().
+    // This avoids calling eq() on a PostgrestTransformBuilder.
+    if (farmerId != null && farmerId.isNotEmpty) {
       query = query.eq('farmer_id', farmerId);
+    }
+
+    query = query.order(
+      'created_at',
+      ascending: false,
+    );
+
     final response = await query;
+
     return (response as List)
-        .map((item) =>
-            FarmerPayout.fromSupabase(Map<String, dynamic>.from(item)))
+        .map(
+          (item) => FarmerPayout.fromSupabase(
+            Map<String, dynamic>.from(item),
+          ),
+        )
         .toList();
   } catch (error) {
     farmDebugLog('Farmer payouts unavailable: $error');
@@ -3855,45 +4580,186 @@ Future<void> updateCouponAvailability(String couponId, bool isActive) async {
   );
 }
 
-Future<void> createSupportTicket({
+Future<String> createSupportTicket({
   required String subject,
   required String message,
 }) async {
-  final user = supabase.auth.currentUser;
-  await supabase.from('support_tickets').insert({
-    'user_id': user?.id,
-    'email': user?.email ?? '',
-    'subject': subject,
-    'message': message,
-    'status': 'open',
-  });
+  final cleanSubject = subject.trim();
+  final cleanMessage = message.trim();
+  if (cleanSubject.isEmpty || cleanMessage.isEmpty) {
+    throw Exception('Please enter a subject and message.');
+  }
 
-  await createAdminNotification(
-    title: 'New support message',
-    message: '${user?.email ?? 'A customer'} sent: $subject',
-    type: 'support',
-  );
+  try {
+    final response = await supabase.rpc(
+      'hpj_create_support_conversation',
+      params: {
+        'p_subject': cleanSubject,
+        'p_message': cleanMessage,
+      },
+    );
+
+    final ticketId = response?.toString().trim() ?? '';
+    if (ticketId.isEmpty) {
+      throw Exception('HPJ Customer Care could not create the conversation.');
+    }
+
+    // Keep admin notifications generic so private message content never appears
+    // outside the secured conversation itself.
+    await createAdminNotification(
+      title: 'New private Customer Care conversation',
+      message:
+          'A signed-in HPJ user started Customer Care conversation #${ticketId.length <= 6 ? ticketId.toUpperCase() : ticketId.substring(0, 6).toUpperCase()}.',
+      type: 'support',
+      actionType: 'admin_support_chat',
+      actionId: ticketId,
+    );
+
+    return ticketId;
+  } catch (error) {
+    final lower = error.toString().toLowerCase();
+    if (lower.contains('hpj_create_support_conversation') ||
+        lower.contains('function') && lower.contains('does not exist')) {
+      throw Exception(
+        'Customer Care security update is not installed yet. Run the HPJ private chat Supabase migration.',
+      );
+    }
+    rethrow;
+  }
 }
+
+const String _supportTicketSelectFields =
+    'id, user_id, email, subject, message, status, admin_reply, '
+    'last_message_preview, last_sender_role, assigned_staff_id, priority, '
+    'created_at, updated_at, last_message_at, customer_last_read_at, staff_last_read_at';
 
 Future<List<SupportTicket>> fetchMySupportTickets() async {
   final user = supabase.auth.currentUser;
-  if (user == null) return [];
+  if (user == null) return const <SupportTicket>[];
 
   try {
     final response = await supabase
         .from('support_tickets')
-        .select('id, email, subject, message, status, admin_reply, created_at')
+        .select(_supportTicketSelectFields)
         .eq('user_id', user.id)
+        .order('last_message_at', ascending: false)
         .order('created_at', ascending: false)
-        .limit(30);
+        .limit(50);
 
     return (response as List)
         .map((item) =>
-            SupportTicket.fromSupabase(Map<String, dynamic>.from(item)))
+            SupportTicket.fromSupabase(Map<String, dynamic>.from(item as Map)))
         .toList();
   } catch (error) {
-    farmDebugLog('Failed to fetch this user support tickets: $error');
-    return [];
+    farmDebugLog('Failed to fetch this user support conversations: $error');
+    return const <SupportTicket>[];
+  }
+}
+
+Future<SupportTicket?> fetchSupportTicket(String ticketId) async {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return null;
+
+  try {
+    final response = await supabase
+        .from('support_tickets')
+        .select(_supportTicketSelectFields)
+        .eq('id', cleanId)
+        .maybeSingle();
+    if (response == null) return null;
+    return SupportTicket.fromSupabase(Map<String, dynamic>.from(response));
+  } catch (error) {
+    farmDebugLog('Support conversation lookup skipped: $error');
+    return null;
+  }
+}
+
+Stream<SupportTicket?> watchSupportTicket(String ticketId) {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return Stream<SupportTicket?>.value(null);
+
+  return supabase
+      .from('support_tickets')
+      .stream(primaryKey: const ['id'])
+      .eq('id', cleanId)
+      .map((rows) {
+        if (rows.isEmpty) return null;
+        return SupportTicket.fromSupabase(
+          Map<String, dynamic>.from(rows.first),
+        );
+      });
+}
+
+Stream<List<SupportMessage>> watchSupportMessages(String ticketId) {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) {
+    return Stream<List<SupportMessage>>.value(const <SupportMessage>[]);
+  }
+
+  return supabase
+      .from('support_messages')
+      .stream(primaryKey: const ['id'])
+      .eq('ticket_id', cleanId)
+      .order('created_at', ascending: true)
+      .map(
+        (rows) => rows
+            .map(
+              (item) => SupportMessage.fromSupabase(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .where((message) => !message.isInternal)
+            .toList(),
+      );
+}
+
+Future<void> sendSupportMessage({
+  required String ticketId,
+  required String message,
+  bool internal = false,
+}) async {
+  final cleanId = ticketId.trim();
+  final cleanMessage = message.trim();
+  if (cleanId.isEmpty || cleanMessage.isEmpty) {
+    throw Exception('Please enter a message.');
+  }
+
+  await supabase.rpc(
+    'hpj_send_support_message',
+    params: {
+      'p_ticket_id': cleanId,
+      'p_message': cleanMessage,
+      'p_internal': internal,
+    },
+  );
+}
+
+Future<void> markSupportConversationRead(String ticketId) async {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return;
+  try {
+    await supabase.rpc(
+      'hpj_mark_support_read',
+      params: {'p_ticket_id': cleanId},
+    );
+  } catch (error) {
+    farmDebugLog('Support read receipt skipped: $error');
+  }
+}
+
+Future<void> claimSupportConversation(String ticketId) async {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return;
+  try {
+    await supabase.rpc(
+      'hpj_claim_support_conversation',
+      params: {'p_ticket_id': cleanId},
+    );
+  } catch (error) {
+    // Owner/manager supervisors do not need to claim tickets. Dedicated
+    // Customer Care agents will receive a real error if another agent already
+    // owns the private thread; the admin screen handles that on send/open.
+    farmDebugLog('Support claim check: $error');
   }
 }
 
@@ -3902,11 +4768,21 @@ Future<void> updateSupportTicket({
   required String status,
   String? adminReply,
 }) async {
-  await requireAdminAccess();
-  await supabase.from('support_tickets').update({
-    'status': status,
-    'admin_reply': adminReply,
-  }).eq('id', ticketId);
+  final cleanReply = adminReply?.trim() ?? '';
+  if (cleanReply.isNotEmpty) {
+    await sendSupportMessage(
+      ticketId: ticketId,
+      message: cleanReply,
+    );
+  }
+
+  await supabase.rpc(
+    'hpj_set_support_status',
+    params: {
+      'p_ticket_id': ticketId.trim(),
+      'p_status': status.trim().toLowerCase(),
+    },
+  );
 }
 
 Future<List<ProductReview>> _attachCustomerProfileNames(
@@ -4213,8 +5089,53 @@ List<Product> buildRecommendedForYouProducts({
   required List<Product> favoriteProducts,
   String selectedCategory = 'All',
   Set<String> excludeIds = const {},
+  UserExperiencePreferences? preferences,
 }) {
-  final visibleProducts = uniqueVisibleProducts(allProducts, limit: 500);
+  final preference = preferences ?? UserExperiencePreferences.defaults;
+  var visibleProducts = uniqueVisibleProducts(allProducts, limit: 500);
+
+  if (preference.organicPreference == 'only') {
+    visibleProducts = visibleProducts.where((product) => product.isOrganic).toList();
+  }
+
+  int preferenceScore(Product product) {
+    var score = 0;
+
+    if ((preference.organicPreference == 'prefer' ||
+            preference.recommendationStyle == 'organic_first') &&
+        product.isOrganic) {
+      score += 10000;
+    }
+
+    if (preference.recommendationStyle == 'budget_first') {
+      if (product.showAsDealOfDay) score += 9000;
+      if (product.hasActiveDiscount) score += 7000;
+      score += (100000 / (product.effectivePrice + 1))
+          .round()
+          .clamp(0, 2500)
+          .toInt();
+    }
+
+    if (preference.recommendationStyle == 'healthy_variety') {
+      score += product.allNutrientTags.length * 500;
+      if (product.nutritionVerified) score += 1500;
+    }
+
+    return score;
+  }
+
+  if (preference.recommendationStyle == 'organic_first' ||
+      preference.recommendationStyle == 'budget_first' ||
+      preference.recommendationStyle == 'healthy_variety' ||
+      preference.organicPreference == 'prefer') {
+    visibleProducts = List<Product>.of(visibleProducts)
+      ..sort((a, b) {
+        final scoreCompare = preferenceScore(b).compareTo(preferenceScore(a));
+        if (scoreCompare != 0) return scoreCompare;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+  }
+
   final excludedIds = <String>{
     ...excludeIds,
     ...recentlyViewedProducts.map((product) => product.id),
@@ -4231,12 +5152,23 @@ List<Product> buildRecommendedForYouProducts({
     output.add(product);
   }
 
-  // Do not use favorites as an instant recommendation signal. Tapping the
-  // heart should only update the heart state, not reshuffle product rails.
+  final allowPersonalSignals = preference.personalizationEnabled;
+
   final signalCategories = <String>{
-    ...recentlyViewedProducts.map((product) => product.category.toLowerCase()),
-    ...buyAgainProducts.map((product) => product.category.toLowerCase()),
+    if (allowPersonalSignals)
+      ...recentlyViewedProducts.map((product) => product.category.toLowerCase()),
+    if (allowPersonalSignals)
+      ...buyAgainProducts.map((product) => product.category.toLowerCase()),
+    if (allowPersonalSignals && preference.recommendationStyle == 'favorites')
+      ...favoriteProducts.map((product) => product.category.toLowerCase()),
   }..removeWhere((category) => category.trim().isEmpty);
+
+  if (preference.recommendationStyle == 'favorites' && allowPersonalSignals) {
+    final favoriteIds = favoriteProducts.map((product) => product.id).toSet();
+    for (final product in visibleProducts) {
+      if (favoriteIds.contains(product.id)) add(product);
+    }
+  }
 
   for (final product in visibleProducts) {
     if (product.showAsDealOfDay || product.hasActiveDiscount) add(product);
@@ -4510,6 +5442,203 @@ Color loyaltyTierColor(String tier) {
   }
 }
 
+// =====================================================
+// HPJ SOCIAL UTILITY INTELLIGENCE
+// Useful social mechanics only: Watch + New/Seen.
+// No public profiles, follower counts, likes, comments,
+// or public conversations are introduced here.
+// =====================================================
+String hpjWatchKeyPart(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll('|', '/');
+}
+
+String hpjFarmerDemandWatchKey(String productName, String unit) {
+  return '${hpjWatchKeyPart(productName)}|${hpjWatchKeyPart(unit)}';
+}
+
+String hpjFarmerDemandFeedItemKey(FarmerMarketDemandOpportunity opportunity) {
+  final needBy = opportunity.nextNeedBy;
+  final dateKey = needBy == null
+      ? 'open'
+      : '${needBy.year.toString().padLeft(4, '0')}-${needBy.month.toString().padLeft(2, '0')}-${needBy.day.toString().padLeft(2, '0')}';
+  final gapKey = opportunity.opportunityGap.toStringAsFixed(2);
+  return 'demand:${hpjFarmerDemandWatchKey(opportunity.productName, opportunity.unit)}:$dateKey:$gapKey';
+}
+
+Future<Set<String>> fetchHpjActiveWatchKeys({
+  required String workspace,
+  required String watchType,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return <String>{};
+
+  try {
+    final response = await supabase
+        .from('hpj_watches')
+        .select('entity_key')
+        .eq('user_id', user.id)
+        .eq('workspace', workspace)
+        .eq('watch_type', watchType)
+        .eq('is_active', true);
+
+    return (response as List)
+        .map((row) => (row['entity_key'] ?? '').toString().trim())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+  } catch (error) {
+    farmDebugLog('HPJ Watch lookup skipped: $error');
+    return <String>{};
+  }
+}
+
+Future<bool> isHpjWatchActive({
+  required String workspace,
+  required String watchType,
+  required String entityKey,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || entityKey.trim().isEmpty) return false;
+
+  try {
+    final row = await supabase
+        .from('hpj_watches')
+        .select('is_active')
+        .eq('user_id', user.id)
+        .eq('workspace', workspace)
+        .eq('watch_type', watchType)
+        .eq('entity_key', entityKey.trim())
+        .maybeSingle();
+    return row != null && row['is_active'] == true;
+  } catch (error) {
+    farmDebugLog('HPJ Watch status lookup skipped: $error');
+    return false;
+  }
+}
+
+Future<bool> setHpjWatchActive({
+  required String workspace,
+  required String watchType,
+  required String entityKey,
+  required String entityName,
+  required bool active,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    throw Exception('Please sign in to watch updates.');
+  }
+
+  final cleanKey = entityKey.trim();
+  final cleanName = entityName.trim();
+  if (cleanKey.isEmpty || cleanName.isEmpty) {
+    throw Exception('This item cannot be watched yet.');
+  }
+
+  try {
+    await supabase.from('hpj_watches').upsert({
+      'user_id': user.id,
+      'user_email': (user.email ?? '').trim().toLowerCase(),
+      'workspace': workspace,
+      'watch_type': watchType,
+      'entity_key': cleanKey,
+      'entity_name': cleanName,
+      'is_active': active,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'user_id,workspace,watch_type,entity_key');
+    return active;
+  } catch (error) {
+    farmDebugLog('HPJ Watch update failed: $error');
+    throw Exception(
+      'Watch is not ready yet. Run the HPJ Social Utility SQL migration and try again.',
+    );
+  }
+}
+
+Future<bool> isHpjFeedItemSeen({
+  required String workspace,
+  required String itemKey,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || itemKey.trim().isEmpty) return true;
+
+  try {
+    final row = await supabase
+        .from('hpj_feed_seen')
+        .select('item_key')
+        .eq('user_id', user.id)
+        .eq('workspace', workspace)
+        .eq('item_key', itemKey.trim())
+        .maybeSingle();
+    return row != null;
+  } catch (error) {
+    // If the migration has not been run, do not falsely badge every card NEW.
+    farmDebugLog('HPJ Feed seen lookup skipped: $error');
+    return true;
+  }
+}
+
+Future<void> markHpjFeedItemSeen({
+  required String workspace,
+  required String itemKey,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || itemKey.trim().isEmpty) return;
+
+  try {
+    await supabase.from('hpj_feed_seen').upsert({
+      'user_id': user.id,
+      'workspace': workspace,
+      'item_key': itemKey.trim(),
+      'seen_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'user_id,workspace,item_key');
+  } catch (error) {
+    farmDebugLog('HPJ Feed seen save skipped: $error');
+  }
+}
+
+Future<void> syncHpjFarmerDemandWatchNotifications(
+  List<FarmerMarketDemandOpportunity> opportunities,
+) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || opportunities.isEmpty) return;
+
+  final watched = await fetchHpjActiveWatchKeys(
+    workspace: 'farmer',
+    watchType: 'farmer_demand',
+  );
+  if (watched.isEmpty) return;
+
+  for (final opportunity in opportunities) {
+    if (opportunity.opportunityGap <= 0.0001) continue;
+    final watchKey = hpjFarmerDemandWatchKey(
+      opportunity.productName,
+      opportunity.unit,
+    );
+    if (!watched.contains(watchKey)) continue;
+
+    final needBy = opportunity.nextNeedBy;
+    final dateKey = needBy == null
+        ? 'open'
+        : '${needBy.year.toString().padLeft(4, '0')}-${needBy.month.toString().padLeft(2, '0')}-${needBy.day.toString().padLeft(2, '0')}';
+    final quantityKey = opportunity.opportunityGap.toStringAsFixed(2);
+
+    await createFarmNotification(
+      title: '${opportunity.productName} buyer demand',
+      message:
+          '${_farmerPartnerNumber(opportunity.opportunityGap)} ${opportunity.unit} is currently needed${needBy == null ? '' : ' by ${_farmerPartnerDate(needBy)}'}.',
+      type: 'farmer_demand',
+      userId: user.id,
+      userEmail: user.email,
+      actionType: 'farmer_demand',
+      actionId: watchKey,
+      dedupeKey: 'farmer-demand:$watchKey:$dateKey:$quantityKey',
+    );
+  }
+}
+
 String farmNotificationTypeLabel(FarmNotification notice) {
   switch (notice.type.trim().toLowerCase()) {
     case 'payment':
@@ -4520,6 +5649,12 @@ String farmNotificationTypeLabel(FarmNotification notice) {
       return 'Ready';
     case 'stock':
       return 'Stock';
+    case 'watch':
+      return 'Watching';
+    case 'price_drop':
+      return 'Price drop';
+    case 'farmer_demand':
+      return 'Buyer demand';
     case 'support':
       return 'Support';
     case 'review':
@@ -4541,11 +5676,390 @@ Color farmNotificationAccent(FarmNotification notice) {
       return FarmColors.green;
     case 'stock':
       return FarmColors.warning;
+    case 'watch':
+      return FarmColors.primary;
+    case 'price_drop':
+      return FarmColors.success;
+    case 'farmer_demand':
+      return FarmColors.warning;
     case 'support':
       return FarmColors.primaryDark;
     case 'review':
       return FarmColors.accent;
     default:
       return FarmColors.green;
+  }
+}
+
+// =====================================================
+// HPJ NAVIGATION MEMORY
+// Supabase already persists the authenticated session.
+// These helpers remember only safe workspace/tab choices
+// so users resume naturally without reopening transient
+// forms, sheets, checkout, or admin tools.
+// =====================================================
+Future<HpjNavigationPreference?> fetchHpjNavigationPreference() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return null;
+
+  try {
+    final row = await supabase
+        .from('user_navigation_preferences')
+        .select(
+          'last_workspace, customer_tab, farmer_tab, wholesale_tab',
+        )
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (row == null) return null;
+
+    return HpjNavigationPreference.fromSupabase(
+      Map<String, dynamic>.from(row),
+    );
+  } catch (error) {
+    // Navigation memory should never stop the user reaching HPJ.
+    farmDebugLog('Navigation preference load skipped: $error');
+    return null;
+  }
+}
+
+Future<void> saveHpjNavigationPreference({
+  required String workspace,
+  required int tab,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
+
+  final cleanWorkspace = workspace.trim().toLowerCase();
+
+  // Staff/admin is deliberately excluded from startup memory. HPJ never
+  // auto-opens administration after login or app restart.
+  if (!const {'customer', 'farmer', 'wholesale'}.contains(cleanWorkspace)) {
+    return;
+  }
+
+  final safeTab = tab.clamp(0, 4);
+
+  try {
+    await supabase.rpc(
+      'hpj_save_navigation_preference',
+      params: {
+        'p_workspace': cleanWorkspace,
+        'p_tab': safeTab,
+      },
+    );
+  } catch (error) {
+    // Memory is convenience only. Never block navigation because it failed.
+    farmDebugLog('Navigation preference save skipped: $error');
+  }
+}
+
+// =====================================================
+// HPJ AGRICULTURE INTELLIGENCE FEED SERVICES
+// =====================================================
+const String _agricultureFeedSelectFields =
+    'id, title, summary, image_url, category, audiences, priority, '
+    'source_name, source_url, action_label, action_type, action_id, '
+    'is_active, publish_at, expires_at, created_by, created_at, updated_at';
+
+const Set<String> _agricultureFeedCategories = <String>{
+  'agriculture_news',
+  'official_notice',
+  'market_intelligence',
+  'hpj_update',
+  'opportunity',
+  'education',
+  'weather_alert',
+};
+
+const Set<String> _agricultureFeedAudiences = <String>{
+  'customer',
+  'farmer',
+  'wholesale',
+};
+
+const Set<String> _agricultureFeedPriorities = <String>{
+  'normal',
+  'important',
+  'urgent',
+};
+
+const Set<String> _agricultureFeedActionTypes = <String>{
+  'none',
+  'external',
+  'customer_shop',
+  'customer_care',
+  'farmer_demand',
+  'farmer_supply',
+  'wholesale_shop',
+  'wholesale_plan',
+};
+
+Future<List<AgricultureFeedUpdate>> fetchAgricultureFeedUpdates({
+  required String audience,
+  int limit = 5,
+}) async {
+  final cleanAudience = audience.trim().toLowerCase();
+  if (!_agricultureFeedAudiences.contains(cleanAudience)) {
+    return const <AgricultureFeedUpdate>[];
+  }
+
+  try {
+    final response = await supabase
+        .from('agriculture_feed_updates')
+        .select(_agricultureFeedSelectFields)
+        .eq('is_active', true)
+        .order('publish_at', ascending: false)
+        .limit(100);
+
+    final now = DateTime.now();
+    final rows = (response as List)
+        .map(
+      (item) => AgricultureFeedUpdate.fromSupabase(
+        Map<String, dynamic>.from(item as Map),
+      ),
+    )
+        .where((item) {
+      if (!item.isForAudience(cleanAudience)) return false;
+      if (item.publishAt.isAfter(now)) return false;
+      if (item.expiresAt != null && !item.expiresAt!.isAfter(now)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    rows.sort((a, b) {
+      int priorityScore(AgricultureFeedUpdate item) {
+        if (item.priority == 'urgent') return 3;
+        if (item.priority == 'important') return 2;
+        return 1;
+      }
+
+      final priorityCompare = priorityScore(b).compareTo(priorityScore(a));
+      if (priorityCompare != 0) return priorityCompare;
+      return b.publishAt.compareTo(a.publishAt);
+    });
+
+    return rows.take(limit.clamp(1, 20).toInt()).toList(growable: false);
+  } catch (error) {
+    farmDebugLog('Agriculture feed unavailable: $error');
+    return const <AgricultureFeedUpdate>[];
+  }
+}
+
+Future<List<AgricultureFeedUpdate>> fetchAdminAgricultureFeedUpdates() async {
+  await requireAdminAccess();
+
+  final response = await supabase
+      .from('agriculture_feed_updates')
+      .select(_agricultureFeedSelectFields)
+      .order('publish_at', ascending: false)
+      .limit(200);
+
+  return (response as List)
+      .map(
+        (item) => AgricultureFeedUpdate.fromSupabase(
+          Map<String, dynamic>.from(item as Map),
+        ),
+      )
+      .toList(growable: false);
+}
+
+String? _cleanAgricultureFeedHttpUrl(String? value) {
+  final clean = value?.trim() ?? '';
+  if (clean.isEmpty) return null;
+  final uri = Uri.tryParse(clean);
+  if (uri == null || uri.host.trim().isEmpty) return null;
+  if (uri.scheme != 'https' && uri.scheme != 'http') return null;
+  return clean;
+}
+
+Future<String> uploadAgricultureFeedImageToStorage(
+  PickedProductImage image,
+) async {
+  await requireAdminAccess();
+
+  if (image.bytes.isEmpty) {
+    throw Exception('Choose a valid image file.');
+  }
+
+  const maxBytes = 6 * 1024 * 1024;
+  if (image.bytes.length > maxBytes) {
+    throw Exception('Image is too large. Please upload an image under 6 MB.');
+  }
+
+  final userId = supabase.auth.currentUser?.id ?? 'admin';
+  final timestamp = DateTime.now().millisecondsSinceEpoch;
+  final safeName = _safeProductImageFileName(image.fileName);
+  final path = 'agriculture-feed/$userId/$timestamp-$safeName';
+
+  await supabase.storage.from(productImageStorageBucket).uploadBinary(
+        path,
+        image.bytes,
+        fileOptions: FileOptions(
+          contentType: _contentTypeForImage(image),
+          upsert: true,
+        ),
+      );
+
+  return supabase.storage.from(productImageStorageBucket).getPublicUrl(path);
+}
+
+Future<AgricultureFeedUpdate> saveAgricultureFeedUpdate({
+  String? id,
+  required String title,
+  required String summary,
+  String? imageUrl,
+  required String category,
+  required List<String> audiences,
+  required String priority,
+  String? sourceName,
+  String? sourceUrl,
+  String? actionLabel,
+  String actionType = 'none',
+  String? actionId,
+  bool isActive = true,
+  required DateTime publishAt,
+  DateTime? expiresAt,
+}) async {
+  await requireAdminAccess();
+
+  final cleanTitle = title.trim();
+  final cleanSummary = summary.trim();
+  final cleanCategory = category.trim().toLowerCase();
+  final cleanPriority = priority.trim().toLowerCase();
+  final cleanActionType = actionType.trim().toLowerCase();
+  final cleanAudiences = audiences
+      .map((item) => item.trim().toLowerCase())
+      .where((item) => _agricultureFeedAudiences.contains(item))
+      .toSet()
+      .toList(growable: false);
+
+  if (cleanTitle.length < 3 || cleanTitle.length > 120) {
+    throw Exception('Use a headline between 3 and 120 characters.');
+  }
+  if (cleanSummary.length < 8 || cleanSummary.length > 800) {
+    throw Exception('Use a useful summary between 8 and 800 characters.');
+  }
+  if (!_agricultureFeedCategories.contains(cleanCategory)) {
+    throw Exception('Choose a valid update category.');
+  }
+  if (cleanAudiences.isEmpty) {
+    throw Exception('Choose at least one audience.');
+  }
+  if (!_agricultureFeedPriorities.contains(cleanPriority)) {
+    throw Exception('Choose a valid priority.');
+  }
+  if (!_agricultureFeedActionTypes.contains(cleanActionType)) {
+    throw Exception('Choose a valid action.');
+  }
+  if (expiresAt != null && !expiresAt.isAfter(publishAt)) {
+    throw Exception('Expiry must be after the publish date.');
+  }
+
+  final cleanImageUrl = cleanHostedImageUrl(imageUrl);
+  final cleanSourceUrl = _cleanAgricultureFeedHttpUrl(sourceUrl);
+  if ((sourceUrl ?? '').trim().isNotEmpty && cleanSourceUrl == null) {
+    throw Exception('Enter a valid http or https source link.');
+  }
+
+  final row = <String, dynamic>{
+    'title': cleanTitle,
+    'summary': cleanSummary,
+    'image_url': cleanImageUrl,
+    'category': cleanCategory,
+    'audiences': cleanAudiences,
+    'priority': cleanPriority,
+    'source_name':
+        (sourceName ?? '').trim().isEmpty ? null : sourceName!.trim(),
+    'source_url': cleanSourceUrl,
+    'action_label':
+        (actionLabel ?? '').trim().isEmpty ? null : actionLabel!.trim(),
+    'action_type': cleanActionType,
+    'action_id': (actionId ?? '').trim().isEmpty ? null : actionId!.trim(),
+    'is_active': isActive,
+    'publish_at': publishAt.toUtc().toIso8601String(),
+    'expires_at': expiresAt?.toUtc().toIso8601String(),
+  };
+
+  final cleanId = id?.trim() ?? '';
+  dynamic response;
+  if (cleanId.isEmpty) {
+    row['created_by'] = supabase.auth.currentUser?.id;
+    response = await supabase
+        .from('agriculture_feed_updates')
+        .insert(row)
+        .select(_agricultureFeedSelectFields)
+        .single();
+  } else {
+    response = await supabase
+        .from('agriculture_feed_updates')
+        .update(row)
+        .eq('id', cleanId)
+        .select(_agricultureFeedSelectFields)
+        .single();
+  }
+
+  return AgricultureFeedUpdate.fromSupabase(
+    Map<String, dynamic>.from(response as Map),
+  );
+}
+
+Future<void> setAgricultureFeedUpdateActive({
+  required String id,
+  required bool isActive,
+}) async {
+  await requireAdminAccess();
+  final cleanId = id.trim();
+  if (cleanId.isEmpty) return;
+
+  await supabase
+      .from('agriculture_feed_updates')
+      .update({'is_active': isActive}).eq('id', cleanId);
+}
+
+Future<void> deleteAgricultureFeedUpdate(String id) async {
+  await requireAdminAccess();
+  final cleanId = id.trim();
+  if (cleanId.isEmpty) return;
+  await supabase.from('agriculture_feed_updates').delete().eq('id', cleanId);
+}
+
+// =====================================================
+// HPJ JAMAICA SUPPLY–DEMAND INTELLIGENCE
+// Reads aggregated national signals only. The Supabase RPC
+// deliberately returns no farmer or buyer identities.
+// =====================================================
+Future<List<JamaicaSupplyDemandInsight>> fetchJamaicaSupplyDemandIntelligence({
+  int limit = 12,
+}) async {
+  if (!isLoggedIn) return const <JamaicaSupplyDemandInsight>[];
+
+  final safeLimit = limit.clamp(1, 50).toInt();
+
+  try {
+    final response = await supabase.rpc(
+      'get_jamaica_supply_demand_intelligence',
+      params: <String, dynamic>{
+        'p_limit': safeLimit,
+      },
+    );
+
+    if (response is! List) {
+      return const <JamaicaSupplyDemandInsight>[];
+    }
+
+    return response
+        .map(
+          (item) => JamaicaSupplyDemandInsight.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    farmDebugLog(
+      'Jamaica supply-demand intelligence unavailable: $error',
+    );
+    return const <JamaicaSupplyDemandInsight>[];
   }
 }

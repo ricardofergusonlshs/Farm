@@ -2,10 +2,62 @@ part of harvest_place_app;
 
 class AppConfig {
   static const appName = 'The Harvest Place Ja';
+  static const appVersion = '1.0.4';
+  static const appBuildNumber = '25';
+  static const supportPhoneDisplay = '876-339-1395';
+  static const supportPhoneDial = '+18763391395';
+  static const supportWhatsAppNumber = '18763391395';
+  static const supportEmail =
+      ''; // Add the official HPJ support email when ready.
+  static const businessLocation = 'Mountainside, St. Elizabeth, Jamaica';
+
+  // Cloudflare Turnstile CAPTCHA (public client configuration only).
+  // IMPORTANT: Never put the Turnstile SECRET key in the Flutter app.
+  //
+  // In FlutLab, replace the empty defaultValue strings below with the
+  // Turnstile SITE KEY and the HTTPS base URL/hostname you authorized in
+  // Cloudflare. In CI, you can instead provide TURNSTILE_SITE_KEY and
+  // TURNSTILE_BASE_URL using --dart-define.
+  static const turnstileSiteKey = String.fromEnvironment(
+    'TURNSTILE_SITE_KEY',
+    defaultValue: '',
+  );
+  // Native Android/iOS uses this as the WebView origin. It must be an
+  // http(s) URL whose hostname is authorized on the Cloudflare widget.
+  // Flutter Web automatically uses the current browser origin instead.
+  static const turnstileNativeBaseUrl = String.fromEnvironment(
+    'TURNSTILE_BASE_URL',
+    defaultValue: '',
+  );
+
+  static String get turnstileBaseUrl {
+    if (kIsWeb) {
+      final uri = Uri.base;
+      return Uri(
+        scheme: uri.scheme,
+        host: uri.host,
+        port: uri.hasPort ? uri.port : null,
+        path: '/',
+      ).toString();
+    }
+    return turnstileNativeBaseUrl.trim();
+  }
+
+  static bool get turnstileConfigured {
+    final siteKey = turnstileSiteKey.trim();
+    final baseUrl = turnstileBaseUrl.trim();
+    if (siteKey.isEmpty || baseUrl.isEmpty) return false;
+
+    final uri = Uri.tryParse(baseUrl);
+    return uri != null &&
+        (uri.scheme == 'https' || uri.scheme == 'http') &&
+        uri.host.trim().isNotEmpty;
+  }
 
   // Set this after deployment to your public app link.
-  // Leave empty during preview testing so invite links use the current preview URL.
-  static const publicShareUrl = 'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp';
+  // Leave empty if the current app URL should be used for invite links.
+  static const publicShareUrl =
+      'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp';
   static const supabaseUrl = 'https://zvgvvsgjzfygbsqwawoh.supabase.co';
   static const supabaseAnonKey =
       'sb_publishable_fBvBBFqJMlIOm1I3d5Oy-w_AbBGuJKH';

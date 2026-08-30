@@ -5607,6 +5607,7 @@ class Header extends StatelessWidget {
   final VoidCallback? onBack;
   final String? backTooltip;
   final bool showNotifications;
+  final Color? notificationBadgeColor;
 
   const Header({
     super.key,
@@ -5616,6 +5617,7 @@ class Header extends StatelessWidget {
     this.onBack,
     this.backTooltip,
     this.showNotifications = true,
+    this.notificationBadgeColor,
   });
 
   @override
@@ -5669,7 +5671,10 @@ class Header extends StatelessWidget {
           ),
           if (showNotifications) ...[
             const SizedBox(width: 12),
-            const FarmNotificationButton(size: 42),
+            FarmNotificationButton(
+              size: 42,
+              badgeColor: notificationBadgeColor ?? FarmColors.danger,
+            ),
           ],
         ],
       ),

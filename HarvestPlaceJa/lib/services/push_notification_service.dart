@@ -1,5 +1,12 @@
 part of harvest_place_app;
 
+/// HPJ Notification Repair 009
+///
+/// Responsibilities:
+/// - register/refresh Android FCM tokens
+/// - receive foreground/background notification taps
+/// - invoke the secure Supabase Edge Function after a notification row is saved
+/// - route notification taps to the exact HPJ destination when metadata exists
 class PushNotificationService {
   PushNotificationService._();
 
@@ -11,20 +18,24 @@ class PushNotificationService {
   static StreamSubscription<String>? _tokenRefreshSubscription;
   static StreamSubscription<AuthState>? _authSubscription;
   static StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
+  static StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
 
-  static bool get _isSupportedAndroid {
-    return !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  }
+  static bool get _isSupportedAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   static Future<void> initialise() async {
-    if (!_isSupportedAndroid || _started) {
-      return;
-    }
-
+    if (!_isSupportedAndroid || _started) return;
     _started = true;
 
-    // Listen for notification taps while the app is already running in the
-    // background. This must be registered once for the lifetime of the app.
+    try {
+      await FirebaseMessaging.instance.setAutoInitEnabled(true);
+    } catch (error, stackTrace) {
+      farmDebugLog('FCM auto-init setup failed: $error');
+      farmDebugLog('$stackTrace');
+    }
+
+    await _ensureNotificationPermission();
+
     _messageOpenedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
       (message) {
         unawaited(_handleOpenedRemoteMessage(message));
@@ -35,12 +46,18 @@ class PushNotificationService {
       },
     );
 
-    // If Android launched HPJ from a terminated state, Firebase gives us the
-    // message here. Queue it until MaterialApp, authentication and the root
-    // navigator are ready.
+    _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
+      (message) {
+        unawaited(_handleForegroundRemoteMessage(message));
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        farmDebugLog('Foreground push listener failed: $error');
+        farmDebugLog('$stackTrace');
+      },
+    );
+
     try {
-      final initialMessage =
-          await FirebaseMessaging.instance.getInitialMessage();
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
       if (initialMessage != null) {
         _pendingOpenedMessage = initialMessage;
       }
@@ -49,12 +66,8 @@ class PushNotificationService {
       farmDebugLog('$stackTrace');
     }
 
-    // Register an already signed-in user.
     await _registerCurrentDevice();
 
-    // Register again whenever a customer or staff member signs in. If the app
-    // was opened from a private notification while signed out, keep that tap
-    // queued and open it only after authentication has been restored.
     _authSubscription = supabase.auth.onAuthStateChange.listen(
       (authState) {
         if (authState.session != null) {
@@ -68,38 +81,24 @@ class PushNotificationService {
         }
       },
       onError: (Object error, StackTrace stackTrace) {
-        farmDebugLog(
-          'Push authentication listener failed: $error',
-        );
+        farmDebugLog('Push authentication listener failed: $error');
         farmDebugLog('$stackTrace');
       },
     );
 
-    // Firebase may replace a device token periodically.
     _tokenRefreshSubscription =
         FirebaseMessaging.instance.onTokenRefresh.listen(
       (newToken) {
         unawaited(_saveToken(newToken));
       },
       onError: (Object error, StackTrace stackTrace) {
-        farmDebugLog(
-          'Push token refresh listener failed: $error',
-        );
+        farmDebugLog('Push token refresh listener failed: $error');
         farmDebugLog('$stackTrace');
       },
     );
   }
 
-  static Future<void> _registerCurrentDevice() async {
-    final user = supabase.auth.currentUser;
-
-    if (user == null) {
-      farmDebugLog(
-        'Push registration waiting for user sign-in.',
-      );
-      return;
-    }
-
+  static Future<bool> _ensureNotificationPermission() async {
     try {
       final permission = await FirebaseMessaging.instance.requestPermission(
         alert: true,
@@ -108,65 +107,123 @@ class PushNotificationService {
         provisional: false,
       );
 
-      if (permission.authorizationStatus == AuthorizationStatus.denied) {
+      final granted =
+          permission.authorizationStatus == AuthorizationStatus.authorized ||
+          permission.authorizationStatus == AuthorizationStatus.provisional;
+
+      if (!granted) {
         farmDebugLog(
-          'Notification permission was denied.',
+          'Notification permission is not granted: '
+          '${permission.authorizationStatus}.',
         );
-        return;
+      }
+      return granted;
+    } catch (error, stackTrace) {
+      farmDebugLog('Notification permission request failed: $error');
+      farmDebugLog('$stackTrace');
+      return false;
+    }
+  }
+
+  static Future<void> _registerCurrentDevice() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      farmDebugLog('Push registration waiting for user sign-in.');
+      return;
+    }
+
+    try {
+      if (!await _ensureNotificationPermission()) return;
+
+      var token = await FirebaseMessaging.instance.getToken();
+      if (token == null || token.trim().isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+        token = await FirebaseMessaging.instance.getToken();
       }
 
-      final token = await FirebaseMessaging.instance.getToken();
-
       if (token == null || token.trim().isEmpty) {
-        farmDebugLog(
-          'Firebase did not return a push token.',
-        );
+        farmDebugLog('Firebase did not return a push token after retry.');
         return;
       }
 
       await _saveToken(token);
     } catch (error, stackTrace) {
-      farmDebugLog(
-        'Push notification registration failed: $error',
-      );
+      farmDebugLog('Push notification registration failed: $error');
       farmDebugLog('$stackTrace');
     }
   }
 
   static Future<void> _saveToken(String token) async {
     final cleanToken = token.trim();
+    if (cleanToken.isEmpty || supabase.auth.currentUser == null) return;
 
-    if (cleanToken.isEmpty || supabase.auth.currentUser == null) {
-      return;
+    try {
+      await supabase.rpc(
+        'register_push_token',
+        params: {
+          'p_token': cleanToken,
+          'p_platform': 'android',
+        },
+      );
+      farmDebugLog('Android push token registered successfully.');
+    } catch (error, stackTrace) {
+      farmDebugLog('Android push token registration failed: $error');
+      farmDebugLog('$stackTrace');
     }
-
-    await supabase.rpc(
-      'register_push_token',
-      params: {
-        'p_token': cleanToken,
-        'p_platform': 'android',
-      },
-    );
-
-    farmDebugLog(
-      'Android push token registered successfully.',
-    );
   }
 
-  // -------------------------------------------------------------------------
-  // SMART NOTIFICATION TAP ROUTING
-  // -------------------------------------------------------------------------
+  static Future<void> dispatchStoredNotificationPush({
+    required String title,
+    required String message,
+    required String type,
+    String? targetUserId,
+    String? targetEmail,
+    String? orderId,
+    String? actionType,
+    String? actionId,
+  }) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final cleanUserId = targetUserId?.trim() ?? '';
+    final cleanEmail = targetEmail?.trim().toLowerCase() ?? '';
+    if (cleanUserId.isEmpty && cleanEmail.isEmpty) return;
+
+    try {
+      final response = await supabase.functions.invoke(
+        'send-push-notification',
+        body: <String, dynamic>{
+          'target_user_id': cleanUserId.isEmpty ? null : cleanUserId,
+          'target_email': cleanEmail.isEmpty ? null : cleanEmail,
+          'title': title.trim(),
+          'message': message.trim(),
+          'type': type.trim(),
+          'order_id': orderId?.trim(),
+          'action_type': actionType?.trim(),
+          'action_id': actionId?.trim(),
+        },
+      );
+
+      if (response.status < 200 || response.status >= 300) {
+        farmDebugLog(
+          'Push Edge Function returned HTTP ${response.status}: ${response.data}',
+        );
+      }
+    } catch (error, stackTrace) {
+      farmDebugLog('Push dispatch skipped safely: $error');
+      farmDebugLog('$stackTrace');
+    }
+  }
 
   static String _messageKey(RemoteMessage message) {
-    final data = message.data;
     final id = message.messageId?.trim() ?? '';
     if (id.isNotEmpty) return id;
 
+    final data = message.data;
     return <String>[
       _dataValue(data, const ['notification_id', 'notificationId']),
       _dataValue(data, const ['action_type', 'actionType', 'type']),
-      _dataValue(
-          data, const ['action_id', 'actionId', 'entity_id', 'entityId']),
+      _dataValue(data, const ['action_id', 'actionId', 'entity_id', 'entityId']),
       _dataValue(data, const ['order_id', 'orderId']),
       message.notification?.title?.trim() ?? '',
       message.sentTime?.millisecondsSinceEpoch.toString() ?? '',
@@ -184,6 +241,42 @@ class PushNotificationService {
     return '';
   }
 
+  static Future<void> _handleForegroundRemoteMessage(
+    RemoteMessage message,
+  ) async {
+    final title =
+        (message.notification?.title ?? _dataValue(message.data, const ['title']))
+            .trim();
+    final body = (message.notification?.body ??
+            _dataValue(message.data, const ['body', 'message']))
+        .trim();
+
+    if (title.isEmpty && body.isEmpty) return;
+
+    final context = hpjRootNavigatorKey.currentContext;
+    if (context == null) return;
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          <String>[title, body].where((value) => value.isNotEmpty).join('\n'),
+        ),
+        duration: const Duration(seconds: 7),
+        action: SnackBarAction(
+          label: 'Open',
+          onPressed: () {
+            _pendingOpenedMessage = message;
+            unawaited(flushPendingNavigation());
+          },
+        ),
+      ),
+    );
+  }
+
   static Future<void> _handleOpenedRemoteMessage(RemoteMessage message) async {
     final key = _messageKey(message);
     if (key.isNotEmpty && key == _lastOpenedMessageKey) return;
@@ -192,23 +285,15 @@ class PushNotificationService {
     await flushPendingNavigation();
   }
 
-  /// Called by the root app after MaterialApp is mounted and again after sign
-  /// in. A notification tap is never discarded merely because HPJ was still
-  /// starting or restoring the user's session.
   static Future<void> flushPendingNavigation() async {
     if (_openingNotification) return;
 
     final message = _pendingOpenedMessage;
     if (message == null) return;
-
-    if (!isLoggedIn || supabase.auth.currentUser == null) {
-      return;
-    }
+    if (!isLoggedIn || supabase.auth.currentUser == null) return;
 
     final navigator = hpjRootNavigatorKey.currentState;
-    if (navigator == null || !navigator.mounted) {
-      return;
-    }
+    if (navigator == null || !navigator.mounted) return;
 
     _openingNotification = true;
     try {
@@ -237,8 +322,6 @@ class PushNotificationService {
     } catch (error, stackTrace) {
       farmDebugLog('Notification tap routing failed: $error');
       farmDebugLog('$stackTrace');
-      // Do not keep retrying a bad payload forever. The notification remains
-      // available in the Updates inbox if its database row exists.
       _pendingOpenedMessage = null;
     } finally {
       _openingNotification = false;
@@ -249,21 +332,20 @@ class PushNotificationService {
     RemoteMessage message,
   ) async {
     final data = message.data;
+
     final notificationId = _dataValue(
       data,
       const ['notification_id', 'notificationId', 'notice_id', 'noticeId'],
     );
-
     if (notificationId.isNotEmpty) {
       final stored = await _fetchNotificationById(notificationId);
       if (stored != null) return stored;
     }
 
-    final actionTypeRaw = _dataValue(
+    var actionType = _dataValue(
       data,
       const ['action_type', 'actionType', 'route', 'screen'],
-    );
-    var actionType = actionTypeRaw.trim().toLowerCase();
+    ).toLowerCase();
     var actionId = _dataValue(
       data,
       const [
@@ -277,14 +359,15 @@ class PushNotificationService {
         'conversationId',
       ],
     );
+
     final orderId = _dataValue(data, const ['order_id', 'orderId']);
     final productId = _dataValue(data, const ['product_id', 'productId']);
     final workspace =
         _dataValue(data, const ['workspace']).trim().toLowerCase();
     final remoteType = _dataValue(
-            data, const ['type', 'notification_type', 'notificationType'])
-        .trim()
-        .toLowerCase();
+      data,
+      const ['type', 'notification_type', 'notificationType'],
+    ).toLowerCase();
 
     if (actionType.isEmpty && orderId.isNotEmpty) {
       actionType = 'order';
@@ -318,19 +401,6 @@ class PushNotificationService {
       }
     }
 
-    // Prefer the secured database notification row. This keeps old FCM
-    // senders useful even when they only send a title/body: HPJ matches the
-    // tapped push to the latest private notification row and recovers its
-    // action_type/action_id before navigating.
-    final matched = await _matchStoredNotificationToRemoteMessage(
-      message,
-      actionType: actionType,
-      actionId: actionId,
-      orderId: orderId,
-      type: remoteType,
-    );
-    if (matched != null) return matched;
-
     final title =
         (message.notification?.title ?? _dataValue(data, const ['title']))
             .trim();
@@ -346,7 +416,7 @@ class PushNotificationService {
     }
 
     return FarmNotification(
-      id: '',
+      id: notificationId,
       title: title.isEmpty ? 'HPJ update' : title,
       message: body,
       type: remoteType.isEmpty ? 'notification' : remoteType,
@@ -365,82 +435,18 @@ class PushNotificationService {
       final response = await supabase
           .from('notifications')
           .select(
-            'id, title, message, type, is_read, created_at, order_id, action_type, action_id, dedupe_key',
+            'id, title, message, type, is_read, created_at, '
+            'order_id, action_type, action_id, dedupe_key',
           )
           .eq('id', id.trim())
           .maybeSingle();
+
       if (response == null) return null;
       return FarmNotification.fromSupabase(
         Map<String, dynamic>.from(response),
       );
     } catch (error) {
       farmDebugLog('Notification id lookup skipped: $error');
-      return null;
-    }
-  }
-
-  static Future<FarmNotification?> _matchStoredNotificationToRemoteMessage(
-    RemoteMessage message, {
-    required String actionType,
-    required String actionId,
-    required String orderId,
-    required String type,
-  }) async {
-    try {
-      final notices = await fetchFarmNotifications(forceRefresh: true);
-      if (notices.isEmpty) return null;
-
-      final remoteTitle = (message.notification?.title ??
-              _dataValue(message.data, const ['title']))
-          .trim()
-          .toLowerCase();
-      final remoteBody = (message.notification?.body ??
-              _dataValue(message.data, const ['body', 'message']))
-          .trim()
-          .toLowerCase();
-      final sentAt = message.sentTime;
-
-      FarmNotification? best;
-      var bestScore = -1;
-
-      for (final notice in notices) {
-        var score = 0;
-        final noticeTitle = notice.title.trim().toLowerCase();
-        final noticeBody = notice.message.trim().toLowerCase();
-        final noticeActionType = (notice.actionType ?? '').trim().toLowerCase();
-        final noticeActionId = (notice.actionId ?? '').trim();
-        final noticeOrderId = (notice.orderId ?? '').trim();
-
-        if (actionId.isNotEmpty && noticeActionId == actionId) score += 20;
-        if (actionType.isNotEmpty && noticeActionType == actionType) score += 8;
-        if (orderId.isNotEmpty && noticeOrderId == orderId) score += 20;
-        if (type.isNotEmpty && notice.type.trim().toLowerCase() == type) {
-          score += 4;
-        }
-        if (remoteTitle.isNotEmpty && noticeTitle == remoteTitle) score += 12;
-        if (remoteBody.isNotEmpty && noticeBody == remoteBody) score += 10;
-
-        if (sentAt != null && notice.createdAt != null) {
-          var difference = notice.createdAt!.difference(sentAt);
-          if (difference.isNegative) difference = -difference;
-          if (difference <= const Duration(minutes: 5)) {
-            score += 8;
-          } else if (difference <= const Duration(hours: 1)) {
-            score += 3;
-          }
-        }
-
-        if (score > bestScore) {
-          best = notice;
-          bestScore = score;
-        }
-      }
-
-      // Avoid guessing from an unrelated notification. A stored row must have
-      // at least one strong matching signal.
-      return bestScore >= 8 ? best : null;
-    } catch (error) {
-      farmDebugLog('Notification metadata recovery skipped: $error');
       return null;
     }
   }
@@ -466,6 +472,7 @@ class PushNotificationService {
       navigator = Navigator.of(context);
     }
     navigator ??= hpjRootNavigatorKey.currentState;
+
     if (navigator == null || !navigator.mounted) {
       throw StateError('HPJ navigation is not ready yet.');
     }
@@ -478,8 +485,6 @@ class PushNotificationService {
     await Future<void>.delayed(Duration.zero);
   }
 
-  /// Shared by Android push taps and the in-app Updates screen. Returns true
-  /// when HPJ could identify and open a meaningful destination.
   static Future<bool> openFarmNotification(
     FarmNotification notice, {
     BuildContext? context,
@@ -487,25 +492,6 @@ class PushNotificationService {
     if (!isLoggedIn || supabase.auth.currentUser == null) return false;
 
     await _markNotificationRead(notice);
-
-    // Orders always win because older notification rows may only have an
-    // order_id and no explicit action metadata.
-    if (notice.hasOrderLink ||
-        (notice.actionType ?? '').trim().toLowerCase() == 'order') {
-      final directOrderId = (notice.orderId ?? '').trim().isNotEmpty
-          ? notice.orderId!.trim()
-          : (notice.actionId ?? '').trim();
-      final orderId = directOrderId.isNotEmpty
-          ? directOrderId
-          : await findOrderIdForNotification(notice);
-      if (orderId != null && orderId.trim().isNotEmpty) {
-        await _pushPage(
-          OrderDetailsScreen(orderId: orderId.trim()),
-          context: context,
-        );
-        return true;
-      }
-    }
 
     final actionType = (notice.actionType ?? '').trim().toLowerCase();
     final actionId = (notice.actionId ?? '').trim();
@@ -635,10 +621,38 @@ class PushNotificationService {
           context: context,
         );
         return true;
+
+      case 'order':
+      case 'customer_order':
+        final directOrderId = (notice.orderId ?? '').trim().isNotEmpty
+            ? notice.orderId!.trim()
+            : actionId;
+        final orderId = directOrderId.isNotEmpty
+            ? directOrderId
+            : await findOrderIdForNotification(notice);
+        if (orderId != null && orderId.trim().isNotEmpty) {
+          await _pushPage(
+            OrderDetailsScreen(orderId: orderId.trim()),
+            context: context,
+          );
+          return true;
+        }
+        return false;
     }
 
-    // Backward-compatible type fallbacks for notifications created before
-    // action_type/action_id were added.
+    if (actionType.isEmpty && notice.hasOrderLink) {
+      final orderId = (notice.orderId ?? '').trim().isNotEmpty
+          ? notice.orderId!.trim()
+          : await findOrderIdForNotification(notice);
+      if (orderId != null && orderId.trim().isNotEmpty) {
+        await _pushPage(
+          OrderDetailsScreen(orderId: orderId.trim()),
+          context: context,
+        );
+        return true;
+      }
+    }
+
     switch (notice.type.trim().toLowerCase()) {
       case 'support':
         await _pushPage(const SupportScreen(), context: context);
@@ -683,10 +697,12 @@ class PushNotificationService {
     await _tokenRefreshSubscription?.cancel();
     await _authSubscription?.cancel();
     await _messageOpenedSubscription?.cancel();
+    await _foregroundMessageSubscription?.cancel();
 
     _tokenRefreshSubscription = null;
     _authSubscription = null;
     _messageOpenedSubscription = null;
+    _foregroundMessageSubscription = null;
     _pendingOpenedMessage = null;
     _lastOpenedMessageKey = null;
     _openingNotification = false;

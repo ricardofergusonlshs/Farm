@@ -2024,15 +2024,15 @@ Future<void> createFarmNotification({
   final cleanOrderId = orderId?.trim();
   final explicitActionType = actionType?.trim() ?? '';
   final explicitActionId = actionId?.trim() ?? '';
+
   final resolvedActionType = explicitActionType.isNotEmpty
       ? explicitActionType
       : (cleanOrderId != null && cleanOrderId.isNotEmpty ? 'order' : '');
+
   final resolvedActionId = explicitActionId.isNotEmpty
       ? explicitActionId
       : (resolvedActionType == 'order' ? (cleanOrderId ?? '') : '');
 
-  // Never create anonymous/global private notifications from the client.
-  // Use an admin Edge Function for broadcast notifications.
   if ((targetUserId == null || targetUserId.isEmpty) &&
       (targetEmail == null || targetEmail.isEmpty)) {
     debugPrintOnce(
@@ -2079,7 +2079,6 @@ Future<void> createFarmNotification({
   try {
     await supabase.from('notifications').insert(notificationPayload);
 
-// Notification data changed — force the inbox to reload next time.
     FarmDataCache.notifications = null;
 
     showBrowserNotificationForTarget(
@@ -2090,6 +2089,19 @@ Future<void> createFarmNotification({
       userEmail: targetEmail,
       orderId: cleanOrderId,
     );
+
+    unawaited(
+      PushNotificationService.dispatchStoredNotificationPush(
+        title: title,
+        message: message,
+        type: type,
+        targetUserId: targetUserId,
+        targetEmail: targetEmail,
+        orderId: cleanOrderId,
+        actionType: resolvedActionType.isEmpty ? null : resolvedActionType,
+        actionId: resolvedActionId.isEmpty ? null : resolvedActionId,
+      ),
+    );
   } catch (error) {
     if (isNotificationsPermissionError(error)) {
       debugPrintOnce(
@@ -2099,9 +2111,6 @@ Future<void> createFarmNotification({
       return;
     }
 
-    // Compatibility fallback for older notifications tables that do not yet
-    // have user_id or order_id columns. Do not retry if this is a permissions
-    // error, because that would only repeat the same console message.
     try {
       if (targetEmail == null || targetEmail.isEmpty) return;
       final legacyPayload = Map<String, dynamic>.from(notificationPayload)
@@ -2110,9 +2119,8 @@ Future<void> createFarmNotification({
         ..remove('action_type')
         ..remove('action_id')
         ..remove('dedupe_key');
-      await supabase.from('notifications').insert(legacyPayload);
 
-// Notification data changed — clear cached inbox.
+      await supabase.from('notifications').insert(legacyPayload);
       FarmDataCache.notifications = null;
 
       showBrowserNotificationForTarget(
@@ -2123,7 +2131,7 @@ Future<void> createFarmNotification({
         userEmail: targetEmail,
         orderId: cleanOrderId,
       );
-    } catch (legacyError) {
+    } catch (_) {
       debugPrintOnce(
         "notification_insert_failed_${type}_${cleanOrderId ?? 'general'}",
         'Notification save skipped. The app will continue running.',
@@ -4720,9 +4728,24 @@ Future<void> sendSupportMessage({
 }) async {
   final cleanId = ticketId.trim();
   final cleanMessage = message.trim();
+
   if (cleanId.isEmpty || cleanMessage.isEmpty) {
     throw Exception('Please enter a message.');
   }
+
+  final currentUser = supabase.auth.currentUser;
+  if (currentUser == null) {
+    throw Exception('Please sign in before sending a message.');
+  }
+
+  String senderStaffRole = '';
+  try {
+    senderStaffRole = await fetchCurrentStaffRole();
+  } catch (_) {
+    senderStaffRole = '';
+  }
+
+  final sentByStaff = isStaffRoleActive(senderStaffRole);
 
   await supabase.rpc(
     'hpj_send_support_message',
@@ -4732,6 +4755,39 @@ Future<void> sendSupportMessage({
       'p_internal': internal,
     },
   );
+
+  if (internal) return;
+
+  try {
+    final ticket = await fetchSupportTicket(cleanId);
+    if (ticket == null) return;
+
+    final shortTicket = cleanId.length <= 6
+        ? cleanId.toUpperCase()
+        : cleanId.substring(0, 6).toUpperCase();
+
+    if (sentByStaff) {
+      await createFarmNotification(
+        title: 'New HPJ Inbox message',
+        message: 'HPJ replied to conversation #$shortTicket.',
+        type: 'support',
+        userId: ticket.userId,
+        userEmail: ticket.email,
+        actionType: 'support_chat',
+        actionId: cleanId,
+      );
+    } else {
+      await createAdminNotification(
+        title: 'New Inbox message',
+        message: 'A partner replied to conversation #$shortTicket.',
+        type: 'support',
+        actionType: 'admin_support_chat',
+        actionId: cleanId,
+      );
+    }
+  } catch (error) {
+    farmDebugLog('Inbox push notification skipped safely: $error');
+  }
 }
 
 Future<void> markSupportConversationRead(String ticketId) async {

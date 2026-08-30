@@ -1,11 +1,11 @@
 {
-    "name": "material3_counter",
-    "short_name": "material3_counter",
+    "name": "The Harvest Place Ja",
+    "short_name": "Harvest Place",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F8FBF4",
+    "theme_color": "#2E7D32",
+    "description": "Fresh local food ordering and farm updates for The Harvest Place Ja.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

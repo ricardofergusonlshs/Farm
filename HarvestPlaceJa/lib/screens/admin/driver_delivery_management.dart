@@ -400,6 +400,798 @@ Future<String?> createDeliveryProofSignedUrl(String? path) async {
     return null;
   }
 }
+// =====================================================
+// WHOLESALE JOBS PANEL FOR DELIVERY STAFF
+// =====================================================
+
+class _WholesaleDriverJobsPanel extends StatefulWidget {
+  final Future<void> Function()? onChanged;
+
+  const _WholesaleDriverJobsPanel({
+    this.onChanged,
+  });
+
+  @override
+  State<_WholesaleDriverJobsPanel> createState() =>
+      _WholesaleDriverJobsPanelState();
+}
+
+class _WholesaleDriverJobsPanelState extends State<_WholesaleDriverJobsPanel> {
+  late Future<List<WholesaleDispatch>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _future = fetchMyWholesaleDispatches();
+  }
+
+  Future<void> _reload() async {
+    final next = fetchMyWholesaleDispatches();
+
+    setState(() {
+      _future = next;
+    });
+
+    await next;
+  }
+
+  void _message(
+    String message, {
+    bool error = false,
+  }) {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+        ),
+        backgroundColor: error ? FarmColors.danger : null,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<bool> _openFirst(
+    List<String> urls,
+  ) async {
+    for (final value in urls) {
+      final clean = value.trim();
+
+      if (clean.isEmpty) {
+        continue;
+      }
+
+      try {
+        if (await openExternalShareUrl(
+          clean,
+        )) {
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    return false;
+  }
+
+  String _whatsAppPhone(
+    String value,
+  ) {
+    var digits = value.replaceAll(
+      RegExp(
+        r'[^0-9]',
+      ),
+      '',
+    );
+
+    if (digits.length == 7) {
+      digits = '1876$digits';
+    }
+
+    if (digits.length == 10) {
+      digits = '1$digits';
+    }
+
+    return digits;
+  }
+
+  Future<void> _call(
+    WholesaleDispatch dispatch,
+  ) async {
+    final phone = dispatch.contactPhone.trim();
+
+    if (phone.isEmpty) {
+      _message(
+        'No business phone number is saved.',
+        error: true,
+      );
+
+      return;
+    }
+
+    final opened = await _openFirst(
+      [
+        'tel:${Uri.encodeComponent(phone)}',
+      ],
+    );
+
+    if (!opened) {
+      _message(
+        'The phone dialler could not open.',
+        error: true,
+      );
+    }
+  }
+
+  Future<void> _whatsapp(
+    WholesaleDispatch dispatch,
+  ) async {
+    final digits = _whatsAppPhone(
+      dispatch.contactPhone,
+    );
+
+    if (digits.isEmpty) {
+      _message(
+        'No business phone number is saved.',
+        error: true,
+      );
+
+      return;
+    }
+
+    final business = dispatch.businessName.trim().isEmpty
+        ? 'customer'
+        : dispatch.businessName.trim();
+
+    final message = Uri.encodeComponent(
+      'Good day $business, '
+      'this is The Harvest Place Ja delivery team '
+      'regarding your wholesale delivery.',
+    );
+
+    final opened = await _openFirst(
+      [
+        'whatsapp://send?phone=$digits&text=$message',
+        'https://wa.me/$digits?text=$message',
+      ],
+    );
+
+    if (!opened) {
+      _message(
+        'WhatsApp could not open.',
+        error: true,
+      );
+    }
+  }
+
+  Future<void> _maps(
+    WholesaleDispatch dispatch,
+  ) async {
+    final address = [
+      dispatch.deliveryAddress.trim(),
+      dispatch.deliveryParish.trim(),
+    ]
+        .where(
+          (value) => value.isNotEmpty,
+        )
+        .join(
+          ', ',
+        );
+
+    if (address.isEmpty) {
+      _message(
+        'No delivery address is saved.',
+        error: true,
+      );
+
+      return;
+    }
+
+    final query = Uri.encodeComponent(
+      address,
+    );
+
+    final opened = await _openFirst(
+      [
+        'google.navigation:q=$query',
+        'https://www.google.com/maps/search/?api=1&query=$query',
+      ],
+    );
+
+    if (!opened) {
+      _message(
+        'Maps could not open.',
+        error: true,
+      );
+    }
+  }
+
+  Future<void> _start(
+    WholesaleDispatch dispatch,
+  ) async {
+    try {
+      await startMyWholesaleDispatch(
+        dispatch,
+      );
+
+      _message(
+        'Wholesale delivery started.',
+      );
+
+      await _reload();
+
+      await widget.onChanged?.call();
+    } catch (error) {
+      _message(
+        friendlyAppError(
+          error,
+        ),
+        error: true,
+      );
+    }
+  }
+
+  Future<XFile?> _pickProof() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                ),
+                title: const Text(
+                  'Take proof photo',
+                ),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  ImageSource.camera,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                ),
+                title: const Text(
+                  'Choose from device',
+                ),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  ImageSource.gallery,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source == null) {
+      return null;
+    }
+
+    return ImagePicker().pickImage(
+      source: source,
+      imageQuality: 78,
+      maxWidth: 1600,
+    );
+  }
+
+  Future<void> _complete(
+    WholesaleDispatch dispatch,
+  ) async {
+    final recipientController = TextEditingController();
+
+    final noteController = TextEditingController();
+
+    XFile? proofFile;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (
+            context,
+            setDialogState,
+          ) {
+            return AlertDialog(
+              title: const Text(
+                'Complete Wholesale Delivery',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      dispatch.businessName.trim().isEmpty
+                          ? 'Wholesale delivery'
+                          : dispatch.businessName,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 14,
+                    ),
+                    TextField(
+                      controller: recipientController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Received by',
+                        prefixIcon: Icon(
+                          Icons.person_outline,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 12,
+                    ),
+                    TextField(
+                      controller: noteController,
+                      minLines: 2,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Delivery note (optional)',
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 12,
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: Icon(
+                          proofFile == null
+                              ? Icons.camera_alt_outlined
+                              : Icons.check_circle_outline,
+                        ),
+                        label: Text(
+                          proofFile == null
+                              ? 'Add Proof Photo'
+                              : 'Proof Photo Selected',
+                        ),
+                        onPressed: () async {
+                          final file = await _pickProof();
+
+                          if (file != null) {
+                            setDialogState(
+                              () {
+                                proofFile = file;
+                              },
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(
+                    dialogContext,
+                    false,
+                  ),
+                  child: const Text(
+                    'Back',
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (recipientController.text.trim().isEmpty) {
+                      _message(
+                        'Enter the recipient name.',
+                        error: true,
+                      );
+
+                      return;
+                    }
+
+                    Navigator.pop(
+                      dialogContext,
+                      true,
+                    );
+                  },
+                  child: const Text(
+                    'Confirm Delivered',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      recipientController.dispose();
+
+      noteController.dispose();
+
+      return;
+    }
+
+    try {
+      String proofUrl = '';
+
+      if (proofFile != null) {
+        proofUrl = await uploadWholesaleDriverProofPhoto(
+          dispatch: dispatch,
+          file: proofFile!,
+        );
+      }
+
+      await completeMyWholesaleDispatch(
+        dispatch: dispatch,
+        recipientName: recipientController.text,
+        proofNote: noteController.text,
+        proofPhotoPath: proofUrl,
+      );
+
+      _message(
+        'Wholesale delivery completed.',
+      );
+
+      await _reload();
+
+      await widget.onChanged?.call();
+    } catch (error) {
+      _message(
+        friendlyAppError(
+          error,
+        ),
+        error: true,
+      );
+    } finally {
+      recipientController.dispose();
+
+      noteController.dispose();
+    }
+  }
+
+  Color _statusColor(
+    WholesaleDispatch dispatch,
+  ) {
+    if (dispatch.isDelivered) {
+      return FarmColors.green;
+    }
+
+    if (dispatch.isOutForDelivery) {
+      return FarmColors.primary;
+    }
+
+    return FarmColors.warning;
+  }
+
+  Widget _jobCard(
+    WholesaleDispatch dispatch,
+  ) {
+    final color = _statusColor(
+      dispatch,
+    );
+
+    final address = [
+      dispatch.deliveryAddress.trim(),
+      dispatch.deliveryParish.trim(),
+    ]
+        .where(
+          (value) => value.isNotEmpty,
+        )
+        .join(
+          ', ',
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(
+        bottom: 10,
+      ),
+      child: FarmCard(
+        padding: const EdgeInsets.all(
+          14,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    dispatch.businessName.trim().isEmpty
+                        ? 'Wholesale Business'
+                        : dispatch.businessName,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(
+                      .10,
+                    ),
+                    borderRadius: BorderRadius.circular(
+                      99,
+                    ),
+                  ),
+                  child: Text(
+                    dispatch.statusLabel,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(
+              height: 6,
+            ),
+            const Text(
+              'WHOLESALE DELIVERY',
+              style: TextStyle(
+                color: FarmColors.primary,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (address.isNotEmpty) ...[
+              const SizedBox(
+                height: 5,
+              ),
+              Text(
+                address,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            if (dispatch.scheduledFor != null) ...[
+              const SizedBox(
+                height: 4,
+              ),
+              Text(
+                'Schedule: ${formatCustomerDateTime(dispatch.scheduledFor)}',
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+            const SizedBox(
+              height: 10,
+            ),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _call(
+                    dispatch,
+                  ),
+                  icon: const Icon(
+                    Icons.phone_outlined,
+                    size: 16,
+                  ),
+                  label: const Text(
+                    'Call',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _whatsapp(
+                    dispatch,
+                  ),
+                  icon: const Icon(
+                    Icons.chat_outlined,
+                    size: 16,
+                  ),
+                  label: const Text(
+                    'WhatsApp',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _maps(
+                    dispatch,
+                  ),
+                  icon: const Icon(
+                    Icons.navigation_outlined,
+                    size: 16,
+                  ),
+                  label: const Text(
+                    'Navigate',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(
+              height: 9,
+            ),
+            if (dispatch.isAssigned)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _start(
+                    dispatch,
+                  ),
+                  icon: const Icon(
+                    Icons.local_shipping_outlined,
+                  ),
+                  label: const Text(
+                    'Start Delivery',
+                  ),
+                ),
+              )
+            else if (dispatch.isOutForDelivery)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _complete(
+                    dispatch,
+                  ),
+                  icon: const Icon(
+                    Icons.task_alt_outlined,
+                  ),
+                  label: const Text(
+                    'Complete Delivery',
+                  ),
+                ),
+              )
+            else if (dispatch.isDelivered)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(
+                  10,
+                ),
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(
+                    12,
+                  ),
+                ),
+                child: Text(
+                  dispatch.recipientName.isEmpty
+                      ? 'Delivered'
+                      : 'Delivered to ${dispatch.recipientName}',
+                  style: const TextStyle(
+                    color: FarmColors.green,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return FutureBuilder<List<WholesaleDispatch>>(
+      future: _future,
+      builder: (
+        context,
+        snapshot,
+      ) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const FarmCard(
+            padding: EdgeInsets.all(
+              18,
+            ),
+            child: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return FarmCard(
+            padding: const EdgeInsets.all(
+              16,
+            ),
+            child: Text(
+              friendlyAppError(
+                snapshot.error!,
+              ),
+            ),
+          );
+        }
+
+        final jobs = snapshot.data ?? const <WholesaleDispatch>[];
+
+        final active = jobs
+            .where(
+              (job) => !job.isDelivered && !job.isCancelled,
+            )
+            .toList();
+
+        final completed = jobs
+            .where(
+              (job) => job.isDelivered,
+            )
+            .toList();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: _DriverSectionHeading(
+                    title: 'Wholesale Deliveries',
+                    subtitle: 'Business orders assigned to you',
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh wholesale deliveries',
+                  onPressed: _reload,
+                  icon: const Icon(
+                    Icons.refresh_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(
+              height: 10,
+            ),
+            if (active.isEmpty)
+              const FarmEmptyState(
+                icon: Icons.inventory_2_outlined,
+                title: 'No wholesale deliveries assigned',
+                message:
+                    'New business deliveries assigned to you will appear here.',
+              )
+            else
+              ...active.map(
+                _jobCard,
+              ),
+            if (completed.isNotEmpty) ...[
+              const SizedBox(
+                height: 14,
+              ),
+              const Text(
+                'Recently Completed',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(
+                height: 8,
+              ),
+              ...completed
+                  .take(
+                    5,
+                  )
+                  .map(
+                    _jobCard,
+                  ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
 
 class AdminDriverManagementTab extends StatefulWidget {
   final int refreshKey;
@@ -414,6 +1206,235 @@ class AdminDriverManagementTab extends StatefulWidget {
   @override
   State<AdminDriverManagementTab> createState() =>
       _AdminDriverManagementTabState();
+}
+// =====================================================
+// WHOLESALE DRIVER SERVICES
+// PHASE 3L-4
+// =====================================================
+
+// =====================================================
+// MY ASSIGNED WHOLESALE DELIVERIES
+// =====================================================
+
+Future<List<WholesaleDispatch>> fetchMyWholesaleDispatches() async {
+  final user = supabase.auth.currentUser;
+
+  if (user == null) {
+    throw Exception(
+      'Please sign in to view assigned deliveries.',
+    );
+  }
+
+  final role = normalizeStaffRole(
+    await fetchCurrentStaffRole(),
+  );
+
+  if (role != 'delivery' && role != 'owner' && role != 'manager') {
+    throw Exception(
+      'Delivery staff access is required.',
+    );
+  }
+
+  final response = await supabase
+      .from(
+        'wholesale_dispatches',
+      )
+      .select(
+        _wholesaleDispatchSelectFields,
+      )
+      .eq(
+        'assigned_driver_id',
+        user.id,
+      )
+      .eq(
+        'dispatch_method',
+        'hpj_delivery',
+      )
+      .neq(
+        'status',
+        'cancelled',
+      )
+      .order(
+        'scheduled_for',
+        ascending: true,
+      )
+      .order(
+        'created_at',
+        ascending: false,
+      );
+
+  return (response as List)
+      .map(
+        (item) => WholesaleDispatch.fromSupabase(
+          Map<String, dynamic>.from(
+            item as Map,
+          ),
+        ),
+      )
+      .toList();
+}
+
+// =====================================================
+// START MY WHOLESALE DELIVERY
+// =====================================================
+
+Future<void> startMyWholesaleDispatch(
+  WholesaleDispatch dispatch, {
+  String notes = '',
+}) async {
+  final user = supabase.auth.currentUser;
+
+  if (user == null) {
+    throw Exception(
+      'Please sign in.',
+    );
+  }
+
+  if ((dispatch.assignedDriverId ?? '').trim() != user.id) {
+    throw Exception(
+      'This wholesale delivery is not assigned to you.',
+    );
+  }
+
+  await supabase.rpc(
+    'hp_driver_start_wholesale_dispatch',
+    params: {
+      'p_dispatch_id': dispatch.id,
+      'p_driver_notes': notes.trim().isEmpty ? null : notes.trim(),
+    },
+  );
+}
+
+// =====================================================
+// COMPLETE MY WHOLESALE DELIVERY
+// =====================================================
+
+Future<void> completeMyWholesaleDispatch({
+  required WholesaleDispatch dispatch,
+  required String recipientName,
+  String proofNote = '',
+  String proofPhotoPath = '',
+  String driverNotes = '',
+  double? latitude,
+  double? longitude,
+}) async {
+  final user = supabase.auth.currentUser;
+
+  if (user == null) {
+    throw Exception(
+      'Please sign in.',
+    );
+  }
+
+  if ((dispatch.assignedDriverId ?? '').trim() != user.id) {
+    throw Exception(
+      'This wholesale delivery is not assigned to you.',
+    );
+  }
+
+  final recipient = recipientName.trim();
+
+  if (recipient.isEmpty) {
+    throw Exception(
+      'Enter the recipient name.',
+    );
+  }
+
+  await supabase.rpc(
+    'hp_driver_complete_wholesale_dispatch',
+    params: {
+      'p_dispatch_id': dispatch.id,
+      'p_recipient_name': recipient,
+      'p_proof_note': proofNote.trim().isEmpty ? null : proofNote.trim(),
+      'p_proof_photo_path':
+          proofPhotoPath.trim().isEmpty ? null : proofPhotoPath.trim(),
+      'p_latitude': latitude,
+      'p_longitude': longitude,
+      'p_driver_notes': driverNotes.trim().isEmpty ? null : driverNotes.trim(),
+    },
+  );
+}
+
+// =====================================================
+// UPLOAD WHOLESALE DELIVERY PROOF
+// =====================================================
+
+Future<String> uploadWholesaleDriverProofPhoto({
+  required WholesaleDispatch dispatch,
+  required XFile file,
+}) async {
+  final user = supabase.auth.currentUser;
+
+  if (user == null) {
+    throw Exception(
+      'Please sign in.',
+    );
+  }
+
+  if ((dispatch.assignedDriverId ?? '').trim() != user.id) {
+    throw Exception(
+      'This wholesale delivery is not assigned to you.',
+    );
+  }
+
+  final bytes = await file.readAsBytes();
+
+  if (bytes.isEmpty) {
+    throw Exception(
+      'The selected image is empty.',
+    );
+  }
+
+  const maxBytes = 6 * 1024 * 1024;
+
+  if (bytes.length > maxBytes) {
+    throw Exception(
+      'Use a proof photo smaller than 6 MB.',
+    );
+  }
+
+  final lowerName = file.name.toLowerCase();
+
+  final isPng = lowerName.endsWith(
+    '.png',
+  );
+
+  final extension = isPng ? 'png' : 'jpg';
+
+  final contentType = isPng ? 'image/png' : 'image/jpeg';
+
+  final safeDispatchId = dispatch.id.replaceAll(
+    RegExp(
+      r'[^A-Za-z0-9_-]',
+    ),
+    '',
+  );
+
+  final path = '${user.id}/'
+      '$safeDispatchId/'
+      '${DateTime.now().millisecondsSinceEpoch}'
+      '.$extension';
+
+  await supabase.storage
+      .from(
+        'wholesale-dispatch-proofs',
+      )
+      .uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: contentType,
+          upsert: false,
+        ),
+      );
+
+  return supabase.storage
+      .from(
+        'wholesale-dispatch-proofs',
+      )
+      .getPublicUrl(
+        path,
+      );
 }
 
 class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
@@ -1145,6 +2166,12 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
                   ],
                 ),
               ),
+              if (!data.managerView) ...[
+                const SizedBox(height: 18),
+                _WholesaleDriverJobsPanel(
+                  onChanged: _reload,
+                ),
+              ],
               if (data.managerView) ...[
                 const SizedBox(height: 18),
                 const _DriverSectionHeading(

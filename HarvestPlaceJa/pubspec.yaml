@@ -2,7 +2,7 @@ name: farm
 description: Fresh local food ordering and farm updates for The Harvest Place Ja.
 publish_to: 'none'
 
-version: 1.0.4+25
+version: 1.0.4+36
 
 environment:
   sdk: ^3.0.0

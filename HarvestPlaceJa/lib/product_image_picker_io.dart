@@ -1,62 +1,47 @@
-import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class PickedProductImage {
-  final String fileName;
-  final String mimeType;
-  final Uint8List bytes;
-
-  const PickedProductImage({
-    required this.fileName,
-    required this.mimeType,
-    required this.bytes,
-  });
-}
-
-String _safeFileName(String path, String fallback) {
-  final clean = path.trim();
-  if (clean.isEmpty) return fallback;
-
-  final parts = clean.split(RegExp(r'[\\/]'));
-  final name = parts.isEmpty ? fallback : parts.last.trim();
-  return name.isEmpty ? fallback : name;
-}
-
-String _contentTypeForFileName(String fileName) {
-  final lower = fileName.toLowerCase().trim();
-
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.webp')) return 'image/webp';
-  if (lower.endsWith('.gif')) return 'image/gif';
-  if (lower.endsWith('.heic')) return 'image/heic';
-  if (lower.endsWith('.heif')) return 'image/heif';
-
-  return 'image/jpeg';
-}
-
-Future<PickedProductImage?> pickProductImageFromDevice() async {
+Future<String> uploadImageFromComputer({
+  required String bucket,
+  required String folder,
+  required String fileNamePrefix,
+}) async {
   final picker = ImagePicker();
 
   final picked = await picker.pickImage(
     source: ImageSource.gallery,
-    imageQuality: 88,
-    maxWidth: 1800,
+    imageQuality: 78,
+    maxWidth: 1600,
   );
 
-  if (picked == null) return null;
+  if (picked == null) {
+    throw Exception('No image selected.');
+  }
 
-  final bytes = await picked.readAsBytes();
-  if (bytes.isEmpty) return null;
+  final file = File(picked.path);
+  final extension = picked.name.split('.').last.toLowerCase();
+  final safeExtension = extension.isEmpty ? 'jpg' : extension;
 
-  final fileName = _safeFileName(
-    picked.name.isNotEmpty ? picked.name : picked.path,
-    'harvest-image-${DateTime.now().millisecondsSinceEpoch}.jpg',
-  );
+  final safePrefix = fileNamePrefix
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'-+'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '');
 
-  return PickedProductImage(
-    fileName: fileName,
-    mimeType: picked.mimeType ?? _contentTypeForFileName(fileName),
-    bytes: bytes,
-  );
+  final filePath =
+      '$folder/${safePrefix.isEmpty ? 'product' : safePrefix}-${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
+
+  await Supabase.instance.client.storage.from(bucket).upload(
+        filePath,
+        file,
+        fileOptions: const FileOptions(
+          cacheControl: '3600',
+          upsert: true,
+        ),
+      );
+
+  return Supabase.instance.client.storage.from(bucket).getPublicUrl(filePath);
 }

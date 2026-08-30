@@ -119,14 +119,17 @@ String formatJmd(double value) => 'J\$${value.toStringAsFixed(2)}';
 double? parseNullableDouble(dynamic value) {
   if (value == null) return null;
   if (value is num) return value.toDouble();
+
   final text = value.toString().trim();
   if (text.isEmpty) return null;
+
   return double.tryParse(text);
 }
 
 String friendlyLabel(String value) {
   final clean = value.trim();
   if (clean.isEmpty) return clean;
+
   return clean
       .split('_')
       .where((part) => part.isNotEmpty)
@@ -136,11 +139,15 @@ String friendlyLabel(String value) {
 
 String formatPaymentStatus(String value) {
   final clean = value.trim().toLowerCase();
+
   if (clean.isEmpty) return 'Unpaid';
+
   if (clean == 'pending_verification') {
     return 'Awaiting bank transfer verification';
   }
+
   if (clean == 'pending') return 'Pending';
+
   return friendlyLabel(clean);
 }
 
@@ -167,6 +174,7 @@ double moneyAmountFromText(String? text, String label) {
     '${RegExp.escape(label)}\\s*:\\s*-?J?\\\$?\\s*([0-9,]+(?:\\.[0-9]+)?)',
     caseSensitive: false,
   );
+
   final match = pattern.firstMatch(source);
   if (match == null) return 0;
 
@@ -181,6 +189,7 @@ double resolvedDeliveryFeeForOrder({
 }) {
   if (fulfillmentType.trim().toLowerCase() != 'delivery') return 0;
   if (rawDeliveryFee > 0) return rawDeliveryFee;
+
   return moneyAmountFromText(notes, 'Delivery fee');
 }
 
@@ -202,6 +211,7 @@ double resolvedOrderTotal({
   }
 
   if (rawTotal <= 0 && expected > 0) return expected;
+
   return rawTotal;
 }
 
@@ -227,9 +237,11 @@ String formatFulfillmentType(String value) {
 String formatScheduleText(String? scheduledDate, String? scheduledTime) {
   final date = scheduledDate?.trim() ?? '';
   final time = scheduledTime?.trim() ?? '';
+
   if (date.isEmpty && time.isEmpty) return 'Not scheduled';
   if (date.isEmpty) return time;
   if (time.isEmpty) return date;
+
   return '$date • $time';
 }
 
@@ -265,6 +277,7 @@ bool isValidHostedImageUrl(String? value) {
   if (clean.isEmpty) return false;
 
   final lower = clean.toLowerCase();
+
   const blockedFragments = [
     'your-supabase-url',
     'image.network',
@@ -284,7 +297,9 @@ bool isValidHostedImageUrl(String? value) {
 
 String? cleanHostedImageUrl(String? value) {
   final clean = value?.trim();
+
   if (clean == null || clean.isEmpty) return null;
+
   return isValidHostedImageUrl(clean) ? clean : null;
 }
 
@@ -300,7 +315,6 @@ DateTime startOfCurrentHarvestWeek([DateTime? date]) {
   final now = date ?? DateTime.now();
   final localDateOnly = DateTime(now.year, now.month, now.day);
 
-  // Monday is 1 in Dart. This makes Monday the beginning of the harvest week.
   return localDateOnly.subtract(Duration(days: localDateOnly.weekday - 1));
 }
 
@@ -323,8 +337,10 @@ String harvestWeekRangeLabel([DateTime? date]) {
 
 DateTime? parseProductDate(dynamic value) {
   if (value == null) return null;
+
   final text = value.toString().trim();
   if (text.isEmpty) return null;
+
   return DateTime.tryParse(text);
 }
 
@@ -344,6 +360,7 @@ bool isProductHarvestedThisWeek(Product product) {
 
 String todayIsoDate() {
   final now = DateTime.now();
+
   return '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 }
 
@@ -353,11 +370,13 @@ String todayIsoDateFrom(DateTime date) {
 
 String shortProductDate(DateTime? date) {
   if (date == null) return 'No date';
+
   return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 }
 
 int productFreshnessScore(Product product) {
   final date = product.harvestDate ?? product.createdAt;
+
   if (date == null) return 75;
 
   final now = DateTime.now();
@@ -370,262 +389,33 @@ int productFreshnessScore(Product product) {
   if (ageDays <= 7) return 88;
   if (ageDays <= 14) return 76;
   if (ageDays <= 30) return 64;
+
   return 52;
 }
 
 String productFreshnessLabel(Product product) {
   final score = productFreshnessScore(product);
+
   if (score >= 85) return 'Fresh';
-  if (score >= 70) return 'Good';
-  return 'Pantry Stable';
+  if (score >= 70) return 'Use Soon';
+
+  return 'Storage Tips';
 }
 
 String productFreshnessDescription(Product product) {
   final score = productFreshnessScore(product);
-  if (score >= 85) return 'Fresh pick with strong freshness quality.';
-  if (score >= 70) return 'Good quality item. Use soon for best flavor.';
-  return 'Best used soon. Check freshness before adding delicate items.';
-}
 
-Color productFreshnessColor(Product product) {
-  final score = productFreshnessScore(product);
-  if (score >= 85) return FarmColors.success;
-  if (score >= 70) return FarmColors.warning;
-  return FarmColors.mutedText;
-}
-
-String browserNotificationTag({
-  required String title,
-  required String body,
-  String? orderId,
-  String? type,
-}) {
-  final cleanType = (type ?? 'farm').trim().toLowerCase();
-  final cleanOrderId = orderId?.trim() ?? '';
-  final cleanTitle = title.trim().toLowerCase();
-  final cleanBody = body.trim().toLowerCase();
-
-  // Order notifications can be emitted by both the immediate checkout flow and
-  // the realtime notification listener. Use a stable tag that ignores small body
-  // wording differences so the same order/title only alerts the customer once.
-  final source = cleanOrderId.isNotEmpty
-      ? [cleanType, cleanOrderId, cleanTitle].join('|')
-      : [cleanType, cleanTitle, cleanBody].join('|');
-
-  return 'harvest_${source.hashCode.abs()}';
-}
-
-bool isImportantBrowserNotification({
-  required String title,
-  required String message,
-  required String type,
-}) {
-  final text = '${title.trim()} ${message.trim()} ${type.trim()}'.toLowerCase();
-
-  if (text.contains('ready')) return true;
-  if (text.contains('delivered')) return true;
-  if (text.contains('delivery')) return true;
-  if (text.contains('hold')) return true;
-  if (text.contains('placed')) return true;
-  if (text.contains('payment')) return true;
-  if (text.contains('support')) return true;
-  if (text.contains('review')) return true;
-  if (text.contains('stock')) return true;
-  if (type.trim().toLowerCase() == 'admin') return true;
-
-  return false;
-}
-
-bool isVisibleCustomerProduct(Product product) {
-  return product.isCustomerVisible;
-}
-
-List<Product> cleanRecentlyViewedProducts(List<Product> products) {
-  return uniqueVisibleProducts(products, limit: 10);
-}
-
-final supabase = Supabase.instance.client;
-
-bool isNotificationsPermissionError(Object error) {
-  final text = error.toString().toLowerCase();
-  return text.contains('permission denied for table notifications') ||
-      (text.contains('notifications') && text.contains('42501'));
-}
-
-String friendlyAppError(Object error) {
-  final text = error.toString();
-  final lower = text.toLowerCase();
-  if (lower.contains('over_email_send_rate_limit')) {
-    return 'Too many reset emails were sent. Please wait a few minutes and try again.';
-  }
-  if (lower.contains('failed host lookup') ||
-      lower.contains('socketexception') ||
-      lower.contains('network')) {
-    return 'Connection problem. Please check your internet and try again.';
-  }
-  if (lower.contains('jwt') ||
-      lower.contains('auth') ||
-      lower.contains('session')) {
-    return 'Your session may have expired. Please sign in again.';
-  }
-  if (lower.contains('permission') ||
-      lower.contains('policy') ||
-      lower.contains('42501') ||
-      lower.contains('row level security')) {
-    return 'This action is not available for your account yet.';
-  }
-  if (lower.contains('rpc') ||
-      lower.contains('postgrest') ||
-      lower.contains('supabase') ||
-      lower.contains('storage') ||
-      lower.contains('bucket') ||
-      lower.contains('null') ||
-      lower.contains('exception') ||
-      lower.contains('unsupported operation') ||
-      lower.contains('not found')) {
-    return 'Something went wrong. Please try again.';
+  if (score >= 85) {
+    return 'Fresh item. Store well to keep quality high.';
   }
 
-  final clean = text.replaceAll('Exception: ', '').trim();
-  if (clean.isEmpty) return 'Something went wrong. Please try again.';
-  if (clean.length > 140) return 'Something went wrong. Please try again.';
-  return clean;
+  if (score >= 70) {
+    return 'Use soon for the best taste and freshness.';
+  }
+
+  return 'Store properly and use as soon as possible.';
 }
 
-String friendlyAuthErrorMessage(
-  AuthException error, {
-  required bool isRegister,
-}) {
-  final message = error.message.trim();
-  final lower = message.toLowerCase();
-
-  if (lower.contains('invalid login credentials') ||
-      lower.contains('invalid credentials') ||
-      lower.contains('invalid email or password')) {
-    return 'Email or password is incorrect. Use Forgot Password to reset this account, then try again.';
-  }
-
-  if (lower.contains('email not confirmed') ||
-      lower.contains('confirm your email')) {
-    return 'Please confirm this email address before signing in.';
-  }
-
-  if (lower.contains('rate limit') ||
-      lower.contains('over_email_send_rate_limit') ||
-      lower.contains('too many')) {
-    return 'Too many attempts. Please wait a few minutes, then try again.';
-  }
-
-  if (lower.contains('network') ||
-      lower.contains('failed host lookup') ||
-      lower.contains('socketexception')) {
-    return 'Connection problem. Please check your internet and try again.';
-  }
-
-  if (message.isNotEmpty &&
-      message.length <= 120 &&
-      !lower.contains('supabase') &&
-      !lower.contains('postgrest') &&
-      !lower.contains('exception')) {
-    return isRegister
-        ? 'Could not create account: $message'
-        : 'Could not sign in: $message';
-  }
-
-  return isRegister
-      ? 'Could not create account. Please check your details and try again.'
-      : 'Could not sign in. Please check your email and password.';
-}
-
-bool get hasSupabaseSession =>
-    supabase.auth.currentSession != null || supabase.auth.currentUser != null;
-
-bool get isAnonymousSupabaseUser {
-  final user = supabase.auth.currentUser;
-  if (user == null) return false;
-
-  final appMetadata = user.appMetadata;
-  final userMetadata = user.userMetadata ?? const <String, dynamic>{};
-  final provider =
-      (appMetadata['provider'] ?? '').toString().trim().toLowerCase();
-  final providersValue = appMetadata['providers'];
-
-  final hasAnonymousProvider = providersValue is List
-      ? providersValue
-          .map((item) => item.toString().trim().toLowerCase())
-          .contains('anonymous')
-      : providersValue.toString().trim().toLowerCase().contains('anonymous');
-
-  return provider == 'anonymous' ||
-      hasAnonymousProvider ||
-      _metadataValueIsTrue(appMetadata['is_anonymous']) ||
-      _metadataValueIsTrue(appMetadata['isAnonymous']) ||
-      _metadataValueIsTrue(userMetadata['is_anonymous']) ||
-      _metadataValueIsTrue(userMetadata['isAnonymous']);
-}
-
-bool get isLoggedIn => hasSupabaseSession && !isAnonymousSupabaseUser;
-
-Future<bool> isSubscribedToProductReadyAlert(Product product) async {
-  final user = supabase.auth.currentUser;
-  if (user == null) return false;
-  try {
-    final existing = await supabase
-        .from('product_ready_subscriptions')
-        .select('id')
-        .eq('product_id', product.id)
-        .eq('user_id', user.id)
-        .eq('is_notified', false)
-        .maybeSingle();
-    return existing != null;
-  } catch (_) {
-    return false;
-  }
-}
-
-String formatPlanDate(DateTime? value) {
-  if (value == null) return 'To be confirmed';
-  return formatCustomerDateTime(value).split(' • ').first;
-}
-
-bool get isSignedIn => isLoggedIn;
-
-bool get isFarmerUser => currentUserRole == 'farmer';
-
-Future<bool> isCurrentUserFarmerFromDatabase() async {
-  final user = supabase.auth.currentUser;
-  if (user == null) return false;
-
-  try {
-    final response = await supabase
-        .from('farmer_profiles')
-        .select('id, verification_status')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-    if (response == null) return false;
-    final status = (response['verification_status'] ?? '').toString();
-    return status == 'approved' || status == 'pending';
-  } catch (error) {
-    farmDebugLog('Farmer role check failed: $error');
-    return currentUserRole == 'farmer';
-  }
-}
-
-String safeReviewDisplayName({
-  String? profileName,
-  String? reviewName,
-  String? metadataName,
-  String? email,
-}) {
-  for (final candidate in [profileName, reviewName, metadataName]) {
-    final clean = _cleanReviewNameCandidate(candidate);
-    if (clean.isNotEmpty) return clean;
-  }
-
-  // Email is intentionally not used as a fallback for reviews.
-  return 'Verified customer';
-}
 String productStorageTip(Product product) {
   final name = product.name.toLowerCase();
   final category = product.category.toLowerCase();
@@ -696,4 +486,472 @@ String productStorageTip(Product product) {
   }
 
   return 'Keep in a cool, clean place. Refrigerate delicate items and use soon for best quality.';
+}
+
+Color productFreshnessColor(Product product) {
+  final score = productFreshnessScore(product);
+
+  if (score >= 85) return FarmColors.success;
+  if (score >= 70) return FarmColors.warning;
+
+  return FarmColors.mutedText;
+}
+
+String browserNotificationTag({
+  required String title,
+  required String body,
+  String? orderId,
+  String? type,
+}) {
+  final cleanType = (type ?? 'farm').trim().toLowerCase();
+  final cleanOrderId = orderId?.trim() ?? '';
+  final cleanTitle = title.trim().toLowerCase();
+  final cleanBody = body.trim().toLowerCase();
+
+  final source = cleanOrderId.isNotEmpty
+      ? [cleanType, cleanOrderId, cleanTitle].join('|')
+      : [cleanType, cleanTitle, cleanBody].join('|');
+
+  return 'harvest_${source.hashCode.abs()}';
+}
+
+bool isImportantBrowserNotification({
+  required String title,
+  required String message,
+  required String type,
+}) {
+  final text = '${title.trim()} ${message.trim()} ${type.trim()}'.toLowerCase();
+
+  if (text.contains('ready')) return true;
+  if (text.contains('delivered')) return true;
+  if (text.contains('delivery')) return true;
+  if (text.contains('hold')) return true;
+  if (text.contains('placed')) return true;
+  if (text.contains('payment')) return true;
+  if (text.contains('support')) return true;
+  if (text.contains('review')) return true;
+  if (text.contains('stock')) return true;
+  if (type.trim().toLowerCase() == 'watch') return true;
+  if (type.trim().toLowerCase() == 'price_drop') return true;
+  if (type.trim().toLowerCase() == 'farmer_demand') return true;
+  if (type.trim().toLowerCase() == 'admin') return true;
+
+  return false;
+}
+
+bool isVisibleCustomerProduct(Product product) {
+  return product.isCustomerVisible;
+}
+
+List<Product> cleanRecentlyViewedProducts(List<Product> products) {
+  return uniqueVisibleProducts(products, limit: 10);
+}
+
+final supabase = Supabase.instance.client;
+
+bool isNotificationsPermissionError(Object error) {
+  final text = error.toString().toLowerCase();
+
+  return text.contains('permission denied for table notifications') ||
+      (text.contains('notifications') && text.contains('42501'));
+}
+
+String friendlyAppError(Object error) {
+  final text = error.toString();
+  final lower = text.toLowerCase();
+
+  if (lower.contains('over_email_send_rate_limit')) {
+    return 'Too many reset emails were sent. Please wait a few minutes and try again.';
+  }
+
+  if (lower.contains('failed host lookup') ||
+      lower.contains('socketexception') ||
+      lower.contains('network')) {
+    return 'Connection problem. Please check your internet and try again.';
+  }
+
+  if (lower.contains('jwt') ||
+      lower.contains('auth') ||
+      lower.contains('session')) {
+    return 'Your session may have expired. Please sign in again.';
+  }
+
+  if (lower.contains('permission') ||
+      lower.contains('policy') ||
+      lower.contains('42501') ||
+      lower.contains('row level security')) {
+    return 'This action is not available for your account yet.';
+  }
+
+  if (lower.contains('rpc') ||
+      lower.contains('postgrest') ||
+      lower.contains('supabase') ||
+      lower.contains('storage') ||
+      lower.contains('bucket') ||
+      lower.contains('null') ||
+      lower.contains('exception') ||
+      lower.contains('unsupported operation') ||
+      lower.contains('not found')) {
+    return 'Something went wrong. Please try again.';
+  }
+
+  final clean = text.replaceAll('Exception: ', '').trim();
+
+  if (clean.isEmpty) return 'Something went wrong. Please try again.';
+  if (clean.length > 140) return 'Something went wrong. Please try again.';
+
+  return clean;
+}
+
+String friendlyAuthErrorMessage(
+  AuthException error, {
+  required bool isRegister,
+}) {
+  final message = error.message.trim();
+  final lower = message.toLowerCase();
+
+  if (lower.contains('invalid login credentials') ||
+      lower.contains('invalid credentials') ||
+      lower.contains('invalid email or password')) {
+    return 'Email or password is incorrect. Use Forgot Password to reset this account, then try again.';
+  }
+
+  if (lower.contains('email not confirmed') ||
+      lower.contains('confirm your email')) {
+    return 'Please confirm this email address before signing in.';
+  }
+
+  if (lower.contains('captcha') ||
+      lower.contains('challenge') ||
+      lower.contains('security check')) {
+    return 'The security check expired or could not be verified. Please try it again.';
+  }
+
+  if (lower.contains('rate limit') ||
+      lower.contains('over_email_send_rate_limit') ||
+      lower.contains('too many')) {
+    return 'Too many attempts. Please wait a few minutes, then try again.';
+  }
+
+  if (lower.contains('network') ||
+      lower.contains('failed host lookup') ||
+      lower.contains('socketexception')) {
+    return 'Connection problem. Please check your internet and try again.';
+  }
+
+  if (message.isNotEmpty &&
+      message.length <= 120 &&
+      !lower.contains('supabase') &&
+      !lower.contains('postgrest') &&
+      !lower.contains('exception')) {
+    return isRegister
+        ? 'Could not create account: $message'
+        : 'Could not sign in: $message';
+  }
+
+  return isRegister
+      ? 'Could not create account. Please check your details and try again.'
+      : 'Could not sign in. Please check your email and password.';
+}
+
+bool get hasSupabaseSession {
+  return supabase.auth.currentSession != null ||
+      supabase.auth.currentUser != null;
+}
+
+bool get isAnonymousSupabaseUser {
+  final user = supabase.auth.currentUser;
+
+  if (user == null) return false;
+
+  final appMetadata = user.appMetadata;
+  final userMetadata = user.userMetadata ?? const <String, dynamic>{};
+
+  final provider =
+      (appMetadata['provider'] ?? '').toString().trim().toLowerCase();
+
+  final providersValue = appMetadata['providers'];
+
+  final hasAnonymousProvider = providersValue is List
+      ? providersValue
+          .map((item) => item.toString().trim().toLowerCase())
+          .contains('anonymous')
+      : providersValue.toString().trim().toLowerCase().contains('anonymous');
+
+  return provider == 'anonymous' ||
+      hasAnonymousProvider ||
+      _metadataValueIsTrue(appMetadata['is_anonymous']) ||
+      _metadataValueIsTrue(appMetadata['isAnonymous']) ||
+      _metadataValueIsTrue(userMetadata['is_anonymous']) ||
+      _metadataValueIsTrue(userMetadata['isAnonymous']);
+}
+
+bool get isLoggedIn => hasSupabaseSession && !isAnonymousSupabaseUser;
+
+Future<bool> isSubscribedToProductReadyAlert(Product product) async {
+  final user = supabase.auth.currentUser;
+
+  if (user == null) return false;
+
+  try {
+    final existing = await supabase
+        .from('product_ready_subscriptions')
+        .select('id')
+        .eq('product_id', product.id)
+        .eq('user_id', user.id)
+        .eq('is_notified', false)
+        .maybeSingle();
+
+    return existing != null;
+  } catch (_) {
+    return false;
+  }
+}
+
+String formatPlanDate(DateTime? value) {
+  if (value == null) return 'To be confirmed';
+
+  return formatCustomerDateTime(value).split(' • ').first;
+}
+
+bool get isSignedIn => isLoggedIn;
+
+bool get isFarmerUser => currentUserRole == 'farmer';
+
+Future<bool> isCurrentUserFarmerFromDatabase() async {
+  final user = supabase.auth.currentUser;
+
+  if (user == null) return false;
+
+  try {
+    final response = await supabase
+        .from('farmer_profiles')
+        .select('id, verification_status')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (response == null) return false;
+
+    final status = (response['verification_status'] ?? '').toString();
+
+    return status == 'approved' || status == 'pending';
+  } catch (error) {
+    farmDebugLog('Farmer role check failed: $error');
+    return currentUserRole == 'farmer';
+  }
+}
+
+String safeReviewDisplayName({
+  String? profileName,
+  String? reviewName,
+  String? metadataName,
+  String? email,
+}) {
+  for (final candidate in [profileName, reviewName, metadataName]) {
+    final clean = _cleanReviewNameCandidate(candidate);
+    if (clean.isNotEmpty) return clean;
+  }
+
+  return 'Verified customer';
+}
+
+// =====================================================
+// HPJ SMART SEARCH INTELLIGENCE
+// Typo-tolerant, intent-aware search shared by Home, Shop and planning.
+// =====================================================
+String hpjSmartNormalizeSearch(String value) {
+  var clean = value
+      .trim()
+      .toLowerCase()
+      .replaceAll('&', ' and ')
+      .replaceAll(RegExp(r'[^a-z0-9. ]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  const aliases = <String, String>{
+    'fibre': 'fiber',
+    'vit c': 'vitamin c',
+    'veggie': 'vegetables',
+    'veggies': 'vegetables',
+    'veg': 'vegetables',
+    'ground food': 'ground provisions',
+    'ground foods': 'ground provisions',
+    'provision': 'ground provisions',
+  };
+
+  aliases.forEach((from, to) {
+    clean = clean.replaceAll(
+      RegExp('\\b${RegExp.escape(from)}\\b'),
+      to,
+    );
+  });
+
+  return clean;
+}
+
+int _hpjSmartEditDistance(String a, String b) {
+  if (a == b) return 0;
+  if (a.isEmpty) return b.length;
+  if (b.isEmpty) return a.length;
+
+  var previous = List<int>.generate(b.length + 1, (index) => index);
+  for (var i = 1; i <= a.length; i++) {
+    final current = List<int>.filled(b.length + 1, 0);
+    current[0] = i;
+    for (var j = 1; j <= b.length; j++) {
+      final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
+      current[j] = <int>[
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + cost,
+      ].reduce((x, y) => x < y ? x : y);
+    }
+    previous = current;
+  }
+  return previous.last;
+}
+
+double? hpjSmartSearchMaxPrice(String query) {
+  final clean = hpjSmartNormalizeSearch(query);
+  final match = RegExp(
+    r'(?:under|below|less than|up to|max(?:imum)?|<=)\s*(?:j\$|\$)?\s*([0-9]+(?:\.[0-9]+)?)',
+  ).firstMatch(clean);
+  if (match == null) return null;
+  return double.tryParse(match.group(1) ?? '');
+}
+
+String _hpjSmartSearchTextWithoutPriceIntent(String query) {
+  var clean = hpjSmartNormalizeSearch(query);
+  clean = clean.replaceAll(
+    RegExp(
+      r'(?:under|below|less than|up to|max(?:imum)?|<=)\s*(?:j\$|\$)?\s*[0-9]+(?:\.[0-9]+)?',
+    ),
+    ' ',
+  );
+  return clean.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String hpjSmartSearchTextQuery(String query) =>
+    _hpjSmartSearchTextWithoutPriceIntent(query);
+
+Set<String> _hpjSmartIntentWords(String query) {
+  final clean = _hpjSmartSearchTextWithoutPriceIntent(query);
+  final words = clean.split(' ').where((word) => word.isNotEmpty).toSet();
+
+  if (clean.contains('soup')) {
+    words.addAll(<String>{
+      'yam',
+      'dasheen',
+      'coco',
+      'pumpkin',
+      'carrot',
+      'scallion',
+      'thyme',
+      'pimento',
+      'potato',
+      'chocho',
+      'plantain',
+    });
+  }
+  if (clean.contains('salad')) {
+    words.addAll(<String>{
+      'lettuce',
+      'cucumber',
+      'tomato',
+      'carrot',
+      'cabbage',
+      'pepper',
+    });
+  }
+  if (clean.contains('juice')) {
+    words.addAll(<String>{
+      'orange',
+      'lime',
+      'pineapple',
+      'watermelon',
+      'ginger',
+      'carrot',
+      'beetroot',
+    });
+  }
+
+  return words;
+}
+
+int hpjSmartProductSearchScore(Product product, String query) {
+  final maxPrice = hpjSmartSearchMaxPrice(query);
+  if (maxPrice != null && product.effectivePrice > maxPrice + 0.001) {
+    return -100000;
+  }
+
+  final cleanQuery = _hpjSmartSearchTextWithoutPriceIntent(query);
+  if (cleanQuery.isEmpty) {
+    return maxPrice == null ? 0 : 1000 - product.effectivePrice.round();
+  }
+
+  final name = hpjSmartNormalizeSearch(product.name);
+  final category = hpjSmartNormalizeSearch(product.category);
+  final farm =
+      hpjSmartNormalizeSearch(product.farmName ?? product.farmerName ?? '');
+  final description = hpjSmartNormalizeSearch(product.description ?? '');
+  final nutrientText = hpjSmartNormalizeSearch(<String>[
+    ...product.nutrientStrong,
+    ...product.nutrientGood,
+    ...product.nutrientContains,
+  ].join(' '));
+  final searchable = '$name $category $farm $description $nutrientText';
+
+  var score = 0;
+  if (name == cleanQuery) score += 6000;
+  if (name.startsWith(cleanQuery)) score += 3800;
+  if (name.contains(cleanQuery)) score += 2600;
+  if (category.contains(cleanQuery)) score += 1200;
+  if (farm.contains(cleanQuery)) score += 850;
+  if (description.contains(cleanQuery)) score += 650;
+  if (nutrientText.contains(cleanQuery)) score += 1000;
+  if (searchable.contains(cleanQuery)) score += 500;
+
+  final queryWords = cleanQuery.split(' ').where((word) => word.isNotEmpty);
+  final searchableWords =
+      searchable.split(' ').where((word) => word.isNotEmpty).toList();
+  var matchedWords = 0;
+
+  for (final queryWord in queryWords) {
+    var matched = searchableWords.any((candidate) => candidate == queryWord);
+    if (!matched && queryWord.length >= 4) {
+      final tolerance = queryWord.length >= 7 ? 2 : 1;
+      matched = searchableWords.any((candidate) {
+        if ((candidate.length - queryWord.length).abs() > tolerance) {
+          return false;
+        }
+        return _hpjSmartEditDistance(candidate, queryWord) <= tolerance;
+      });
+      if (matched) score += 420;
+    }
+    if (matched) matchedWords++;
+  }
+
+  final intentWords = _hpjSmartIntentWords(query);
+  if (cleanQuery.contains('soup') ||
+      cleanQuery.contains('salad') ||
+      cleanQuery.contains('juice')) {
+    final matchedIntent = intentWords.any((word) => name.contains(word));
+    if (matchedIntent) {
+      score += 1400;
+      matchedWords = matchedWords == 0 ? 1 : matchedWords;
+    }
+  }
+
+  if (matchedWords == 0 && score == 0) return -100000;
+
+  if (product.canAddToCart) score += 180;
+  if (product.hasActiveDiscount) score += 70;
+  if (product.isOrganic) score += 25;
+  if (product.isOutOfStock) score -= 800;
+
+  return score;
+}
+
+bool hpjSmartProductMatchesSearch(Product product, String query) {
+  return hpjSmartProductSearchScore(product, query) > -100000;
 }

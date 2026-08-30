@@ -898,9 +898,17 @@ class _PostLoginWorkspaceSelectorState
                                   _BalancedPhotoWorkspaceCard(
                                     photoUrl: _customerPhoto,
                                     title: 'Customer Shopping',
-                                    subtitle: 'Shop fresh produce',
-                                    status: 'Available',
-                                    statusColor: const Color(0xFF2C754A),
+                                    subtitle: settings
+                                            .customerMarketplaceEnabled
+                                        ? 'Shop fresh produce'
+                                        : 'Fresh Jamaican produce coming soon',
+                                    status: settings.customerMarketplaceEnabled
+                                        ? 'Available'
+                                        : 'Coming Soon',
+                                    statusColor:
+                                        settings.customerMarketplaceEnabled
+                                            ? const Color(0xFF2C754A)
+                                            : const Color(0xFF78817D),
                                     onTap: _openCustomerWorkspace,
                                   ),
                                   _BalancedPhotoWorkspaceCard(
@@ -3136,9 +3144,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _resendConfirmationEmail() async {
-    final email = (pendingConfirmationEmail ?? emailController.text)
-        .trim()
-        .toLowerCase();
+    final email =
+        (pendingConfirmationEmail ?? emailController.text).trim().toLowerCase();
 
     if (email.isEmpty || resendingConfirmation) return;
 
@@ -3997,6 +4004,7 @@ class _MainNavigationState extends State<MainNavigation> {
   int get cartItemCount => cart.length;
 
   int authViewVersion = 0;
+  late Future<MarketplaceProgramSettings> customerMarketplaceSettingsFuture;
 
   String get authViewKey {
     if (!isLoggedIn) return 'guest-$authViewVersion';
@@ -4011,6 +4019,7 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   void initState() {
     super.initState();
+    customerMarketplaceSettingsFuture = fetchMarketplaceProgramSettings();
     selectedIndex = widget.initialIndex.clamp(0, 4).toInt();
     unawaited(
       saveHpjNavigationPreference(
@@ -4630,24 +4639,39 @@ class _MainNavigationState extends State<MainNavigation> {
     final safeSelectedIndex =
         selectedIndex >= pages.length ? homeTabIndex : selectedIndex;
 
-    return Scaffold(
-      body: IndexedStack(index: safeSelectedIndex, children: pages),
-      bottomNavigationBar: FarmBottomOptionsBar(
-        selectedIndex: safeSelectedIndex,
-        destinations: destinations,
-        onSelected: (index) async {
-          if (!mounted) return;
+    return FutureBuilder<MarketplaceProgramSettings>(
+      future: customerMarketplaceSettingsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            snapshot.data == null) {
+          return const _SmartEntryLoadingView();
+        }
 
-          final tappedAccountTab = index == accountTabIndex;
+        final settings = snapshot.data ?? MarketplaceProgramSettings.fallback;
+        if (!settings.customerMarketplaceEnabled) {
+          return const CustomerMarketplaceComingSoonScreen();
+        }
 
-          if (tappedAccountTab && !isLoggedIn) {
-            await openSignInFromTab();
-            return;
-          }
+        return Scaffold(
+          body: IndexedStack(index: safeSelectedIndex, children: pages),
+          bottomNavigationBar: FarmBottomOptionsBar(
+            selectedIndex: safeSelectedIndex,
+            destinations: destinations,
+            onSelected: (index) async {
+              if (!mounted) return;
 
-          _selectCustomerTab(index);
-        },
-      ),
+              final tappedAccountTab = index == accountTabIndex;
+
+              if (tappedAccountTab && !isLoggedIn) {
+                await openSignInFromTab();
+                return;
+              }
+
+              _selectCustomerTab(index);
+            },
+          ),
+        );
+      },
     );
   }
 }

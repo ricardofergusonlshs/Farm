@@ -4768,6 +4768,9 @@ Future<WholesaleDemandForecast> createWholesaleDemandForecast({
     message:
         '${account.displayName} expects ${forecast.formattedQuantity} of ${forecast.productName}.',
     type: 'wholesale',
+    actionType: 'admin_wholesale_demand',
+    actionId: forecast.id,
+    dedupeKey: 'admin-wholesale-demand:${forecast.id}',
   );
 
   return forecast;
@@ -4914,6 +4917,12 @@ Future<List<WholesaleDemandForecast>> createWholesaleDemandForecastBatch({
       message:
           '${account.displayName} added ${forecasts.length} planned item${forecasts.length == 1 ? '' : 's'}: $preview$more.',
       type: 'wholesale',
+      actionType: 'admin_wholesale_demand',
+      actionId: forecasts.isEmpty ? null : forecasts.first.id,
+      dedupeKey: forecasts.isEmpty
+          ? null
+          : 'admin-wholesale-planning:${forecasts.first.id}:'
+              '${forecasts.length}',
     );
   } catch (error) {
     farmDebugLog(
@@ -5273,6 +5282,8 @@ Future<void> adminUpdateWholesaleDemandForecast({
     userId: forecast.userId,
     actionType: 'wholesale_plan',
     actionId: forecast.id,
+    dedupeKey:
+        'wholesale-plan:${forecast.id}:${status.trim().toLowerCase()}',
   );
 }
 // =====================================================
@@ -5843,6 +5854,11 @@ Future<String> adminConvertReservedDemandToRequest({
     );
   }
 
+  final cleanDeliveryParish = normalizeOptionalJamaicaParish(
+    deliveryParish,
+    fieldLabel: 'Delivery parish',
+  );
+
   final response = await supabase.rpc(
     'admin_convert_reserved_demand_to_request',
     params: {
@@ -5850,8 +5866,7 @@ Future<String> adminConvertReservedDemandToRequest({
       'p_unit_price': unitPrice,
       'p_delivery_address':
           deliveryAddress.trim().isEmpty ? null : deliveryAddress.trim(),
-      'p_delivery_parish':
-          deliveryParish.trim().isEmpty ? null : deliveryParish.trim(),
+      'p_delivery_parish': cleanDeliveryParish,
       'p_requested_date': _wholesaleDemandDateIso(
         requestedDate,
       ),
@@ -7899,15 +7914,17 @@ Future<void> submitWholesalePaymentConfirmation({
   String paymentReference = '',
   String note = '',
 }) async {
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
   final user = supabase.auth.currentUser;
-  if (user == null) {
+  if (user == null || operationBoundary.userId == null) {
     throw Exception('Please sign in before submitting payment confirmation.');
   }
 
   if (!invoice.isIssued || invoice.isPaid || invoice.isVoid) {
     throw Exception('This invoice is not accepting payment confirmations.');
   }
-
   if (amount <= 0 || amount.isNaN || amount.isInfinite) {
     throw Exception('Enter a valid payment amount.');
   }
@@ -7922,26 +7939,48 @@ Future<void> submitWholesalePaymentConfirmation({
     throw Exception('Upload payment proof before submitting.');
   }
 
-  await supabase.rpc(
-    'business_submit_wholesale_payment_confirmation',
-    params: {
-      'p_invoice_id': invoice.id,
-      'p_amount': amount,
-      'p_payment_method': method,
-      'p_payment_reference': paymentReference.trim(),
-      'p_proof_path': cleanProof,
-      'p_note': note.trim(),
-    },
+  final mutationLease = acquireHpjPrivateMutation(
+    'wholesale-payment:${invoice.id}',
+    expectedBoundary: operationBoundary,
   );
 
-  await createAdminNotification(
-    title: 'Wholesale payment confirmation',
-    message:
-        '${invoice.businessName.trim().isEmpty ? 'A wholesale business' : invoice.businessName} submitted ${formatJmd(amount)} for ${invoice.invoiceNumber}.',
-    type: 'wholesale',
-  );
+  try {
+    mutationLease.ensureCurrent();
+
+    final idempotencyKey =
+        newHpjIdempotencyKey('wholesale-payment:${invoice.id}');
+
+    await supabase.rpc(
+      'business_submit_wholesale_payment_confirmation_idempotent',
+      params: {
+        'p_invoice_id': invoice.id,
+        'p_amount': amount,
+        'p_payment_method': method,
+        'p_payment_reference': paymentReference.trim(),
+        'p_proof_path': cleanProof,
+        'p_note': note.trim(),
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+
+    mutationLease.ensureCurrent();
+
+    await createAdminNotification(
+      title: 'Wholesale payment confirmation',
+      message:
+          '${invoice.businessName.trim().isEmpty ? 'A wholesale business' : invoice.businessName} submitted ${formatJmd(amount)} for ${invoice.invoiceNumber}.',
+      type: 'wholesale',
+      actionType: 'admin_wholesale_payment',
+      actionId: invoice.id,
+      dedupeKey:
+          'admin-wholesale-payment:${invoice.id}:${paymentReference.trim()}',
+    );
+
+    mutationLease.ensureCurrent();
+  } finally {
+    mutationLease.release();
+  }
 }
-
 Future<void> cancelWholesalePaymentConfirmation(
   WholesalePaymentSubmission submission,
 ) async {
@@ -8001,6 +8040,26 @@ Future<String> getWholesalePaymentProofSignedUrl(
       .createSignedUrl(cleanPath, 900);
 }
 
+
+Future<String?> _wholesaleNotificationRequestIdForInvoice(
+  String invoiceId,
+) async {
+  final cleanInvoiceId = invoiceId.trim();
+  if (cleanInvoiceId.isEmpty) return null;
+
+  try {
+    final invoice = await fetchWholesaleInvoiceById(cleanInvoiceId);
+    final requestId = invoice.requestId.trim();
+    return requestId.isEmpty ? null : requestId;
+  } catch (error) {
+    farmDebugLog(
+      'Wholesale notification request lookup skipped for '
+      '$cleanInvoiceId: $error',
+    );
+    return null;
+  }
+}
+
 Future<void> approveWholesalePaymentConfirmation(
   WholesalePaymentSubmission submission,
 ) async {
@@ -8018,14 +8077,20 @@ Future<void> approveWholesalePaymentConfirmation(
     },
   );
 
+  final requestId =
+      await _wholesaleNotificationRequestIdForInvoice(
+    submission.invoiceId,
+  );
+
   await createFarmNotification(
     title: 'Wholesale payment approved',
     message:
         '${submission.formattedAmount} was approved for ${submission.invoiceNumber.isEmpty ? 'your wholesale invoice' : submission.invoiceNumber}.',
     type: 'wholesale',
     userId: submission.submittedBy,
-    actionType: 'wholesale_orders',
-    actionId: submission.invoiceId,
+    actionType: 'wholesale_order',
+    actionId: requestId,
+    dedupeKey: 'wholesale-payment-approved:${submission.id}',
   );
 }
 
@@ -8053,14 +8118,20 @@ Future<void> rejectWholesalePaymentConfirmation({
     },
   );
 
+  final requestId =
+      await _wholesaleNotificationRequestIdForInvoice(
+    submission.invoiceId,
+  );
+
   await createFarmNotification(
     title: 'Wholesale payment needs attention',
     message:
         '${submission.invoiceNumber.isEmpty ? 'Your wholesale payment confirmation' : 'Payment confirmation for ${submission.invoiceNumber}'} needs attention. $cleanReason',
     type: 'wholesale',
     userId: submission.submittedBy,
-    actionType: 'wholesale_orders',
-    actionId: submission.invoiceId,
+    actionType: 'wholesale_order',
+    actionId: requestId,
+    dedupeKey: 'wholesale-payment-review:${submission.id}:rejected',
   );
 }
 
@@ -8334,7 +8405,12 @@ Future<WholesaleInvoice> updateWholesaleInvoiceDraft({
     if (otherAmount != null) 'other_amount': otherAmount,
     if (paymentTermsDays != null) 'payment_terms_days': paymentTermsDays,
     if (billingAddress != null) 'billing_address': billingAddress.trim(),
-    if (billingParish != null) 'billing_parish': billingParish.trim(),
+    if (billingParish != null)
+      'billing_parish': normalizeOptionalJamaicaParish(
+            billingParish,
+            fieldLabel: 'Billing parish',
+          ) ??
+          '',
     if (customerNote != null) 'customer_note': customerNote.trim(),
     if (internalNote != null) 'internal_note': internalNote.trim(),
   };
@@ -8577,16 +8653,20 @@ Future<void> submitBusinessApplication({
   final cleanName = businessName.trim();
   final cleanContact = contactName.trim();
   final cleanPhone = phone.trim();
-  final cleanParish = parish.trim();
 
   if (cleanName.isEmpty ||
       cleanContact.isEmpty ||
       cleanPhone.isEmpty ||
-      cleanParish.isEmpty) {
+      parish.trim().isEmpty) {
     throw Exception(
       'Business name, contact person, phone, and parish are required.',
     );
   }
+
+  final cleanParish = requireJamaicaParish(
+    parish,
+    fieldLabel: 'Business parish',
+  );
 
   await supabase.rpc(
     'upsert_business_application',
@@ -8604,6 +8684,8 @@ Future<void> submitBusinessApplication({
     },
   );
 
+  final savedAccount = await fetchCurrentBusinessAccount();
+
   await createAdminNotification(
     title: existing == null
         ? 'New wholesale application'
@@ -8612,6 +8694,12 @@ Future<void> submitBusinessApplication({
         ? '$cleanName submitted a business shopper application.'
         : '$cleanName updated its business shopper details.',
     type: 'wholesale',
+    actionType: 'admin_wholesale_application',
+    actionId: savedAccount?.id,
+    dedupeKey: savedAccount?.id == null
+        ? null
+        : 'admin-wholesale-application:${savedAccount!.id}:'
+            '${existing == null ? 'new' : 'updated'}',
   );
 }
 
@@ -8912,12 +9000,21 @@ Future<String> submitWholesaleOrderRequest({
   required String notes,
   double estimatedTotal = 0,
 }) async {
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
   final settings = await fetchMarketplaceProgramSettings();
+  if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+    throw const HpjPrivateMutationInterruptedException();
+  }
   if (!settings.wholesaleWorkspaceEnabled) {
     throw Exception('Wholesale ordering is temporarily unavailable.');
   }
 
   final account = await fetchCurrentBusinessAccount();
+  if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+    throw const HpjPrivateMutationInterruptedException();
+  }
   if (account == null || !account.isApproved) {
     throw Exception('An approved wholesale account is required.');
   }
@@ -8933,48 +9030,78 @@ Future<String> submitWholesaleOrderRequest({
 
   if (!schedule.isAvailable || schedule.windowId.trim().isEmpty) {
     throw Exception(
-        'Choose an available wholesale delivery or collection window.');
+      'Choose an available wholesale delivery or collection window.',
+    );
   }
 
-  // Phase 3Q preflight. PostgreSQL re-checks this again when the request is
-  // inserted, so stale UI state cannot bypass Credit Hold / aging / limit rules.
-  final control = await fetchWholesaleOrderingControl(
-    account: account,
-    estimatedTotal: estimatedTotal,
+  final mutationLease = acquireHpjPrivateMutation(
+    'wholesale-order-request',
+    expectedBoundary: operationBoundary,
   );
 
-  if (control.isBlocked) {
-    throw Exception(control.reason);
+  try {
+    mutationLease.ensureCurrent();
+
+    final control = await fetchWholesaleOrderingControl(
+      account: account,
+      estimatedTotal: estimatedTotal,
+    );
+
+    mutationLease.ensureCurrent();
+
+    if (control.isBlocked) {
+      throw Exception(control.reason);
+    }
+
+    final cleanDeliveryParish = requireJamaicaParish(
+      deliveryParish,
+      fieldLabel: method == 'business_collection'
+          ? 'Collection parish'
+          : 'Delivery parish',
+    );
+
+    final idempotencyKey =
+        newHpjIdempotencyKey('wholesale-order-request');
+
+    final response = await supabase.rpc(
+      'submit_wholesale_order_request_scheduled_idempotent',
+      params: {
+        'p_items': items,
+        'p_delivery_address': deliveryAddress.trim(),
+        'p_delivery_parish': cleanDeliveryParish,
+        'p_requested_date': _wholesaleDemandDateIso(schedule.scheduledDate),
+        'p_notes': notes.trim(),
+        'p_dispatch_method': method,
+        'p_schedule_window_id': schedule.windowId,
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+
+    mutationLease.ensureCurrent();
+
+    final requestId = response?.toString().trim() ?? '';
+    if (requestId.isEmpty) {
+      throw Exception(
+        'The wholesale order was submitted, but no request ID was returned.',
+      );
+    }
+
+    await createAdminNotification(
+      title: 'New wholesale order request',
+      message:
+          'A business customer submitted bulk request #${requestId.length >= 8 ? requestId.substring(0, 8).toUpperCase() : requestId.toUpperCase()} for ${schedule.dateLabel} • ${schedule.label}.',
+      type: 'wholesale',
+      actionType: 'admin_wholesale_order',
+      actionId: requestId,
+      dedupeKey: 'admin-wholesale-order:$requestId',
+    );
+
+    mutationLease.ensureCurrent();
+    return requestId;
+  } finally {
+    mutationLease.release();
   }
-
-  // Phase 3R scheduled wrapper re-checks capacity while holding a database
-  // advisory lock. If another request takes the last slot first, this call
-  // rolls back cleanly rather than leaving an unscheduled wholesale request.
-  final response = await supabase.rpc(
-    'submit_wholesale_order_request_scheduled',
-    params: {
-      'p_items': items,
-      'p_delivery_address': deliveryAddress.trim(),
-      'p_delivery_parish': deliveryParish.trim(),
-      'p_requested_date': _wholesaleDemandDateIso(schedule.scheduledDate),
-      'p_notes': notes.trim(),
-      'p_dispatch_method': method,
-      'p_schedule_window_id': schedule.windowId,
-    },
-  );
-
-  final requestId = response?.toString() ?? '';
-
-  await createAdminNotification(
-    title: 'New wholesale order request',
-    message:
-        'A business customer submitted bulk request #${requestId.length >= 8 ? requestId.substring(0, 8).toUpperCase() : requestId.toUpperCase()} for ${schedule.dateLabel} • ${schedule.label}.',
-    type: 'wholesale',
-  );
-
-  return requestId;
 }
-
 // =====================================================
 // PHASE 3U — REPEAT ORDER / TEMPLATE SERVICES
 // =====================================================
@@ -9090,6 +9217,9 @@ Future<String> createWholesaleStandingOrderFromTemplate({
   required String deliveryParish,
   String notes = '',
 }) async {
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
   final cleanName = name.trim();
   if (cleanName.isEmpty) throw Exception('Enter a standing-order name.');
 
@@ -9103,25 +9233,52 @@ Future<String> createWholesaleStandingOrderFromTemplate({
     throw Exception('Choose HPJ Delivery or Business Collection.');
   }
 
-  final response = await supabase.rpc(
-    'business_create_standing_order_from_template',
-    params: {
-      'p_template_id': template.id,
-      'p_name': cleanName,
-      'p_frequency': cleanFrequency,
-      'p_start_date': _wholesaleDemandDateIso(startDate),
-      'p_dispatch_method': cleanMethod,
-      'p_delivery_address': deliveryAddress.trim(),
-      'p_delivery_parish': deliveryParish.trim(),
-      'p_notes': notes.trim(),
-    },
+  final cleanDeliveryParish = requireJamaicaParish(
+    deliveryParish,
+    fieldLabel: cleanMethod == 'business_collection'
+        ? 'Collection parish'
+        : 'Delivery parish',
   );
 
-  final id = response?.toString().trim() ?? '';
-  if (id.isEmpty) throw Exception('The standing order was not created.');
-  return id;
-}
+  final mutationLease = acquireHpjPrivateMutation(
+    'wholesale-standing-order:${template.id}',
+    expectedBoundary: operationBoundary,
+  );
 
+  try {
+    mutationLease.ensureCurrent();
+
+    final idempotencyKey =
+        newHpjIdempotencyKey(
+          'wholesale-standing-order:${template.id}',
+        );
+
+    final response = await supabase.rpc(
+      'business_create_standing_order_from_template_idempotent',
+      params: {
+        'p_template_id': template.id,
+        'p_name': cleanName,
+        'p_frequency': cleanFrequency,
+        'p_start_date': _wholesaleDemandDateIso(startDate),
+        'p_dispatch_method': cleanMethod,
+        'p_delivery_address': deliveryAddress.trim(),
+        'p_delivery_parish': cleanDeliveryParish,
+        'p_notes': notes.trim(),
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+
+    mutationLease.ensureCurrent();
+
+    final id = response?.toString().trim() ?? '';
+    if (id.isEmpty) {
+      throw Exception('The standing order was not created.');
+    }
+    return id;
+  } finally {
+    mutationLease.release();
+  }
+}
 Future<void> updateMyWholesaleStandingOrderStatus({
   required WholesaleStandingOrder order,
   required String status,
@@ -9269,6 +9426,8 @@ Future<void> adminUpdateBusinessStatus({
     userEmail: account.email,
     actionType: 'wholesale_account',
     actionId: account.id,
+    dedupeKey:
+        'wholesale-account:${account.id}:${status.trim().toLowerCase()}',
   );
 }
 
@@ -9330,6 +9489,9 @@ Future<void> adminUpdateWholesaleCreditTerms({
     userEmail: account.email,
     actionType: 'wholesale_account',
     actionId: account.id,
+    dedupeKey: 'wholesale-account-terms:${account.id}:'
+        '${creditEnabled ? 'credit' : 'cash'}:$paymentTermsDays:'
+        '${creditLimit.toStringAsFixed(2)}',
   );
 }
 
@@ -9428,6 +9590,8 @@ Future<void> adminUpdateWholesaleRequest({
     userEmail: account?.email,
     actionType: 'wholesale_order',
     actionId: request.id,
+    dedupeKey:
+        'wholesale-request:${request.id}:${status.trim().toLowerCase()}',
   );
 }
 
@@ -9528,10 +9692,12 @@ PreferredSizeWidget _wholesaleAccessAppBar(
 
 class BusinessWholesaleHubScreen extends StatefulWidget {
   final int initialTab;
+  final String? initialRecordId;
 
   const BusinessWholesaleHubScreen({
     super.key,
     this.initialTab = 0,
+    this.initialRecordId,
   });
 
   @override
@@ -9630,6 +9796,7 @@ class _BusinessWholesaleHubScreenState
           return _WholesaleWorkspaceShell(
             account: account,
             initialIndex: widget.initialTab,
+            initialRecordId: widget.initialRecordId,
           );
         }
 
@@ -9703,10 +9870,12 @@ class _BusinessWholesaleHubScreenState
 class _WholesaleWorkspaceShell extends StatefulWidget {
   final BusinessAccount account;
   final int initialIndex;
+  final String? initialRecordId;
 
   const _WholesaleWorkspaceShell({
     required this.account,
     this.initialIndex = 0,
+    this.initialRecordId,
   });
 
   @override
@@ -9715,16 +9884,53 @@ class _WholesaleWorkspaceShell extends StatefulWidget {
 }
 
 class _WholesaleWorkspaceShellState
-    extends State<_WholesaleWorkspaceShell> {
+    extends State<_WholesaleWorkspaceShell>
+    with WidgetsBindingObserver {
   int selectedIndex = 0;
   int todayRefreshKey = 0;
   late BusinessAccount currentAccount;
+  StreamSubscription<AuthState>? _authBoundarySubscription;
+  String? _authBoundaryUserId;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     selectedIndex = widget.initialIndex.clamp(0, 4).toInt();
     currentAccount = widget.account;
+    _authBoundaryUserId =
+        supabase.auth.currentUser?.id.trim();
+
+    _authBoundarySubscription =
+        supabase.auth.onAuthStateChange.listen((authState) {
+      if (!mounted) return;
+
+      final rawUserId =
+          authState.session?.user.id.trim() ?? '';
+      final nextUserId =
+          rawUserId.isEmpty ? null : rawUserId;
+      final previousUserId = _authBoundaryUserId;
+
+      if (nextUserId == previousUserId) return;
+
+      _authBoundaryUserId = nextUserId;
+      clearHpjPrivateAccountMemory();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => nextUserId == null
+                ? const AuthGate()
+                : const OwnerWorkspaceSwitcherScreen(
+                    showCloseButton: false,
+                  ),
+          ),
+          (route) => false,
+        );
+      });
+    });
+
     unawaited(
       saveHpjNavigationPreference(
         workspace: 'wholesale',
@@ -9736,14 +9942,92 @@ class _WholesaleWorkspaceShellState
   BusinessAccount get account => currentAccount;
 
   Future<void> _reloadAccount() async {
+    final operationBoundary =
+        captureHpjPrivateOperationBoundary();
+
     final latest = await fetchCurrentBusinessAccount();
 
-    if (!mounted || latest == null) return;
+    if (!mounted ||
+        latest == null ||
+        !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return;
+    }
 
     setState(() {
       currentAccount = latest;
       todayRefreshKey++;
     });
+  }
+
+  Future<void> _revalidateWholesaleWorkspace() async {
+    if (!mounted) return;
+
+    final operationBoundary =
+        captureHpjPrivateOperationBoundary();
+
+    if (!isLoggedIn || supabase.auth.currentUser == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const AuthGate(),
+          ),
+          (route) => false,
+        );
+      });
+      return;
+    }
+
+    try {
+      final access = await fetchOwnerWorkspaceAccessSnapshot();
+
+      if (!mounted ||
+          !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        return;
+      }
+
+      final latest = access.businessAccount;
+      final active = latest != null &&
+          latest.isApproved &&
+          access.programSettings.wholesaleWorkspaceEnabled;
+
+      if (!active) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute<void>(
+              builder: (_) => const BusinessWholesaleHubScreen(
+                initialTab: 0,
+              ),
+            ),
+            (route) => false,
+          );
+        });
+        return;
+      }
+
+      setState(() {
+        currentAccount = latest;
+        todayRefreshKey++;
+      });
+    } catch (error) {
+      farmDebugLog(
+        'Wholesale workspace resume validation skipped: $error',
+      );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(_revalidateWholesaleWorkspace());
+  }
+
+  @override
+  void dispose() {
+    _authBoundarySubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   static const titles = <String>[
@@ -9799,9 +10083,15 @@ class _WholesaleWorkspaceShellState
       WholesalePlanningAheadScreen(
         account: account,
         embedded: true,
+        initialForecastId: selectedIndex == 2
+            ? widget.initialRecordId
+            : null,
       ),
-      const MyWholesaleRequestsScreen(
+      MyWholesaleRequestsScreen(
         embedded: true,
+        initialRequestId: selectedIndex == 3
+            ? widget.initialRecordId
+            : null,
       ),
       _WholesaleAccountWorkspacePage(
         account: account,
@@ -11519,12 +11809,11 @@ class _BusinessApplicationFormState extends State<BusinessApplicationForm> {
             ),
           ),
           const SizedBox(height: 12),
-          TextField(
+          JamaicaParishDropdown(
             controller: parishController,
-            decoration: const InputDecoration(
-              labelText: 'Parish *',
-              prefixIcon: Icon(Icons.map_outlined),
-            ),
+            label: 'Parish *',
+            enabled: !saving,
+            prefixIcon: Icons.map_outlined,
           ),
           const SizedBox(height: 12),
           TextField(
@@ -17331,11 +17620,13 @@ class _WholesalePlanningLineDraft {
 class WholesalePlanningAheadScreen extends StatefulWidget {
   final BusinessAccount account;
   final bool embedded;
+  final String? initialForecastId;
 
   const WholesalePlanningAheadScreen({
     super.key,
     required this.account,
     this.embedded = false,
+    this.initialForecastId,
   });
 
   @override
@@ -18726,8 +19017,19 @@ class _WholesalePlanningAheadScreenState
 
             final forecasts =
                 snapshot.data ?? const <WholesaleDemandForecast>[];
-            final active = forecasts.where((item) => item.isActive).toList()
+            final allActive = forecasts.where((item) => item.isActive).toList()
               ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
+
+            final requestedForecastId =
+                widget.initialForecastId?.trim() ?? '';
+            final focusedForecasts = requestedForecastId.isEmpty
+                ? const <WholesaleDemandForecast>[]
+                : allActive
+                    .where((item) => item.id.trim() == requestedForecastId)
+                    .toList();
+
+            final exactForecastFound = focusedForecasts.isNotEmpty;
+            final active = exactForecastFound ? focusedForecasts : allActive;
             final needsReview =
                 active.where(_wholesaleForecastNeedsReview).toList();
 
@@ -18818,6 +19120,51 @@ class _WholesalePlanningAheadScreenState
                     _planningForm(),
                   ],
                   const SizedBox(height: 22),
+                  if (requestedForecastId.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(11),
+                      decoration: BoxDecoration(
+                        color: exactForecastFound
+                            ? FarmColors.primarySoft
+                            : const Color(0xFFFFF7E8),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: exactForecastFound
+                              ? FarmColors.primary.withOpacity(0.20)
+                              : FarmColors.warning.withOpacity(0.28),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            exactForecastFound
+                                ? Icons.notifications_active_outlined
+                                : Icons.info_outline_rounded,
+                            size: 18,
+                            color: exactForecastFound
+                                ? FarmColors.primary
+                                : FarmColors.warning,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              exactForecastFound
+                                  ? 'Opened from your notification. Showing the related planned need.'
+                                  : 'That planned need is no longer active. Showing your current planning list instead.',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10,
+                                height: 1.35,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Row(
                     children: [
                       const Expanded(
@@ -21444,12 +21791,10 @@ class _WholesaleRequestReviewScreenState
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
+              JamaicaParishDropdown(
                 controller: parishController,
-                decoration: const InputDecoration(
-                  labelText: 'Delivery parish',
-                  prefixIcon: Icon(Icons.map_outlined),
-                ),
+                label: 'Delivery parish',
+                prefixIcon: Icons.map_outlined,
               ),
             ],
             const SizedBox(height: 12),
@@ -22198,10 +22543,12 @@ class _WholesaleRepeatStandingOrdersScreenState
 
 class MyWholesaleRequestsScreen extends StatelessWidget {
   final bool embedded;
+  final String? initialRequestId;
 
   const MyWholesaleRequestsScreen({
     super.key,
     this.embedded = false,
+    this.initialRequestId,
   });
 
   Future<void> _orderAgain(
@@ -23094,9 +23441,20 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
 
           final data = snapshot.data;
 
-          final requests = data == null
+          final allRequests = data == null
               ? const <WholesaleOrderRequest>[]
               : data[0] as List<WholesaleOrderRequest>;
+
+          final requestedRequestId = initialRequestId?.trim() ?? '';
+          final focusedRequests = requestedRequestId.isEmpty
+              ? const <WholesaleOrderRequest>[]
+              : allRequests
+                  .where((request) => request.id.trim() == requestedRequestId)
+                  .toList();
+
+          final exactRequestFound = focusedRequests.isNotEmpty;
+          final requests =
+              exactRequestFound ? focusedRequests : allRequests;
 
           final journeys = data == null
               ? const <WholesaleOrderJourney>[]
@@ -23145,6 +23503,51 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                   subtitle:
                       'Track current orders and quickly review past orders.',
                 ),
+                if (requestedRequestId.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: exactRequestFound
+                          ? FarmColors.primarySoft
+                          : const Color(0xFFFFF7E8),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: exactRequestFound
+                            ? FarmColors.primary.withOpacity(0.20)
+                            : FarmColors.warning.withOpacity(0.28),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          exactRequestFound
+                              ? Icons.notifications_active_outlined
+                              : Icons.info_outline_rounded,
+                          size: 18,
+                          color: exactRequestFound
+                              ? FarmColors.primary
+                              : FarmColors.warning,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            exactRequestFound
+                                ? 'Opened from your notification. Showing the related order.'
+                                : 'That order is no longer available in this view. Showing your current orders instead.',
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 10,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 if (requests.isEmpty)
                   const FarmEmptyState(
@@ -23429,12 +23832,74 @@ class _WholesaleAdminSectionSpec {
   });
 }
 
+
+class _WholesaleAdminFocusNotice extends StatelessWidget {
+  final bool found;
+  final String foundMessage;
+  final String missingMessage;
+
+  const _WholesaleAdminFocusNotice({
+    required this.found,
+    required this.foundMessage,
+    required this.missingMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = found
+        ? FarmColors.primary
+        : FarmColors.warning;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: found
+            ? FarmColors.primarySoft
+            : const Color(0xFFFFF7E8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accent.withOpacity(0.25),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            found
+                ? Icons.notifications_active_outlined
+                : Icons.info_outline_rounded,
+            size: 18,
+            color: accent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              found ? foundMessage : missingMessage,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 10,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AdminWholesaleManagementTab extends StatefulWidget {
   final int refreshKey;
   final VoidCallback onChanged;
   final List<String>? sections;
   final String initialSection;
   final String? requestStatusFilter;
+  final String? requestIdFilter;
+  final String? businessAccountIdFilter;
+  final String? invoiceIdFilter;
+  final String? demandIdFilter;
   final String receivingMode;
   final String receivingFilter;
 
@@ -23445,6 +23910,10 @@ class AdminWholesaleManagementTab extends StatefulWidget {
     this.sections,
     this.initialSection = 'executive',
     this.requestStatusFilter,
+    this.requestIdFilter,
+    this.businessAccountIdFilter,
+    this.invoiceIdFilter,
+    this.demandIdFilter,
     this.receivingMode = 'all',
     this.receivingFilter = 'all',
   });
@@ -24927,19 +25396,44 @@ class _AdminWholesaleManagementTabState
           return const Center(child: CircularProgressIndicator());
         }
 
-        final accounts = snapshot.data ?? const <BusinessAccount>[];
-        if (accounts.isEmpty) {
+        final allAccounts = snapshot.data ?? const <BusinessAccount>[];
+        if (allAccounts.isEmpty) {
           return const Center(
             child: Text('No business applications yet.'),
           );
         }
 
+        final requestedAccountId =
+            widget.businessAccountIdFilter?.trim() ?? '';
+
+        final focusedAccounts = requestedAccountId.isEmpty
+            ? const <BusinessAccount>[]
+            : allAccounts
+                .where(
+                  (account) => account.id.trim() == requestedAccountId,
+                )
+                .toList();
+
+        final exactAccountFound = focusedAccounts.isNotEmpty;
+        final accounts =
+            exactAccountFound ? focusedAccounts : allAccounts;
+
         return RefreshIndicator(
           onRefresh: _refresh,
-          child: ListView.builder(
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
-            itemCount: accounts.length,
-            itemBuilder: (context, index) {
+            children: [
+              if (requestedAccountId.isNotEmpty) ...[
+                _WholesaleAdminFocusNotice(
+                  found: exactAccountFound,
+                  foundMessage:
+                      'Opened from your notification. Showing the related business application.',
+                  missingMessage:
+                      'That business application is no longer available. Showing current applications instead.',
+                ),
+                const SizedBox(height: 12),
+              ],
+              ...List<Widget>.generate(accounts.length, (index) {
               final account = accounts[index];
               final color = businessAccountStatusColor(account.status);
 
@@ -25072,7 +25566,8 @@ class _AdminWholesaleManagementTabState
                   ),
                 ),
               );
-            },
+            }),
+            ],
           ),
         );
       },
@@ -25154,13 +25649,30 @@ class _AdminWholesaleManagementTabState
 
         final allRequests = snapshot.data ?? const <WholesaleOrderRequest>[];
         final requestedStatus = widget.requestStatusFilter?.trim().toLowerCase();
-        final requests = requestedStatus == null || requestedStatus.isEmpty
-            ? allRequests
+        final requestedId = widget.requestIdFilter?.trim() ?? '';
+
+        final statusRequests = allRequests.where((request) {
+          if (requestedStatus != null &&
+              requestedStatus.isNotEmpty &&
+              request.status != requestedStatus) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        final focusedRequests = requestedId.isEmpty
+            ? const <WholesaleOrderRequest>[]
             : allRequests
-                .where((request) => request.status == requestedStatus)
+                .where(
+                  (request) => request.id.trim() == requestedId,
+                )
                 .toList();
 
-        if (requests.isEmpty) {
+        final exactRequestFound = focusedRequests.isNotEmpty;
+        final requests =
+            exactRequestFound ? focusedRequests : statusRequests;
+
+        if (requests.isEmpty && requestedId.isEmpty) {
           return Center(
             child: Text(
               requestedStatus == null || requestedStatus.isEmpty
@@ -25172,10 +25684,20 @@ class _AdminWholesaleManagementTabState
 
         return RefreshIndicator(
           onRefresh: _refresh,
-          child: ListView.builder(
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
-            itemCount: requests.length,
-            itemBuilder: (context, index) {
+            children: [
+              if (requestedId.isNotEmpty) ...[
+                _WholesaleAdminFocusNotice(
+                  found: exactRequestFound,
+                  foundMessage:
+                      'Opened from your notification. Showing the related wholesale order.',
+                  missingMessage:
+                      'That wholesale order is no longer available. Showing the current order list instead.',
+                ),
+                const SizedBox(height: 12),
+              ],
+              ...List<Widget>.generate(requests.length, (index) {
               final request = requests[index];
               final accountName =
                   request.businessAccount?.displayName ?? request.businessName;
@@ -25246,7 +25768,8 @@ class _AdminWholesaleManagementTabState
                   ),
                 ),
               );
-            },
+            }),
+            ],
           ),
         );
       },
@@ -27916,15 +28439,11 @@ class _AdminWholesaleManagementTabState
                         const SizedBox(
                           height: 12,
                         ),
-                        TextField(
+                        JamaicaParishDropdown(
                           controller: parishController,
+                          label: 'Delivery parish',
                           enabled: !saving,
-                          decoration: const InputDecoration(
-                            labelText: 'Delivery parish',
-                            prefixIcon: Icon(
-                              Icons.map_outlined,
-                            ),
-                          ),
+                          prefixIcon: Icons.map_outlined,
                         ),
                         const SizedBox(
                           height: 12,
@@ -28443,8 +28962,24 @@ class _AdminWholesaleManagementTabState
           );
         }
 
-        final demands = data.demands.where((item) => item.isActive).toList()
-          ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
+        final allActiveDemands =
+            data.demands.where((item) => item.isActive).toList()
+              ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
+
+        final requestedDemandId =
+            widget.demandIdFilter?.trim() ?? '';
+
+        final focusedDemands = requestedDemandId.isEmpty
+            ? const <WholesaleDemandForecast>[]
+            : allActiveDemands
+                .where(
+                  (demand) => demand.id.trim() == requestedDemandId,
+                )
+                .toList();
+
+        final exactDemandFound = focusedDemands.isNotEmpty;
+        final demands =
+            exactDemandFound ? focusedDemands : allActiveDemands;
 
         final farmerMap = <String, FarmerProfile>{
           for (final farmer in data.farmers) farmer.id: farmer,
@@ -28599,6 +29134,16 @@ class _AdminWholesaleManagementTabState
                 ),
               ),
               const SizedBox(height: 14),
+              if (requestedDemandId.isNotEmpty) ...[
+                _WholesaleAdminFocusNotice(
+                  found: exactDemandFound,
+                  foundMessage:
+                      'Opened from your notification. Showing the related procurement requirement.',
+                  missingMessage:
+                      'That procurement requirement is no longer active. Showing current supply needs instead.',
+                ),
+                const SizedBox(height: 12),
+              ],
               ...demands.map((demand) {
                 final demandName = _normalizeMatchName(demand.productName);
                 final demandUnit = _normalizeMatchUnit(demand.unit);
@@ -32866,11 +33411,10 @@ class _AdminWholesaleManagementTabState
                 const SizedBox(
                   height: 10,
                 ),
-                TextField(
+                JamaicaParishDropdown(
                   controller: parishController,
-                  decoration: const InputDecoration(
-                    labelText: 'Billing parish',
-                  ),
+                  label: 'Billing parish',
+                  prefixIcon: Icons.map_outlined,
                 ),
                 const SizedBox(
                   height: 10,
@@ -35126,7 +35670,22 @@ class _AdminWholesaleManagementTabState
           return const SizedBox.shrink();
         }
 
-        final invoices = data[0] as List<WholesaleInvoice>;
+        final allInvoices = data[0] as List<WholesaleInvoice>;
+
+        final requestedInvoiceId =
+            widget.invoiceIdFilter?.trim() ?? '';
+
+        final focusedInvoices = requestedInvoiceId.isEmpty
+            ? const <WholesaleInvoice>[]
+            : allInvoices
+                .where(
+                  (invoice) => invoice.id.trim() == requestedInvoiceId,
+                )
+                .toList();
+
+        final exactInvoiceFound = focusedInvoices.isNotEmpty;
+        final invoices =
+            exactInvoiceFound ? focusedInvoices : allInvoices;
 
         final requests = data[1] as List<WholesaleOrderRequest>;
 
@@ -35141,7 +35700,7 @@ class _AdminWholesaleManagementTabState
           for (final request in requests) request.id: request,
         };
 
-        final activeInvoiceRequestIds = invoices
+        final activeInvoiceRequestIds = allInvoices
             .where(
               (invoice) => !invoice.isVoid,
             )
@@ -35176,25 +35735,25 @@ class _AdminWholesaleManagementTabState
           readyToInvoice.add(request);
         }
 
-        final draftCount = invoices
+        final draftCount = allInvoices
             .where(
               (invoice) => invoice.isDraft,
             )
             .length;
 
-        final overdueCount = invoices
+        final overdueCount = allInvoices
             .where(
               (invoice) => invoice.isOverdue,
             )
             .length;
 
-        final paidCount = invoices
+        final paidCount = allInvoices
             .where(
               (invoice) => invoice.isPaid && !invoice.isVoid,
             )
             .length;
 
-        final outstanding = invoices
+        final outstanding = allInvoices
             .where(
               (invoice) =>
                   invoice.isIssued && !invoice.isPaid && !invoice.isVoid,
@@ -35253,6 +35812,16 @@ class _AdminWholesaleManagementTabState
                 ),
               ),
               const SizedBox(height: 12),
+              if (requestedInvoiceId.isNotEmpty) ...[
+                _WholesaleAdminFocusNotice(
+                  found: exactInvoiceFound,
+                  foundMessage:
+                      'Opened from your notification. Showing the related wholesale invoice.',
+                  missingMessage:
+                      'That wholesale invoice is no longer available. Showing current invoices instead.',
+                ),
+                const SizedBox(height: 12),
+              ],
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -36311,7 +36880,7 @@ class _AdminWholesaleManagementTabState
 
     return DefaultTabController(
       key: ValueKey(
-        'wholesale-${sections.map((section) => section.keyName).join('-')}-$requestedInitial-${widget.receivingMode}-${widget.receivingFilter}-${widget.requestStatusFilter ?? ''}',
+        'wholesale-${sections.map((section) => section.keyName).join('-')}-$requestedInitial-${widget.receivingMode}-${widget.receivingFilter}-${widget.requestStatusFilter ?? ''}-${widget.requestIdFilter ?? ''}-${widget.businessAccountIdFilter ?? ''}-${widget.invoiceIdFilter ?? ''}-${widget.demandIdFilter ?? ''}',
       ),
       length: sections.length,
       initialIndex: initialIndex < 0 ? 0 : initialIndex,
@@ -36940,11 +37509,13 @@ class OwnerWorkspaceSwitcherScreen
     extends StatefulWidget {
   final VoidCallback? onShopTap;
   final String currentWorkspace;
+  final bool showCloseButton;
 
   const OwnerWorkspaceSwitcherScreen({
     super.key,
     this.onShopTap,
     this.currentWorkspace = '',
+    this.showCloseButton = true,
   });
 
   @override
@@ -36955,6 +37526,8 @@ class OwnerWorkspaceSwitcherScreen
 class _OwnerWorkspaceSwitcherScreenState
     extends State<OwnerWorkspaceSwitcherScreen> {
   late Future<OwnerWorkspaceAccessSnapshot> _future;
+  StreamSubscription<AuthState>? _authBoundarySubscription;
+  String? _authBoundaryUserId;
 
   static const String _customerPhoto =
       'https://images.unsplash.com/photo-1775825772432-58a1a31dcf40'
@@ -36975,11 +37548,65 @@ class _OwnerWorkspaceSwitcherScreenState
   @override
   void initState() {
     super.initState();
-    _future = fetchOwnerWorkspaceAccessSnapshot();
+    _authBoundaryUserId =
+        supabase.auth.currentUser?.id.trim();
+    _future = _loadAccessForCurrentBoundary();
+
+    _authBoundarySubscription =
+        supabase.auth.onAuthStateChange.listen((authState) {
+      if (!mounted) return;
+
+      final rawUserId =
+          authState.session?.user.id.trim() ?? '';
+      final nextUserId =
+          rawUserId.isEmpty ? null : rawUserId;
+      final previousUserId = _authBoundaryUserId;
+
+      if (nextUserId == previousUserId) return;
+
+      _authBoundaryUserId = nextUserId;
+      clearHpjPrivateAccountMemory();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => nextUserId == null
+                ? const AuthGate()
+                : const OwnerWorkspaceSwitcherScreen(
+                    showCloseButton: false,
+                  ),
+          ),
+          (route) => false,
+        );
+      });
+    });
+  }
+
+  Future<OwnerWorkspaceAccessSnapshot>
+      _loadAccessForCurrentBoundary() async {
+    final operationBoundary =
+        captureHpjPrivateOperationBoundary();
+
+    final snapshot = await fetchOwnerWorkspaceAccessSnapshot();
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      throw StateError(
+        'Workspace access response became stale after account change.',
+      );
+    }
+
+    return snapshot;
+  }
+
+  @override
+  void dispose() {
+    _authBoundarySubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _reload() async {
-    final next = fetchOwnerWorkspaceAccessSnapshot();
+    final next = _loadAccessForCurrentBoundary();
 
     if (mounted) {
       setState(() {
@@ -36987,7 +37614,13 @@ class _OwnerWorkspaceSwitcherScreenState
       });
     }
 
-    await next;
+    try {
+      await next;
+    } catch (error) {
+      farmDebugLog(
+        'Workspace access reload skipped: $error',
+      );
+    }
   }
 
   bool _isCurrent(String value) {
@@ -37014,22 +37647,26 @@ class _OwnerWorkspaceSwitcherScreenState
   }
 
   void _openCustomer(bool marketplaceEnabled) {
-    if (!marketplaceEnabled) {
-      _switchRoot(const CustomerMarketplaceComingSoonScreen());
-      return;
-    }
-
-    final callback = widget.onShopTap;
-
-    if (callback != null) {
-      Navigator.of(context).pop();
-      callback();
-      return;
-    }
-
     unawaited(() async {
       final tab = await _rememberedTab('customer');
+      await saveHpjNavigationPreference(
+        workspace: 'customer',
+        tab: tab,
+      );
       if (!mounted) return;
+
+      if (!marketplaceEnabled) {
+        _switchRoot(const CustomerMarketplaceComingSoonScreen());
+        return;
+      }
+
+      final callback = widget.onShopTap;
+      if (callback != null) {
+        Navigator.of(context).pop();
+        callback();
+        return;
+      }
+
       _switchRoot(
         MainNavigation(initialIndex: tab),
       );
@@ -37039,6 +37676,10 @@ class _OwnerWorkspaceSwitcherScreenState
   void _openFarmer() {
     unawaited(() async {
       final tab = await _rememberedTab('farmer');
+      await saveHpjNavigationPreference(
+        workspace: 'farmer',
+        tab: tab,
+      );
       if (!mounted) return;
       _switchRoot(
         FarmerAccessGate(initialTab: tab),
@@ -37049,6 +37690,10 @@ class _OwnerWorkspaceSwitcherScreenState
   void _openWholesale() {
     unawaited(() async {
       final tab = await _rememberedTab('wholesale');
+      await saveHpjNavigationPreference(
+        workspace: 'wholesale',
+        tab: tab,
+      );
       if (!mounted) return;
       _switchRoot(
         BusinessWholesaleHubScreen(initialTab: tab),
@@ -37087,8 +37732,7 @@ class _OwnerWorkspaceSwitcherScreenState
 
     if (confirmed != true || !mounted) return;
 
-    await supabase.auth.signOut();
-    FarmDataCache.clearAll();
+    await signOutFromHpjSession();
 
     if (!mounted) return;
 
@@ -37110,14 +37754,16 @@ class _OwnerWorkspaceSwitcherScreenState
         backgroundColor: pageBackground,
         surfaceTintColor: Colors.transparent,
         automaticallyImplyLeading: false,
-        leading: IconButton(
-          tooltip: 'Close',
-          onPressed: _closeSwitcher,
-          icon: const Icon(
-            Icons.close_rounded,
-          ),
-        ),
-        titleSpacing: 2,
+        leading: widget.showCloseButton
+            ? IconButton(
+                tooltip: 'Close',
+                onPressed: _closeSwitcher,
+                icon: const Icon(
+                  Icons.close_rounded,
+                ),
+              )
+            : null,
+        titleSpacing: widget.showCloseButton ? 2 : 16,
         title: Row(
           children: [
             Container(
@@ -37188,8 +37834,7 @@ class _OwnerWorkspaceSwitcherScreenState
                 onRetry: _reload,
                 onCustomerSelected: () => _openCustomer(false),
                 onSignOut: () async {
-                  await supabase.auth.signOut();
-                  FarmDataCache.clearAll();
+                  await signOutFromHpjSession();
                   if (!mounted) return;
                   Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute<void>(
@@ -37210,9 +37855,19 @@ class _OwnerWorkspaceSwitcherScreenState
 
             final customerCurrent =
                 customerEnabled && _isCurrent('customer');
-            final wholesaleCurrent = _isCurrent('wholesale');
-            final farmerCurrent = _isCurrent('farmer');
-            final staffCurrent = _isCurrent('staff');
+
+            final wholesaleCurrent =
+                access.isApprovedWholesale &&
+                access.programSettings.wholesaleWorkspaceEnabled &&
+                _isCurrent('wholesale');
+
+            final farmerCurrent =
+                access.isApprovedFarmer &&
+                access.programSettings.farmerWorkspaceEnabled &&
+                _isCurrent('farmer');
+
+            final staffCurrent =
+                hasStaffAccess && _isCurrent('staff');
 
             final wholesaleStatus = wholesaleCurrent
                 ? 'Current'

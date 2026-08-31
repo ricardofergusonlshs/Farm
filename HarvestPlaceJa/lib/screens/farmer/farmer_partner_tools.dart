@@ -157,19 +157,13 @@ Future<List<FarmerMarketDemandOpportunity>> fetchFarmerMarketDemandBoard(
     params: {'p_horizon_days': horizonDays},
   );
 
-  final opportunities = (response as List)
+  return (response as List)
       .map(
         (row) => FarmerMarketDemandOpportunity.fromSupabase(
           Map<String, dynamic>.from(row as Map),
         ),
       )
       .toList();
-
-  // Watched crops create private, deduplicated demand updates in the
-  // unified HPJ notification center. This never exposes buyer identity.
-  unawaited(syncHpjFarmerDemandWatchNotifications(opportunities));
-
-  return opportunities;
 }
 
 Future<List<FarmerCollectionScheduleItem>>
@@ -531,12 +525,67 @@ class FarmerPartnerToolsCard extends StatelessWidget {
   }
 }
 
+class _FarmerNotificationFocusNotice extends StatelessWidget {
+  final bool found;
+  final String foundMessage;
+  final String missingMessage;
+
+  const _FarmerNotificationFocusNotice({
+    required this.found,
+    required this.foundMessage,
+    required this.missingMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = found ? FarmColors.primary : FarmColors.warning;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: found ? FarmColors.primarySoft : const Color(0xFFFFF7E8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accent.withOpacity(0.25),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            found
+                ? Icons.notifications_active_outlined
+                : Icons.info_outline_rounded,
+            size: 18,
+            color: accent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              found ? foundMessage : missingMessage,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 10,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class FarmerDemandBoardScreen extends StatefulWidget {
   final FarmerProfile profile;
+  final String? initialWatchKey;
 
   const FarmerDemandBoardScreen({
     super.key,
     required this.profile,
+    this.initialWatchKey,
   });
 
   @override
@@ -695,7 +744,27 @@ class _FarmerDemandBoardScreenState extends State<FarmerDemandBoardScreen> {
             return Center(child: Text(friendlyAppError(snapshot.error!)));
           }
 
-          final rows = snapshot.data ?? const <FarmerMarketDemandOpportunity>[];
+          final allRows =
+              snapshot.data ?? const <FarmerMarketDemandOpportunity>[];
+
+          final requestedWatchKey = widget.initialWatchKey?.trim() ?? '';
+
+          final focusedRows = requestedWatchKey.isEmpty
+              ? const <FarmerMarketDemandOpportunity>[]
+              : allRows
+                  .where(
+                    (item) =>
+                        hpjFarmerDemandWatchKey(
+                          item.productName,
+                          item.unit,
+                        ) ==
+                        requestedWatchKey,
+                  )
+                  .toList();
+
+          final exactDemandFound = focusedRows.isNotEmpty;
+          final rows = exactDemandFound ? focusedRows : allRows;
+
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
@@ -741,6 +810,16 @@ class _FarmerDemandBoardScreenState extends State<FarmerDemandBoardScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (requestedWatchKey.isNotEmpty) ...[
+                  _FarmerNotificationFocusNotice(
+                    found: exactDemandFound,
+                    foundMessage:
+                        'Opened from your notification. Showing the matching buyer-demand signal.',
+                    missingMessage:
+                        'That demand signal has changed or is no longer active. Showing current buyer demand instead.',
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (rows.isEmpty)
                   const FarmEmptyState(
                     icon: Icons.trending_up_outlined,
@@ -863,32 +942,13 @@ class _FarmerDemandBoardScreenState extends State<FarmerDemandBoardScreen> {
                             ),
                             if (item.opportunityGap > 0) ...[
                               const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: HpjWatchButton(
-                                      workspace: 'farmer',
-                                      watchType: 'farmer_demand',
-                                      entityKey: hpjFarmerDemandWatchKey(
-                                        item.productName,
-                                        item.unit,
-                                      ),
-                                      entityName:
-                                          '${item.productName} buyer demand',
-                                      compact: true,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    flex: 2,
-                                    child: ElevatedButton.icon(
-                                      onPressed: () => _reportSupply(item),
-                                      icon: const Icon(
-                                          Icons.agriculture_outlined),
-                                      label: const Text('I Can Supply This'),
-                                    ),
-                                  ),
-                                ],
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _reportSupply(item),
+                                  icon: const Icon(Icons.agriculture_outlined),
+                                  label: const Text('I Can Supply This'),
+                                ),
                               ),
                             ],
                           ],
@@ -1176,10 +1236,12 @@ class _FarmerDemandSupplySheetState extends State<_FarmerDemandSupplySheet> {
 
 class FarmerCollectionScheduleScreen extends StatefulWidget {
   final FarmerProfile profile;
+  final String? initialCollectionId;
 
   const FarmerCollectionScheduleScreen({
     super.key,
     required this.profile,
+    this.initialCollectionId,
   });
 
   @override
@@ -1257,7 +1319,23 @@ class _FarmerCollectionScheduleScreenState
             return Center(child: Text(friendlyAppError(snapshot.error!)));
           }
 
-          final rows = snapshot.data ?? const <FarmerCollectionScheduleItem>[];
+          final allRows =
+              snapshot.data ?? const <FarmerCollectionScheduleItem>[];
+
+          final requestedCollectionId =
+              widget.initialCollectionId?.trim() ?? '';
+
+          final focusedRows = requestedCollectionId.isEmpty
+              ? const <FarmerCollectionScheduleItem>[]
+              : allRows
+                  .where(
+                    (item) => item.id.trim() == requestedCollectionId,
+                  )
+                  .toList();
+
+          final exactCollectionFound = focusedRows.isNotEmpty;
+          final rows = exactCollectionFound ? focusedRows : allRows;
+
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
@@ -1287,6 +1365,16 @@ class _FarmerCollectionScheduleScreenState
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (requestedCollectionId.isNotEmpty) ...[
+                  _FarmerNotificationFocusNotice(
+                    found: exactCollectionFound,
+                    foundMessage:
+                        'Opened from your notification. Showing the related collection stop.',
+                    missingMessage:
+                        'That collection stop is no longer available. Showing your current collection schedule instead.',
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (rows.isEmpty)
                   const FarmEmptyState(
                     icon: Icons.local_shipping_outlined,
@@ -1308,55 +1396,36 @@ class _FarmerCollectionScheduleScreenState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                HpjProductThumb(
-                                  productName: item.productName,
-                                  size: 72,
-                                  radius: 14,
-                                ),
-                                const SizedBox(width: 11),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.productName,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: FarmColors.ink,
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 5,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: color.withOpacity(0.10),
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                        ),
-                                        child: Text(
-                                          _statusLabel(item),
-                                          style: TextStyle(
-                                            color: color,
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                  child: Text(
+                                    item.productName,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    _statusLabel(item),
+                                    style: TextStyle(
+                                      color: color,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 9),
+                            const SizedBox(height: 7),
                             Text(
                               '${_farmerPartnerDate(item.collectionDate)} • $method • Stop ${item.sequenceNo}',
                               style: const TextStyle(

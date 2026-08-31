@@ -14178,12 +14178,47 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-                children: const [
-                  FarmEmptyState(
+                children: [
+                  const FarmEmptyState(
                     icon: Icons.search_off_rounded,
                     title: 'Order unavailable',
                     message:
-                        'We could not open this order right now. Please go back to Orders and try again.',
+                        'HPJ could not open this order right now. You can retry the lookup or return to My Orders.',
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        unawaited(_refreshOrderDetails());
+                      },
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Try Again'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final navigator = Navigator.of(context);
+
+                        if (navigator.canPop()) {
+                          navigator.maybePop();
+                          return;
+                        }
+
+                        navigator.pushAndRemoveUntil(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const MainNavigation(initialIndex: 3),
+                          ),
+                          (route) => false,
+                        );
+                      },
+                      icon: const Icon(Icons.receipt_long_outlined),
+                      label: const Text('Back to My Orders'),
+                    ),
                   ),
                 ],
               );
@@ -14841,31 +14876,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     FarmDataCache.notifications = null;
   }
 
-  Future<void> markSingleNotificationRead(
-    FarmNotification notice,
-  ) async {
-    if (notice.isRead || notice.id.trim().isEmpty) {
-      return;
-    }
-
-    try {
-      await supabase.from('notifications').update({
-        'is_read': true,
-      }).eq('id', notice.id);
-
-      FarmDataCache.notifications = null;
-
-      if (mounted) {
-        setState(() {
-          refreshKey++;
-        });
-      }
-    } catch (error) {
-      farmDebugLog(
-        'Could not mark notification as read: $error',
-      );
-    }
-  }
 
   Future<void> deleteSelectedNotifications() async {
     if (selectedNotificationIds.isEmpty) return;
@@ -14956,23 +14966,98 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _openNotification(FarmNotification notice) async {
-    await markSingleNotificationRead(notice);
-    if (!mounted) return;
-
     final opened = await PushNotificationService.openFarmNotification(
       notice,
       context: context,
     );
 
-    if (!mounted || opened) return;
+    if (!mounted) return;
+
+    if (opened) {
+      FarmDataCache.notifications = null;
+      setState(() {
+        refreshKey++;
+      });
+      return;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'This update does not have a direct page yet.',
+          'This update is still unread because its destination could not be opened.',
         ),
       ),
     );
+  }
+
+  String _noticeType(FarmNotification notice) =>
+      notice.type.trim().toLowerCase();
+
+  String _noticeAction(FarmNotification notice) =>
+      hpjCanonicalNotificationActionType(notice.actionType);
+
+  bool _isOrderNotice(FarmNotification notice) {
+    final type = _noticeType(notice);
+    final action = _noticeAction(notice);
+    return notice.hasOrderLink ||
+        const <String>{
+          'order',
+          'payment',
+          'delivery',
+        }.contains(type) ||
+        const <String>{
+          'order',
+          'admin_customer_order',
+          'wholesale_order',
+          'admin_wholesale_order',
+          'admin_wholesale_payment',
+        }.contains(action);
+  }
+
+  bool _isSupportNotice(FarmNotification notice) {
+    final type = _noticeType(notice);
+    final action = _noticeAction(notice);
+    return type == 'support' ||
+        type == 'review' ||
+        const <String>{
+          'support_chat',
+          'admin_support_chat',
+          'admin_review',
+        }.contains(action);
+  }
+
+  bool _isStockNotice(FarmNotification notice) {
+    final type = _noticeType(notice);
+    final action = _noticeAction(notice);
+    return type == 'stock' ||
+        type == 'product_ready' ||
+        const <String>{
+          'customer_product',
+          'wholesale_product',
+          'admin_inventory',
+          'admin_product_approval',
+        }.contains(action);
+  }
+
+  bool _isWatchingNotice(FarmNotification notice) {
+    final type = _noticeType(notice);
+    return type == 'watch' || type == 'price_drop';
+  }
+
+  bool _isFarmerNotice(FarmNotification notice) {
+    final type = _noticeType(notice);
+    final action = _noticeAction(notice);
+    return type.startsWith('farmer_') ||
+        action.startsWith('farmer_') ||
+        action == 'admin_farmer_application';
+  }
+
+  bool _isWholesaleNotice(FarmNotification notice) {
+    final type = _noticeType(notice);
+    final action = _noticeAction(notice);
+    return type == 'wholesale' ||
+        action.startsWith('wholesale_') ||
+        action.startsWith('admin_wholesale_');
   }
 
   bool _matchesFilter(FarmNotification notice) {
@@ -14980,18 +15065,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'unread':
         return !notice.isRead;
       case 'orders':
-        return notice.hasOrderLink ||
-            notice.type == 'order' ||
-            notice.type == 'payment' ||
-            notice.type == 'delivery';
+        return _isOrderNotice(notice);
       case 'support':
-        return notice.type == 'support' || notice.type == 'review';
+        return _isSupportNotice(notice);
       case 'stock':
-        return notice.type == 'stock' || notice.type == 'product_ready';
+        return _isStockNotice(notice);
       case 'watching':
-        return notice.type == 'watch' ||
-            notice.type == 'price_drop' ||
-            notice.type == 'farmer_demand';
+        return _isWatchingNotice(notice);
+      case 'farmer':
+        return _isFarmerNotice(notice);
+      case 'wholesale':
+        return _isWholesaleNotice(notice);
       default:
         return true;
     }
@@ -15051,27 +15135,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             final notifications = snapshot.data ?? const <FarmNotification>[];
             final unreadCount =
                 notifications.where((notice) => !notice.isRead).length;
-            final orderCount = notifications
-                .where((notice) =>
-                    notice.hasOrderLink ||
-                    notice.type == 'order' ||
-                    notice.type == 'payment' ||
-                    notice.type == 'delivery')
-                .length;
-            final supportCount = notifications
-                .where((notice) =>
-                    notice.type == 'support' || notice.type == 'review')
-                .length;
-            final stockCount = notifications
-                .where((notice) =>
-                    notice.type == 'stock' || notice.type == 'product_ready')
-                .length;
-            final watchCount = notifications
-                .where((notice) =>
-                    notice.type == 'watch' ||
-                    notice.type == 'price_drop' ||
-                    notice.type == 'farmer_demand')
-                .length;
+            final orderCount =
+                notifications.where(_isOrderNotice).length;
+            final supportCount =
+                notifications.where(_isSupportNotice).length;
+            final stockCount =
+                notifications.where(_isStockNotice).length;
+            final watchCount =
+                notifications.where(_isWatchingNotice).length;
+            final farmerCount =
+                notifications.where(_isFarmerNotice).length;
+            final wholesaleCount =
+                notifications.where(_isWholesaleNotice).length;
 
             final filtered = notifications.where(_matchesFilter).toList()
               ..sort((a, b) {
@@ -15103,6 +15178,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     supportCount: supportCount,
                     stockCount: stockCount,
                     watchCount: watchCount,
+                    farmerCount: farmerCount,
+                    wholesaleCount: wholesaleCount,
                     onSelected: (value) =>
                         setState(() => selectedFilter = value),
                   ),
@@ -15119,7 +15196,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       icon: Icons.filter_alt_off_rounded,
                       title: 'Nothing in this view',
                       message:
-                          'Try All updates to see everything from the farm.',
+                          'Try All updates to see everything across HPJ.',
                       actionLabel: 'Show all',
                       actionIcon: Icons.notifications_active_outlined,
                       onAction: () => setState(() => selectedFilter = 'all'),
@@ -15224,8 +15301,8 @@ class NotificationCenterHero extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   totalCount == 0
-                      ? 'Your farm updates will appear here.'
-                      : 'Orders, private support, watched products, buyer demand, and stock alerts in one place.',
+                      ? 'Your HPJ updates will appear here.'
+                      : 'Orders, Farmer, Wholesale, product and support updates in one place.',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.82),
                     height: 1.25,
@@ -15269,6 +15346,8 @@ class NotificationFilterBar extends StatelessWidget {
   final int supportCount;
   final int stockCount;
   final int watchCount;
+  final int farmerCount;
+  final int wholesaleCount;
   final ValueChanged<String> onSelected;
 
   const NotificationFilterBar({
@@ -15279,6 +15358,8 @@ class NotificationFilterBar extends StatelessWidget {
     required this.supportCount,
     required this.stockCount,
     required this.watchCount,
+    required this.farmerCount,
+    required this.wholesaleCount,
     required this.onSelected,
   });
 
@@ -15354,6 +15435,20 @@ class NotificationFilterBar extends StatelessWidget {
             label: 'Watching',
             count: watchCount,
             icon: Icons.visibility_outlined,
+          ),
+          const SizedBox(width: 8),
+          _chip(
+            value: 'farmer',
+            label: 'Farmer',
+            count: farmerCount,
+            icon: Icons.agriculture_outlined,
+          ),
+          const SizedBox(width: 8),
+          _chip(
+            value: 'wholesale',
+            label: 'Wholesale',
+            count: wholesaleCount,
+            icon: Icons.storefront_outlined,
           ),
           const SizedBox(width: 8),
           _chip(
@@ -16194,13 +16289,6 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
       if (mounted) {
         FocusScope.of(context).unfocus();
       }
-      await createAdminNotification(
-        title: 'New HPJ Inbox reply',
-        message: 'Conversation #${widget.ticket.shortId} has a new user reply.',
-        type: 'support',
-        actionType: 'admin_support_chat',
-        actionId: widget.ticket.id,
-      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -16735,7 +16823,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               FarmCard(
                 padding: const EdgeInsets.all(18),
                 child: FutureBuilder<List<Product>>(
-                  future: fetchProducts(),
+                  future: fetchReviewEligibleProducts(),
                   builder: (context, snapshot) {
                     final products = (snapshot.data ?? const <Product>[])
                         .where((product) => product.isCustomerVisible)
@@ -16756,7 +16844,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          'Help other shoppers choose fresh picks with confidence.',
+                          products.isEmpty
+                              ? 'Complete an HPJ order before sharing a product review.'
+                              : 'Only products from your paid, completed HPJ orders appear here.',
                           style: TextStyle(
                             color: FarmColors.mutedText,
                             height: 1.35,
@@ -16767,9 +16857,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         DropdownButtonFormField<Product>(
                           value: selected,
                           isExpanded: true,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Product you tried',
-                            prefixIcon: Icon(Icons.shopping_basket_outlined),
+                            hintText: products.isEmpty
+                                ? 'No completed-order products yet'
+                                : 'Choose a purchased product',
+                            prefixIcon:
+                                const Icon(Icons.shopping_basket_outlined),
                           ),
                           items: products.map((product) {
                             return DropdownMenuItem<Product>(
@@ -16781,10 +16875,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
                               ),
                             );
                           }).toList(),
-                          onChanged: (Product? product) {
-                            if (product == null) return;
-                            setState(() => selectedProduct = product);
-                          },
+                          onChanged: products.isEmpty
+                              ? null
+                              : (Product? product) {
+                                  if (product == null) return;
+                                  setState(
+                                    () => selectedProduct = product,
+                                  );
+                                },
                         ),
                         const SizedBox(height: 16),
                         ReviewRatingSelector(
@@ -19588,9 +19686,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     if (mounted) setState(() => loading = true);
 
+    final checkoutBoundary =
+        captureHpjPrivateOperationBoundary();
+
     SecureCartQuote secureQuote;
     try {
       secureQuote = await fetchSecureCartQuote(widget.cartLines);
+
+      if (!isHpjPrivateOperationBoundaryCurrent(checkoutBoundary)) {
+        throw const HpjPrivateMutationInterruptedException();
+      }
     } catch (error) {
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
@@ -19607,10 +19712,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    HpjPrivateMutationLease? mutationLease;
+
     try {
+      mutationLease = acquireHpjPrivateMutation(
+        'customer-checkout',
+        expectedBoundary: checkoutBoundary,
+      );
+
+      mutationLease.ensureCurrent();
+
       final signedInUser = supabase.auth.currentUser;
-      if (signedInUser == null) {
-        throw Exception('Please sign in before placing an order.');
+      if (signedInUser == null ||
+          signedInUser.id.trim() != checkoutBoundary.userId) {
+        throw const HpjPrivateMutationInterruptedException();
       }
 
       final secureSubtotal = secureQuote.subtotal;
@@ -19680,14 +19795,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'Promo requested: $requestedCouponCode',
       ].join('\n');
 
+      final checkoutIdempotencyKey =
+          newHpjIdempotencyKey('customer-checkout');
+
       final checkoutRpc = requestedCouponCode == null
-          ? 'secure_checkout'
-          : 'secure_checkout_with_coupon';
+          ? 'secure_checkout_idempotent'
+          : 'secure_checkout_with_coupon_idempotent';
+
       final checkoutParams = <String, dynamic>{
         'p_customer': customerPayload,
         'p_items': rpcItems,
         'p_payment_method': selectedPaymentMethod,
         'p_notes': checkoutNotes.isEmpty ? null : checkoutNotes,
+        'p_idempotency_key': checkoutIdempotencyKey,
       };
 
       if (requestedCouponCode != null) {
@@ -19698,6 +19818,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         checkoutRpc,
         params: checkoutParams,
       );
+
+      mutationLease.ensureCurrent();
 
       if (checkoutResponse is! Map) {
         throw Exception(
@@ -19751,10 +19873,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         farmDebugLog('Checkout metadata update skipped: $error');
       }
 
+      mutationLease.ensureCurrent();
+
       await ensureStockReducedAfterCheckout(
         orderId: orderId,
         checkoutLines: secureQuote.lines,
       );
+
+      mutationLease.ensureCurrent();
 
       await createOrderConfirmationSupport(
         orderId: orderId,
@@ -19763,6 +19889,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         customerEmail: signedInUser.email,
         total: total,
       );
+
+      mutationLease.ensureCurrent();
 
       await createFarmNotification(
         title: 'Order placed',
@@ -19773,7 +19901,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         userId: signedInUser.id,
         userEmail: signedInUser.email,
         orderId: orderId,
+        actionType: 'order',
+        actionId: orderId,
+        dedupeKey: 'customer-order-created:$orderId',
       );
+
+      mutationLease.ensureCurrent();
 
       await createAdminNotification(
         title: 'New order received',
@@ -19781,7 +19914,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             '$name placed order #${shortIdLabel(orderId)} for ${formatJmd(total)}.',
         type: 'admin',
         orderId: orderId,
+        actionType: 'admin_customer_order',
+        actionId: orderId,
+        dedupeKey: 'admin-order-created:$orderId',
       );
+
+      mutationLease.ensureCurrent();
 
       if (selectedPaymentMethod == 'bank_transfer') {
         await createAdminNotification(
@@ -19790,10 +19928,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               'Order #${shortIdLabel(orderId)} is awaiting bank transfer verification. Reference: ${bankReference ?? 'not provided'}.',
           type: 'payment',
           orderId: orderId,
+          actionType: 'admin_customer_order',
+          actionId: orderId,
+          dedupeKey: 'admin-bank-transfer:$orderId',
         );
+
+        mutationLease.ensureCurrent();
       }
 
       await notifyAdminsAboutLowStockAfterCheckout(secureQuote.lines);
+
+      mutationLease.ensureCurrent();
 
       final orderShortId = orderId.length >= 6
           ? orderId.substring(0, 6).toUpperCase()
@@ -19812,13 +19957,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (!mounted) return;
 
+      mutationLease.ensureCurrent();
+
       await _saveSmartCheckoutDefaults();
+
+      mutationLease.ensureCurrent();
 
 // Clear the visible My Box immediately.
       widget.onOrderPlaced();
 
 // Clear the saved Supabase cart.
       await clearSavedCartForCurrentUser();
+
+      mutationLease.ensureCurrent();
 
       if (!mounted) return;
 
@@ -19840,6 +19991,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         SnackBar(content: Text('Checkout failed: ${friendlyAppError(error)}')),
       );
     } finally {
+      mutationLease?.release();
       if (mounted) setState(() => loading = false);
     }
   }

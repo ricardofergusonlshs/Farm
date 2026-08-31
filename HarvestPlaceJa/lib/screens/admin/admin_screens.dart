@@ -107,49 +107,17 @@ Future<List<NotificationTarget>> fetchAdminNotificationTargets() async {
   void addTarget({String? userId, String? email}) {
     final cleanUserId = userId?.trim();
     final cleanEmail = email?.trim().toLowerCase();
-
     if ((cleanUserId == null || cleanUserId.isEmpty) &&
         (cleanEmail == null || cleanEmail.isEmpty)) {
       return;
     }
-
     final key = '${cleanUserId ?? ''}|${cleanEmail ?? ''}';
     if (!seen.add(key)) return;
-
-    targets.add(
-      NotificationTarget(
-        userId: cleanUserId,
-        userEmail: cleanEmail,
-      ),
-    );
-  }
-
-  try {
-    final response = await supabase
-        .from('staff_users')
-        .select('user_id, email, role, is_active')
-        .eq('is_active', true);
-
-    for (final item in response as List) {
-      final row = Map<String, dynamic>.from(item as Map);
-      final role = normalizeStaffRole(row['role']?.toString());
-
-      if (!const <String>{'owner', 'manager', 'support'}.contains(role)) {
-        continue;
-      }
-
-      addTarget(
-        userId: row['user_id']?.toString(),
-        email: row['email']?.toString(),
-      );
-    }
-  } catch (error) {
-    farmDebugLog('Staff notification target lookup skipped: $error');
+    targets.add(NotificationTarget(userId: cleanUserId, userEmail: cleanEmail));
   }
 
   Future<void> readAdmins(String selectFields) async {
     final response = await supabase.from('admin_users').select(selectFields);
-
     for (final item in response as List) {
       final row = Map<String, dynamic>.from(item as Map);
       addTarget(
@@ -161,14 +129,16 @@ Future<List<NotificationTarget>> fetchAdminNotificationTargets() async {
 
   try {
     await readAdmins('user_id, email');
-  } catch (_) {
+  } catch (firstError) {
     try {
       await readAdmins('id, email');
-    } catch (_) {
+    } catch (secondError) {
       try {
         await readAdmins('email');
-      } catch (error) {
-        farmDebugLog('Legacy admin target lookup skipped: $error');
+      } catch (thirdError) {
+        farmDebugLog(
+          'Admin notification target lookup skipped: $firstError / $secondError / $thirdError',
+        );
       }
     }
   }
@@ -183,7 +153,58 @@ Future<void> createAdminNotification({
   String? orderId,
   String? actionType,
   String? actionId,
+  String? dedupeKey,
 }) async {
+  final cleanType = type.trim().toLowerCase().isEmpty
+      ? 'admin'
+      : type.trim().toLowerCase();
+  final cleanOrderId = orderId?.trim() ?? '';
+  var resolvedActionType =
+      hpjCanonicalNotificationActionType(actionType);
+  var resolvedActionId = actionId?.trim() ?? '';
+
+  // Staff notifications must never inherit the shared customer order fallback.
+  if (resolvedActionType.isEmpty && cleanOrderId.isNotEmpty) {
+    resolvedActionType = 'admin_customer_order';
+    resolvedActionId = cleanOrderId;
+  }
+
+  if (resolvedActionType.isEmpty) {
+    switch (cleanType) {
+      case 'stock':
+      case 'product_ready':
+        resolvedActionType = 'admin_inventory';
+        break;
+      case 'review':
+        resolvedActionType = 'admin_review';
+        break;
+      case 'farmer':
+        resolvedActionType = 'admin_farmer_application';
+        break;
+      case 'support':
+        resolvedActionType = 'admin_support_chat';
+        break;
+    }
+  }
+
+  if (resolvedActionId.isEmpty &&
+      cleanOrderId.isNotEmpty &&
+      resolvedActionType == 'admin_customer_order') {
+    resolvedActionId = cleanOrderId;
+  }
+
+  if (resolvedActionType.isEmpty) {
+    farmDebugLog(
+      'Admin notification has no explicit destination: "$title".',
+    );
+  } else if (hpjNotificationActionBenefitsFromId(resolvedActionType) &&
+      resolvedActionId.isEmpty) {
+    farmDebugLog(
+      'Admin notification destination $resolvedActionType has no record id: '
+      '"$title".',
+    );
+  }
+
   try {
     final targets = await fetchAdminNotificationTargets();
     if (targets.isEmpty) {
@@ -193,15 +214,23 @@ Future<void> createAdminNotification({
     }
 
     for (final target in targets) {
+      final targetKey = target.userId?.trim().isNotEmpty == true
+          ? target.userId!.trim()
+          : (target.userEmail ?? '').trim().toLowerCase();
+
       await createFarmNotification(
         title: title,
         message: message,
-        type: type,
+        type: cleanType,
         userId: target.userId,
         userEmail: target.userEmail,
-        orderId: orderId,
-        actionType: actionType,
-        actionId: actionId,
+        orderId: cleanOrderId.isEmpty ? null : cleanOrderId,
+        actionType:
+            resolvedActionType.isEmpty ? null : resolvedActionType,
+        actionId: resolvedActionId.isEmpty ? null : resolvedActionId,
+        dedupeKey: dedupeKey == null || dedupeKey.trim().isEmpty
+            ? null
+            : '${dedupeKey.trim()}:${targetKey.isEmpty ? 'staff' : targetKey}',
       );
     }
   } catch (error) {
@@ -275,6 +304,10 @@ Future<void> notifyAdminsAboutLowStockAfterCheckout(
         title: title,
         message: message,
         type: 'stock',
+        actionType: 'admin_inventory',
+        actionId: product.id,
+        dedupeKey:
+            'admin-stock:${product.id}:${product.stockQuantity}',
       );
     } catch (error) {
       farmDebugLog(
@@ -709,6 +742,32 @@ Future<bool> isCurrentUserAdminFromDatabase() async {
   final user = supabase.auth.currentUser;
   if (user == null) return false;
 
+  // Preferred release-safe check. Migration 007 installs this as a
+  // SECURITY DEFINER helper so Owner/Manager verification is not blocked by
+  // staff_users/admin_users RLS. Older databases simply fall through to the
+  // existing compatibility checks below.
+  try {
+    final secureRoleCheck = await supabase.rpc(
+      'hpj_user_has_staff_role',
+      params: {
+        'p_roles': <String>[
+          'owner',
+          'manager',
+          'packer',
+          'delivery',
+          'inventory',
+          'support',
+        ],
+      },
+    );
+
+    if (secureRoleCheck == true) return true;
+  } catch (error) {
+    farmDebugLog(
+      'Secure staff role helper unavailable; using compatibility checks: $error',
+    );
+  }
+
   final staffRole = await fetchCurrentStaffRole();
   if (isStaffRoleActive(staffRole)) return true;
 
@@ -914,11 +973,24 @@ PreferredSizeWidget _farmerWorkspaceAppBar(
 
 class FarmerAccessGate extends StatelessWidget {
   final int initialTab;
+  final String? initialRecordId;
 
   const FarmerAccessGate({
     super.key,
     this.initialTab = 0,
+    this.initialRecordId,
   });
+
+  void _retryAccess(BuildContext context) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => FarmerAccessGate(
+          initialTab: initialTab,
+          initialRecordId: initialRecordId,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -950,11 +1022,14 @@ class FarmerAccessGate extends StatelessWidget {
             body: FarmPage(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-                children: const [
+                children: [
                   _MarketplaceProgramNotice(
                     icon: Icons.error_outline,
                     title: 'Could not load farmer access',
-                    message: 'Please check your connection and try again.',
+                    message:
+                        'Please check your connection and try again.',
+                    actionLabel: 'Try Again',
+                    onAction: () => _retryAccess(context),
                   ),
                 ],
               ),
@@ -972,12 +1047,14 @@ class FarmerAccessGate extends StatelessWidget {
             body: FarmPage(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-                children: const [
+                children: [
                   _MarketplaceProgramNotice(
                     icon: Icons.agriculture_outlined,
                     title: 'Farmer applications are paused',
                     message:
                         'You can continue shopping as a customer. Please check again when farmer applications reopen.',
+                    actionLabel: 'Refresh Status',
+                    onAction: () => _retryAccess(context),
                   ),
                 ],
               ),
@@ -989,6 +1066,47 @@ class FarmerAccessGate extends StatelessWidget {
           return const FarmerPartnerIntroScreen();
         }
 
+        if (!profile.isApproved) {
+          final status =
+              profile.verificationStatus.trim().toLowerCase();
+          final rejected = status == 'rejected';
+
+          return Scaffold(
+            backgroundColor: FarmColors.background,
+            appBar: _farmerWorkspaceAppBar(
+              context,
+              'Farmer Partner',
+            ),
+            body: FarmPage(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  18,
+                  18,
+                  18,
+                  120,
+                ),
+                children: [
+                  FarmerStatusCard(profile: profile),
+                  const SizedBox(height: 14),
+                  _MarketplaceProgramNotice(
+                    icon: rejected
+                        ? Icons.info_outline_rounded
+                        : Icons.schedule_outlined,
+                    title: rejected
+                        ? 'Farmer application needs attention'
+                        : 'Farmer application under review',
+                    message: rejected
+                        ? 'Your Farmer workspace is not active. Review your application details or contact HPJ Support if you need help before trying again.'
+                        : 'HPJ is reviewing your Farmer application. Supply, collections, payouts and Farmer market-demand tools will unlock after approval.',
+                    actionLabel: 'Refresh Status',
+                    onAction: () => _retryAccess(context),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         if (!settings.farmerWorkspaceEnabled) {
           return Scaffold(
             backgroundColor: FarmColors.background,
@@ -996,12 +1114,14 @@ class FarmerAccessGate extends StatelessWidget {
             body: FarmPage(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-                children: const [
+                children: [
                   _MarketplaceProgramNotice(
                     icon: Icons.pause_circle_outline,
                     title: 'Farmer workspace is temporarily paused',
                     message:
                         'Your farmer profile and approval status are safe. Regular customer shopping remains available.',
+                    actionLabel: 'Refresh Status',
+                    onAction: () => _retryAccess(context),
                   ),
                 ],
               ),
@@ -1012,6 +1132,7 @@ class FarmerAccessGate extends StatelessWidget {
         return FarmerMarketplaceShell(
           profile: profile,
           initialIndex: initialTab,
+          initialRecordId: initialRecordId,
         );
       },
     );
@@ -1511,14 +1632,11 @@ class _FarmerOnboardingScreenState
                   ),
                   const SizedBox(height: 11),
 
-                  TextField(
-                    controller:
-                        parishController,
+                  JamaicaParishDropdown(
+                    controller: parishController,
+                    label: 'Parish *',
                     enabled: !loading,
-                    decoration:
-                        const InputDecoration(
-                      labelText: 'Parish',
-                    ),
+                    prefixIcon: Icons.map_outlined,
                   ),
                 ],
               ),
@@ -1736,27 +1854,66 @@ class _FarmerOnboardingScreenState
 class FarmerMarketplaceShell extends StatefulWidget {
   final FarmerProfile profile;
   final int initialIndex;
+  final String? initialRecordId;
 
   const FarmerMarketplaceShell({
     super.key,
     required this.profile,
     this.initialIndex = 0,
+    this.initialRecordId,
   });
 
   @override
   State<FarmerMarketplaceShell> createState() => _FarmerMarketplaceShellState();
 }
 
-class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell> {
+class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
+    with WidgetsBindingObserver {
   int selectedIndex = 0;
   int refreshKey = 0;
   late FarmerProfile currentProfile;
+  StreamSubscription<AuthState>? _authBoundarySubscription;
+  String? _authBoundaryUserId;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     selectedIndex = widget.initialIndex.clamp(0, 4).toInt();
     currentProfile = widget.profile;
+    _authBoundaryUserId =
+        supabase.auth.currentUser?.id.trim();
+
+    _authBoundarySubscription =
+        supabase.auth.onAuthStateChange.listen((authState) {
+      if (!mounted) return;
+
+      final rawUserId =
+          authState.session?.user.id.trim() ?? '';
+      final nextUserId =
+          rawUserId.isEmpty ? null : rawUserId;
+      final previousUserId = _authBoundaryUserId;
+
+      if (nextUserId == previousUserId) return;
+
+      _authBoundaryUserId = nextUserId;
+      clearHpjPrivateAccountMemory();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => nextUserId == null
+                ? const AuthGate()
+                : const OwnerWorkspaceSwitcherScreen(
+                    showCloseButton: false,
+                  ),
+          ),
+          (route) => false,
+        );
+      });
+    });
+
     unawaited(
       saveHpjNavigationPreference(
         workspace: 'farmer',
@@ -1766,14 +1923,92 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell> {
   }
 
   Future<void> _reloadProfile() async {
+    final operationBoundary =
+        captureHpjPrivateOperationBoundary();
+
     final latest = await fetchCurrentFarmerProfile();
 
-    if (!mounted || latest == null) return;
+    if (!mounted ||
+        latest == null ||
+        !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return;
+    }
 
     setState(() {
       currentProfile = latest;
       refreshKey++;
     });
+  }
+
+  Future<void> _revalidateFarmerWorkspace() async {
+    if (!mounted) return;
+
+    final operationBoundary =
+        captureHpjPrivateOperationBoundary();
+
+    if (!isLoggedIn || supabase.auth.currentUser == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const AuthGate(),
+          ),
+          (route) => false,
+        );
+      });
+      return;
+    }
+
+    try {
+      final access = await fetchOwnerWorkspaceAccessSnapshot();
+
+      if (!mounted ||
+          !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        return;
+      }
+
+      final latest = access.farmerProfile;
+      final active = latest != null &&
+          latest.isApproved &&
+          access.programSettings.farmerWorkspaceEnabled;
+
+      if (!active) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute<void>(
+              builder: (_) => const FarmerAccessGate(
+                initialTab: 0,
+              ),
+            ),
+            (route) => false,
+          );
+        });
+        return;
+      }
+
+      setState(() {
+        currentProfile = latest;
+        refreshKey++;
+      });
+    } catch (error) {
+      farmDebugLog(
+        'Farmer workspace resume validation skipped: $error',
+      );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(_revalidateFarmerWorkspace());
+  }
+
+  @override
+  void dispose() {
+    _authBoundarySubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   static const _pageTitles = <String>[
@@ -1838,6 +2073,9 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell> {
       FarmerSupplyScreen(
         profile: profile,
         refreshKey: refreshKey,
+        initialSupplyId: selectedIndex == 1
+            ? widget.initialRecordId
+            : null,
       ),
       FarmerOrdersScreen(
         profile: profile,
@@ -1846,6 +2084,9 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell> {
       FarmerEarningsScreen(
         profile: profile,
         refreshKey: refreshKey,
+        initialPayoutId: selectedIndex == 3
+            ? widget.initialRecordId
+            : null,
       ),
       FarmerAccountScreen(
         profile: profile,
@@ -5746,14 +5987,74 @@ class _FarmerSupplyEntrySheetState
   }
 }
 
+
+class _FarmerRecordFocusNotice extends StatelessWidget {
+  final bool found;
+  final String foundMessage;
+  final String missingMessage;
+
+  const _FarmerRecordFocusNotice({
+    required this.found,
+    required this.foundMessage,
+    required this.missingMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = found
+        ? FarmColors.primary
+        : FarmColors.warning;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: found
+            ? FarmColors.primarySoft
+            : const Color(0xFFFFF7E8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accent.withOpacity(0.25),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            found
+                ? Icons.notifications_active_outlined
+                : Icons.info_outline_rounded,
+            size: 18,
+            color: accent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              found ? foundMessage : missingMessage,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 10,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class FarmerSupplyScreen extends StatefulWidget {
   final FarmerProfile profile;
   final int refreshKey;
+  final String? initialSupplyId;
 
   const FarmerSupplyScreen({
     super.key,
     required this.profile,
     required this.refreshKey,
+    this.initialSupplyId,
   });
 
   @override
@@ -5870,14 +6171,30 @@ class _FarmerSupplyScreenState
                   const <
                       FarmerSupplyForecast>[];
 
-          final active = supplies
+          final requestedSupplyId =
+              widget.initialSupplyId?.trim() ?? '';
+
+          final focusedSupplies = requestedSupplyId.isEmpty
+              ? const <FarmerSupplyForecast>[]
+              : supplies
+                  .where(
+                    (item) =>
+                        item.id.trim() == requestedSupplyId,
+                  )
+                  .toList();
+
+          final exactSupplyFound = focusedSupplies.isNotEmpty;
+          final visibleSupplies =
+              exactSupplyFound ? focusedSupplies : supplies;
+
+          final active = visibleSupplies
               .where(
                 (item) =>
                     item.isActive,
               )
               .toList();
 
-          final past = supplies
+          final past = visibleSupplies
               .where(
                 (item) =>
                     !item.isActive,
@@ -5956,9 +6273,20 @@ class _FarmerSupplyScreenState
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
 
-              if (active.isEmpty)
+              if (requestedSupplyId.isNotEmpty) ...[
+                _FarmerRecordFocusNotice(
+                  found: exactSupplyFound,
+                  foundMessage:
+                      'Opened from your notification. Showing the related supply report.',
+                  missingMessage:
+                      'That supply report is no longer available. Showing your current supply instead.',
+                ),
+                const SizedBox(height: 14),
+              ],
+
+              if (active.isEmpty && past.isEmpty)
                 _FarmerFirstCropCard(
                   onTap: () =>
                       openSupplyForm(
@@ -7777,8 +8105,14 @@ class FarmerOrdersScreen extends StatelessWidget {
 class FarmerEarningsScreen extends StatelessWidget {
   final FarmerProfile profile;
   final int refreshKey;
-  const FarmerEarningsScreen(
-      {super.key, required this.profile, required this.refreshKey});
+  final String? initialPayoutId;
+
+  const FarmerEarningsScreen({
+    super.key,
+    required this.profile,
+    required this.refreshKey,
+    this.initialPayoutId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -7787,14 +8121,31 @@ class FarmerEarningsScreen extends StatelessWidget {
         key: ValueKey('farmer-payouts-$refreshKey'),
         future: fetchFarmerPayouts(farmerId: profile.id),
         builder: (context, snapshot) {
-          final payouts = snapshot.data ?? [];
-          final pending = payouts
+          final allPayouts = snapshot.data ?? const <FarmerPayout>[];
+
+          final requestedPayoutId =
+              initialPayoutId?.trim() ?? '';
+
+          final focusedPayouts = requestedPayoutId.isEmpty
+              ? const <FarmerPayout>[]
+              : allPayouts
+                  .where(
+                    (payout) =>
+                        payout.id.trim() == requestedPayoutId,
+                  )
+                  .toList();
+
+          final exactPayoutFound = focusedPayouts.isNotEmpty;
+          final payouts =
+              exactPayoutFound ? focusedPayouts : allPayouts;
+
+          final pending = allPayouts
               .where((p) => p.payoutStatus == 'pending')
               .fold<double>(0, (sum, p) => sum + p.netAmount);
-          final released = payouts
+          final released = allPayouts
               .where((p) => p.payoutStatus == 'released')
               .fold<double>(0, (sum, p) => sum + p.netAmount);
-          final held = payouts
+          final held = allPayouts
               .where((p) => p.payoutStatus == 'held')
               .fold<double>(0, (sum, p) => sum + p.netAmount);
           return ListView(
@@ -7819,6 +8170,16 @@ class FarmerEarningsScreen extends StatelessWidget {
                     value: 'J\$${held.toStringAsFixed(2)}'),
               ]),
               const SizedBox(height: 16),
+              if (requestedPayoutId.isNotEmpty) ...[
+                _FarmerRecordFocusNotice(
+                  found: exactPayoutFound,
+                  foundMessage:
+                      'Opened from your notification. Showing the related payout.',
+                  missingMessage:
+                      'That payout is no longer available. Showing your current payout history instead.',
+                ),
+                const SizedBox(height: 12),
+              ],
               if (payouts.isEmpty)
                 const FarmEmptyState(
                   icon: Icons.payments_outlined,
@@ -9254,12 +9615,11 @@ class _FarmerProfileEditScreenState
             ),
             const SizedBox(height: 11),
 
-            TextField(
+            JamaicaParishDropdown(
               controller: parishController,
+              label: 'Parish *',
               enabled: !saving,
-              decoration: const InputDecoration(
-                labelText: 'Parish',
-              ),
+              prefixIcon: Icons.map_outlined,
             ),
             const SizedBox(height: 11),
 
@@ -9771,11 +10131,13 @@ class _AdminNavigationIntent {
   final String section;
   final String? subSection;
   final String? filter;
+  final String? recordId;
 
   const _AdminNavigationIntent({
     required this.section,
     this.subSection,
     this.filter,
+    this.recordId,
   });
 }
 
@@ -9832,7 +10194,9 @@ class _AdminUnifiedOrdersTab extends StatefulWidget {
 class _AdminUnifiedOrdersTabState extends State<_AdminUnifiedOrdersTab> {
   String audience = 'wholesale';
   String customerFilter = 'all';
+  String? customerOrderId;
   String? wholesaleFilter;
+  String? wholesaleRequestId;
 
   @override
   void initState() {
@@ -9856,18 +10220,25 @@ class _AdminUnifiedOrdersTabState extends State<_AdminUnifiedOrdersTab> {
 
     final nextAudience = intent.subSection?.trim().toLowerCase();
     final nextFilter = intent.filter?.trim().toLowerCase();
+    final nextRecordId = intent.recordId?.trim();
 
     setState(() {
       if (nextAudience == 'customer' || nextAudience == 'wholesale') {
         audience = nextAudience!;
       }
-      if (audience == 'customer' && nextFilter != null && nextFilter.isNotEmpty) {
-        customerFilter = nextFilter;
+      if (audience == 'customer') {
+        if (nextFilter != null && nextFilter.isNotEmpty) {
+          customerFilter = nextFilter;
+        }
+        customerOrderId =
+            nextRecordId == null || nextRecordId.isEmpty ? null : nextRecordId;
       }
       if (audience == 'wholesale') {
         wholesaleFilter = nextFilter == null || nextFilter.isEmpty
             ? null
             : nextFilter;
+        wholesaleRequestId =
+            nextRecordId == null || nextRecordId.isEmpty ? null : nextRecordId;
       }
     });
   }
@@ -9889,18 +10260,24 @@ class _AdminUnifiedOrdersTabState extends State<_AdminUnifiedOrdersTab> {
             index: audience == 'customer' ? 0 : 1,
             children: [
               AdminOrdersTab(
-                key: ValueKey('customer-orders-$customerFilter-${widget.refreshKey}'),
+                key: ValueKey(
+                  'customer-orders-$customerFilter-${customerOrderId ?? 'all'}-${widget.refreshKey}',
+                ),
                 refreshKey: widget.refreshKey,
                 onChanged: widget.onChanged,
                 initialFilter: customerFilter,
+                initialOrderId: customerOrderId,
               ),
               AdminWholesaleManagementTab(
-                key: ValueKey('wholesale-orders-${wholesaleFilter ?? 'all'}-${widget.refreshKey}'),
+                key: ValueKey(
+                  'wholesale-orders-${wholesaleFilter ?? 'all'}-${wholesaleRequestId ?? 'all'}-${widget.refreshKey}',
+                ),
                 refreshKey: widget.refreshKey,
                 onChanged: widget.onChanged,
                 sections: const ['requests'],
                 initialSection: 'requests',
                 requestStatusFilter: wholesaleFilter,
+                requestIdFilter: wholesaleRequestId,
               ),
             ],
           ),
@@ -10231,6 +10608,7 @@ class _AdminProcurementOperationsTabState
     extends State<_AdminProcurementOperationsTab> {
   String section = 'needs_supply';
   String? focusFilter;
+  String? focusRecordId;
 
   @override
   void initState() {
@@ -10257,6 +10635,7 @@ class _AdminProcurementOperationsTabState
       setState(() {
         section = next!;
         focusFilter = intent.filter?.trim().toLowerCase();
+        focusRecordId = intent.recordId?.trim();
       });
     }
   }
@@ -10276,6 +10655,7 @@ class _AdminProcurementOperationsTabState
           onChanged: (value) => setState(() {
             section = value;
             focusFilter = null;
+            focusRecordId = null;
           }),
         ),
         Expanded(
@@ -10303,11 +10683,14 @@ class _AdminProcurementOperationsTabState
                 receivingFilter: focusFilter ?? 'all',
               ),
             _ => AdminWholesaleManagementTab(
-                key: ValueKey('procurement-needs-${widget.refreshKey}'),
+                key: ValueKey(
+                  'procurement-needs-${widget.refreshKey}-${focusRecordId ?? 'all'}',
+                ),
                 refreshKey: widget.refreshKey,
                 onChanged: widget.onChanged,
                 sections: const ['procurement'],
                 initialSection: 'procurement',
+                demandIdFilter: focusRecordId,
               ),
           },
         ),
@@ -10616,6 +10999,8 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
               const Header(
                 title: 'Today',
                 subtitle: 'Open the work that needs attention now',
+                // Unread notifications are attention, not a blocking error.
+                notificationBadgeColor: FarmColors.warning,
               ),
               const SizedBox(height: 14),
               Text(
@@ -10809,6 +11194,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
   required String staffRole,
   required int refreshKey,
   required VoidCallback onChanged,
+  _AdminNavigationIntent? initialIntent,
 }) {
   final role = normalizeStaffRole(staffRole);
   final ownerAccess = role.isEmpty || role == 'owner';
@@ -10870,6 +11256,10 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         child: AdminProductsTab(
           refreshKey: refreshKey,
           onChanged: onChanged,
+          initialProductId:
+              initialIntent?.section.trim().toLowerCase() == 'products'
+                  ? initialIntent?.recordId
+                  : null,
         ),
       );
   _AdminTabSpec procurement() => _AdminTabSpec(
@@ -10907,7 +11297,22 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
             'invoices',
             'finance',
           ],
-          initialSection: 'applications',
+          initialSection:
+              initialIntent?.section.trim().toLowerCase() == 'business setup'
+                  ? (initialIntent?.subSection ?? 'applications')
+                  : 'applications',
+          businessAccountIdFilter:
+              initialIntent?.section.trim().toLowerCase() == 'business setup' &&
+                      initialIntent?.subSection?.trim().toLowerCase() ==
+                          'applications'
+                  ? initialIntent?.recordId
+                  : null,
+          invoiceIdFilter:
+              initialIntent?.section.trim().toLowerCase() == 'business setup' &&
+                      initialIntent?.subSection?.trim().toLowerCase() ==
+                          'invoices'
+                  ? initialIntent?.recordId
+                  : null,
         ),
       );
   _AdminTabSpec hero() => _AdminTabSpec(
@@ -10945,8 +11350,8 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
 
   _AdminTabSpec support() => _AdminTabSpec(
         tab: const Tab(
-          icon: Icon(Icons.support_agent_outlined),
-          text: 'Inbox',
+          icon: Icon(Icons.chat_bubble_outline_rounded),
+          text: 'Messages',
         ),
         child: AdminSupportTab(
           refreshKey: refreshKey,
@@ -10962,6 +11367,10 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         child: AdminFarmerManagementTab(
           refreshKey: refreshKey,
           onChanged: onChanged,
+          initialFarmerId:
+              initialIntent?.section.trim().toLowerCase() == 'farmers'
+                  ? initialIntent?.recordId
+                  : null,
         ),
       );
 
@@ -10999,7 +11408,13 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
           icon: Icon(Icons.rate_review_outlined),
           text: 'Reviews',
         ),
-        child: AdminReviewsTab(refreshKey: refreshKey),
+        child: AdminReviewsTab(
+          refreshKey: refreshKey,
+          initialProductId:
+              initialIntent?.section.trim().toLowerCase() == 'reviews'
+                  ? initialIntent?.recordId
+                  : null,
+        ),
       );
 
   _AdminTabSpec coupons() => _AdminTabSpec(
@@ -11121,29 +11536,229 @@ class _AdminNavigationScope
   }
 }
 
+class _AdminFloatingMessagesButton extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onTap;
+
+  const _AdminFloatingMessagesButton({
+    required this.refreshKey,
+    required this.onTap,
+  });
+
+  @override
+  State<_AdminFloatingMessagesButton> createState() =>
+      _AdminFloatingMessagesButtonState();
+}
+
+class _AdminFloatingMessagesButtonState
+    extends State<_AdminFloatingMessagesButton> {
+  late Future<int> _unreadFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _unreadFuture = _loadUnread();
+    _scheduleUnreadRefresh();
+  }
+
+  @override
+  void didUpdateWidget(
+    covariant _AdminFloatingMessagesButton oldWidget,
+  ) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _reloadUnread();
+    }
+  }
+
+  Future<int> _loadUnread() async {
+    try {
+      final tickets = await fetchAdminSupportTickets();
+
+      return tickets
+          .where(
+            (ticket) => ticket.hasUnreadForStaff,
+          )
+          .length;
+    } catch (error) {
+      farmDebugLog(
+        'Admin Messages unread count unavailable: $error',
+      );
+      return 0;
+    }
+  }
+
+  void _reloadUnread() {
+    if (!mounted) return;
+
+    setState(() {
+      _unreadFuture = _loadUnread();
+    });
+  }
+
+  void _scheduleUnreadRefresh() {
+    Future<void>.delayed(
+      const Duration(seconds: 20),
+      () async {
+        if (!mounted) return;
+
+        _reloadUnread();
+        _scheduleUnreadRefresh();
+      },
+    );
+  }
+
+  String _badgeLabel(int unread) {
+    if (unread > 99) return '99+';
+    return '$unread';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+      future: _unreadFuture,
+      builder: (context, snapshot) {
+        final unread = snapshot.data ?? 0;
+
+        // Scaffold's floating-action slot can briefly expose loose
+        // constraints during Flutter Web/full-page reloads. Give the custom
+        // HPJ Messages pill a hard finite box so no RenderFlex in this widget
+        // can ever receive an infinite width or height.
+        return SizedBox(
+          width: 112,
+          height: 42,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(18),
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: FarmColors.green,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                        if (unread > 0)
+                          Positioned(
+                            right: -9,
+                            top: -8,
+                            child: Container(
+                              constraints:
+                                  const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: FarmColors.warning,
+                                borderRadius:
+                                    BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Text(
+                                _badgeLabel(unread),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 8.5,
+                                  height: 1,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Messages',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        );
+      },
+    );
+  }
+}
+
 class _AdminBottomNavigationShell
     extends StatelessWidget {
   final String staffRole;
   final String roleLabel;
   final List<_AdminTabSpec> tabs;
+  final int refreshKey;
   final VoidCallback onRefresh;
   final VoidCallback onExit;
+  final _AdminNavigationIntent? initialIntent;
 
   const _AdminBottomNavigationShell({
     required this.staffRole,
     required this.roleLabel,
     required this.tabs,
+    required this.refreshKey,
     required this.onRefresh,
     required this.onExit,
+    this.initialIntent,
   });
 
+  String _canonicalAdminSectionLabel(String value) {
+    final normalized = value.trim().toLowerCase();
+
+    // Repair 027 renamed the visible Admin destination to Messages, but older
+    // notifications/dashboard intents still use the internal name "Inbox".
+    if (normalized == 'inbox') return 'messages';
+
+    return normalized;
+  }
+
   int _indexForLabel(String label) {
+    final requested =
+        _canonicalAdminSectionLabel(label);
+
     return tabs.indexWhere(
       (spec) =>
-          (spec.tab.text ?? '')
-              .trim()
-              .toLowerCase() ==
-          label.trim().toLowerCase(),
+          _canonicalAdminSectionLabel(
+            spec.tab.text ?? '',
+          ) ==
+          requested,
     );
   }
 
@@ -11181,9 +11796,10 @@ class _AdminBottomNavigationShell
             ? Icons.bar_chart_rounded
             : Icons.bar_chart_outlined;
       case 'Inbox':
+      case 'Messages':
         return selected
-            ? Icons.support_agent_rounded
-            : Icons.support_agent_outlined;
+            ? Icons.chat_bubble_rounded
+            : Icons.chat_bubble_outline_rounded;
       default:
         return selected
             ? Icons.grid_view_rounded
@@ -11277,10 +11893,14 @@ class _AdminBottomNavigationShell
     }
 
     final primary = _primaryIndices();
+    final requestedInitialIndex = initialIntent == null
+        ? -1
+        : _indexForLabel(initialIntent!.section);
+    final initialIndex = requestedInitialIndex < 0 ? 0 : requestedInitialIndex;
 
     return DefaultTabController(
       length: tabs.length,
-      initialIndex: 0,
+      initialIndex: initialIndex,
       child: Builder(
         builder: (context) {
           final controller =
@@ -11366,6 +11986,13 @@ class _AdminBottomNavigationShell
                       ? 'Today'
                       : rawCurrentTitle;
 
+              final messagesIndex =
+                  _indexForLabel('Messages');
+
+              final showMessagesButton =
+                  messagesIndex >= 0 &&
+                  actualIndex != messagesIndex;
+
               return _AdminNavigationScope(
                 onNavigate: (intent) =>
                     _navigateByIntent(
@@ -11437,6 +12064,19 @@ class _AdminBottomNavigationShell
                         tab.child,
                     ],
                   ),
+                  floatingActionButton:
+                      showMessagesButton
+                          ? _AdminFloatingMessagesButton(
+                              refreshKey: refreshKey,
+                              onTap: () {
+                                controller.animateTo(
+                                  messagesIndex,
+                                );
+                              },
+                            )
+                          : null,
+                  floatingActionButtonLocation:
+                      FloatingActionButtonLocation.endFloat,
                   bottomNavigationBar:
                       FarmBottomOptionsBar(
                     selectedIndex:
@@ -11508,6 +12148,7 @@ class _AdminMoreScreen extends StatelessWidget {
       case 'Reports':
         return 'Finance & Insights';
       case 'Inbox':
+      case 'Messages':
       case 'Staff':
         return 'Management';
       default:
@@ -11690,34 +12331,193 @@ class _AdminWorkspaceSwitchTile
 
 class AdminDashboardScreen extends StatefulWidget {
   final VoidCallback? onHomeTap;
+  final String initialSection;
+  final String? initialSubSection;
+  final String? initialFilter;
+  final String? initialRecordId;
 
-  const AdminDashboardScreen({super.key, this.onHomeTap});
+  const AdminDashboardScreen({
+    super.key,
+    this.onHomeTap,
+    this.initialSection = 'Dashboard',
+    this.initialSubSection,
+    this.initialFilter,
+    this.initialRecordId,
+  });
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
 class _AdminDashboardScreenState
-    extends State<AdminDashboardScreen> {
-  late final Future<bool> _adminAllowedFuture;
+    extends State<AdminDashboardScreen>
+    with WidgetsBindingObserver {
+  late Future<bool> _adminAllowedFuture;
   late Future<String> _staffRoleFuture;
+  StreamSubscription<AuthState>? _authBoundarySubscription;
+  String? _authBoundaryUserId;
   int refreshKey = 0;
+  bool _initialIntentPublished = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _authBoundaryUserId =
+        supabase.auth.currentUser?.id.trim();
+
+    _authBoundarySubscription =
+        supabase.auth.onAuthStateChange.listen((authState) {
+      if (!mounted) return;
+
+      final rawUserId =
+          authState.session?.user.id.trim() ?? '';
+      final nextUserId =
+          rawUserId.isEmpty ? null : rawUserId;
+      final previousUserId = _authBoundaryUserId;
+
+      if (nextUserId == previousUserId) return;
+
+      _authBoundaryUserId = nextUserId;
+      clearHpjPrivateAccountMemory();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => nextUserId == null
+                ? const AuthGate()
+                : const OwnerWorkspaceSwitcherScreen(
+                    showCloseButton: false,
+                  ),
+          ),
+          (route) => false,
+        );
+      });
+    });
+
     _adminAllowedFuture =
         isCurrentUserAdminFromDatabase();
     _staffRoleFuture =
         fetchCurrentStaffRole();
   }
 
+  /// Refresh data inside the currently open Admin section without replacing
+  /// the Admin access/role futures. Replacing those futures tears down the
+  /// bottom-navigation shell long enough for DefaultTabController to restart
+  /// at Today/Dashboard.
+  ///
+  /// Child screens (Products, Orders, Farmers, etc.) must use this after a
+  /// normal save/update so the user stays in the section they were working in.
+  void _refreshCurrentAdminSection() {
+    if (!mounted) return;
+    setState(() {
+      refreshKey++;
+    });
+  }
+
+  /// Manual Admin refresh keeps the stronger Repair 018 access/role recheck.
+  /// This is used only by the top-right Refresh button, not ordinary child
+  /// saves such as Edit Product.
   void refresh() {
     setState(() {
       refreshKey++;
+      _adminAllowedFuture =
+          isCurrentUserAdminFromDatabase();
       _staffRoleFuture =
           fetchCurrentStaffRole();
     });
+  }
+
+  Future<void> _revalidateAdminWorkspace() async {
+    if (!mounted) return;
+
+    final operationBoundary =
+        captureHpjPrivateOperationBoundary();
+
+    if (!isLoggedIn || supabase.auth.currentUser == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const AuthGate(),
+          ),
+          (route) => false,
+        );
+      });
+      return;
+    }
+
+    try {
+      final allowed = await isCurrentUserAdminFromDatabase();
+
+      if (!mounted ||
+          !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        return;
+      }
+
+      if (!allowed) {
+        FarmDataCache.clearAll();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute<void>(
+              builder: (_) => const OwnerWorkspaceSwitcherScreen(
+                showCloseButton: false,
+              ),
+            ),
+            (route) => false,
+          );
+        });
+        return;
+      }
+
+      setState(() {
+        _adminAllowedFuture = Future<bool>.value(true);
+        _staffRoleFuture = fetchCurrentStaffRole();
+        refreshKey++;
+      });
+    } catch (error) {
+      farmDebugLog(
+        'Admin workspace resume validation skipped: $error',
+      );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(_revalidateAdminWorkspace());
+  }
+
+  @override
+  void dispose() {
+    _authBoundarySubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _returnToWorkspaces() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const OwnerWorkspaceSwitcherScreen(
+          showCloseButton: false,
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  Future<void> _signOutFromLockedAdmin() async {
+    await signOutFromHpjSession();
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const AuthGate(),
+      ),
+      (route) => false,
+    );
   }
 
   void goBackHome() {
@@ -11764,30 +12564,65 @@ class _AdminDashboardScreenState
         }
 
         if (snapshot.data != true) {
+          final accessCheckFailed = snapshot.hasError;
+
           return Scaffold(
-            backgroundColor:
-                FarmColors.background,
+            backgroundColor: FarmColors.background,
             appBar: AppBar(
-              title:
-                  const Text('Staff Access'),
+              title: const Text('Staff Access'),
             ),
             body: FarmPage(
               child: ListView(
-                padding:
-                    const EdgeInsets.all(18),
-                children: const [
+                padding: const EdgeInsets.all(18),
+                children: [
                   Header(
-                    title: 'Admin Locked',
-                    subtitle:
-                        'Staff access required',
+                    title: accessCheckFailed
+                        ? 'Staff access could not be verified'
+                        : 'Staff access is locked',
+                    subtitle: accessCheckFailed
+                        ? 'Connection or access check'
+                        : 'Approved staff access required',
                   ),
-                  SizedBox(height: 18),
+                  const SizedBox(height: 18),
                   FarmCard(
-                    child: Text(
-                      'This area is only available to approved owner, manager, or staff users.',
-                      style: TextStyle(
-                        fontSize: 16,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          accessCheckFailed
+                              ? 'HPJ could not confirm your staff role right now. Try the access check again, or return to Workspaces.'
+                              : 'This area is only available to approved owner, manager, or staff users. Return to Workspaces to use another approved area.',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: refresh,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Try Again'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _returnToWorkspaces,
+                            icon: const Icon(Icons.apps_rounded),
+                            label: const Text('Back to Workspaces'),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () {
+                            unawaited(_signOutFromLockedAdmin());
+                          },
+                          icon: const Icon(Icons.logout_rounded),
+                          label: const Text('Sign out'),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -11825,11 +12660,26 @@ class _AdminDashboardScreenState
               staffRole,
             );
 
+            final initialIntent = _AdminNavigationIntent(
+              section: widget.initialSection,
+              subSection: widget.initialSubSection,
+              filter: widget.initialFilter,
+              recordId: widget.initialRecordId,
+            );
+
+            if (!_initialIntentPublished) {
+              _initialIntentPublished = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _adminNavigationIntent.value = initialIntent;
+              });
+            }
+
             final tabs =
                 _adminTabSpecsForRole(
               staffRole: staffRole,
               refreshKey: refreshKey,
-              onChanged: refresh,
+              onChanged: _refreshCurrentAdminSection,
+              initialIntent: initialIntent,
             );
 
             return _AdminBottomNavigationShell(
@@ -11838,8 +12688,10 @@ class _AdminDashboardScreenState
                   ? 'Staff'
                   : roleLabel,
               tabs: tabs,
+              refreshKey: refreshKey,
               onRefresh: refresh,
               onExit: goBackHome,
+              initialIntent: initialIntent,
             );
           },
         );
@@ -14246,9 +15098,9 @@ class AdminUrgentActionsCard extends StatelessWidget {
                 onTap: onProductsTap,
               ),
               AdminQuickChip(
-                label: 'Inbox',
+                label: 'Messages',
                 count: openSupportMessages,
-                icon: Icons.support_agent_outlined,
+                icon: Icons.chat_bubble_outline_rounded,
                 onTap: onSupportTap,
               ),
             ],
@@ -16412,12 +17264,14 @@ class AdminOrdersTab extends StatefulWidget {
   final int refreshKey;
   final VoidCallback onChanged;
   final String initialFilter;
+  final String? initialOrderId;
 
   const AdminOrdersTab({
     super.key,
     required this.refreshKey,
     required this.onChanged,
     this.initialFilter = 'all',
+    this.initialOrderId,
   });
 
   @override
@@ -16434,12 +17288,17 @@ String pdfSafe(String value) {
 }
 
 class _AdminOrdersTabState extends State<AdminOrdersTab> {
+  final TextEditingController orderSearchController = TextEditingController();
+  bool _staleInitialOrderCleared = false;
+
   @override
   void initState() {
     super.initState();
     selectedFilter = widget.initialFilter.trim().isEmpty
         ? 'all'
         : widget.initialFilter.trim().toLowerCase();
+    orderSearchQuery = widget.initialOrderId?.trim() ?? '';
+    orderSearchController.text = orderSearchQuery;
   }
 
   @override
@@ -16448,12 +17307,28 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
     final next = widget.initialFilter.trim().isEmpty
         ? 'all'
         : widget.initialFilter.trim().toLowerCase();
-    if (oldWidget.initialFilter != widget.initialFilter &&
-        selectedFilter != next) {
+    final nextOrderId = widget.initialOrderId?.trim() ?? '';
+    final filterChanged = oldWidget.initialFilter != widget.initialFilter &&
+        selectedFilter != next;
+    final orderChanged = oldWidget.initialOrderId != widget.initialOrderId &&
+        orderSearchQuery != nextOrderId;
+
+    if (filterChanged || orderChanged) {
       setState(() {
-        selectedFilter = next;
+        if (filterChanged) selectedFilter = next;
+        if (orderChanged) {
+          _staleInitialOrderCleared = false;
+          orderSearchQuery = nextOrderId;
+          orderSearchController.text = nextOrderId;
+        }
       });
     }
+  }
+
+  @override
+  void dispose() {
+    orderSearchController.dispose();
+    super.dispose();
   }
 
   Future<Uint8List> buildOrderSlipPdf(AdminOrder order) async {
@@ -17030,15 +17905,47 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
   }
 
   String scheduledLabel(AdminOrder order) {
-    final parts = <String>[];
+    final rawDate = order.scheduledDate?.trim() ?? '';
+    final rawTime = order.scheduledTime?.trim() ?? '';
 
-    final date = order.scheduledDate?.trim() ?? '';
-    final time = order.scheduledTime?.trim() ?? '';
+    if (rawDate.isEmpty && rawTime.isEmpty) {
+      return 'Not scheduled';
+    }
 
-    if (date.isNotEmpty) parts.add(date);
-    if (time.isNotEmpty) parts.add(time);
+    String displayDate = rawDate;
+    final parsedDate = DateTime.tryParse(rawDate);
+    if (parsedDate != null) {
+      const months = <String>[
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      ];
+      displayDate =
+          '${months[parsedDate.month - 1]} ${parsedDate.day}, ${parsedDate.year}';
+    }
 
-    if (parts.isEmpty) return 'Not scheduled';
+    String displayTime = rawTime;
+    final timeParts = rawTime.split(':');
+    if (timeParts.length >= 2) {
+      final hour24 = int.tryParse(timeParts[0]);
+      final minute = int.tryParse(timeParts[1]);
+      if (hour24 != null &&
+          minute != null &&
+          hour24 >= 0 &&
+          hour24 <= 23 &&
+          minute >= 0 &&
+          minute <= 59) {
+        final period = hour24 >= 12 ? 'PM' : 'AM';
+        final hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12;
+        displayTime =
+            '$hour12:${minute.toString().padLeft(2, '0')} $period';
+      }
+    }
+
+    final parts = <String>[
+      if (displayDate.isNotEmpty) displayDate,
+      if (displayTime.isNotEmpty) displayTime,
+    ];
+
     return parts.join(' • ');
   }
 
@@ -17699,6 +18606,34 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
         }
 
         final orders = snapshot.data ?? [];
+        final requestedOrderId =
+            widget.initialOrderId?.trim() ?? '';
+
+        final exactOrderTargetFound =
+            requestedOrderId.isEmpty ||
+            orders.any(
+              (order) =>
+                  order.id.trim() == requestedOrderId ||
+                  order.shortId.trim().toLowerCase() ==
+                      requestedOrderId.toLowerCase(),
+            );
+
+        if (requestedOrderId.isNotEmpty &&
+            !exactOrderTargetFound &&
+            !_staleInitialOrderCleared) {
+          _staleInitialOrderCleared = true;
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+
+            orderSearchController.clear();
+            setState(() {
+              orderSearchQuery = '';
+              selectedFilter = 'all';
+            });
+          });
+        }
+
         final filteredOrders = applySearch(applyFilter(orders));
         final paidCount =
             orders.where((order) => order.paymentStatus == 'paid').length;
@@ -17768,8 +18703,19 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                 ],
               ),
             ),
+            if (requestedOrderId.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _AdminRecordFocusNotice(
+                found: exactOrderTargetFound,
+                foundMessage:
+                    'Opened from your notification. Showing the related customer order.',
+                missingMessage:
+                    'That customer order is no longer available. Showing current customer orders instead.',
+              ),
+            ],
             const SizedBox(height: 14),
             TextField(
+              controller: orderSearchController,
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search),
                 labelText: 'Search orders',
@@ -19317,11 +20263,13 @@ Future<void> updateAdminProductNutritionBadges({
 class AdminProductsTab extends StatefulWidget {
   final int refreshKey;
   final VoidCallback onChanged;
+  final String? initialProductId;
 
   const AdminProductsTab({
     super.key,
     required this.refreshKey,
     required this.onChanged,
+    this.initialProductId,
   });
 
   @override
@@ -19335,16 +20283,101 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
   String inventoryQuery = '';
   String inventoryFilter = 'needs_attention';
   String inventorySort = 'priority';
+  String? _lastFocusedProductId;
+  String? _productFocusNoticeId;
+  bool? _productFocusFound;
+
+  @override
+  void initState() {
+    super.initState();
+    _adminNavigationIntent.addListener(_handleNavigationIntent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final initialId = widget.initialProductId?.trim() ?? '';
+      if (initialId.isNotEmpty) {
+        unawaited(_focusProduct(initialId));
+      } else {
+        _handleNavigationIntent();
+      }
+    });
+  }
+
+  void _handleNavigationIntent() {
+    final intent = _adminNavigationIntent.value;
+    if (!mounted ||
+        intent == null ||
+        intent.section.trim().toLowerCase() != 'products') {
+      return;
+    }
+
+    final productId = intent.recordId?.trim() ?? '';
+    if (productId.isNotEmpty) {
+      unawaited(_focusProduct(productId));
+    }
+  }
+
+  Future<void> _focusProduct(String productId) async {
+    final cleanId = productId.trim();
+    if (cleanId.isEmpty || cleanId == _lastFocusedProductId) return;
+
+    _lastFocusedProductId = cleanId;
+
+    try {
+      final product = await fetchProductById(cleanId);
+      if (!mounted) return;
+
+      if (product == null) {
+        inventorySearchController.clear();
+        setState(() {
+          _productFocusNoticeId = cleanId;
+          _productFocusFound = false;
+          inventoryQuery = '';
+          inventoryFilter = 'all';
+        });
+        return;
+      }
+
+      inventorySearchController.text = product.name;
+      setState(() {
+        _productFocusNoticeId = cleanId;
+        _productFocusFound = true;
+        inventoryQuery = product.name;
+        inventoryFilter = 'all';
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      inventorySearchController.clear();
+      setState(() {
+        _productFocusNoticeId = cleanId;
+        _productFocusFound = false;
+        inventoryQuery = '';
+        inventoryFilter = 'all';
+      });
+
+      farmDebugLog('Admin product deep-link focus skipped: $error');
+    }
+  }
 
   @override
   void dispose() {
+    _adminNavigationIntent.removeListener(_handleNavigationIntent);
     inventorySearchController.dispose();
     super.dispose();
   }
 
   void refreshProducts() {
-    setState(() => localRefreshKey++);
-    widget.onChanged();
+    if (!mounted) return;
+
+    // Product mutations already invalidate the product cache. Refresh only
+    // this Products tab. Calling the parent Admin onChanged here rebuilds the
+    // Admin tab specification and can reset DefaultTabController to Today,
+    // especially when an image upload refresh happens while the editor dialog
+    // is still open.
+    FarmDataCache.clearProducts();
+
+    setState(() {
+      localRefreshKey++;
+    });
   }
 
   String shortDescription(Product product) {
@@ -21198,6 +22231,17 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
               ),
               const SizedBox(height: 16),
               _inventorySummaryCard(products),
+              if ((_productFocusNoticeId ?? '').isNotEmpty &&
+                  _productFocusFound != null) ...[
+                const SizedBox(height: 12),
+                _AdminRecordFocusNotice(
+                  found: _productFocusFound!,
+                  foundMessage:
+                      'Opened from your notification. Showing the related product.',
+                  missingMessage:
+                      'That product could not be opened from this notification. Showing current products instead.',
+                ),
+              ],
               const SizedBox(height: 14),
               FarmCard(
                 padding: const EdgeInsets.all(14),
@@ -21422,7 +22466,13 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
 
 class AdminReviewsTab extends StatelessWidget {
   final int refreshKey;
-  const AdminReviewsTab({super.key, required this.refreshKey});
+  final String? initialProductId;
+
+  const AdminReviewsTab({
+    super.key,
+    required this.refreshKey,
+    this.initialProductId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -21435,6 +22485,21 @@ class AdminReviewsTab extends StatelessWidget {
           return const SkeletonList(count: 4, height: 112);
         }
         final reviews = snapshot.data ?? const <ProductReview>[];
+        final requestedProductId = initialProductId?.trim() ?? '';
+
+        final focusedReviews = requestedProductId.isEmpty
+            ? const <ProductReview>[]
+            : reviews
+                .where(
+                  (review) =>
+                      review.productId.trim() == requestedProductId,
+                )
+                .toList();
+
+        final exactReviewTargetFound = focusedReviews.isNotEmpty;
+        final visibleReviews =
+            exactReviewTargetFound ? focusedReviews : reviews;
+
         final count = reviews.length;
         final average = count == 0
             ? 0.0
@@ -21517,6 +22582,16 @@ class AdminReviewsTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
+            if (requestedProductId.isNotEmpty) ...[
+              _AdminRecordFocusNotice(
+                found: exactReviewTargetFound,
+                foundMessage:
+                    'Opened from your notification. Showing reviews for the related product.',
+                missingMessage:
+                    'That product review is no longer available in this list. Showing current reviews instead.',
+              ),
+              const SizedBox(height: 12),
+            ],
             if (reviews.isEmpty)
               const FarmEmptyState(
                 icon: Icons.reviews_outlined,
@@ -21525,7 +22600,9 @@ class AdminReviewsTab extends StatelessWidget {
                     'Reviews will appear here after shoppers leave product feedback.',
               )
             else
-              ...reviews.take(50).map((review) => ReviewCard(review: review)),
+              ...visibleReviews
+                  .take(50)
+                  .map((review) => ReviewCard(review: review)),
           ],
         );
       },
@@ -21610,9 +22687,9 @@ class AdminSupportTab extends StatelessWidget {
             children: const [
               FarmEmptyState(
                 icon: Icons.lock_outline_rounded,
-                title: 'Customer Care inbox is clear',
+                title: 'Messages are clear',
                 message:
-                    'Private customer conversations assigned to you will appear here.',
+                    'Private HPJ conversations you can access will appear here.',
                 compact: true,
               ),
             ],
@@ -21653,7 +22730,7 @@ class AdminSupportTab extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Private Customer Care',
+                            'HPJ Messages',
                             style: TextStyle(
                               color: FarmColors.ink,
                               fontSize: 18,
@@ -21961,16 +23038,6 @@ class _AdminSupportConversationScreenState
         message: message,
       );
       messageController.clear();
-
-      await createFarmNotification(
-        title: 'HPJ Customer Care replied',
-        message: 'You have a new private Customer Care reply.',
-        type: 'support',
-        userId: ticket.userId.trim().isEmpty ? null : ticket.userId.trim(),
-        userEmail: ticket.email.trim().isEmpty ? null : ticket.email.trim(),
-        actionType: 'support_chat',
-        actionId: ticket.id,
-      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -22666,11 +23733,75 @@ class _AdminCouponsTabState extends State<AdminCouponsTab> {
   }
 }
 
+
+class _AdminRecordFocusNotice extends StatelessWidget {
+  final bool found;
+  final String foundMessage;
+  final String missingMessage;
+
+  const _AdminRecordFocusNotice({
+    required this.found,
+    required this.foundMessage,
+    required this.missingMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = found
+        ? FarmColors.primary
+        : FarmColors.warning;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: found
+            ? FarmColors.primarySoft
+            : const Color(0xFFFFF7E8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accent.withOpacity(0.25),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            found
+                ? Icons.notifications_active_outlined
+                : Icons.info_outline_rounded,
+            size: 18,
+            color: accent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              found ? foundMessage : missingMessage,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 10,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AdminFarmerManagementTab extends StatelessWidget {
   final int refreshKey;
   final VoidCallback onChanged;
-  const AdminFarmerManagementTab(
-      {super.key, required this.refreshKey, required this.onChanged});
+  final String? initialFarmerId;
+
+  const AdminFarmerManagementTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+    this.initialFarmerId,
+  });
 
   Color _statusColor(String status) {
     switch (status.trim().toLowerCase()) {
@@ -22952,7 +24083,21 @@ class AdminFarmerManagementTab extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SizedBox.expand(child: SkeletonList(count: 3));
         }
-        final farmers = snapshot.data ?? [];
+        final farmers = snapshot.data ?? const <FarmerProfile>[];
+        final requestedFarmerId = initialFarmerId?.trim() ?? '';
+
+        final focusedFarmers = requestedFarmerId.isEmpty
+            ? const <FarmerProfile>[]
+            : farmers
+                .where(
+                  (farmer) => farmer.id.trim() == requestedFarmerId,
+                )
+                .toList();
+
+        final exactFarmerFound = focusedFarmers.isNotEmpty;
+        final visibleFarmers =
+            exactFarmerFound ? focusedFarmers : farmers;
+
         final approved = farmers.where((f) => f.isApproved).length;
         final pending = farmers
             .where(
@@ -22962,7 +24107,8 @@ class AdminFarmerManagementTab extends StatelessWidget {
             .where(
                 (f) => f.verificationStatus.trim().toLowerCase() == 'rejected')
             .length;
-        final ordered = [...farmers]..sort((a, b) {
+
+        final ordered = [...visibleFarmers]..sort((a, b) {
             final statusCompare =
                 _statusPriority(a).compareTo(_statusPriority(b));
             if (statusCompare != 0) return statusCompare;
@@ -22987,6 +24133,16 @@ class AdminFarmerManagementTab extends StatelessWidget {
                 rejected: rejected,
               ),
               const SizedBox(height: 16),
+              if (requestedFarmerId.isNotEmpty) ...[
+                _AdminRecordFocusNotice(
+                  found: exactFarmerFound,
+                  foundMessage:
+                      'Opened from your notification. Showing the related farmer application.',
+                  missingMessage:
+                      'That farmer application is no longer available. Showing the current farmer list instead.',
+                ),
+                const SizedBox(height: 12),
+              ],
               if (farmers.isEmpty)
                 const FarmEmptyState(
                   icon: Icons.agriculture_outlined,

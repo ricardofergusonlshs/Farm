@@ -37,12 +37,16 @@ Future<String> uploadProductImageToStorage(PickedProductImage image) async {
           image.bytes,
           fileOptions: FileOptions(
             contentType: contentType,
-            upsert: true,
+            // Every HPJ upload path includes a timestamp, so this is always
+            // a new object. Avoid Storage upsert because upsert requires
+            // broader SELECT/UPDATE permissions than a normal upload.
+            upsert: false,
           ),
         );
 
     return supabase.storage.from(productImageStorageBucket).getPublicUrl(path);
   } catch (error) {
+    farmDebugLog('Product image storage upload failed: $error');
     final message = error.toString().toLowerCase();
     if (message.contains('bucket') || message.contains('not found')) {
       throw Exception(
@@ -111,12 +115,16 @@ Future<String> uploadHomeHeroImageToStorage({
           image.bytes,
           fileOptions: FileOptions(
             contentType: contentType,
-            upsert: true,
+            // Every HPJ upload path includes a timestamp, so this is always
+            // a new object. Avoid Storage upsert because upsert requires
+            // broader SELECT/UPDATE permissions than a normal upload.
+            upsert: false,
           ),
         );
 
     return supabase.storage.from(productImageStorageBucket).getPublicUrl(path);
   } catch (error) {
+    farmDebugLog('Hero image storage upload failed: $error');
     final message = error.toString().toLowerCase();
     if (message.contains('bucket') || message.contains('not found')) {
       throw Exception(
@@ -1032,34 +1040,37 @@ Future<void> recordIncomingReferralForCurrentUser() async {
   final referralCode = _incomingReferralCodeFromParams();
   final referrerId = _incomingReferrerIdFromParams();
 
-  if (referralCode == null || referrerId == null || referrerId == user.id) {
+  if (referralCode == null ||
+      referrerId == null ||
+      referrerId == user.id) {
     return;
   }
 
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
   try {
-    final existing = await supabase
-        .from('customer_referrals')
-        .select('id')
-        .eq('referred_customer_id', user.id)
-        .maybeSingle();
-
-    if (existing != null) return;
-
     final referralLink = buildCustomerReferralLink(
       referralCode: referralCode,
       referrerId: referrerId,
     );
 
-    await supabase.from('customer_referrals').insert({
-      'referrer_id': referrerId,
-      'referred_customer_id': user.id,
-      'referral_code': referralCode,
-      'referral_link': referralLink,
-      'status': 'pending',
-      'points_awarded': 0,
-    });
-  } catch (_) {
-    farmDebugLog('Referral link capture skipped safely.');
+    await supabase.rpc(
+      'record_customer_referral_secure',
+      params: {
+        'p_referrer_id': referrerId,
+        'p_referral_code': referralCode,
+        'p_referral_link': referralLink,
+      },
+    );
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return;
+    }
+  } catch (error) {
+    farmDebugLog(
+      'Referral link capture skipped safely: $error',
+    );
   }
 }
 
@@ -1138,19 +1149,33 @@ Future<ReferralShareSnapshot> fetchReferralShareSnapshot() async {
 Future<void> completeReferralRewardForCurrentUserFirstOrder({
   required String orderId,
 }) async {
-  if (!isLoggedIn || orderId.trim().isEmpty) return;
+  final cleanOrderId = orderId.trim();
+
+  if (!isLoggedIn || cleanOrderId.isEmpty) return;
 
   final user = supabase.auth.currentUser;
   if (user == null) return;
 
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
   try {
-    await supabase.rpc('complete_referral_after_first_order', params: {
-      'p_referred_customer_id': user.id,
-      'p_order_id': orderId,
-      'p_points': referralRewardPoints,
-    });
-  } catch (_) {
-    farmDebugLog('Referral reward completion skipped safely.');
+    await supabase.rpc(
+      'complete_referral_after_eligible_order',
+      params: {
+        'p_order_id': cleanOrderId,
+      },
+    );
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return;
+    }
+  } catch (error) {
+    // Rewards must never block the customer order flow. There is deliberately
+    // no client-side reward fallback: only the server may mutate rewards.
+    farmDebugLog(
+      'Referral reward completion skipped safely: $error',
+    );
   }
 }
 
@@ -1210,40 +1235,45 @@ Future<void> awardLoyaltyPointsForOrder({
   required String orderId,
   required double total,
 }) async {
-  if (!isLoggedIn) return;
+  final cleanOrderId = orderId.trim();
+
+  if (!isLoggedIn || cleanOrderId.isEmpty) return;
 
   final user = supabase.auth.currentUser;
-  if (user == null || orderId.isEmpty || total <= 0) return;
+  if (user == null) return;
 
-  final points = (total / 100).floor();
-  if (points <= 0) return;
+  // `total` remains in the public Dart signature so older call sites do not
+  // break, but it is intentionally not used as reward authority. The secure
+  // RPC reads the real order total from PostgreSQL.
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
 
   try {
-    await supabase.rpc('award_loyalty_points', params: {
-      'p_user_id': user.id,
-      'p_order_id': orderId,
-      'p_points': points,
-      'p_reason': 'order',
-    });
-  } catch (rpcError) {
-    farmDebugLog(
-        'Loyalty RPC unavailable, using safe client fallback: $rpcError');
+    await supabase.rpc(
+      'award_loyalty_points_for_current_order',
+      params: {
+        'p_order_id': cleanOrderId,
+      },
+    );
 
-    // Loyalty points should not block checkout. Stock is already reduced
-    // inside the secure_checkout RPC before this runs.
-    try {
-      await supabase.from('loyalty_transactions').insert({
-        'user_id': user.id,
-        'order_id': orderId,
-        'points': points,
-        'reason': 'order',
-      });
-    } catch (error) {
-      farmDebugLog('Loyalty award skipped: $error');
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return;
     }
+  } catch (error) {
+    // Never fall back to a direct loyalty_transactions INSERT.
+    // Reward ledgers are server-owned after Repair 024.
+    farmDebugLog(
+      'Loyalty award skipped safely: $error',
+    );
   }
 
-  await completeReferralRewardForCurrentUserFirstOrder(orderId: orderId);
+  if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+    return;
+  }
+
+  await completeReferralRewardForCurrentUserFirstOrder(
+    orderId: cleanOrderId,
+  );
 }
 
 Future<ProductTraceRecord?> fetchTraceRecordByCode(String code) async {
@@ -1251,27 +1281,54 @@ Future<ProductTraceRecord?> fetchTraceRecordByCode(String code) async {
   if (cleanCode.isEmpty) return null;
 
   try {
-    final response = await supabase
-        .from('product_trace_records')
-        .select(
-            'id, trace_code, product_name, farm_location, harvest_date, harvest_time, farmer_name, farming_method, batch_notes, qr_scan_count')
-        .eq('trace_code', cleanCode)
-        .maybeSingle();
+    final response = await supabase.rpc(
+      'lookup_product_trace_record_secure',
+      params: {
+        'p_trace_code': cleanCode,
+      },
+    );
 
     if (response == null) return null;
 
-    final record = ProductTraceRecord.fromSupabase(
-      Map<String, dynamic>.from(response),
+    Map<String, dynamic>? row;
+
+    if (response is Map) {
+      row = Map<String, dynamic>.from(response);
+    } else if (response is List && response.isNotEmpty) {
+      final first = response.first;
+      if (first is Map) {
+        row = Map<String, dynamic>.from(first);
+      }
+    }
+
+    if (row == null || row.isEmpty) return null;
+
+    return ProductTraceRecord.fromSupabase(row);
+  } catch (rpcError) {
+    // Repair 025 deliberately does not fall back to a client UPDATE. If the
+    // secure scan RPC is temporarily unavailable, a read-only lookup keeps a
+    // valid trace code useful without weakening RLS or scan-count integrity.
+    farmDebugLog(
+      'Secure trace lookup unavailable; using read-only fallback: $rpcError',
     );
 
-    await supabase
-        .from('product_trace_records')
-        .update({'qr_scan_count': record.qrScanCount + 1}).eq('id', record.id);
+    try {
+      final response = await supabase
+          .from('product_trace_records')
+          .select(
+              'id, trace_code, product_name, farm_location, harvest_date, harvest_time, farmer_name, farming_method, batch_notes, qr_scan_count')
+          .eq('trace_code', cleanCode)
+          .maybeSingle();
 
-    return record;
-  } catch (error) {
-    farmDebugLog('Trace lookup failed: $error');
-    return null;
+      if (response == null) return null;
+
+      return ProductTraceRecord.fromSupabase(
+        Map<String, dynamic>.from(response),
+      );
+    } catch (fallbackError) {
+      farmDebugLog('Trace lookup failed: $fallbackError');
+      return null;
+    }
   }
 }
 
@@ -1478,13 +1535,217 @@ bool areSameProductLists(List<Product> a, List<Product> b) {
   return true;
 }
 
-Future<void> clearPrivateSessionStateForGuestBrowsing() async {
+class HpjPrivateOperationBoundary {
+  final int generation;
+  final String? userId;
+
+  const HpjPrivateOperationBoundary({
+    required this.generation,
+    required this.userId,
+  });
+}
+
+class HpjPrivateMutationInterruptedException implements Exception {
+  final String message;
+
+  const HpjPrivateMutationInterruptedException([
+    this.message =
+        'Your account changed while this request was processing. '
+        'Refresh your activity before trying again.',
+  ]);
+
+  @override
+  String toString() => message;
+}
+
+
+int _hpjIdempotencySequence = 0;
+
+String newHpjIdempotencyKey(String operation) {
+  final boundary = captureHpjPrivateOperationBoundary();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(boundary) ||
+      boundary.userId == null ||
+      boundary.userId!.trim().isEmpty) {
+    throw const HpjPrivateMutationInterruptedException();
+  }
+
+  final cleanOperation = operation
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9_-]+'), '-');
+
+  _hpjIdempotencySequence++;
+
+  return '${cleanOperation.isEmpty ? 'mutation' : cleanOperation}:'
+      '${boundary.userId}:'
+      '${boundary.generation}:'
+      '${DateTime.now().microsecondsSinceEpoch}:'
+      '$_hpjIdempotencySequence';
+}
+
+final Set<String> _hpjPrivateMutationsInFlight = <String>{};
+
+class HpjPrivateMutationLease {
+  final String _scopedKey;
+  final HpjPrivateOperationBoundary boundary;
+  bool _released = false;
+
+  HpjPrivateMutationLease._({
+    required String scopedKey,
+    required this.boundary,
+  }) : _scopedKey = scopedKey;
+
+  void ensureCurrent() {
+    if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+      throw const HpjPrivateMutationInterruptedException();
+    }
+  }
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    _hpjPrivateMutationsInFlight.remove(_scopedKey);
+  }
+}
+
+HpjPrivateMutationLease acquireHpjPrivateMutation(
+  String operationKey, {
+  HpjPrivateOperationBoundary? expectedBoundary,
+}) {
+  final boundary =
+      expectedBoundary ?? captureHpjPrivateOperationBoundary();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+    throw const HpjPrivateMutationInterruptedException();
+  }
+
+  final userId = boundary.userId?.trim() ?? '';
+  if (userId.isEmpty) {
+    throw Exception('Please sign in before continuing.');
+  }
+
+  final cleanKey = operationKey.trim().toLowerCase();
+  if (cleanKey.isEmpty) {
+    throw ArgumentError.value(
+      operationKey,
+      'operationKey',
+      'Mutation operation key cannot be empty.',
+    );
+  }
+
+  final scopedKey = '$userId:$cleanKey';
+
+  if (!_hpjPrivateMutationsInFlight.add(scopedKey)) {
+    throw Exception(
+      'This request is already being processed. Please wait for it to finish.',
+    );
+  }
+
+  return HpjPrivateMutationLease._(
+    scopedKey: scopedKey,
+    boundary: boundary,
+  );
+}
+
+bool _hpjPrivateBoundaryInitialized = false;
+String? _hpjPrivateBoundaryUserId;
+int _hpjPrivateBoundaryGeneration = 0;
+
+String? _hpjOrdersCacheUserId;
+String? _hpjBuyAgainCacheUserId;
+String? _hpjNotificationsCacheUserId;
+
+String? _hpjCurrentBoundaryUserId() {
+  final raw = supabase.auth.currentUser?.id.trim() ?? '';
+  return raw.isEmpty ? null : raw;
+}
+
+void _syncHpjPrivateBoundaryIdentity() {
+  final currentUserId = _hpjCurrentBoundaryUserId();
+
+  if (!_hpjPrivateBoundaryInitialized) {
+    _hpjPrivateBoundaryInitialized = true;
+    _hpjPrivateBoundaryUserId = currentUserId;
+    return;
+  }
+
+  if (currentUserId == _hpjPrivateBoundaryUserId) return;
+
+  _hpjPrivateBoundaryUserId = currentUserId;
+  _hpjPrivateBoundaryGeneration++;
+
+  // These cache owners are user-specific. Drop ownership immediately even
+  // before the root auth listeners finish rebuilding the UI.
+  _hpjOrdersCacheUserId = null;
+  _hpjBuyAgainCacheUserId = null;
+  _hpjNotificationsCacheUserId = null;
+}
+
+HpjPrivateOperationBoundary captureHpjPrivateOperationBoundary() {
+  _syncHpjPrivateBoundaryIdentity();
+
+  return HpjPrivateOperationBoundary(
+    generation: _hpjPrivateBoundaryGeneration,
+    userId: _hpjPrivateBoundaryUserId,
+  );
+}
+
+bool isHpjPrivateOperationBoundaryCurrent(
+  HpjPrivateOperationBoundary boundary,
+) {
+  _syncHpjPrivateBoundaryIdentity();
+
+  return boundary.generation == _hpjPrivateBoundaryGeneration &&
+      boundary.userId == _hpjPrivateBoundaryUserId;
+}
+
+void clearHpjPrivateAccountMemory({
+  bool forceBoundary = false,
+}) {
+  _syncHpjPrivateBoundaryIdentity();
+
+  if (forceBoundary) {
+    _hpjPrivateBoundaryGeneration++;
+  }
+
+  _hpjOrdersCacheUserId = null;
+  _hpjBuyAgainCacheUserId = null;
+  _hpjNotificationsCacheUserId = null;
+  _hpjPrivateMutationsInFlight.clear();
+
+  PushNotificationService.clearPendingNavigationState();
   FarmDataCache.clearAll();
-  hpjCurrentUserExperiencePreferences = UserExperiencePreferences.defaults;
+  hpjCurrentUserExperiencePreferences =
+      UserExperiencePreferences.defaults;
+}
+
+Future<void> signOutFromHpjSession() async {
+  clearHpjPrivateAccountMemory(forceBoundary: true);
+
+  try {
+    await PushNotificationService.unregisterCurrentDevice();
+  } catch (error) {
+    farmDebugLog('Push token cleanup skipped during sign out: $error');
+  }
+
+  // A second layer of protection: invalidate the Firebase token locally so a
+  // stale server registration cannot continue delivering private pushes.
+  await PushNotificationService.invalidateLocalPushToken();
+
+  try {
+    await supabase.auth.signOut();
+  } finally {
+    clearHpjPrivateAccountMemory();
+  }
+}
+
+Future<void> clearPrivateSessionStateForGuestBrowsing() async {
+  clearHpjPrivateAccountMemory();
 
   if (hasSupabaseSession) {
     try {
-      await supabase.auth.signOut();
+      await signOutFromHpjSession();
     } catch (error) {
       farmDebugLog(
           'Supabase sign out skipped while entering guest mode: $error');
@@ -1813,22 +2074,52 @@ List<Product> buildFrequentlyBoughtTogetherProducts({
 }
 
 Future<List<FarmOrder>> fetchOrders({bool forceRefresh = false}) async {
-  if (!forceRefresh) {
+  final boundary = captureHpjPrivateOperationBoundary();
+  final userId = boundary.userId;
+
+  if (userId == null) return const <FarmOrder>[];
+
+  if (!forceRefresh && _hpjOrdersCacheUserId == userId) {
     final cached = FarmDataCache.orders;
     if (cached != null) return cached;
   }
+
   final orders = await _fetchOrdersUncached();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+    farmDebugLog(
+      'Discarded stale Orders response after account/session boundary change.',
+    );
+    return const <FarmOrder>[];
+  }
+
   FarmDataCache.orders = orders;
+  _hpjOrdersCacheUserId = userId;
   return orders;
 }
 
 Future<List<Product>> fetchBuyAgainProducts({bool forceRefresh = false}) async {
-  if (!forceRefresh) {
+  final boundary = captureHpjPrivateOperationBoundary();
+  final userId = boundary.userId;
+
+  if (userId == null) return const <Product>[];
+
+  if (!forceRefresh && _hpjBuyAgainCacheUserId == userId) {
     final cached = FarmDataCache.buyAgain;
     if (cached != null) return cached;
   }
+
   final products = await _fetchBuyAgainProductsUncached();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+    farmDebugLog(
+      'Discarded stale Buy Again response after account/session boundary change.',
+    );
+    return const <Product>[];
+  }
+
   FarmDataCache.buyAgain = products;
+  _hpjBuyAgainCacheUserId = userId;
   return products;
 }
 
@@ -1836,14 +2127,30 @@ Future<List<Product>> fetchBuyAgainProductsForCustomerUi({
   bool forceRefresh = false,
   Duration timeout = const Duration(seconds: 7),
 }) async {
-  final cached = FarmDataCache.buyAgain;
+  final boundary = captureHpjPrivateOperationBoundary();
+
+  final cached =
+      boundary.userId != null &&
+              _hpjBuyAgainCacheUserId == boundary.userId
+          ? FarmDataCache.buyAgain
+          : null;
 
   try {
     final products = await fetchBuyAgainProducts(forceRefresh: forceRefresh)
         .timeout(timeout, onTimeout: () => cached ?? const <Product>[]);
+
+    if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+      return const <Product>[];
+    }
+
     return products;
   } catch (error) {
     farmDebugLog('Buy again load fallback used: $error');
+
+    if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+      return const <Product>[];
+    }
+
     return cached ?? const <Product>[];
   }
 }
@@ -2004,6 +2311,178 @@ String? notificationOrderShortId(FarmNotification notification) {
   return match?.group(1)?.trim().toUpperCase();
 }
 
+// Sends an already-saved private notification through the secured Supabase
+// Edge Function. Firebase service-account credentials stay on the server and
+// are never bundled into the HPJ app.
+Future<void> _dispatchStoredPushNotification({
+  String? notificationId,
+  String? dedupeKey,
+}) async {
+  final cleanId = notificationId?.trim() ?? '';
+  final cleanDedupeKey = dedupeKey?.trim() ?? '';
+  if ((cleanId.isEmpty && cleanDedupeKey.isEmpty) ||
+      supabase.auth.currentUser == null) {
+    return;
+  }
+
+  final accessToken = supabase.auth.currentSession?.accessToken.trim() ?? '';
+  if (accessToken.isEmpty) return;
+
+  try {
+    final response = await supabase.functions.invoke(
+      'send-push-notification',
+      headers: <String, String>{
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: <String, dynamic>{
+        if (cleanId.isNotEmpty) 'notification_id': cleanId,
+        if (cleanDedupeKey.isNotEmpty) 'dedupe_key': cleanDedupeKey,
+      },
+    );
+
+    if (response.status < 200 || response.status >= 300) {
+      farmDebugLog(
+        'Push dispatch returned HTTP ${response.status} '
+        'for ${cleanId.isNotEmpty ? cleanId : cleanDedupeKey}.',
+      );
+    }
+  } catch (error, stackTrace) {
+    // Saving the in-app notification is more important than the remote push.
+    // A temporary FCM/Edge Function outage must never break checkout, chat,
+    // procurement, farmer or wholesale workflows.
+    farmDebugLog('Remote push dispatch skipped: $error');
+    farmDebugLog('$stackTrace');
+  }
+}
+
+Future<void> dispatchStoredPushNotification(String notificationId) {
+  return _dispatchStoredPushNotification(notificationId: notificationId);
+}
+
+Future<void> dispatchStoredPushNotificationByDedupeKey(String dedupeKey) {
+  return _dispatchStoredPushNotification(dedupeKey: dedupeKey);
+}
+
+
+String hpjCanonicalNotificationActionType(String? value) {
+  final clean = (value ?? '').trim().toLowerCase();
+
+  switch (clean) {
+    case 'customer_order':
+      return 'order';
+    case 'farmer_payout':
+      return 'farmer_payment';
+    case 'wholesale_orders':
+    case 'wholesale_request':
+      return 'wholesale_order';
+    case 'customer_care':
+    case 'customer_care_chat':
+    case 'chat':
+      return 'support_chat';
+    case 'staff_support_chat':
+      return 'admin_support_chat';
+    default:
+      return clean;
+  }
+}
+
+bool hpjNotificationActionBenefitsFromId(String actionType) {
+  switch (hpjCanonicalNotificationActionType(actionType)) {
+    case 'order':
+    case 'support_chat':
+    case 'admin_support_chat':
+    case 'customer_product':
+    case 'wholesale_product':
+    case 'farmer_demand':
+    case 'farmer_collection':
+    case 'farmer_supply':
+    case 'farmer_payment':
+    case 'wholesale_plan':
+    case 'wholesale_order':
+    case 'admin_customer_order':
+    case 'admin_farmer_application':
+    case 'admin_product_approval':
+    case 'admin_review':
+    case 'admin_inventory':
+    case 'admin_wholesale_demand':
+    case 'admin_wholesale_payment':
+    case 'admin_wholesale_application':
+    case 'admin_wholesale_order':
+      return true;
+    default:
+      return false;
+  }
+}
+
+String _hpjNotificationDedupeSlug(String value) {
+  final slug = value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'-+'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '');
+
+  if (slug.isEmpty) return 'update';
+  return slug.length <= 50 ? slug : slug.substring(0, 50);
+}
+
+({String actionType, String actionId}) hpjResolveNotificationAction({
+  required String type,
+  String? orderId,
+  String? actionType,
+  String? actionId,
+}) {
+  final cleanType = type.trim().toLowerCase();
+  final cleanOrderId = (orderId ?? '').trim();
+  var resolvedType = hpjCanonicalNotificationActionType(actionType);
+  var resolvedId = (actionId ?? '').trim();
+
+  if (resolvedType.isEmpty && cleanOrderId.isNotEmpty) {
+    resolvedType = 'order';
+    resolvedId = cleanOrderId;
+  }
+
+  if (resolvedType.isEmpty && resolvedId.isNotEmpty) {
+    switch (cleanType) {
+      case 'support':
+        resolvedType = 'support_chat';
+        break;
+      case 'product_ready':
+      case 'watch':
+      case 'price_drop':
+        resolvedType = 'customer_product';
+        break;
+      case 'farmer_demand':
+      case 'farmer_collection':
+      case 'farmer_supply':
+      case 'farmer_payment':
+      case 'farmer_payout':
+        resolvedType = hpjCanonicalNotificationActionType(cleanType);
+        break;
+      case 'wholesale_plan':
+      case 'wholesale_order':
+      case 'wholesale_orders':
+      case 'wholesale_account':
+        resolvedType = hpjCanonicalNotificationActionType(cleanType);
+        break;
+    }
+  }
+
+  if (resolvedId.isEmpty &&
+      cleanOrderId.isNotEmpty &&
+      const <String>{
+        'order',
+        'admin_customer_order',
+      }.contains(resolvedType)) {
+    resolvedId = cleanOrderId;
+  }
+
+  return (
+    actionType: resolvedType,
+    actionId: resolvedId,
+  );
+}
+
 Future<void> createFarmNotification({
   required String title,
   required String message,
@@ -2015,24 +2494,39 @@ Future<void> createFarmNotification({
   String? actionId,
   String? dedupeKey,
 }) async {
+  final currentUser = supabase.auth.currentUser;
   final explicitUserEmail = userEmail != null && userEmail.trim().isNotEmpty;
   final targetUserId =
-      (userId ?? (explicitUserEmail ? null : supabase.auth.currentUser?.id))
-          ?.trim();
+      (userId ?? (explicitUserEmail ? null : currentUser?.id))?.trim();
   final targetEmail =
-      (userEmail ?? supabase.auth.currentUser?.email)?.trim().toLowerCase();
+      (userEmail ?? currentUser?.email)?.trim().toLowerCase();
+  final cleanType = type.trim().toLowerCase().isEmpty
+      ? 'notification'
+      : type.trim().toLowerCase();
   final cleanOrderId = orderId?.trim();
-  final explicitActionType = actionType?.trim() ?? '';
-  final explicitActionId = actionId?.trim() ?? '';
 
-  final resolvedActionType = explicitActionType.isNotEmpty
-      ? explicitActionType
-      : (cleanOrderId != null && cleanOrderId.isNotEmpty ? 'order' : '');
+  final route = hpjResolveNotificationAction(
+    type: cleanType,
+    orderId: cleanOrderId,
+    actionType: actionType,
+    actionId: actionId,
+  );
 
-  final resolvedActionId = explicitActionId.isNotEmpty
-      ? explicitActionId
-      : (resolvedActionType == 'order' ? (cleanOrderId ?? '') : '');
+  final resolvedActionType = route.actionType;
+  final resolvedActionId = route.actionId;
+  final requestedDedupeKey = dedupeKey?.trim() ?? '';
 
+  if (resolvedActionType.isNotEmpty &&
+      hpjNotificationActionBenefitsFromId(resolvedActionType) &&
+      resolvedActionId.isEmpty) {
+    farmDebugLog(
+      'Notification route metadata is incomplete: '
+      '$resolvedActionType has no action_id for "$title".',
+    );
+  }
+
+  // Never create anonymous/global private notifications from the client.
+  // Use an admin Edge Function for broadcast notifications.
   if ((targetUserId == null || targetUserId.isEmpty) &&
       (targetEmail == null || targetEmail.isEmpty)) {
     debugPrintOnce(
@@ -2042,33 +2536,51 @@ Future<void> createFarmNotification({
     return;
   }
 
+  // Every modern notification gets a private dispatch key. We do not request
+  // the inserted row back from PostgREST because the sender often cannot SELECT
+  // a notification targeted to another user under RLS. The Edge Function can
+  // securely resolve this key with the service role and verify created_by.
+  final dispatchDedupeKey = requestedDedupeKey.isNotEmpty
+      ? requestedDedupeKey
+      : 'push:${currentUser?.id ?? 'anonymous'}:'
+          '${DateTime.now().microsecondsSinceEpoch}:'
+          '$cleanType:'
+          '${resolvedActionType.isEmpty ? 'general' : resolvedActionType}:'
+          '${resolvedActionId.isEmpty ? title.hashCode.abs() : resolvedActionId}';
+
   final notificationPayload = <String, dynamic>{
     'user_id': targetUserId,
     'user_email': targetEmail,
     'title': title,
     'message': message,
-    'type': type,
+    'type': cleanType,
     'is_read': false,
     if (cleanOrderId != null && cleanOrderId.isNotEmpty)
       'order_id': cleanOrderId,
     if (resolvedActionType.isNotEmpty) 'action_type': resolvedActionType,
     if (resolvedActionId.isNotEmpty) 'action_id': resolvedActionId,
-    if (dedupeKey != null && dedupeKey.trim().isNotEmpty)
-      'dedupe_key': dedupeKey.trim(),
+    'dedupe_key': dispatchDedupeKey,
   };
 
   if (await farmNotificationAlreadyExists(
     title: title,
-    type: type,
+    type: cleanType,
     userId: targetUserId,
     userEmail: targetEmail,
     orderId: cleanOrderId,
-    dedupeKey: dedupeKey,
+    dedupeKey: requestedDedupeKey.isEmpty ? null : requestedDedupeKey,
   )) {
+    // A prior attempt may have saved the notification while FCM was
+    // temporarily unavailable. The Edge Function is idempotent and will only
+    // send it if push_sent_at is still empty.
+    if (requestedDedupeKey.isNotEmpty) {
+      await dispatchStoredPushNotificationByDedupeKey(requestedDedupeKey);
+    }
+
     showBrowserNotificationForTarget(
       title: title,
       message: message,
-      type: type,
+      type: cleanType,
       userId: targetUserId,
       userEmail: targetEmail,
       orderId: cleanOrderId,
@@ -2079,28 +2591,18 @@ Future<void> createFarmNotification({
   try {
     await supabase.from('notifications').insert(notificationPayload);
 
+    // Notification data changed — force the inbox to reload next time.
     FarmDataCache.notifications = null;
+
+    await dispatchStoredPushNotificationByDedupeKey(dispatchDedupeKey);
 
     showBrowserNotificationForTarget(
       title: title,
       message: message,
-      type: type,
+      type: cleanType,
       userId: targetUserId,
       userEmail: targetEmail,
       orderId: cleanOrderId,
-    );
-
-    unawaited(
-      PushNotificationService.dispatchStoredNotificationPush(
-        title: title,
-        message: message,
-        type: type,
-        targetUserId: targetUserId,
-        targetEmail: targetEmail,
-        orderId: cleanOrderId,
-        actionType: resolvedActionType.isEmpty ? null : resolvedActionType,
-        actionId: resolvedActionId.isEmpty ? null : resolvedActionId,
-      ),
     );
   } catch (error) {
     if (isNotificationsPermissionError(error)) {
@@ -2111,6 +2613,9 @@ Future<void> createFarmNotification({
       return;
     }
 
+    // Compatibility fallback for older notifications tables. Remote Android
+    // push requires migration 009, but the legacy in-app notification remains
+    // available so older test databases do not break the workflow.
     try {
       if (targetEmail == null || targetEmail.isEmpty) return;
       final legacyPayload = Map<String, dynamic>.from(notificationPayload)
@@ -2119,19 +2624,19 @@ Future<void> createFarmNotification({
         ..remove('action_type')
         ..remove('action_id')
         ..remove('dedupe_key');
-
       await supabase.from('notifications').insert(legacyPayload);
+
       FarmDataCache.notifications = null;
 
       showBrowserNotificationForTarget(
         title: title,
         message: message,
-        type: type,
+        type: cleanType,
         userId: null,
         userEmail: targetEmail,
         orderId: cleanOrderId,
       );
-    } catch (_) {
+    } catch (legacyError) {
       debugPrintOnce(
         "notification_insert_failed_${type}_${cleanOrderId ?? 'general'}",
         'Notification save skipped. The app will continue running.',
@@ -2330,6 +2835,10 @@ Future<void> createOrderCustomerNotification({
       userId: target.userId,
       userEmail: target.userEmail,
       orderId: orderId,
+      actionType: 'order',
+      actionId: orderId,
+      dedupeKey:
+          'customer-order:$orderId:${type.trim().toLowerCase()}:${_hpjNotificationDedupeSlug(title)}',
     );
   } catch (error) {
     debugPrintOnce(
@@ -2376,19 +2885,35 @@ Future<void> createOrderConfirmationSupport({
 
 Future<List<FarmNotification>> fetchFarmNotifications(
     {bool forceRefresh = false}) async {
-  if (!forceRefresh) {
+  final boundary = captureHpjPrivateOperationBoundary();
+  final userId = boundary.userId;
+
+  if (userId == null) return const <FarmNotification>[];
+
+  if (!forceRefresh && _hpjNotificationsCacheUserId == userId) {
     final cached = FarmDataCache.notifications;
     if (cached != null) return cached;
   }
+
   final notifications = await _fetchFarmNotificationsUncached();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+    farmDebugLog(
+      'Discarded stale Notifications response after account/session boundary change.',
+    );
+    return const <FarmNotification>[];
+  }
+
   FarmDataCache.notifications = notifications;
+  _hpjNotificationsCacheUserId = userId;
   return notifications;
 }
 
 Future<int> fetchUnreadNotificationCount() async {
+  final boundary = captureHpjPrivateOperationBoundary();
   final user = supabase.auth.currentUser;
 
-  if (user == null) return 0;
+  if (user == null || boundary.userId == null) return 0;
 
   try {
     final response = await supabase
@@ -2396,6 +2921,10 @@ Future<int> fetchUnreadNotificationCount() async {
         .select('id')
         .eq('user_id', user.id)
         .eq('is_read', false);
+
+    if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+      return 0;
+    }
 
     return (response as List).length;
   } catch (userIdError) {
@@ -2409,6 +2938,10 @@ Future<int> fetchUnreadNotificationCount() async {
           .select('id')
           .eq('user_email', userEmail)
           .eq('is_read', false);
+
+      if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+        return 0;
+      }
 
       return (response as List).length;
     } catch (emailError) {
@@ -2526,6 +3059,8 @@ Future<void> notifySubscribedCustomersProductReady(Product product) async {
         userEmail: email,
         actionType: 'customer_product',
         actionId: product.id,
+        dedupeKey: 'product-ready:${product.id}:'
+            '${subId.isNotEmpty ? subId : (userId ?? email ?? 'customer')}',
       );
 
       final normalizedEmail = email?.trim().toLowerCase();
@@ -2855,6 +3390,9 @@ Future<void> updateOrderStatus(String orderId, String status) async {
           'Order #${shortIdLabel(orderId)} was marked ${_friendlyStatus(status)}.',
       type: 'admin',
       orderId: orderId,
+      actionType: 'admin_customer_order',
+      actionId: orderId,
+      dedupeKey: 'admin-order-status:$orderId:${status.trim().toLowerCase()}',
     );
   }
 }
@@ -3659,16 +4197,20 @@ Future<void> saveFarmerProfile({
   final cleanFarmName = farmName.trim();
   final cleanFarmerName = farmerName.trim();
   final cleanPhone = phone.trim();
-  final cleanParish = parish.trim();
 
   if (cleanFarmName.isEmpty ||
       cleanFarmerName.isEmpty ||
       cleanPhone.isEmpty ||
-      cleanParish.isEmpty) {
+      parish.trim().isEmpty) {
     throw Exception(
       'Farm name, farmer name, phone, and parish are required.',
     );
   }
+
+  final cleanParish = requireJamaicaParish(
+    parish,
+    fieldLabel: 'Farmer parish',
+  );
 
   final params = <String, dynamic>{
     'p_farm_name': cleanFarmName,
@@ -3758,6 +4300,8 @@ Future<void> saveFarmerProfile({
   // Notification delivery is intentionally non-blocking. A successfully saved
   // farmer application must never be reported to the user as failed just
   // because an admin notification could not be created.
+  final savedFarmerProfile = await fetchCurrentFarmerProfile();
+
   await createAdminNotification(
     title:
         existing == null ? 'New farmer application' : 'Farmer profile updated',
@@ -3765,6 +4309,12 @@ Future<void> saveFarmerProfile({
         ? '$cleanFarmName submitted a farmer partner application.'
         : '$cleanFarmName updated their farmer profile.',
     type: 'farmer',
+    actionType: 'admin_farmer_application',
+    actionId: savedFarmerProfile?.id,
+    dedupeKey: savedFarmerProfile?.id == null
+        ? null
+        : 'admin-farmer-profile:${savedFarmerProfile!.id}:'
+            '${existing == null ? 'new' : 'updated'}',
   );
 }
 
@@ -3870,7 +4420,14 @@ Future<FarmerSupplyForecast> updateFarmerSupplyForecast({
   String? status,
   String? notes,
 }) async {
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
   final farmer = await fetchCurrentFarmerProfile();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+    throw const HpjPrivateMutationInterruptedException();
+  }
 
   if (farmer == null) {
     throw Exception(
@@ -3910,7 +4467,7 @@ Future<FarmerSupplyForecast> updateFarmerSupplyForecast({
     );
   }
 
-  final payload = <String, dynamic>{};
+  final patch = <String, dynamic>{};
 
   if (cropName != null) {
     final cleanCrop = cropName.trim();
@@ -3921,23 +4478,24 @@ Future<FarmerSupplyForecast> updateFarmerSupplyForecast({
       );
     }
 
-    payload['crop_name'] = cleanCrop;
+    patch['crop_name'] = cleanCrop;
   }
 
   if (category != null) {
-    payload['category'] = category.trim().isEmpty ? null : category.trim();
+    patch['category'] =
+        category.trim().isEmpty ? null : category.trim();
   }
 
   if (quantityGrowing != null) {
-    payload['quantity_growing'] = quantityGrowing;
+    patch['quantity_growing'] = quantityGrowing;
   }
 
   if (expectedQuantity != null) {
-    payload['expected_quantity'] = expectedQuantity;
+    patch['expected_quantity'] = expectedQuantity;
   }
 
   if (harvestedQuantity != null) {
-    payload['harvested_quantity'] = harvestedQuantity;
+    patch['harvested_quantity'] = harvestedQuantity;
   }
 
   if (unit != null) {
@@ -3949,16 +4507,17 @@ Future<FarmerSupplyForecast> updateFarmerSupplyForecast({
       );
     }
 
-    payload['unit'] = cleanUnit;
+    patch['unit'] = cleanUnit;
   }
 
   if (expectedHarvestDate != null) {
-    payload['expected_harvest_date'] =
+    patch['expected_harvest_date'] =
         expectedHarvestDate.toIso8601String().split('T').first;
   }
 
   if (notes != null) {
-    payload['notes'] = notes.trim().isEmpty ? null : notes.trim();
+    patch['notes'] =
+        notes.trim().isEmpty ? null : notes.trim();
   }
 
   if (status != null) {
@@ -3970,49 +4529,55 @@ Future<FarmerSupplyForecast> updateFarmerSupplyForecast({
       );
     }
 
-    payload['status'] = cleanStatus;
+    patch['status'] = cleanStatus;
 
     if (cleanStatus == 'harvested') {
-      payload['harvested_at'] =
-          (harvestedAt ?? DateTime.now()).toUtc().toIso8601String();
+      patch['harvested_at'] =
+          (harvestedAt ?? DateTime.now())
+              .toUtc()
+              .toIso8601String();
     }
   } else if (harvestedAt != null) {
-    payload['harvested_at'] = harvestedAt.toUtc().toIso8601String();
+    patch['harvested_at'] =
+        harvestedAt.toUtc().toIso8601String();
   }
 
-  if (payload.isEmpty) {
+  if (patch.isEmpty) {
     throw Exception(
       'No supply changes were provided.',
     );
   }
 
-  final response = await supabase
-      .from('farmer_supply_forecasts')
-      .update(payload)
-      .eq(
-        'id',
-        cleanForecastId,
-      )
-      .eq(
-        'farmer_id',
-        farmer.id,
-      )
-      .select(
-        _farmerSupplyForecastFields,
-      )
-      .maybeSingle();
-
-  if (response == null) {
-    throw Exception(
-      'Supply report could not be updated.',
-    );
-  }
-
-  return FarmerSupplyForecast.fromSupabase(
-    Map<String, dynamic>.from(
-      response,
-    ),
+  final mutationLease = acquireHpjPrivateMutation(
+    'farmer-supply-update:$cleanForecastId',
+    expectedBoundary: operationBoundary,
   );
+
+  try {
+    mutationLease.ensureCurrent();
+
+    final response = await supabase.rpc(
+      'farmer_update_supply_forecast_secure',
+      params: {
+        'p_supply_id': cleanForecastId,
+        'p_patch': patch,
+      },
+    );
+
+    mutationLease.ensureCurrent();
+
+    if (response is! Map) {
+      throw Exception(
+        'Supply report could not be updated.',
+      );
+    }
+
+    return FarmerSupplyForecast.fromSupabase(
+      Map<String, dynamic>.from(response),
+    );
+  } finally {
+    mutationLease.release();
+  }
 }
 // =====================================================
 // CANCEL FARMER SUPPLY FORECAST
@@ -4134,7 +4699,14 @@ Future<FarmerSupplyForecast> createFarmerSupplyForecast({
   String status = 'growing',
   String? notes,
 }) async {
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
   final farmer = await fetchCurrentFarmerProfile();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+    throw const HpjPrivateMutationInterruptedException();
+  }
 
   if (farmer == null) {
     throw Exception(
@@ -4149,71 +4721,82 @@ Future<FarmerSupplyForecast> createFarmerSupplyForecast({
   }
 
   final cleanCropName = cropName.trim();
-
   final cleanUnit = unit.trim();
-
   final cleanStatus = status.trim().toLowerCase();
 
   if (cleanCropName.isEmpty) {
-    throw Exception(
-      'Crop name is required.',
-    );
+    throw Exception('Crop name is required.');
   }
 
   if (cleanUnit.isEmpty) {
-    throw Exception(
-      'Unit is required.',
-    );
+    throw Exception('Unit is required.');
   }
 
   if (!_farmerEditableSupplyStatuses.contains(cleanStatus)) {
-    throw Exception(
-      'Invalid farmer supply status.',
-    );
+    throw Exception('Invalid farmer supply status.');
   }
 
   if (quantityGrowing != null && quantityGrowing < 0) {
-    throw Exception(
-      'Quantity growing cannot be negative.',
-    );
+    throw Exception('Quantity growing cannot be negative.');
   }
 
   if (expectedQuantity != null && expectedQuantity < 0) {
-    throw Exception(
-      'Expected quantity cannot be negative.',
-    );
+    throw Exception('Expected quantity cannot be negative.');
   }
 
-  final payload = <String, dynamic>{
-    'farmer_id': farmer.id,
-    'crop_name': cleanCropName,
-    'category':
-        category == null || category.trim().isEmpty ? null : category.trim(),
-    'quantity_growing': quantityGrowing,
-    'expected_quantity': expectedQuantity,
-    'unit': cleanUnit,
-    'expected_harvest_date': expectedHarvestDate == null
-        ? null
-        : expectedHarvestDate.toIso8601String().split('T').first,
-    'status': cleanStatus,
-    'notes': notes == null || notes.trim().isEmpty ? null : notes.trim(),
-  };
-
-  final response = await supabase
-      .from('farmer_supply_forecasts')
-      .insert(payload)
-      .select(
-        _farmerSupplyForecastFields,
-      )
-      .single();
-
-  return FarmerSupplyForecast.fromSupabase(
-    Map<String, dynamic>.from(
-      response,
-    ),
+  final mutationLease = acquireHpjPrivateMutation(
+    'farmer-supply:${farmer.id}:${cleanCropName.toLowerCase()}',
+    expectedBoundary: operationBoundary,
   );
-}
 
+  try {
+    mutationLease.ensureCurrent();
+
+    final idempotencyKey =
+        newHpjIdempotencyKey('farmer-supply-create');
+
+    final response = await supabase.rpc(
+      'farmer_create_supply_forecast_secure_idempotent',
+      params: {
+        'p_crop_name': cleanCropName,
+        'p_category':
+            category == null || category.trim().isEmpty
+                ? null
+                : category.trim(),
+        'p_quantity_growing': quantityGrowing,
+        'p_expected_quantity': expectedQuantity,
+        'p_unit': cleanUnit,
+        'p_expected_harvest_date':
+            expectedHarvestDate == null
+                ? null
+                : expectedHarvestDate
+                    .toIso8601String()
+                    .split('T')
+                    .first,
+        'p_status': cleanStatus,
+        'p_notes':
+            notes == null || notes.trim().isEmpty
+                ? null
+                : notes.trim(),
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+
+    mutationLease.ensureCurrent();
+
+    if (response is! Map) {
+      throw Exception(
+        'Farmer supply report could not be created.',
+      );
+    }
+
+    return FarmerSupplyForecast.fromSupabase(
+      Map<String, dynamic>.from(response),
+    );
+  } finally {
+    mutationLease.release();
+  }
+}
 Future<List<Product>> fetchFarmerProducts(String farmerId) async {
   if (farmerId.isEmpty) return [];
   try {
@@ -4324,8 +4907,17 @@ Future<void> createFarmerProduct({
     'serving_size_g': 100,
   };
 
+  String submittedProductId = '';
+
   try {
-    await supabase.from('products').insert(marketplacePayload);
+    final inserted = await supabase
+        .from('products')
+        .insert(marketplacePayload)
+        .select('id')
+        .maybeSingle();
+
+    submittedProductId =
+        inserted == null ? '' : (inserted['id'] ?? '').toString().trim();
   } catch (error) {
     final errorText = error.toString().toLowerCase();
 
@@ -4364,10 +4956,35 @@ Future<void> createFarmerProduct({
     }
   }
 
+  if (submittedProductId.isEmpty) {
+    try {
+      final recovered = await supabase
+          .from('products')
+          .select('id')
+          .eq('farmer_id', farmer.id)
+          .eq('name', cleanName)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      submittedProductId =
+          recovered == null ? '' : (recovered['id'] ?? '').toString().trim();
+    } catch (error) {
+      farmDebugLog(
+        'Farmer product id recovery skipped after successful submission: $error',
+      );
+    }
+  }
+
   await createAdminNotification(
     title: 'Product awaiting approval',
     message: '${farmer.farmName} submitted $cleanName for review.',
     type: 'admin',
+    actionType: 'admin_product_approval',
+    actionId: submittedProductId.isEmpty ? null : submittedProductId,
+    dedupeKey: submittedProductId.isEmpty
+        ? null
+        : 'admin-product-approval:$submittedProductId',
   );
 }
 
@@ -4728,24 +5345,9 @@ Future<void> sendSupportMessage({
 }) async {
   final cleanId = ticketId.trim();
   final cleanMessage = message.trim();
-
   if (cleanId.isEmpty || cleanMessage.isEmpty) {
     throw Exception('Please enter a message.');
   }
-
-  final currentUser = supabase.auth.currentUser;
-  if (currentUser == null) {
-    throw Exception('Please sign in before sending a message.');
-  }
-
-  String senderStaffRole = '';
-  try {
-    senderStaffRole = await fetchCurrentStaffRole();
-  } catch (_) {
-    senderStaffRole = '';
-  }
-
-  final sentByStaff = isStaffRoleActive(senderStaffRole);
 
   await supabase.rpc(
     'hpj_send_support_message',
@@ -4758,35 +5360,71 @@ Future<void> sendSupportMessage({
 
   if (internal) return;
 
+  // Create the recipient notification server-side. The RPC determines whether
+  // the sender is the ticket owner or HPJ staff and writes the correct private
+  // notification row(s) with exact action_type/action_id metadata.
   try {
-    final ticket = await fetchSupportTicket(cleanId);
-    if (ticket == null) return;
+    final response = await supabase.rpc(
+      'hpj_create_support_message_notifications',
+      params: {'p_ticket_id': cleanId},
+    );
 
-    final shortTicket = cleanId.length <= 6
-        ? cleanId.toUpperCase()
-        : cleanId.substring(0, 6).toUpperCase();
-
-    if (sentByStaff) {
-      await createFarmNotification(
-        title: 'New HPJ Inbox message',
-        message: 'HPJ replied to conversation #$shortTicket.',
-        type: 'support',
-        userId: ticket.userId,
-        userEmail: ticket.email,
-        actionType: 'support_chat',
-        actionId: cleanId,
-      );
+    final ids = <String>[];
+    if (response is List) {
+      for (final value in response) {
+        final id = value?.toString().trim() ?? '';
+        if (id.isNotEmpty) ids.add(id);
+      }
     } else {
-      await createAdminNotification(
-        title: 'New Inbox message',
-        message: 'A partner replied to conversation #$shortTicket.',
-        type: 'support',
-        actionType: 'admin_support_chat',
-        actionId: cleanId,
-      );
+      final id = response?.toString().trim() ?? '';
+      if (id.isNotEmpty) ids.add(id);
     }
+
+    for (final id in ids.toSet()) {
+      await dispatchStoredPushNotification(id);
+    }
+    return;
   } catch (error) {
-    farmDebugLog('Inbox push notification skipped safely: $error');
+    farmDebugLog(
+      'Secure support notification RPC unavailable; using compatibility path: '
+      '$error',
+    );
+  }
+
+  // Compatibility path for a database that has not received migration 009
+  // yet. Keep this narrow and private; the normal path above is preferred.
+  final ticket = await fetchSupportTicket(cleanId);
+  if (ticket == null) return;
+
+  var senderIsStaff = false;
+  try {
+    final role = await fetchCurrentStaffRole();
+    senderIsStaff = isStaffRoleActive(role);
+    if (!senderIsStaff) {
+      senderIsStaff = await isCurrentUserAdminFromDatabase();
+    }
+  } catch (_) {
+    senderIsStaff = false;
+  }
+
+  if (senderIsStaff) {
+    await createFarmNotification(
+      title: 'HPJ Inbox reply',
+      message: 'You have a new private reply from The Harvest Place Ja.',
+      type: 'support',
+      userId: ticket.userId.trim().isEmpty ? null : ticket.userId.trim(),
+      userEmail: ticket.email.trim().isEmpty ? null : ticket.email.trim(),
+      actionType: 'support_chat',
+      actionId: cleanId,
+    );
+  } else {
+    await createAdminNotification(
+      title: 'New HPJ Inbox message',
+      message: 'Conversation #${ticket.shortId} has a new private reply.',
+      type: 'support',
+      actionType: 'admin_support_chat',
+      actionId: cleanId,
+    );
   }
 }
 
@@ -4884,6 +5522,57 @@ Future<List<ProductReview>> _attachCustomerProfileNames(
   }
 }
 
+Future<List<Product>> fetchReviewEligibleProducts() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return const <Product>[];
+
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
+  try {
+    final response = await supabase.rpc(
+      'list_review_eligible_product_ids_secure',
+    );
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return const <Product>[];
+    }
+
+    final ids = <String>{};
+
+    if (response is List) {
+      for (final item in response) {
+        final id = item?.toString().trim() ?? '';
+        if (id.isNotEmpty) ids.add(id);
+      }
+    } else if (response != null) {
+      final id = response.toString().trim();
+      if (id.isNotEmpty) ids.add(id);
+    }
+
+    if (ids.isEmpty) return const <Product>[];
+
+    final products = await fetchProducts();
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return const <Product>[];
+    }
+
+    return products
+        .where(
+          (product) =>
+              ids.contains(product.id.trim()) &&
+              product.isCustomerVisible,
+        )
+        .toList();
+  } catch (error) {
+    farmDebugLog(
+      'Verified review product eligibility load skipped: $error',
+    );
+    return const <Product>[];
+  }
+}
+
 Future<void> createProductReview({
   required String productId,
   required String productName,
@@ -4891,79 +5580,155 @@ Future<void> createProductReview({
   required String comment,
 }) async {
   final user = supabase.auth.currentUser;
-  final customerName = await currentReviewCustomerName();
-  final payload = <String, dynamic>{
-    'product_id': productId.isEmpty ? null : productId,
-    'product_name': productName,
-    'user_id': user?.id,
-    'customer_name': customerName,
-    'email': user?.email ?? '',
-    'rating': rating,
-    'comment': comment,
-  };
-
-  try {
-    await supabase.from('product_reviews').insert(payload);
-  } catch (error) {
-    final message = error.toString().toLowerCase();
-    if (message.contains('customer_name') || message.contains('column')) {
-      final fallbackPayload = Map<String, dynamic>.from(payload)
-        ..remove('customer_name');
-      await supabase.from('product_reviews').insert(fallbackPayload);
-    } else {
-      rethrow;
-    }
+  if (user == null) {
+    throw Exception('Please sign in before sharing a review.');
   }
 
-  await createAdminNotification(
-    title: 'New product review',
-    message: '$customerName left a $rating-star review for $productName.',
-    type: 'review',
+  final cleanProductId = productId.trim();
+  final cleanComment = comment.trim();
+
+  if (cleanProductId.isEmpty) {
+    throw Exception('Choose a product you purchased.');
+  }
+
+  if (rating < 1 || rating > 5) {
+    throw Exception('Choose a rating from 1 to 5 stars.');
+  }
+
+  if (cleanComment.length < 8) {
+    throw Exception(
+      'Add a little more detail so your review is useful.',
+    );
+  }
+
+  if (cleanComment.length > 1200) {
+    throw Exception(
+      'Keep your review under 1,200 characters.',
+    );
+  }
+
+  final operationBoundary =
+      captureHpjPrivateOperationBoundary();
+
+  final mutationLease = acquireHpjPrivateMutation(
+    'product-review:$cleanProductId',
+    expectedBoundary: operationBoundary,
   );
+
+  try {
+    mutationLease.ensureCurrent();
+
+    final response = await supabase.rpc(
+      'submit_verified_product_review_secure',
+      params: {
+        'p_product_id': cleanProductId,
+        'p_rating': rating,
+        'p_comment': cleanComment,
+      },
+    );
+
+    mutationLease.ensureCurrent();
+
+    if (response is! Map) {
+      throw Exception(
+        'The review could not be verified and saved.',
+      );
+    }
+
+    final row = Map<String, dynamic>.from(response);
+    final serverProductName =
+        (row['product_name'] ?? productName).toString().trim();
+    final customerName =
+        (row['customer_name'] ?? 'HPJ Customer').toString().trim();
+    final created = row['created'] == true;
+
+    await createAdminNotification(
+      title: created
+          ? 'New verified product review'
+          : 'Verified product review updated',
+      message:
+          '${customerName.isEmpty ? 'An HPJ customer' : customerName} left a $rating-star review for ${serverProductName.isEmpty ? productName : serverProductName}.',
+      type: 'review',
+      actionType: 'admin_review',
+      actionId: cleanProductId,
+      dedupeKey: 'admin-review:${user.id}:$cleanProductId',
+    );
+
+    mutationLease.ensureCurrent();
+  } finally {
+    mutationLease.release();
+  }
 }
 
 Future<List<ProductReview>> fetchProductReviews() async {
   Future<List<ProductReview>> parseReviews(dynamic response) async {
-    final reviews = (response as List)
-        .map((item) =>
-            ProductReview.fromSupabase(Map<String, dynamic>.from(item)))
+    if (response is! List) return const <ProductReview>[];
+
+    return response
+        .whereType<Map>()
+        .map(
+          (item) => ProductReview.fromSupabase(
+            Map<String, dynamic>.from(item),
+          ),
+        )
         .toList();
-    return _attachCustomerProfileNames(reviews);
   }
 
   try {
-    final response = await supabase
-        .from('product_reviews')
-        .select(
-            'id, product_id, product_name, user_id, customer_name, email, rating, comment, created_at, products(name)')
-        .order('created_at', ascending: false)
-        .limit(100);
+    final isAdmin = await isCurrentUserAdminFromDatabase();
 
-    return parseReviews(response);
-  } catch (firstError) {
-    try {
-      final response = await supabase
-          .from('product_reviews')
-          .select(
-              'id, product_id, product_name, user_id, email, rating, comment, created_at, products(name)')
-          .order('created_at', ascending: false)
-          .limit(100);
-
-      return parseReviews(response);
-    } catch (secondError) {
+    if (isAdmin) {
       try {
         final response = await supabase
             .from('product_reviews')
             .select(
-                'id, product_id, product_name, email, rating, comment, created_at, products(name)')
+                'id, product_id, product_name, user_id, customer_name, email, rating, comment, created_at, verified_purchase, verified_order_id, products(name)')
             .order('created_at', ascending: false)
             .limit(100);
 
-        return parseReviews(response);
-      } catch (error) {
-        farmDebugLog('Failed to fetch product reviews: $error');
-        return [];
+        final reviews = await parseReviews(response);
+        return _attachCustomerProfileNames(reviews);
+      } catch (adminCompatibilityError) {
+        final response = await supabase
+            .from('product_reviews')
+            .select(
+                'id, product_id, product_name, user_id, email, rating, comment, created_at, products(name)')
+            .order('created_at', ascending: false)
+            .limit(100);
+
+        final reviews = await parseReviews(response);
+        return _attachCustomerProfileNames(reviews);
       }
+    }
+
+    final response = await supabase.rpc(
+      'fetch_public_verified_product_reviews_secure',
+      params: {
+        'p_limit': 100,
+      },
+    );
+
+    return parseReviews(response);
+  } catch (error) {
+    // Safe compatibility fallback. RLS continues to limit direct table reads
+    // to the current user/admin on older deployments; no write fallback exists.
+    farmDebugLog(
+      'Verified public reviews RPC unavailable; using safe read fallback: $error',
+    );
+
+    try {
+      final response = await supabase
+          .from('product_reviews')
+          .select(
+              'id, product_id, product_name, user_id, customer_name, email, rating, comment, created_at, products(name)')
+          .order('created_at', ascending: false)
+          .limit(100);
+
+      final reviews = await parseReviews(response);
+      return _attachCustomerProfileNames(reviews);
+    } catch (fallbackError) {
+      farmDebugLog('Failed to fetch product reviews: $fallbackError');
+      return const <ProductReview>[];
     }
   }
 }

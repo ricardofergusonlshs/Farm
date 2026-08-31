@@ -14,6 +14,7 @@ class PushNotificationService {
   static bool _openingNotification = false;
   static RemoteMessage? _pendingOpenedMessage;
   static String? _lastOpenedMessageKey;
+  static int _pendingNavigationAttempts = 0;
 
   static StreamSubscription<String>? _tokenRefreshSubscription;
   static StreamSubscription<AuthState>? _authSubscription;
@@ -57,9 +58,11 @@ class PushNotificationService {
     );
 
     try {
-      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+      final initialMessage =
+          await FirebaseMessaging.instance.getInitialMessage();
       if (initialMessage != null) {
         _pendingOpenedMessage = initialMessage;
+        _pendingNavigationAttempts = 0;
       }
     } catch (error, stackTrace) {
       farmDebugLog('Initial push notification lookup failed: $error');
@@ -70,15 +73,19 @@ class PushNotificationService {
 
     _authSubscription = supabase.auth.onAuthStateChange.listen(
       (authState) {
-        if (authState.session != null) {
-          unawaited(_registerCurrentDevice());
-          unawaited(
-            Future<void>.delayed(
-              const Duration(milliseconds: 650),
-              flushPendingNavigation,
-            ),
-          );
+        if (authState.session == null) {
+          clearPendingNavigationState();
+          unawaited(invalidateLocalPushToken());
+          return;
         }
+
+        unawaited(_registerCurrentDevice());
+        unawaited(
+          Future<void>.delayed(
+            const Duration(milliseconds: 650),
+            flushPendingNavigation,
+          ),
+        );
       },
       onError: (Object error, StackTrace stackTrace) {
         farmDebugLog('Push authentication listener failed: $error');
@@ -109,7 +116,7 @@ class PushNotificationService {
 
       final granted =
           permission.authorizationStatus == AuthorizationStatus.authorized ||
-          permission.authorizationStatus == AuthorizationStatus.provisional;
+              permission.authorizationStatus == AuthorizationStatus.provisional;
 
       if (!granted) {
         farmDebugLog(
@@ -172,6 +179,48 @@ class PushNotificationService {
     }
   }
 
+  static void clearPendingNavigationState() {
+    _pendingOpenedMessage = null;
+    _lastOpenedMessageKey = null;
+    _pendingNavigationAttempts = 0;
+    _openingNotification = false;
+  }
+
+  static Future<void> invalidateLocalPushToken() async {
+    if (!_isSupportedAndroid) return;
+
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+      farmDebugLog(
+        'Local Android push token invalidated for signed-out account.',
+      );
+    } catch (error, stackTrace) {
+      farmDebugLog(
+        'Local push token invalidation skipped: $error',
+      );
+      farmDebugLog('$stackTrace');
+    }
+  }
+
+  static Future<void> unregisterCurrentDevice() async {
+    if (!_isSupportedAndroid || supabase.auth.currentUser == null) return;
+
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      final cleanToken = token?.trim() ?? '';
+      if (cleanToken.isEmpty) return;
+
+      await supabase.rpc(
+        'deactivate_push_token',
+        params: {'p_token': cleanToken},
+      );
+      farmDebugLog('Android push token deactivated for this device.');
+    } catch (error, stackTrace) {
+      farmDebugLog('Android push token deactivation skipped: $error');
+      farmDebugLog('$stackTrace');
+    }
+  }
+
   static Future<void> dispatchStoredNotificationPush({
     required String title,
     required String message,
@@ -223,7 +272,8 @@ class PushNotificationService {
     return <String>[
       _dataValue(data, const ['notification_id', 'notificationId']),
       _dataValue(data, const ['action_type', 'actionType', 'type']),
-      _dataValue(data, const ['action_id', 'actionId', 'entity_id', 'entityId']),
+      _dataValue(
+          data, const ['action_id', 'actionId', 'entity_id', 'entityId']),
       _dataValue(data, const ['order_id', 'orderId']),
       message.notification?.title?.trim() ?? '',
       message.sentTime?.millisecondsSinceEpoch.toString() ?? '',
@@ -244,9 +294,9 @@ class PushNotificationService {
   static Future<void> _handleForegroundRemoteMessage(
     RemoteMessage message,
   ) async {
-    final title =
-        (message.notification?.title ?? _dataValue(message.data, const ['title']))
-            .trim();
+    final title = (message.notification?.title ??
+            _dataValue(message.data, const ['title']))
+        .trim();
     final body = (message.notification?.body ??
             _dataValue(message.data, const ['body', 'message']))
         .trim();
@@ -270,6 +320,7 @@ class PushNotificationService {
           label: 'Open',
           onPressed: () {
             _pendingOpenedMessage = message;
+            _pendingNavigationAttempts = 0;
             unawaited(flushPendingNavigation());
           },
         ),
@@ -282,7 +333,21 @@ class PushNotificationService {
     if (key.isNotEmpty && key == _lastOpenedMessageKey) return;
 
     _pendingOpenedMessage = message;
+    _pendingNavigationAttempts = 0;
     await flushPendingNavigation();
+  }
+
+  static Future<void> _openNotificationsFallback() async {
+    final nav = hpjRootNavigatorKey.currentState;
+    if (nav == null || !nav.mounted) return;
+
+    unawaited(
+      nav.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const NotificationsScreen(),
+        ),
+      ),
+    );
   }
 
   static Future<void> flushPendingNavigation() async {
@@ -292,37 +357,86 @@ class PushNotificationService {
     if (message == null) return;
     if (!isLoggedIn || supabase.auth.currentUser == null) return;
 
+    final operationBoundary = captureHpjPrivateOperationBoundary();
+
     final navigator = hpjRootNavigatorKey.currentState;
     if (navigator == null || !navigator.mounted) return;
 
     _openingNotification = true;
     try {
       final notice = await _resolveRemoteNotification(message);
+
+      if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        clearPendingNavigationState();
+        farmDebugLog(
+          'Discarded stale notification navigation after account/session change.',
+        );
+        return;
+      }
+
       if (notice == null) {
+        _pendingNavigationAttempts++;
+
+        if (_pendingNavigationAttempts <= 1) {
+          farmDebugLog(
+            'Notification destination is not ready yet. Retrying once.',
+          );
+          unawaited(
+            Future<void>.delayed(
+              const Duration(milliseconds: 900),
+              flushPendingNavigation,
+            ),
+          );
+          return;
+        }
+
         _pendingOpenedMessage = null;
+        _pendingNavigationAttempts = 0;
+        await _openNotificationsFallback();
         return;
       }
 
       final opened = await openFarmNotification(notice);
+
+      if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        clearPendingNavigationState();
+        return;
+      }
+
       if (!opened) {
-        final nav = hpjRootNavigatorKey.currentState;
-        if (nav != null && nav.mounted) {
-          unawaited(
-            nav.push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => const NotificationsScreen(),
-              ),
-            ),
-          );
-        }
+        await _openNotificationsFallback();
+      }
+
+      if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        clearPendingNavigationState();
+        return;
       }
 
       _lastOpenedMessageKey = _messageKey(message);
       _pendingOpenedMessage = null;
+      _pendingNavigationAttempts = 0;
     } catch (error, stackTrace) {
+      if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        clearPendingNavigationState();
+        return;
+      }
+
       farmDebugLog('Notification tap routing failed: $error');
       farmDebugLog('$stackTrace');
-      _pendingOpenedMessage = null;
+
+      _pendingNavigationAttempts++;
+      if (_pendingNavigationAttempts <= 1) {
+        unawaited(
+          Future<void>.delayed(
+            const Duration(milliseconds: 900),
+            flushPendingNavigation,
+          ),
+        );
+      } else {
+        _pendingOpenedMessage = null;
+        _pendingNavigationAttempts = 0;
+        await _openNotificationsFallback();
+      }
     } finally {
       _openingNotification = false;
     }
@@ -340,6 +454,14 @@ class PushNotificationService {
     if (notificationId.isNotEmpty) {
       final stored = await _fetchNotificationById(notificationId);
       if (stored != null) return stored;
+
+      // A modern HPJ push that carries notification_id represents a private
+      // database notification. If this signed-in account cannot read that row,
+      // never fall through to action metadata from the remote payload. This
+      // prevents a notification opened for Account A from navigating Account B
+      // after a sign-out/account switch. flushPendingNavigation() retries once
+      // for normal database/realtime delay before falling back to Updates.
+      return null;
     }
 
     var actionType = _dataValue(
@@ -392,14 +514,27 @@ class PushNotificationService {
         'farmer_collection',
         'farmer_supply',
         'farmer_payment',
+        'farmer_payout',
         'wholesale_plan',
         'wholesale_order',
         'wholesale_orders',
         'wholesale_account',
+        'admin_inventory',
+        'admin_wholesale_demand',
+        'admin_wholesale_payment',
+        'admin_wholesale_application',
+        'admin_wholesale_order',
+        'admin_customer_order',
+        'admin_farmer_application',
+        'admin_product_approval',
+        'admin_review',
+        'customer_order',
       }.contains(remoteType)) {
         actionType = remoteType;
       }
     }
+
+    actionType = hpjCanonicalNotificationActionType(actionType);
 
     final title =
         (message.notification?.title ?? _dataValue(data, const ['title']))
@@ -463,6 +598,31 @@ class PushNotificationService {
     }
   }
 
+  static Future<OwnerWorkspaceAccessSnapshot?>
+      _notificationWorkspaceAccessSnapshot() async {
+    try {
+      return await fetchOwnerWorkspaceAccessSnapshot();
+    } catch (error, stackTrace) {
+      farmDebugLog(
+        'Notification workspace-access lookup failed: $error',
+      );
+      farmDebugLog('$stackTrace');
+      return null;
+    }
+  }
+
+  static Future<bool> _hasActiveStaffNotificationAccess() async {
+    try {
+      return await isCurrentUserAdminFromDatabase();
+    } catch (error, stackTrace) {
+      farmDebugLog(
+        'Notification staff-access lookup failed: $error',
+      );
+      farmDebugLog('$stackTrace');
+      return false;
+    }
+  }
+
   static Future<void> _pushPage(
     Widget page, {
     BuildContext? context,
@@ -491,10 +651,47 @@ class PushNotificationService {
   }) async {
     if (!isLoggedIn || supabase.auth.currentUser == null) return false;
 
-    await _markNotificationRead(notice);
+    final operationBoundary = captureHpjPrivateOperationBoundary();
+
+    final opened = await _openFarmNotificationDestination(
+      notice,
+      context: context,
+    );
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return false;
+    }
+
+    if (opened) {
+      await _markNotificationRead(notice);
+    }
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return false;
+    }
+
+    return opened;
+  }
+
+  static Future<bool> _openFarmNotificationDestination(
+    FarmNotification notice, {
+    BuildContext? context,
+  }) async {
+    if (!isLoggedIn || supabase.auth.currentUser == null) return false;
 
     final actionType = (notice.actionType ?? '').trim().toLowerCase();
     final actionId = (notice.actionId ?? '').trim();
+
+    final staffDestination =
+        actionType.startsWith('admin_') || actionType == 'staff_support_chat';
+
+    if (staffDestination && !await _hasActiveStaffNotificationAccess()) {
+      farmDebugLog(
+        'Notification destination blocked because staff access is no longer active: '
+        '$actionType',
+      );
+      return false;
+    }
 
     switch (actionType) {
       case 'support_chat':
@@ -526,7 +723,16 @@ class PushNotificationService {
             return true;
           }
         }
-        return false;
+
+        // The exact conversation may have been closed/deleted. Keep staff in
+        // the correct communication area instead of falling to generic Updates.
+        await _pushPage(
+          const AdminDashboardScreen(
+            initialSection: 'Messages',
+          ),
+          context: context,
+        );
+        return true;
 
       case 'customer_product':
       case 'product':
@@ -548,12 +754,28 @@ class PushNotificationService {
         return true;
 
       case 'wholesale_product':
-        final account = await fetchCurrentBusinessAccount();
-        if (account == null) return false;
+        final access = await _notificationWorkspaceAccessSnapshot();
+        if (access == null) return false;
+
+        final account = access.businessAccount;
+
+        if (account == null ||
+            !account.isApproved ||
+            !access.programSettings.wholesaleWorkspaceEnabled) {
+          await _pushPage(
+            const BusinessWholesaleHubScreen(
+              initialTab: 0,
+            ),
+            context: context,
+          );
+          return true;
+        }
+
         Product? product;
         if (actionId.isNotEmpty) {
           product = await fetchProductById(actionId);
         }
+
         await _pushPage(
           WholesaleCatalogueScreen(
             account: account,
@@ -565,27 +787,62 @@ class PushNotificationService {
 
       case 'farmer_demand':
       case 'buyer_demand':
-        final profile = await fetchCurrentFarmerProfile();
-        if (profile == null) return false;
+        final access = await _notificationWorkspaceAccessSnapshot();
+        if (access == null) return false;
+
+        final profile = access.farmerProfile;
+
+        if (profile == null ||
+            !profile.isApproved ||
+            !access.programSettings.farmerWorkspaceEnabled) {
+          await _pushPage(
+            const FarmerAccessGate(initialTab: 0),
+            context: context,
+          );
+          return true;
+        }
+
         await _pushPage(
-          FarmerDemandBoardScreen(profile: profile),
+          FarmerDemandBoardScreen(
+            profile: profile,
+            initialWatchKey: actionId.isEmpty ? null : actionId,
+          ),
           context: context,
         );
         return true;
 
       case 'farmer_collection':
       case 'collection':
-        final profile = await fetchCurrentFarmerProfile();
-        if (profile == null) return false;
+        final access = await _notificationWorkspaceAccessSnapshot();
+        if (access == null) return false;
+
+        final profile = access.farmerProfile;
+
+        if (profile == null ||
+            !profile.isApproved ||
+            !access.programSettings.farmerWorkspaceEnabled) {
+          await _pushPage(
+            const FarmerAccessGate(initialTab: 0),
+            context: context,
+          );
+          return true;
+        }
+
         await _pushPage(
-          FarmerCollectionScheduleScreen(profile: profile),
+          FarmerCollectionScheduleScreen(
+            profile: profile,
+            initialCollectionId: actionId.isEmpty ? null : actionId,
+          ),
           context: context,
         );
         return true;
 
       case 'farmer_supply':
         await _pushPage(
-          const FarmerAccessGate(initialTab: 1),
+          FarmerAccessGate(
+            initialTab: 1,
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
           context: context,
         );
         return true;
@@ -593,7 +850,10 @@ class PushNotificationService {
       case 'farmer_payment':
       case 'farmer_payout':
         await _pushPage(
-          const FarmerAccessGate(initialTab: 3),
+          FarmerAccessGate(
+            initialTab: 3,
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
           context: context,
         );
         return true;
@@ -601,7 +861,10 @@ class PushNotificationService {
       case 'wholesale_plan':
       case 'planning_ahead':
         await _pushPage(
-          const BusinessWholesaleHubScreen(initialTab: 2),
+          BusinessWholesaleHubScreen(
+            initialTab: 2,
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
           context: context,
         );
         return true;
@@ -610,7 +873,10 @@ class PushNotificationService {
       case 'wholesale_request':
       case 'wholesale_orders':
         await _pushPage(
-          const BusinessWholesaleHubScreen(initialTab: 3),
+          BusinessWholesaleHubScreen(
+            initialTab: 3,
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
           context: context,
         );
         return true;
@@ -618,6 +884,103 @@ class PushNotificationService {
       case 'wholesale_account':
         await _pushPage(
           const BusinessWholesaleHubScreen(initialTab: 4),
+          context: context,
+        );
+        return true;
+
+      case 'admin_customer_order':
+        final linkedOrderId = (notice.orderId ?? '').trim();
+        final adminOrderId = actionId.isNotEmpty ? actionId : linkedOrderId;
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Orders',
+            initialSubSection: 'customer',
+            initialRecordId: adminOrderId.isEmpty ? null : adminOrderId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_farmer_application':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Farmers',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_product_approval':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Products',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_review':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Reviews',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_inventory':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Products',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_wholesale_demand':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Procurement',
+            initialSubSection: 'needs_supply',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_wholesale_payment':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Business Setup',
+            initialSubSection: 'invoices',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_wholesale_application':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Business Setup',
+            initialSubSection: 'applications',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
+          context: context,
+        );
+        return true;
+
+      case 'admin_wholesale_order':
+        await _pushPage(
+          AdminDashboardScreen(
+            initialSection: 'Orders',
+            initialSubSection: 'wholesale',
+            initialRecordId: actionId.isEmpty ? null : actionId,
+          ),
           context: context,
         );
         return true;
@@ -637,7 +1000,14 @@ class PushNotificationService {
           );
           return true;
         }
-        return false;
+
+        // A stale/missing order target should still land in My Orders rather
+        // than the generic Updates screen.
+        await _pushPage(
+          const MainNavigation(initialIndex: 3),
+          context: context,
+        );
+        return true;
     }
 
     if (actionType.isEmpty && notice.hasOrderLink) {
@@ -651,6 +1021,12 @@ class PushNotificationService {
         );
         return true;
       }
+
+      await _pushPage(
+        const MainNavigation(initialIndex: 3),
+        context: context,
+      );
+      return true;
     }
 
     switch (notice.type.trim().toLowerCase()) {
@@ -658,8 +1034,21 @@ class PushNotificationService {
         await _pushPage(const SupportScreen(), context: context);
         return true;
       case 'farmer_demand':
-        final profile = await fetchCurrentFarmerProfile();
-        if (profile == null) return false;
+        final access = await _notificationWorkspaceAccessSnapshot();
+        if (access == null) return false;
+
+        final profile = access.farmerProfile;
+
+        if (profile == null ||
+            !profile.isApproved ||
+            !access.programSettings.farmerWorkspaceEnabled) {
+          await _pushPage(
+            const FarmerAccessGate(initialTab: 0),
+            context: context,
+          );
+          return true;
+        }
+
         await _pushPage(
           FarmerDemandBoardScreen(profile: profile),
           context: context,
@@ -705,6 +1094,7 @@ class PushNotificationService {
     _foregroundMessageSubscription = null;
     _pendingOpenedMessage = null;
     _lastOpenedMessageKey = null;
+    _pendingNavigationAttempts = 0;
     _openingNotification = false;
     _started = false;
   }

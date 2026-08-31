@@ -215,10 +215,10 @@ class _AuthGateState extends State<AuthGate> {
       AppConfig.hasEmailConfirmationCallback ||
       isLoggedIn;
 
-  // Signed-in users resolve to their remembered safe workspace/tab. On a true
-  // first login HPJ chooses Customer Home, Farmer Feed, or Wholesale Feed;
-  // Staff/Admin is never an automatic startup destination. Guests bypass this
-  // resolver so a checkout/login flow is never interrupted mid-order.
+  // Signed-in users resume their remembered safe workspace/tab. If no
+  // navigation preference exists yet, HPJ treats this as first workspace entry
+  // and opens the Workspaces selector. Staff/Admin is never an automatic
+  // startup destination.
   bool shouldChooseWorkspace = isLoggedIn &&
       !AppConfig.hasPasswordRecoveryCallback &&
       !AppConfig.hasEmailConfirmationCallback;
@@ -229,12 +229,14 @@ class _AuthGateState extends State<AuthGate> {
   String? emailConfirmationError;
   String? emailConfirmationMessage;
   late final StreamSubscription<AuthState> _authSubscription;
+  String? _authUserId;
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _deepLinkSubscription;
 
   @override
   void initState() {
     super.initState();
+    _authUserId = supabase.auth.currentUser?.id.trim();
 
     if (shouldChooseWorkspace) {
       _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
@@ -243,6 +245,31 @@ class _AuthGateState extends State<AuthGate> {
 
     _authSubscription = supabase.auth.onAuthStateChange.listen((data) {
       if (!mounted) return;
+
+      final rawUserId = data.session?.user.id.trim() ?? '';
+      final nextUserId = rawUserId.isEmpty ? null : rawUserId;
+      final identityChanged = nextUserId != _authUserId;
+
+      if (identityChanged) {
+        _authUserId = nextUserId;
+        clearHpjPrivateAccountMemory();
+
+        if (nextUserId == null) {
+          setState(() {
+            _workspaceAccessFuture = null;
+            _navigationPreferenceFuture = null;
+            shouldChooseWorkspace = false;
+            hasEnteredMarket = false;
+          });
+        } else {
+          setState(() {
+            hasEnteredMarket = true;
+            shouldChooseWorkspace = !isPasswordRecovery && !isEmailConfirmation;
+            _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
+            _navigationPreferenceFuture = fetchHpjNavigationPreference();
+          });
+        }
+      }
 
       if (data.event == AuthChangeEvent.passwordRecovery) {
         setState(() {
@@ -255,7 +282,9 @@ class _AuthGateState extends State<AuthGate> {
         return;
       }
 
-      setState(() {});
+      if (!identityChanged) {
+        setState(() {});
+      }
     });
 
     unawaited(_initDeepLinks());
@@ -389,43 +418,6 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
-  void enterMarket() {
-    if (!mounted) return;
-    setState(() {
-      hasEnteredMarket = true;
-      shouldChooseWorkspace = isLoggedIn;
-      _workspaceAccessFuture =
-          isLoggedIn ? fetchOwnerWorkspaceAccessSnapshot() : null;
-      _navigationPreferenceFuture =
-          isLoggedIn ? fetchHpjNavigationPreference() : null;
-    });
-  }
-
-  Future<void> enterMarketAsGuest() async {
-    await clearPrivateSessionStateForGuestBrowsing();
-    if (!mounted) return;
-    setState(() {
-      hasEnteredMarket = true;
-      shouldChooseWorkspace = false;
-    });
-  }
-
-  void _enterCustomerWorkspace() {
-    if (!mounted) return;
-    unawaited(
-      saveHpjNavigationPreference(
-        workspace: 'customer',
-        tab: 0,
-      ),
-    );
-    setState(() {
-      hasEnteredMarket = true;
-      shouldChooseWorkspace = false;
-      _workspaceAccessFuture = null;
-      _navigationPreferenceFuture = null;
-    });
-  }
-
   Future<void> openAuth({bool createAccount = false}) async {
     final didSignIn = await Navigator.push<bool>(
       context,
@@ -455,45 +447,50 @@ class _AuthGateState extends State<AuthGate> {
     if (preference != null) {
       switch (preference.lastWorkspace) {
         case 'farmer':
-          if (access.farmerProfile != null) {
+          if (access.isApprovedFarmer &&
+              access.programSettings.farmerWorkspaceEnabled) {
             return FarmerAccessGate(
               initialTab: preference.farmerTab,
             );
           }
           break;
+
         case 'wholesale':
-          if (access.businessAccount != null) {
+          if (access.isApprovedWholesale &&
+              access.programSettings.wholesaleWorkspaceEnabled) {
             return BusinessWholesaleHubScreen(
               initialTab: preference.wholesaleTab,
             );
           }
           break;
+
         case 'customer':
+          if (access.programSettings.customerMarketplaceEnabled) {
+            return MainNavigation(
+              initialIndex: preference.customerTab,
+            );
+          }
+          break;
+
         default:
-          return MainNavigation(
-            initialIndex: preference.customerTab,
-          );
+          break;
       }
+
+      // A remembered destination may have been approved yesterday and paused,
+      // rejected, or revoked today. Do not keep reopening a stale workspace.
+      // Let the signed-in user choose from the access that is active now.
+      return const OwnerWorkspaceSwitcherScreen(
+        showCloseButton: false,
+      );
     }
 
-    // First-login rule: never auto-open Staff/Admin. A farmer-first account
-    // starts in Farmer (Feed once approved), a business-first account starts
-    // in Wholesale (Feed once approved), and everyone else starts at Home.
-    final metadata =
-        supabase.auth.currentUser?.userMetadata ?? const <String, dynamic>{};
-    final role = (metadata['role'] ?? '').toString().trim().toLowerCase();
-    final accountType =
-        (metadata['account_type'] ?? '').toString().trim().toLowerCase();
-
-    if (role == 'farmer') {
-      return const FarmerAccessGate(initialTab: 0);
-    }
-
-    if (accountType == 'business' || accountType == 'wholesale') {
-      return const BusinessWholesaleHubScreen(initialTab: 0);
-    }
-
-    return const MainNavigation(initialIndex: 0);
+    // First workspace entry: do not guess where a new account should land.
+    // Show the shared Workspaces screen so the user can see Customer, Farmer,
+    // Wholesale and Staff access in one place. The first explicit selection is
+    // then remembered for future sign-ins/restarts.
+    return const OwnerWorkspaceSwitcherScreen(
+      showCloseButton: false,
+    );
   }
 
   Widget _routeSignedInUser() {
@@ -512,10 +509,13 @@ class _AuthGateState extends State<AuthGate> {
 
         final access = accessSnapshot.data;
 
-        // If role lookup fails, never block a signed-in user. Customer Home is
-        // always the safe fallback and Staff/Admin is never auto-opened.
+        // If access lookup fails, do not silently send the user into the wrong
+        // workspace. Keep them at the shared selector where access can be
+        // refreshed or they can sign out safely.
         if (access == null) {
-          return const MainNavigation(initialIndex: 0);
+          return const OwnerWorkspaceSwitcherScreen(
+            showCloseButton: false,
+          );
         }
 
         return FutureBuilder<HpjNavigationPreference?>(
@@ -599,9 +599,11 @@ class _AuthGateState extends State<AuthGate> {
     // the market, stay in the market even if auth later becomes null.
     if (!hasEnteredMarket) {
       return PublicLandingScreen(
-        onEnterMarket: enterMarket,
-        onAuth: () {
-          openAuth();
+        onEnterWorkspaces: () {
+          unawaited(openAuth());
+        },
+        onCreateAccount: () {
+          unawaited(openAuth(createAccount: true));
         },
       );
     }
@@ -715,8 +717,7 @@ class _PostLoginWorkspaceSelectorState
   }
 
   Future<void> _signOut() async {
-    await supabase.auth.signOut();
-    FarmDataCache.clearAll();
+    await signOutFromHpjSession();
     if (!mounted) return;
 
     Navigator.of(context).pushAndRemoveUntil(
@@ -1967,7 +1968,7 @@ class _WorkspaceLoadErrorView extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Your customer shop is still available. Try again to reload wholesale, farmer and staff access.',
+          'HPJ could not verify all workspace access right now. You can retry, open Customer Shopping so it can check its own availability, or sign out safely.',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: FarmColors.mutedText,
@@ -1977,7 +1978,7 @@ class _WorkspaceLoadErrorView extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         PrimaryFarmButton(
-          label: 'Continue as Customer',
+          label: 'Open Customer Shopping',
           onPressed: onCustomerSelected,
         ),
         const SizedBox(height: 8),
@@ -2038,13 +2039,13 @@ class EmailConfirmationProgressScreen extends StatelessWidget {
 }
 
 class PublicLandingScreen extends StatelessWidget {
-  final VoidCallback onEnterMarket;
-  final VoidCallback onAuth;
+  final VoidCallback onEnterWorkspaces;
+  final VoidCallback onCreateAccount;
 
   const PublicLandingScreen({
     super.key,
-    required this.onEnterMarket,
-    required this.onAuth,
+    required this.onEnterWorkspaces,
+    required this.onCreateAccount,
   });
 
   @override
@@ -2107,7 +2108,7 @@ class PublicLandingScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Fresh Jamaican produce, simple ordering, and trusted farm connections.',
+              'Connecting Jamaican farms, buyers and customers in one platform.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: FarmColors.mutedText,
@@ -2125,54 +2126,29 @@ class PublicLandingScreen extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _LandingTrustPill(
-                  icon: Icons.visibility_outlined,
-                  label: 'Browse freely',
+                  icon: Icons.agriculture_outlined,
+                  label: 'Farmers',
                 ),
                 _LandingTrustPill(
-                  icon: Icons.lock_outline,
-                  label: 'Secure checkout',
+                  icon: Icons.storefront_outlined,
+                  label: 'Wholesale',
                 ),
                 _LandingTrustPill(
-                  icon: Icons.receipt_long_outlined,
-                  label: 'Track orders',
+                  icon: Icons.shopping_bag_outlined,
+                  label: 'Customers',
                 ),
               ],
             ),
             const SizedBox(height: 20),
             PrimaryFarmButton(
-              label: 'Enter Market',
-              onPressed: onEnterMarket,
+              label: 'Enter Workspaces',
+              onPressed: onEnterWorkspaces,
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              icon: const Icon(Icons.person_outline),
-              label: const Text(
-                'Log in or Create Account',
-              ),
-              onPressed: onAuth,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0F4EC),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: const Color(
-                    0xFFDCE4D8,
-                  ),
-                ),
-              ),
-              child: const Text(
-                'Farmer or wholesale business? Log in with the same HPJ account to access your approved workspace.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF5F6D65),
-                  fontSize: 10.2,
-                  height: 1.35,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: const Text('Create Account'),
+              onPressed: onCreateAccount,
             ),
             const SizedBox(height: 8),
             TextButton(
@@ -2187,22 +2163,31 @@ class PublicLandingScreen extends StatelessWidget {
               child: const Text('Forgot password?'),
             ),
             const SizedBox(height: 2),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 4,
-              runSpacing: 0,
+            Row(
               children: [
-                _LandingPolicyLink(
-                  label: 'Terms',
-                  builder: (_) => const TermsOfServiceScreen(),
+                Expanded(
+                  child: _LandingPolicyLink(
+                    label: 'Terms',
+                    builder: (_) => const TermsOfServiceScreen(),
+                  ),
                 ),
-                _LandingPolicyLink(
-                  label: 'Privacy',
-                  builder: (_) => const PrivacyPolicyScreen(),
+                Expanded(
+                  child: _LandingPolicyLink(
+                    label: 'Privacy',
+                    builder: (_) => const PrivacyPolicyScreen(),
+                  ),
                 ),
-                _LandingPolicyLink(
-                  label: 'Refund Policy',
-                  builder: (_) => const RefundPolicyScreen(),
+                Expanded(
+                  child: _LandingPolicyLink(
+                    label: 'Refunds',
+                    builder: (_) => const RefundPolicyScreen(),
+                  ),
+                ),
+                Expanded(
+                  child: _LandingPolicyLink(
+                    label: 'FAQ',
+                    builder: (_) => const HpjFaqScreen(),
+                  ),
                 ),
               ],
             ),
@@ -2240,7 +2225,7 @@ class _LandingHeroCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Fresh from Jamaican farms to you',
+            'One account. Multiple ways to participate.',
             style: TextStyle(
               color: Colors.white,
               fontSize: 21,
@@ -2251,7 +2236,7 @@ class _LandingHeroCard extends StatelessWidget {
           ),
           SizedBox(height: 7),
           Text(
-            'Browse what is available, build your box, and order for pickup or delivery.',
+            'Grow, supply, buy wholesale, or shop through the HPJ network — all from one secure account.',
             style: TextStyle(
               color: Color(0xFFE2EEE7),
               fontSize: 12.7,
@@ -3048,6 +3033,175 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
   }
 }
 
+// ================================================================
+// HPJ — JAMAICA PARISH SELECTOR
+// One canonical list for signup, Farmer, Wholesale and address forms.
+// Keep this in one part file only; all `part of harvest_place_app` files
+// can reuse JamaicaParishDropdown because they share the same library.
+// ================================================================
+
+const List<String> jamaicaParishes = <String>[
+  'Clarendon',
+  'Hanover',
+  'Kingston',
+  'Manchester',
+  'Portland',
+  'St. Andrew',
+  'St. Ann',
+  'St. Catherine',
+  'St. Elizabeth',
+  'St. James',
+  'St. Mary',
+  'St. Thomas',
+  'Trelawny',
+  'Westmoreland',
+];
+
+String? normalizeJamaicaParish(String? value) {
+  final raw = (value ?? '').trim();
+  if (raw.isEmpty) return null;
+
+  String key(String input) {
+    return input
+        .trim()
+        .toLowerCase()
+        .replaceAll('saint', 'st')
+        .replaceAll('.', '')
+        .replaceAll('-', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  final wanted = key(raw);
+
+  for (final parish in jamaicaParishes) {
+    if (key(parish) == wanted) return parish;
+  }
+
+  return null;
+}
+
+String requireJamaicaParish(
+  String? value, {
+  String fieldLabel = 'Parish',
+}) {
+  final normalized = normalizeJamaicaParish(value);
+
+  if (normalized == null) {
+    throw Exception(
+      '$fieldLabel must be one of Jamaica\'s 14 parishes.',
+    );
+  }
+
+  return normalized;
+}
+
+String? normalizeOptionalJamaicaParish(
+  String? value, {
+  String fieldLabel = 'Parish',
+}) {
+  final raw = (value ?? '').trim();
+  if (raw.isEmpty) return null;
+
+  final normalized = normalizeJamaicaParish(raw);
+  if (normalized == null) {
+    throw Exception(
+      '$fieldLabel must be one of Jamaica\'s 14 parishes.',
+    );
+  }
+
+  return normalized;
+}
+
+class JamaicaParishDropdown extends StatefulWidget {
+  final TextEditingController controller;
+  final String label;
+  final bool enabled;
+  final IconData prefixIcon;
+  final ValueChanged<String?>? onChanged;
+
+  const JamaicaParishDropdown({
+    super.key,
+    required this.controller,
+    this.label = 'Parish',
+    this.enabled = true,
+    this.prefixIcon = Icons.location_on_outlined,
+    this.onChanged,
+  });
+
+  @override
+  State<JamaicaParishDropdown> createState() => _JamaicaParishDropdownState();
+}
+
+class _JamaicaParishDropdownState extends State<JamaicaParishDropdown> {
+  String? selectedParish;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedParish = normalizeJamaicaParish(
+      widget.controller.text,
+    );
+
+    if (selectedParish != null) {
+      widget.controller.text = selectedParish!;
+    }
+  }
+
+  @override
+  void didUpdateWidget(
+    covariant JamaicaParishDropdown oldWidget,
+  ) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.controller != widget.controller) {
+      selectedParish = normalizeJamaicaParish(
+        widget.controller.text,
+      );
+
+      if (selectedParish != null) {
+        widget.controller.text = selectedParish!;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      value: selectedParish,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        prefixIcon: Icon(widget.prefixIcon),
+      ),
+      hint: const Text('Select parish'),
+      icon: const Icon(
+        Icons.keyboard_arrow_down_rounded,
+      ),
+      items: jamaicaParishes
+          .map(
+            (parish) => DropdownMenuItem<String>(
+              value: parish,
+              child: Text(
+                parish,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: widget.enabled
+          ? (value) {
+              setState(() {
+                selectedParish = value;
+              });
+
+              widget.controller.text = value ?? '';
+              widget.onChanged?.call(value);
+            }
+          : null,
+    );
+  }
+}
+
 class LoginScreen extends StatefulWidget {
   final bool returnToPrevious;
   final bool startInRegister;
@@ -3193,7 +3347,22 @@ class _LoginScreenState extends State<LoginScreen> {
     final fullName = fullNameController.text.trim();
     final businessName = businessNameController.text.trim();
     final businessPhone = businessPhoneController.text.trim();
-    final businessParish = businessParishController.text.trim();
+    final rawBusinessParish = businessParishController.text.trim();
+    String businessParish = rawBusinessParish;
+
+    if (isBusinessRegistration && rawBusinessParish.isNotEmpty) {
+      try {
+        businessParish = requireJamaicaParish(
+          rawBusinessParish,
+          fieldLabel: 'Business parish',
+        );
+      } catch (error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyAppError(error))),
+        );
+        return;
+      }
+    }
 
     if (email.isEmpty ||
         password.trim().isEmpty ||
@@ -3261,10 +3430,10 @@ class _LoginScreenState extends State<LoginScreen> {
             SnackBar(
               content: Text(
                 isBusinessRegistration
-                    ? 'Business account created. Confirm your email, then sign in to review your wholesale application.'
+                    ? 'Business account created. Confirm your email, then sign in and choose Wholesale Business.'
                     : selectedRole == 'farmer'
-                        ? 'Farmer account created. Confirm your email, then sign in and choose Farmer Partner to finish your application.'
-                        : 'Account created. Please check your email and tap the confirmation link before signing in.',
+                        ? 'Farmer account created. Confirm your email, then sign in and choose Farmer Partner.'
+                        : 'Account created. Confirm your email, then sign in to choose your HPJ workspace.',
               ),
             ),
           );
@@ -3281,10 +3450,10 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(
             content: Text(
               isBusinessRegistration
-                  ? 'Business account created. Your wholesale application is pending review.'
+                  ? 'Business account created. Choose Wholesale Business to continue your setup.'
                   : selectedRole == 'farmer'
-                      ? 'Account created. Complete your farmer application next.'
-                      : 'Account created. You are signed in.',
+                      ? 'Account created. Choose Farmer Partner to continue your setup.'
+                      : 'Account created. Choose the HPJ workspace you want to open.',
             ),
           ),
         );
@@ -3295,11 +3464,7 @@ class _LoginScreenState extends State<LoginScreen> {
         } else {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
-              builder: (_) => selectedRole == 'farmer'
-                  ? const FarmerAccessGate(initialTab: 0)
-                  : isBusinessRegistration
-                      ? const BusinessWholesaleHubScreen(initialTab: 0)
-                      : const MainNavigation(initialIndex: 0),
+              builder: (_) => const AuthGate(),
             ),
             (route) => false,
           );
@@ -3464,12 +3629,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 : 'Create your HPJ account';
 
     final subtitle = !isRegister
-        ? 'Sign in to continue with The Harvest Place Ja.'
+        ? 'Sign in to continue to your HPJ workspaces.'
         : isBusinessRegistration
             ? 'One HPJ login for wholesale shopping, planning and orders.'
             : isFarmerRegistration
                 ? 'Create your HPJ account first. Then complete the short farmer application.'
-                : 'Fresh Jamaican produce, made easier.';
+                : 'One secure HPJ account for the workspaces available to you.';
 
     return Scaffold(
       backgroundColor: FarmColors.background,
@@ -3661,14 +3826,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 14),
-                                TextField(
+                                JamaicaParishDropdown(
                                   controller: businessParishController,
-                                  textCapitalization: TextCapitalization.words,
-                                  textInputAction: TextInputAction.next,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Business parish *',
-                                    prefixIcon: Icon(Icons.map_outlined),
-                                  ),
+                                  label: 'Business parish *',
+                                  enabled: !loading,
+                                  prefixIcon: Icons.map_outlined,
                                 ),
                                 const SizedBox(height: 14),
                               ],
@@ -3976,7 +4138,8 @@ class MainNavigation extends StatefulWidget {
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
-class _MainNavigationState extends State<MainNavigation> {
+class _MainNavigationState extends State<MainNavigation>
+    with WidgetsBindingObserver {
   static const int homeTabIndex = 0;
   static const int shopTabIndex = 1;
   static const int myBoxTabIndex = 2;
@@ -3997,6 +4160,7 @@ class _MainNavigationState extends State<MainNavigation> {
   dynamic notificationRealtimeChannel;
   Timer? inventoryRefreshDebounce;
   StreamSubscription<AuthState>? authStateSubscription;
+  String? authBoundaryUserId;
   final Set<String> seenRealtimeNotificationIds = <String>{};
   final Map<String, DateTime> realtimeNotificationCooldowns =
       <String, DateTime>{};
@@ -4019,7 +4183,9 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     customerMarketplaceSettingsFuture = fetchMarketplaceProgramSettings();
+    authBoundaryUserId = supabase.auth.currentUser?.id.trim();
     selectedIndex = widget.initialIndex.clamp(0, 4).toInt();
     unawaited(
       saveHpjNavigationPreference(
@@ -4032,13 +4198,58 @@ class _MainNavigationState extends State<MainNavigation> {
     loadRecentlyViewedProducts();
     subscribeToInventoryUpdates();
     subscribeToNotificationUpdates();
-    authStateSubscription = supabase.auth.onAuthStateChange.listen((_) async {
+    authStateSubscription =
+        supabase.auth.onAuthStateChange.listen((authState) async {
       if (!mounted) return;
 
-      FarmDataCache.clearOrders();
+      final rawUserId = authState.session?.user.id.trim() ?? '';
+      final nextUserId = rawUserId.isEmpty ? null : rawUserId;
+      final previousUserId = authBoundaryUserId;
+      final identityChanged = nextUserId != previousUserId;
 
-      if (!isLoggedIn) {
-        FarmDataCache.clearAll();
+      authBoundaryUserId = nextUserId;
+
+      if (identityChanged) {
+        clearHpjPrivateAccountMemory();
+      } else {
+        FarmDataCache.clearOrders();
+      }
+
+      // Preserve intentional guest browsing. Redirect only when a previously
+      // authenticated Customer session disappears.
+      if (previousUserId != null && nextUserId == null) {
+        unsubscribeFromNotificationUpdates();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute<void>(
+              builder: (_) => const AuthGate(),
+            ),
+            (route) => false,
+          );
+        });
+        return;
+      }
+
+      if (previousUserId != null &&
+          nextUserId != null &&
+          previousUserId != nextUserId) {
+        unsubscribeFromNotificationUpdates();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute<void>(
+              builder: (_) => const OwnerWorkspaceSwitcherScreen(
+                showCloseButton: false,
+              ),
+            ),
+            (route) => false,
+          );
+        });
+        return;
+      }
+
+      if (nextUserId == null) {
         unsubscribeFromNotificationUpdates();
         setState(() {
           authViewVersion++;
@@ -4058,8 +4269,53 @@ class _MainNavigationState extends State<MainNavigation> {
     });
   }
 
+  Future<void> _revalidateCustomerWorkspace() async {
+    if (!mounted) return;
+
+    final operationBoundary = captureHpjPrivateOperationBoundary();
+
+    final next = () async {
+      final settings = await fetchMarketplaceProgramSettings();
+
+      if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        throw StateError(
+          'Customer workspace access response became stale after account change.',
+        );
+      }
+
+      return settings;
+    }();
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return;
+    }
+
+    setState(() {
+      customerMarketplaceSettingsFuture = next;
+    });
+
+    try {
+      await next;
+    } catch (error) {
+      if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        return;
+      }
+
+      farmDebugLog(
+        'Customer workspace resume validation skipped: $error',
+      );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(_revalidateCustomerWorkspace());
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     inventoryRefreshDebounce?.cancel();
     authStateSubscription?.cancel();
     if (inventoryRealtimeChannel != null) {

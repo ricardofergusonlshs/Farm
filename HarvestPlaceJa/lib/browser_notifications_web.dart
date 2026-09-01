@@ -1,6 +1,8 @@
 // Web-only browser notification implementation.
 // This file is selected only when dart.library.html is available.
 
+// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter
+
 import 'dart:html' as html;
 
 final Map<String, DateTime> _recentBrowserNotifications =
@@ -34,6 +36,7 @@ Future<bool> requestBrowserNotifications() async {
 
     final permission =
         await html.Notification.requestPermission();
+
     final granted = permission == 'granted';
 
     html.window.console.log(
@@ -74,7 +77,9 @@ void showBrowserNotification({
     final cleanTitle = title.trim().isEmpty
         ? 'The Harvest Place Ja'
         : title.trim();
+
     final cleanBody = body.trim();
+
     final cleanTag =
         (tag ?? '$cleanTitle|$cleanBody').trim();
 

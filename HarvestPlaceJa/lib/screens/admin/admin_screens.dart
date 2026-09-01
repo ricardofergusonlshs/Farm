@@ -238,6 +238,173 @@ Future<void> createAdminNotification({
   }
 }
 
+
+// =====================================================
+// ADMIN HELP & TUTORIALS
+// Repair 030
+// Owner/Manager can create, edit, publish, hide and delete tutorial links.
+// =====================================================
+
+Future<void> _requireHelpTutorialAdminAccess() async {
+  await requireAdminAccess();
+
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+
+  // Empty role is retained as a compatibility path for legacy admin_users
+  // accounts. Current staff accounts must be Owner or Manager.
+  if (role.isNotEmpty && role != 'owner' && role != 'manager') {
+    throw Exception('Only Owner or Manager can manage help tutorials.');
+  }
+}
+
+Future<List<HpjHelpTutorial>> fetchAdminHelpTutorials() async {
+  await _requireHelpTutorialAdminAccess();
+
+  try {
+    final response = await supabase
+        .from('help_tutorials')
+        .select(
+          'id, title, button_label, description, video_url, thumbnail_url, placement, audience, is_published, sort_order, created_at, updated_at',
+        )
+        .order('placement', ascending: true)
+        .order('sort_order', ascending: true)
+        .order('updated_at', ascending: false);
+
+    return (response as List)
+        .map(
+          (item) => HpjHelpTutorial.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  } catch (error) {
+    throw Exception(
+      'Could not load Help & Tutorials. Run Repair 030 SQL in Supabase, then retry.',
+    );
+  }
+}
+
+Future<void> saveAdminHelpTutorial({
+  String? id,
+  required String title,
+  required String buttonLabel,
+  required String description,
+  required String videoUrl,
+  String? thumbnailUrl,
+  required String placement,
+  required String audience,
+  required bool isPublished,
+  required int sortOrder,
+}) async {
+  await _requireHelpTutorialAdminAccess();
+
+  final cleanId = id?.trim() ?? '';
+  final cleanTitle = title.trim();
+  final cleanButtonLabel = buttonLabel.trim();
+  final cleanDescription = description.trim();
+  final cleanVideoUrl = videoUrl.trim();
+  final cleanThumbnailUrl = thumbnailUrl?.trim() ?? '';
+  final cleanPlacement = placement.trim().toLowerCase();
+  final cleanAudience = audience.trim().toLowerCase();
+
+  if (cleanTitle.isEmpty) {
+    throw Exception('Enter a tutorial title.');
+  }
+
+  if (cleanButtonLabel.isEmpty) {
+    throw Exception('Enter a button label.');
+  }
+
+  if (!_isSafeHelpTutorialUrl(cleanVideoUrl)) {
+    throw Exception(
+      'Enter a valid https:// or http:// video URL.',
+    );
+  }
+
+  if (cleanThumbnailUrl.isNotEmpty &&
+      !_isSafeHelpTutorialUrl(cleanThumbnailUrl)) {
+    throw Exception(
+      'Thumbnail URL must start with https:// or http://.',
+    );
+  }
+
+  if (!hpjHelpTutorialPlacementLabels.containsKey(cleanPlacement)) {
+    throw Exception('Choose a valid tutorial placement.');
+  }
+
+  if (!hpjHelpTutorialAudienceLabels.containsKey(cleanAudience)) {
+    throw Exception('Choose a valid tutorial audience.');
+  }
+
+  final safeSortOrder = sortOrder.clamp(0, 9999);
+
+  final payload = <String, dynamic>{
+    'title': cleanTitle,
+    'button_label': cleanButtonLabel,
+    'description': cleanDescription,
+    'video_url': cleanVideoUrl,
+    'thumbnail_url':
+        cleanThumbnailUrl.isEmpty ? null : cleanThumbnailUrl,
+    'placement': cleanPlacement,
+    'audience': cleanAudience,
+    'is_published': isPublished,
+    'sort_order': safeSortOrder,
+  };
+
+  try {
+    if (cleanId.isEmpty) {
+      await supabase.from('help_tutorials').insert(payload);
+    } else {
+      await supabase
+          .from('help_tutorials')
+          .update(payload)
+          .eq('id', cleanId);
+    }
+  } catch (error) {
+    throw Exception(
+      'Could not save the tutorial. Check Repair 030 SQL and your Owner/Manager permission.',
+    );
+  }
+}
+
+Future<void> setAdminHelpTutorialPublished({
+  required HpjHelpTutorial tutorial,
+  required bool isPublished,
+}) async {
+  await saveAdminHelpTutorial(
+    id: tutorial.id,
+    title: tutorial.title,
+    buttonLabel: tutorial.buttonLabel,
+    description: tutorial.description,
+    videoUrl: tutorial.videoUrl,
+    thumbnailUrl: tutorial.thumbnailUrl,
+    placement: tutorial.placement,
+    audience: tutorial.audience,
+    isPublished: isPublished,
+    sortOrder: tutorial.sortOrder,
+  );
+}
+
+Future<void> deleteAdminHelpTutorial(
+  HpjHelpTutorial tutorial,
+) async {
+  await _requireHelpTutorialAdminAccess();
+
+  final id = tutorial.id.trim();
+  if (id.isEmpty) return;
+
+  try {
+    await supabase
+        .from('help_tutorials')
+        .delete()
+        .eq('id', id);
+  } catch (error) {
+    throw Exception(
+      'Could not delete the tutorial. Check your Owner/Manager permission.',
+    );
+  }
+}
+
 Future<List<AuditLogEntry>> fetchAdminAuditLogs({
   int limit = 50,
   String? action,
@@ -11348,6 +11515,17 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         ),
       );
 
+  _AdminTabSpec tutorials() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.video_library_outlined),
+          text: 'Tutorials',
+        ),
+        child: AdminHelpTutorialsTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
   _AdminTabSpec support() => _AdminTabSpec(
         tab: const Tab(
           icon: Icon(Icons.chat_bubble_outline_rounded),
@@ -11457,6 +11635,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       hero(),
       feedUpdates(),
       reels(),
+      tutorials(),
       support(),
       reviews(),
       coupons(),
@@ -11480,6 +11659,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       reports(),
       feedUpdates(),
       reels(),
+      tutorials(),
       support(),
       reviews(),
     ];
@@ -12472,9 +12652,19 @@ class _AdminDashboardScreenState
         return;
       }
 
+      // Keep the existing Admin navigation shell alive when the app
+      // resumes from a camera/gallery/browser file-picker handoff.
+      // Replacing the access future here can briefly rebuild the whole
+      // workspace and reset the bottom navigation to Today.
+      final currentRole = await fetchCurrentStaffRole();
+
+      if (!mounted ||
+          !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+        return;
+      }
+
       setState(() {
-        _adminAllowedFuture = Future<bool>.value(true);
-        _staffRoleFuture = fetchCurrentStaffRole();
+        _staffRoleFuture = Future<String>.value(currentRole);
         refreshKey++;
       });
     } catch (error) {
@@ -17059,6 +17249,791 @@ class _AdminLaunchChecklistTabState extends State<AdminLaunchChecklistTab> {
   }
 }
 
+
+class AdminHelpTutorialsTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminHelpTutorialsTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminHelpTutorialsTab> createState() =>
+      _AdminHelpTutorialsTabState();
+}
+
+class _AdminHelpTutorialsTabState
+    extends State<AdminHelpTutorialsTab> {
+  late Future<List<HpjHelpTutorial>> _future;
+  int _localRefreshKey = 0;
+  final Set<String> _busyIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchAdminHelpTutorials();
+  }
+
+  @override
+  void didUpdateWidget(
+    covariant AdminHelpTutorialsTab oldWidget,
+  ) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _future = fetchAdminHelpTutorials();
+    }
+  }
+
+  Future<void> _refresh({bool notifyParent = false}) async {
+    final next = fetchAdminHelpTutorials();
+
+    if (mounted) {
+      setState(() {
+        _localRefreshKey++;
+        _future = next;
+      });
+    }
+
+    await next;
+
+    if (notifyParent) {
+      widget.onChanged();
+    }
+  }
+
+  Future<void> _openTutorial(
+    HpjHelpTutorial tutorial,
+  ) async {
+    await openHpjHelpTutorial(
+      context,
+      tutorial,
+    );
+  }
+
+  Future<void> _togglePublished(
+    HpjHelpTutorial tutorial,
+    bool nextValue,
+  ) async {
+    final id = tutorial.id.trim();
+    if (id.isEmpty || _busyIds.contains(id)) return;
+
+    setState(() => _busyIds.add(id));
+
+    try {
+      await setAdminHelpTutorialPublished(
+        tutorial: tutorial,
+        isPublished: nextValue,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            nextValue
+                ? '${tutorial.title} published.'
+                : '${tutorial.title} hidden.',
+          ),
+        ),
+      );
+
+      await _refresh(notifyParent: true);
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyAppError(error)),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _busyIds.remove(id));
+      }
+    }
+  }
+
+  Future<void> _deleteTutorial(
+    HpjHelpTutorial tutorial,
+  ) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Delete tutorial?'),
+              content: Text(
+                'Delete "${tutorial.title}"? This removes it from HPJ immediately.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ==
+        true;
+
+    if (!confirmed || !mounted) return;
+
+    final id = tutorial.id.trim();
+    if (id.isNotEmpty) {
+      setState(() => _busyIds.add(id));
+    }
+
+    try {
+      await deleteAdminHelpTutorial(tutorial);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tutorial deleted.'),
+        ),
+      );
+
+      await _refresh(notifyParent: true);
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyAppError(error)),
+        ),
+      );
+    } finally {
+      if (mounted && id.isNotEmpty) {
+        setState(() => _busyIds.remove(id));
+      }
+    }
+  }
+
+  Future<void> _showTutorialEditor([
+    HpjHelpTutorial? tutorial,
+  ]) async {
+    final titleController = TextEditingController(
+      text: tutorial?.title ?? '',
+    );
+    final buttonController = TextEditingController(
+      text: tutorial?.buttonLabel ?? 'Watch quick guide',
+    );
+    final descriptionController = TextEditingController(
+      text: tutorial?.description ?? '',
+    );
+    final videoController = TextEditingController(
+      text: tutorial?.videoUrl ?? '',
+    );
+    final thumbnailController = TextEditingController(
+      text: tutorial?.thumbnailUrl ?? '',
+    );
+    final sortController = TextEditingController(
+      text: '${tutorial?.sortOrder ?? 100}',
+    );
+
+    var placement = tutorial?.placement ?? 'signup';
+    var audience = tutorial?.audience ?? 'all';
+    var published = tutorial?.isPublished ?? false;
+    var saving = false;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !saving,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> save() async {
+              if (saving) return;
+
+              setDialogState(() => saving = true);
+
+              try {
+                final sortOrder =
+                    int.tryParse(sortController.text.trim()) ?? 100;
+
+                await saveAdminHelpTutorial(
+                  id: tutorial?.id,
+                  title: titleController.text,
+                  buttonLabel: buttonController.text,
+                  description: descriptionController.text,
+                  videoUrl: videoController.text,
+                  thumbnailUrl: thumbnailController.text,
+                  placement: placement,
+                  audience: audience,
+                  isPublished: published,
+                  sortOrder: sortOrder,
+                );
+
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext, true);
+              } catch (error) {
+                if (!dialogContext.mounted) return;
+
+                setDialogState(() => saving = false);
+
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(
+                    content: Text(friendlyAppError(error)),
+                  ),
+                );
+              }
+            }
+
+            return AlertDialog(
+              title: Text(
+                tutorial == null
+                    ? 'Add Help Tutorial'
+                    : 'Edit Help Tutorial',
+              ),
+              content: SizedBox(
+                width: 560,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: titleController,
+                        textCapitalization:
+                            TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          labelText: 'Tutorial title *',
+                          hintText: 'Create Your HPJ Account',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: buttonController,
+                        textCapitalization:
+                            TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          labelText: 'Button label *',
+                          hintText: 'Watch quick guide',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: placement,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Placement',
+                        ),
+                        items: hpjHelpTutorialPlacementLabels.entries
+                            .map(
+                              (entry) => DropdownMenuItem<String>(
+                                value: entry.key,
+                                child: Text(entry.value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() => placement = value);
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: audience,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Audience',
+                        ),
+                        items: hpjHelpTutorialAudienceLabels.entries
+                            .map(
+                              (entry) => DropdownMenuItem<String>(
+                                value: entry.key,
+                                child: Text(entry.value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() => audience = value);
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: videoController,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          labelText: 'Video URL *',
+                          hintText:
+                              'https://youtube.com/... or https://vimeo.com/...',
+                          prefixIcon:
+                              Icon(Icons.play_circle_outline_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: thumbnailController,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          labelText: 'Thumbnail URL (optional)',
+                          prefixIcon: Icon(Icons.image_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descriptionController,
+                        minLines: 2,
+                        maxLines: 4,
+                        textCapitalization:
+                            TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          labelText: 'Short description',
+                          hintText:
+                              'A quick guide to creating and entering your HPJ account.',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: sortController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Sort order',
+                          helperText:
+                              'Lower numbers appear first when a section has multiple tutorials.',
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      SwitchListTile.adaptive(
+                        value: published,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Published',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        subtitle: Text(
+                          published
+                              ? 'Users can see this tutorial now.'
+                              : 'Saved as a draft. Users cannot see it.',
+                        ),
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                setDialogState(
+                                  () => published = value,
+                                );
+                              },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving
+                      ? null
+                      : () => Navigator.pop(
+                            dialogContext,
+                            false,
+                          ),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  onPressed: saving ? null : save,
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(
+                    saving ? 'Saving...' : 'Save Tutorial',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    titleController.dispose();
+    buttonController.dispose();
+    descriptionController.dispose();
+    videoController.dispose();
+    thumbnailController.dispose();
+    sortController.dispose();
+
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            tutorial == null
+                ? 'Tutorial added.'
+                : 'Tutorial updated.',
+          ),
+        ),
+      );
+
+      await _refresh(notifyParent: true);
+    }
+  }
+
+  Widget _tutorialCard(
+    HpjHelpTutorial tutorial,
+  ) {
+    final busy = _busyIds.contains(tutorial.id);
+    final thumbnail = tutorial.thumbnailUrl?.trim() ?? '';
+
+    return FarmCard(
+      padding: const EdgeInsets.all(15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (thumbnail.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    width: 92,
+                    height: 62,
+                    child: Image.network(
+                      thumbnail,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) {
+                        return const ColoredBox(
+                          color: FarmColors.primarySoft,
+                          child: Icon(
+                            Icons.video_library_outlined,
+                            color: FarmColors.primary,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tutorial.title,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(tutorial.placementLabel),
+                        ),
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(tutorial.audienceLabel),
+                        ),
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          avatar: Icon(
+                            tutorial.isPublished
+                                ? Icons.public_rounded
+                                : Icons.edit_note_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            tutorial.isPublished
+                                ? 'Published'
+                                : 'Draft',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: tutorial.isPublished,
+                onChanged: busy
+                    ? null
+                    : (value) => unawaited(
+                          _togglePublished(
+                            tutorial,
+                            value,
+                          ),
+                        ),
+              ),
+            ],
+          ),
+          if (tutorial.description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              tutorial.description,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 12.5,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(
+                Icons.play_circle_outline_rounded,
+                size: 18,
+                color: FarmColors.primary,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  tutorial.videoUrl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Order ${tutorial.sortOrder}',
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => unawaited(
+                          _openTutorial(tutorial),
+                        ),
+                icon: const Icon(
+                  Icons.open_in_new_rounded,
+                  size: 18,
+                ),
+                label: const Text('Test Video'),
+              ),
+              OutlinedButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => unawaited(
+                          _showTutorialEditor(tutorial),
+                        ),
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                ),
+                label: const Text('Edit'),
+              ),
+              TextButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => unawaited(
+                          _deleteTutorial(tutorial),
+                        ),
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 18,
+                ),
+                label: const Text('Delete'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<HpjHelpTutorial>>(
+      key: ValueKey(
+        '${widget.refreshKey}-$_localRefreshKey',
+      ),
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState ==
+                ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SkeletonList();
+        }
+
+        if (snapshot.hasError) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              FarmCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Help & Tutorials needs setup',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      friendlyAppError(snapshot.error!),
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () =>
+                          unawaited(_refresh()),
+                      icon: const Icon(
+                        Icons.refresh_rounded,
+                      ),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        final tutorials =
+            snapshot.data ?? const <HpjHelpTutorial>[];
+
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+            physics:
+                const AlwaysScrollableScrollPhysics(),
+            padding:
+                const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              FarmCard(
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Help & Tutorials',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 20,
+                                  fontWeight:
+                                      FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'Add tutorial videos without updating the app. Publish only when the video is ready.',
+                                style: TextStyle(
+                                  color:
+                                      FarmColors.mutedText,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: () => unawaited(
+                            _showTutorialEditor(),
+                          ),
+                          icon: const Icon(
+                            Icons.add_rounded,
+                          ),
+                          label:
+                              const Text('Add Tutorial'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius:
+                            BorderRadius.circular(16),
+                      ),
+                      child: const Text(
+                        'Signup button behaviour: if no published "Sign Up" tutorial exists, the button stays hidden. Publish one here and it appears automatically.',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 12,
+                          height: 1.4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (tutorials.isEmpty)
+                const FarmEmptyState(
+                  icon: Icons.video_library_outlined,
+                  title: 'No tutorials yet',
+                  message:
+                      'Add your first tutorial now. Keep it as Draft until the video is ready.',
+                )
+              else
+                ...tutorials.map(
+                  (tutorial) => Padding(
+                    padding:
+                        const EdgeInsets.only(bottom: 12),
+                    child: _tutorialCard(tutorial),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class AdminHeroSlidesTab extends StatefulWidget {
   final int refreshKey;
   final VoidCallback onChanged;
@@ -18154,43 +19129,122 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
 
   Future<void> captureOrderBoxPhoto(
       BuildContext context, AdminOrder order) async {
-    try {
-      final picker = ImagePicker();
+    HpjImageSource source = HpjImageSource.gallery;
 
-      final picked = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 80,
-        maxWidth: 1600,
+    // Installed Android/iOS:
+    // let staff choose Camera or Gallery.
+    //
+    // FlutLab/Web:
+    // skip ImagePicker camera completely and use the browser-safe
+    // file chooser through product_image_picker_web.dart.
+    if (!kIsWeb) {
+      final selected = await showModalBottomSheet<HpjImageSource>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Take box photo'),
+                subtitle: const Text('Use the device camera'),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  HpjImageSource.camera,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Choose box photo'),
+                subtitle: const Text('Select an existing image'),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  HpjImageSource.gallery,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
       );
 
-      if (picked == null) {
-        return;
+      if (selected == null) return;
+      source = selected;
+    }
+
+    try {
+      final picked = await pickProductImageFromDevice(
+        source: source,
+      );
+
+      if (picked == null) return;
+
+      final bytes = picked.bytes;
+
+      if (bytes.isEmpty) {
+        throw Exception(
+          'The selected box photo could not be read.',
+        );
       }
 
-      final bytes = await picked.readAsBytes();
+      const maxBytes = 6 * 1024 * 1024;
 
-      final cleanOrderId = order.id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      if (bytes.length > maxBytes) {
+        throw Exception(
+          'Use a box photo smaller than 6 MB.',
+        );
+      }
+
+      final mime = picked.mimeType.trim().toLowerCase();
+      final lowerName = picked.fileName.toLowerCase();
+
+      final extension =
+          mime == 'image/png' || lowerName.endsWith('.png')
+              ? 'png'
+              : mime == 'image/webp' || lowerName.endsWith('.webp')
+                  ? 'webp'
+                  : 'jpg';
+
+      final contentType = extension == 'png'
+          ? 'image/png'
+          : extension == 'webp'
+              ? 'image/webp'
+              : 'image/jpeg';
+
+      final cleanOrderId = order.id.replaceAll(
+        RegExp(r'[^A-Za-z0-9_-]'),
+        '',
+      );
+
+      final fileName =
+          '${DateTime.now().millisecondsSinceEpoch}.$extension';
+
       final path = '$cleanOrderId/$fileName';
 
-      await supabase.storage.from('order-box-photos').uploadBinary(
+      await supabase.storage
+          .from('order-box-photos')
+          .uploadBinary(
             path,
             bytes,
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
+            fileOptions: FileOptions(
+              contentType: contentType,
               upsert: true,
             ),
           );
 
-      final publicUrl =
-          supabase.storage.from('order-box-photos').getPublicUrl(path);
+      final publicUrl = supabase.storage
+          .from('order-box-photos')
+          .getPublicUrl(path);
 
       final updatedOrder = await supabase
           .from('orders')
           .update({
             'box_photo_url': publicUrl,
-            'box_photo_uploaded_at': DateTime.now().toIso8601String(),
-            'box_photo_uploaded_by': supabase.auth.currentUser?.id,
+            'box_photo_uploaded_at':
+                DateTime.now().toIso8601String(),
+            'box_photo_uploaded_by':
+                supabase.auth.currentUser?.id,
           })
           .eq('id', order.id)
           .select('id, box_photo_url')
@@ -18198,14 +19252,15 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
 
       if (!context.mounted) return;
 
-      final savedUrl = updatedOrder?['box_photo_url']?.toString();
+      final savedUrl =
+          updatedOrder?['box_photo_url']?.toString();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             savedUrl == null || savedUrl.isEmpty
-                ? 'Photo uploaded, but order was not updated.'
-                : 'Box photo saved to order.',
+                ? 'Photo uploaded, but the order record was not updated.'
+                : 'Box photo saved.',
           ),
         ),
       );
@@ -18214,7 +19269,9 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Box photo failed: $error'),
+          content: Text(
+            'Box photo failed: ${friendlyAppError(error)}',
+          ),
         ),
       );
     }
@@ -18449,8 +19506,8 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
-                icon: const Icon(Icons.camera_alt_outlined),
-                label: const Text('Take Box Photo'),
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: const Text('Add Box Photo'),
                 onPressed: () => captureOrderBoxPhoto(context, order),
               ),
               const SizedBox(height: 10),

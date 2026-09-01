@@ -1303,6 +1303,8 @@ class WholesaleOrderJourney {
   final DateTime? dispatchedAt;
   final DateTime? deliveredAt;
   final DateTime? collectedAt;
+  final String recipientName;
+  final DateTime? businessReceivedAt;
 
   const WholesaleOrderJourney({
     required this.requestId,
@@ -1326,6 +1328,8 @@ class WholesaleOrderJourney {
     this.dispatchedAt,
     this.deliveredAt,
     this.collectedAt,
+    required this.recipientName,
+    this.businessReceivedAt,
   });
 
   factory WholesaleOrderJourney.fromSupabase(Map<String, dynamic> data) {
@@ -1370,6 +1374,8 @@ class WholesaleOrderJourney {
       dispatchedAt: date(data['dispatched_at']),
       deliveredAt: date(data['delivered_at']),
       collectedAt: date(data['collected_at']),
+      recipientName: (data['recipient_name'] ?? '').toString().trim(),
+      businessReceivedAt: date(data['business_received_at']),
     );
   }
 
@@ -1377,17 +1383,29 @@ class WholesaleOrderJourney {
       (dispatchMethod.isNotEmpty ? dispatchMethod : requestedDispatchMethod) ==
       'business_collection';
 
-  bool get isComplete =>
+  bool get isLogisticsComplete =>
       dispatchStatus == 'delivered' || dispatchStatus == 'collected';
+
+  // Preserve the existing completed-order behavior: a delivered HPJ order is
+  // still operationally complete even before the buyer acknowledges receipt.
+  bool get isComplete => isLogisticsComplete;
+
+  bool get isReceivedConfirmed =>
+      isCollection ? dispatchStatus == 'collected' : businessReceivedAt != null;
+
+  bool get canConfirmReceipt =>
+      !isCollection && dispatchStatus == 'delivered' && businessReceivedAt == null;
 
   int get currentStageIndex {
     if (requestStatus == 'cancelled' || requestStatus == 'rejected') return 0;
-    if (isComplete) return 6;
+
+    if (!isCollection && businessReceivedAt != null) return 8;
+    if (dispatchStatus == 'delivered' || dispatchStatus == 'collected') return 7;
     if (dispatchStatus == 'out_for_delivery' ||
         dispatchStatus == 'ready_for_pickup') {
-      return 5;
+      return 6;
     }
-    if (dispatchStatus == 'planned' || dispatchStatus == 'assigned') return 4;
+    if (dispatchStatus == 'planned' || dispatchStatus == 'assigned') return 5;
     if (fulfillmentStatus == 'ready_for_dispatch') return 4;
     if (fulfillmentStatus == 'packing') return 3;
     if (fulfillmentStatus == 'preparing') return 2;
@@ -1398,6 +1416,7 @@ class WholesaleOrderJourney {
   String get currentStageLabel {
     if (requestStatus == 'cancelled') return 'Cancelled';
     if (requestStatus == 'rejected') return 'Needs Attention';
+    if (!isCollection && businessReceivedAt != null) return 'Received';
     if (dispatchStatus == 'delivered') return 'Delivered';
     if (dispatchStatus == 'collected') return 'Collected';
     if (dispatchStatus == 'out_for_delivery') return 'Out for Delivery';
@@ -1408,21 +1427,79 @@ class WholesaleOrderJourney {
     if (fulfillmentStatus == 'ready_for_dispatch') return 'Ready for Dispatch';
     if (fulfillmentStatus == 'packing') return 'Packing';
     if (fulfillmentStatus == 'preparing') return 'Preparing';
-    if (requestStatus == 'approved' || requestStatus == 'fulfilled')
+    if (requestStatus == 'approved' || requestStatus == 'fulfilled') {
       return 'Confirmed';
+    }
     if (requestStatus == 'quoted') return 'Quote Ready';
     return 'Submitted';
   }
 
-  List<String> get stageLabels => <String>[
-        'Submitted',
-        'Confirmed',
-        'Preparing',
-        'Packing',
-        isCollection ? 'Ready for Collection' : 'Ready for Dispatch',
-        isCollection ? 'Collection Ready' : 'Out for Delivery',
-        isCollection ? 'Collected' : 'Delivered',
-      ];
+  List<String> get stageLabels => isCollection
+      ? const <String>[
+          'Submitted',
+          'Confirmed',
+          'Preparing',
+          'Packing',
+          'Ready for Dispatch',
+          'Collection Scheduled',
+          'Ready for Collection',
+          'Collected',
+        ]
+      : const <String>[
+          'Submitted',
+          'Confirmed',
+          'Preparing',
+          'Packing',
+          'Ready for Dispatch',
+          'Delivery Scheduled',
+          'Out for Delivery',
+          'Delivered',
+          'Received',
+        ];
+
+  DateTime? timestampForStage(int index) {
+    if (isCollection) {
+      switch (index) {
+        case 0:
+          return requestCreatedAt;
+        case 2:
+          return preparationStartedAt;
+        case 3:
+          return packingStartedAt;
+        case 4:
+          return readyAt;
+        case 5:
+          return scheduledFor;
+        case 6:
+          return readyAt ?? scheduledFor;
+        case 7:
+          return collectedAt;
+        default:
+          return null;
+      }
+    }
+
+    switch (index) {
+      case 0:
+        return requestCreatedAt;
+      case 2:
+        return preparationStartedAt;
+      case 3:
+        return packingStartedAt;
+      case 4:
+        return readyAt;
+      case 5:
+        return scheduledFor;
+      case 6:
+        return dispatchedAt;
+      case 7:
+        return deliveredAt;
+      case 8:
+        return businessReceivedAt;
+      default:
+        return null;
+    }
+  }
 }
 
 // =====================================================
@@ -3021,23 +3098,18 @@ Future<List<WholesaleDeliveryStaff>> fetchWholesaleDeliveryStaff() async {
 // =====================================================
 
 Future<String> captureWholesaleDispatchProofPhoto(
-  WholesaleDispatch dispatch,
-) async {
+  WholesaleDispatch dispatch, {
+  HpjImageSource source = HpjImageSource.camera,
+}) async {
   await requireAdminAccess();
 
-  final picker = ImagePicker();
-
-  final image = await picker.pickImage(
-    source: ImageSource.camera,
-    imageQuality: 80,
-    maxWidth: 1600,
-  );
+  final image = await pickProductImageFromDevice(source: source);
 
   if (image == null) {
     return '';
   }
 
-  final bytes = await image.readAsBytes();
+  final bytes = image.bytes;
 
   if (bytes.isEmpty) {
     throw Exception(
@@ -3053,12 +3125,26 @@ Future<String> captureWholesaleDispatchProofPhoto(
     );
   }
 
+  final mime = image.mimeType.trim().toLowerCase();
+  final lowerName = image.fileName.toLowerCase();
+  final extension = mime == 'image/png' || lowerName.endsWith('.png')
+      ? 'png'
+      : mime == 'image/webp' || lowerName.endsWith('.webp')
+          ? 'webp'
+          : 'jpg';
+  final contentType = extension == 'png'
+      ? 'image/png'
+      : extension == 'webp'
+          ? 'image/webp'
+          : 'image/jpeg';
+
   final cleanDispatchId = dispatch.id.replaceAll(
     RegExp(r'[^A-Za-z0-9_-]'),
     '',
   );
 
-  final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+  final fileName =
+      '${DateTime.now().millisecondsSinceEpoch}.$extension';
 
   final path = '$cleanDispatchId/$fileName';
 
@@ -3069,8 +3155,8 @@ Future<String> captureWholesaleDispatchProofPhoto(
       .uploadBinary(
         path,
         bytes,
-        fileOptions: const FileOptions(
-          contentType: 'image/jpeg',
+        fileOptions: FileOptions(
+          contentType: contentType,
           upsert: false,
         ),
       );
@@ -6375,6 +6461,54 @@ Future<WholesaleReceivingBatch> inspectWholesaleReceivingBatch({
 // COMPLETE RECEIVING BATCH
 // =====================================================
 
+String _wholesaleReceivingCompletionError(Object error) {
+  final raw = error.toString().trim();
+  final lower = raw.toLowerCase();
+
+  if (lower.contains('pgrst202') &&
+      lower.contains('admin_complete_wholesale_receiving_batch')) {
+    return 'Warehouse receiving completion is not installed in Supabase yet. '
+        'Run Repair 031 SQL, then try Complete Receiving again.';
+  }
+
+  if (lower.contains('permission') ||
+      lower.contains('42501') ||
+      lower.contains('staff role')) {
+    return 'Your current staff role cannot complete warehouse receiving.';
+  }
+
+  if (lower.contains('quality inspection')) {
+    return 'Complete quality inspection before closing this receiving batch.';
+  }
+
+  final staleWarehouseTrigger =
+      lower.contains('phase3wy_sync_inventory_from_receiving') ||
+          lower.contains('trg_phase3wy') ||
+          lower.contains('sync_wholesale_inventory_from_receiving') ||
+          (lower.contains('warehouse_inventory_lots') &&
+              (lower.contains('column') ||
+                  lower.contains('constraint') ||
+                  lower.contains('movement_type'))) ||
+          (lower.contains('warehouse_inventory_movements') &&
+              (lower.contains('constraint') ||
+                  lower.contains('movement_type') ||
+                  lower.contains('reference_id')));
+
+  if (staleWarehouseTrigger) {
+    return 'Receiving is being blocked by an older warehouse inventory trigger/schema. '
+        'Run Repair 031 SQL once, refresh HPJ, then try Complete Receiving again.';
+  }
+
+  final friendly = friendlyAppError(error).trim();
+  if (friendly.isNotEmpty &&
+      friendly.toLowerCase() != 'something went wrong. please try again.') {
+    return friendly;
+  }
+
+  return 'Receiving could not be completed. '
+      'Run Repair 031 SQL, refresh HPJ, and try again.';
+}
+
 Future<WholesaleReceivingBatch> completeWholesaleReceivingBatch(
   WholesaleReceivingBatch batch,
 ) async {
@@ -6405,18 +6539,48 @@ Future<WholesaleReceivingBatch> completeWholesaleReceivingBatch(
       }
     }
 
+    // Defensive verification for PostgREST/RPC response-shape differences.
+    // If the RPC completed successfully but returned no usable JSON row,
+    // verify the authoritative table state before reporting a failure.
     if (row == null || row.isEmpty) {
+      final verified = await supabase
+          .from('wholesale_receiving_batches')
+          .select(_wholesaleReceivingSelectFields)
+          .eq('id', batch.id)
+          .maybeSingle();
+
+      if (verified != null) {
+        final verifiedBatch = WholesaleReceivingBatch.fromSupabase(
+          Map<String, dynamic>.from(verified as Map),
+        );
+
+        if (verifiedBatch.isCompleted) {
+          return verifiedBatch;
+        }
+      }
+
       throw Exception(
         'This receiving batch could not be completed.',
       );
     }
 
-    return WholesaleReceivingBatch.fromSupabase(row);
+    final completed = WholesaleReceivingBatch.fromSupabase(row);
+
+    if (!completed.isCompleted) {
+      throw Exception(
+        'Receiving did not reach Completed status. Please try again.',
+      );
+    }
+
+    return completed;
   } catch (error) {
     farmDebugLog(
       'Wholesale receiving completion failed for ${batch.id}: $error',
     );
-    rethrow;
+
+    throw Exception(
+      _wholesaleReceivingCompletionError(error),
+    );
   }
 }
 
@@ -6735,6 +6899,67 @@ Future<void> reserveWholesaleFulfillmentStock(
     params: {
       'p_fulfillment_id': fulfillment.id,
     },
+  );
+}
+
+
+class WarehouseAutoFlowResult {
+  final int checked;
+  final int released;
+  final int stillWaiting;
+
+  const WarehouseAutoFlowResult({
+    required this.checked,
+    required this.released,
+    required this.stillWaiting,
+  });
+
+  factory WarehouseAutoFlowResult.fromSupabase(
+    dynamic response,
+  ) {
+    Map<String, dynamic> data = const <String, dynamic>{};
+
+    if (response is Map) {
+      data = Map<String, dynamic>.from(response);
+    } else if (response is List &&
+        response.isNotEmpty &&
+        response.first is Map) {
+      data = Map<String, dynamic>.from(
+        response.first as Map,
+      );
+    }
+
+    int number(dynamic value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    return WarehouseAutoFlowResult(
+      checked: number(data['checked']),
+      released: number(data['released']),
+      stillWaiting: number(data['still_waiting']),
+    );
+  }
+
+  bool get movedAny => released > 0;
+}
+
+Future<WarehouseAutoFlowResult> autoReleaseWaitingWarehouseOrders({
+  int limit = 50,
+}) async {
+  await requireAdminAccess();
+
+  final safeLimit = limit.clamp(1, 100);
+
+  final response = await supabase.rpc(
+    'admin_auto_release_waiting_warehouse_orders',
+    params: {
+      'p_limit': safeLimit,
+    },
+  );
+
+  return WarehouseAutoFlowResult.fromSupabase(
+    response,
   );
 }
 
@@ -7323,6 +7548,7 @@ Future<WholesaleDispatch> assignWholesaleDispatchDriver({
       .update({
         'assigned_driver_id': cleanDriverId,
         'status': 'assigned',
+        'assigned_at': DateTime.now().toUtc().toIso8601String(),
         if (scheduledFor != null)
           'scheduled_for': scheduledFor.toUtc().toIso8601String(),
         'admin_notes': adminNotes.trim(),
@@ -7439,6 +7665,7 @@ Future<WholesaleDispatch> markWholesaleDispatchOutForDelivery(
       )
       .update({
         'status': 'out_for_delivery',
+        'dispatched_at': DateTime.now().toUtc().toIso8601String(),
         'driver_notes': driverNotes.trim(),
       })
       .eq(
@@ -7516,6 +7743,7 @@ Future<WholesaleDispatch> completeWholesaleDelivery({
       )
       .update({
         'status': 'delivered',
+        'delivered_at': DateTime.now().toUtc().toIso8601String(),
         'recipient_name': cleanRecipient,
         'proof_note': proofNote.trim(),
         'proof_photo_path': proofPhotoPath.trim(),
@@ -7584,6 +7812,7 @@ Future<WholesaleDispatch> completeWholesaleBusinessCollection({
       )
       .update({
         'status': 'collected',
+        'collected_at': DateTime.now().toUtc().toIso8601String(),
         'recipient_name': cleanRecipient,
         'proof_note': proofNote.trim(),
         'proof_photo_path': proofPhotoPath.trim(),
@@ -7640,6 +7869,7 @@ Future<WholesaleDispatch> cancelWholesaleDispatch({
       )
       .update({
         'status': 'cancelled',
+        'cancelled_at': DateTime.now().toUtc().toIso8601String(),
         'admin_notes': reason.trim(),
       })
       .eq(
@@ -7847,7 +8077,7 @@ Future<List<WholesalePaymentSubmission>> fetchMyWholesalePaymentSubmissions({
 
 Future<String> uploadWholesalePaymentProof({
   required WholesaleInvoice invoice,
-  required XFile file,
+  required PickedProductImage image,
 }) async {
   final user = supabase.auth.currentUser;
   if (user == null) {
@@ -7863,7 +8093,7 @@ Future<String> uploadWholesalePaymentProof({
     throw Exception('This invoice does not belong to your business account.');
   }
 
-  final bytes = await file.readAsBytes();
+  final bytes = image.bytes;
   if (bytes.isEmpty) {
     throw Exception('Choose a valid payment proof image.');
   }
@@ -7873,10 +8103,11 @@ Future<String> uploadWholesalePaymentProof({
     throw Exception('Use a payment proof image smaller than 6 MB.');
   }
 
-  final lower = file.name.toLowerCase();
-  final extension = lower.endsWith('.png')
+  final mime = image.mimeType.trim().toLowerCase();
+  final lower = image.fileName.toLowerCase();
+  final extension = mime == 'image/png' || lower.endsWith('.png')
       ? 'png'
-      : lower.endsWith('.webp')
+      : mime == 'image/webp' || lower.endsWith('.webp')
           ? 'webp'
           : 'jpg';
 
@@ -8971,6 +9202,28 @@ Future<List<WholesaleOrderJourney>> fetchMyWholesaleOrderJourneys() async {
       .toList();
 }
 
+Future<DateTime?> confirmWholesaleOrderReceived(String requestId) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    throw Exception('Sign in to confirm that this delivery was received.');
+  }
+
+  final cleanRequestId = requestId.trim();
+  if (cleanRequestId.isEmpty) {
+    throw Exception('Missing wholesale order ID.');
+  }
+
+  final response = await supabase.rpc(
+    'business_confirm_wholesale_received',
+    params: {
+      'p_request_id': cleanRequestId,
+    },
+  );
+
+  if (response == null) return null;
+  return DateTime.tryParse(response.toString());
+}
+
 Future<List<WholesaleOrderRequest>> fetchMyWholesaleRequests() async {
   final user = supabase.auth.currentUser;
   if (user == null) return const <WholesaleOrderRequest>[];
@@ -9551,7 +9804,7 @@ Future<List<WholesaleOrderRequest>> fetchAdminWholesaleRequests() async {
         '$_wholesaleRequestSelectFields, business_accounts($_businessAccountSelectFields)',
       )
       .order('created_at', ascending: false)
-      .limit(200);
+      .limit(500);
 
   return (response as List)
       .map(
@@ -13004,7 +13257,7 @@ class _BusinessWholesaleInvoicesScreenState
     final noteController = TextEditingController();
 
     String method = 'bank_transfer';
-    XFile? proofFile;
+    PickedProductImage? proofFile;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -13012,15 +13265,49 @@ class _BusinessWholesaleInvoicesScreenState
         return StatefulBuilder(
           builder: (context, setDialogState) {
             Future<void> chooseProof() async {
-              try {
-                final file = await ImagePicker().pickImage(
-                  source: ImageSource.gallery,
-                  imageQuality: 86,
-                  maxWidth: 1800,
+              HpjImageSource source = HpjImageSource.gallery;
+
+              if (!kIsWeb) {
+                final selected = await showModalBottomSheet<HpjImageSource>(
+                  context: dialogContext,
+                  showDragHandle: true,
+                  builder: (sheetContext) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.camera_alt_outlined),
+                          title: const Text('Take payment proof photo'),
+                          onTap: () => Navigator.pop(
+                            sheetContext,
+                            HpjImageSource.camera,
+                          ),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.photo_library_outlined),
+                          title: const Text('Choose screenshot / image'),
+                          onTap: () => Navigator.pop(
+                            sheetContext,
+                            HpjImageSource.gallery,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
                 );
 
-                if (file != null) {
-                  setDialogState(() => proofFile = file);
+                if (selected == null) return;
+                source = selected;
+              }
+
+              try {
+                final image = await pickProductImageFromDevice(
+                  source: source,
+                );
+
+                if (image != null) {
+                  setDialogState(() => proofFile = image);
                 }
               } catch (error) {
                 if (!dialogContext.mounted) return;
@@ -13193,7 +13480,7 @@ class _BusinessWholesaleInvoicesScreenState
     try {
       final path = await uploadWholesalePaymentProof(
         invoice: invoice,
-        file: proofFile!,
+        image: proofFile!,
       );
 
       await submitWholesalePaymentConfirmation(
@@ -15295,6 +15582,7 @@ class _WholesaleTodaySnapshot {
   final List<WholesaleDemandForecast> forecasts;
   final List<WholesaleOrderRequest> requests;
   final List<WholesaleInvoice> invoices;
+  final List<WholesaleOrderJourney> journeys;
   final List<WholesaleProduct> catalogue;
   final List<WholesaleDemandGapLine> demandGaps;
   final WholesaleOrderingControl? orderingControl;
@@ -15303,6 +15591,7 @@ class _WholesaleTodaySnapshot {
     required this.forecasts,
     required this.requests,
     required this.invoices,
+    required this.journeys,
     required this.catalogue,
     this.demandGaps = const <WholesaleDemandGapLine>[],
     this.orderingControl,
@@ -15315,6 +15604,7 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
   var forecasts = <WholesaleDemandForecast>[];
   var requests = <WholesaleOrderRequest>[];
   var invoices = <WholesaleInvoice>[];
+  var journeys = <WholesaleOrderJourney>[];
   var catalogue = <WholesaleProduct>[];
   var demandGaps = <WholesaleDemandGapLine>[];
   WholesaleOrderingControl? orderingControl;
@@ -15339,6 +15629,12 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     );
   } catch (error) {
     farmDebugLog('Wholesale Today — invoices unavailable: $error');
+  }
+
+  try {
+    journeys = await fetchMyWholesaleOrderJourneys();
+  } catch (error) {
+    farmDebugLog('Wholesale Today — tracking unavailable: $error');
   }
 
   try {
@@ -15395,6 +15691,7 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     forecasts: forecasts,
     requests: requests,
     invoices: invoices,
+    journeys: journeys,
     catalogue: catalogue,
     demandGaps: demandGaps,
     orderingControl: orderingControl,
@@ -15533,6 +15830,7 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
               forecasts: <WholesaleDemandForecast>[],
               requests: <WholesaleOrderRequest>[],
               invoices: <WholesaleInvoice>[],
+              journeys: <WholesaleOrderJourney>[],
               catalogue: <WholesaleProduct>[],
             );
 
@@ -15545,29 +15843,16 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
         final forecastsNeedingReview =
             activeForecasts.where(_wholesaleForecastNeedsReview).toList();
 
-        const closedStatuses = <String>{
-          'delivered',
-          'completed',
-          'cancelled',
-          'rejected',
-        };
-
-        final openRequests = data.requests
-            .where((item) => !closedStatuses.contains(item.status))
-            .toList()
-          ..sort((a, b) {
-            final aDate = a.requestedDate ?? a.updatedAt ?? a.createdAt;
-            final bDate = b.requestedDate ?? b.updatedAt ?? b.createdAt;
-            if (aDate == null && bDate == null) return 0;
-            if (aDate == null) return 1;
-            if (bDate == null) return -1;
-            return aDate.compareTo(bDate);
-          });
-
-        final deliveriesToday = openRequests.where((item) {
-          return item.requestedDispatchMethod == 'hpj_delivery' &&
-              _sameDay(item.requestedDate, today);
+        final deliveriesToday = data.journeys.where((journey) {
+          return !journey.isCollection &&
+              journey.requestStatus != 'cancelled' &&
+              journey.requestStatus != 'rejected' &&
+              _sameDay(journey.scheduledFor, today);
         }).length;
+
+        final awaitingReceipt = data.journeys
+            .where((journey) => journey.canConfirmReceipt)
+            .toList(growable: false);
 
         final overdueInvoices = data.invoices
             .where(
@@ -15605,36 +15890,40 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
 
         final thirtyDaysAgo = now.subtract(const Duration(days: 30));
         final ninetyDaysAgo = now.subtract(const Duration(days: 90));
-        const purchaseStatuses = <String>{'delivered', 'completed'};
 
-        DateTime? requestActivityDate(WholesaleOrderRequest request) {
-          return request.updatedAt ?? request.createdAt ?? request.requestedDate;
+        // Financial purchasing totals come from the latest issued invoice for
+        // each request, not from request status or the earlier order estimate.
+        // This keeps Purchased/90-day spend aligned with the final packed bill.
+        final invoiceByRequest = <String, WholesaleInvoice>{};
+        for (final invoice in data.invoices) {
+          final requestId = invoice.requestId.trim();
+          if (requestId.isEmpty || invoice.isVoid) continue;
+          invoiceByRequest.putIfAbsent(requestId, () => invoice);
         }
 
-        bool purchasedSince(WholesaleOrderRequest request, DateTime cutoff) {
-          final activity = requestActivityDate(request);
-          return purchaseStatuses.contains(request.status) &&
-              activity != null &&
-              !activity.isBefore(cutoff);
+        DateTime? invoiceActivityDate(WholesaleInvoice invoice) {
+          return invoice.issuedAt ?? invoice.issueDate ?? invoice.createdAt;
         }
 
-        double requestValue(WholesaleOrderRequest request) {
-          return request.quotedTotal ?? request.subtotalEstimate;
+        bool invoicedSince(WholesaleInvoice invoice, DateTime cutoff) {
+          final activity = invoiceActivityDate(invoice);
+          return activity != null && !activity.isBefore(cutoff);
         }
 
-        final purchased30 = data.requests
-            .where((item) => purchasedSince(item, thirtyDaysAgo))
+        final finalInvoices = invoiceByRequest.values.toList(growable: false);
+        final purchased30 = finalInvoices
+            .where((item) => invoicedSince(item, thirtyDaysAgo))
             .toList(growable: false);
-        final purchased90 = data.requests
-            .where((item) => purchasedSince(item, ninetyDaysAgo))
+        final purchased90 = finalInvoices
+            .where((item) => invoicedSince(item, ninetyDaysAgo))
             .toList(growable: false);
         final spend30 = purchased30.fold<double>(
           0,
-          (sum, item) => sum + requestValue(item),
+          (sum, item) => sum + item.totalAmount,
         );
         final spend90 = purchased90.fold<double>(
           0,
-          (sum, item) => sum + requestValue(item),
+          (sum, item) => sum + item.totalAmount,
         );
 
         final orderingControl = data.orderingControl;
@@ -15706,6 +15995,19 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
                   '${formatJmd(overdueInvoices.fold<double>(0, (sum, item) => sum + item.amountDue))} requires attention.',
               action: 'Payments',
               onTap: () => _goInvoices(context),
+            ),
+          );
+        }
+
+        if (awaitingReceipt.isNotEmpty) {
+          addAttention(
+            _WholesaleAttentionRow(
+              title:
+                  'Confirm ${awaitingReceipt.length} delivered order${awaitingReceipt.length == 1 ? '' : 's'}',
+              message:
+                  'HPJ marked ${awaitingReceipt.length == 1 ? 'this delivery' : 'these deliveries'} delivered. Confirm receipt after your business checks the order.',
+              action: 'Orders',
+              onTap: () => _goOrders(context),
             ),
           );
         }
@@ -15928,7 +16230,7 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
                 child: _WholesaleBusinessMetric(
                   label: 'Purchased',
                   value: formatJmd(spend30),
-                  note: '$purchasedOrders30 order${purchasedOrders30 == 1 ? '' : 's'} • 30d',
+                  note: '$purchasedOrders30 final invoice${purchasedOrders30 == 1 ? '' : 's'} • 30d',
                   onTap: onOpenOrders,
                 ),
               ),
@@ -16039,7 +16341,7 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
           ],
           const SizedBox(height: 4),
           Text(
-            '90-day purchases ${formatJmd(spend90)}',
+            '90-day final purchases ${formatJmd(spend90)}',
             style: const TextStyle(
               color: FarmColors.mutedText,
               fontSize: 10.5,
@@ -22541,7 +22843,7 @@ class _WholesaleRepeatStandingOrdersScreenState
   }
 }
 
-class MyWholesaleRequestsScreen extends StatelessWidget {
+class MyWholesaleRequestsScreen extends StatefulWidget {
   final bool embedded;
   final String? initialRequestId;
 
@@ -22550,6 +22852,19 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
     this.embedded = false,
     this.initialRequestId,
   });
+
+  @override
+  State<MyWholesaleRequestsScreen> createState() =>
+      _MyWholesaleRequestsScreenState();
+}
+
+class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
+  int _refreshKey = 0;
+
+  void _refreshOrders() {
+    if (!mounted) return;
+    setState(() => _refreshKey++);
+  }
 
   Future<void> _orderAgain(
     BuildContext context,
@@ -22736,19 +23051,26 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
     return status == 'cancelled' || status == 'rejected';
   }
 
-  String _fulfilmentDateLabel(WholesaleOrderRequest request) {
+  String _fulfilmentDateLabel(
+    WholesaleOrderRequest request,
+    WholesaleOrderJourney? journey,
+  ) {
+    final scheduled = _shortDate(journey?.scheduledFor);
     final requested = _shortDate(request.requestedDate);
     final ordered = _shortDate(request.createdAt);
+    final method = (journey?.isCollection == true ||
+            request.requestedDispatchMethod == 'business_collection')
+        ? 'Collection'
+        : 'Delivery';
+
+    if (scheduled.isNotEmpty) {
+      return '$method scheduled $scheduled';
+    }
 
     if (requested.isNotEmpty) {
-      final method = request.requestedDispatchMethod == 'business_collection'
-          ? 'Collection'
-          : 'Delivery';
-
       final window = request.requestedWindowLabel.trim();
-
       return [
-        '$method $requested',
+        '$method requested $requested',
         if (window.isNotEmpty) window,
       ].join(' • ');
     }
@@ -22757,9 +23079,16 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
     return '';
   }
 
-  String _orderAmountLabel(WholesaleOrderRequest request) {
+  String _orderAmountLabel(
+    WholesaleOrderRequest request,
+    WholesaleOrderJourney? journey,
+    WholesaleInvoice? invoice,
+  ) {
+    final finalTotal = invoice?.totalAmount ?? journey?.invoiceTotal ?? 0;
+    if (finalTotal > 0) return 'Final ${formatJmd(finalTotal)}';
+
     final quoted = request.quotedTotal;
-    if (quoted != null) return formatJmd(quoted);
+    if (quoted != null) return 'Quoted ${formatJmd(quoted)}';
     return 'Est. ${formatJmd(request.subtotalEstimate)}';
   }
 
@@ -22788,13 +23117,62 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _confirmReceived(
+    BuildContext context,
+    WholesaleOrderRequest request,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm order received?'),
+        content: Text(
+          'Confirm that your business received Order #${request.shortId}. '
+          'Use this after the delivered items have been checked.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Not Yet'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Confirm Received'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await confirmWholesaleOrderReceived(request.id);
+      if (!mounted) return;
+      _refreshOrders();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Receipt confirmed. Thank you.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
   Future<void> _showOrderDetails(
     BuildContext context,
     WholesaleOrderRequest request,
     WholesaleOrderJourney? journey,
+    WholesaleInvoice? invoice,
   ) async {
     final status = _orderStatus(request, journey);
-    final dateLabel = _fulfilmentDateLabel(request);
+    final dateLabel = _fulfilmentDateLabel(request, journey);
+    final finalTotal = invoice?.totalAmount ?? journey?.invoiceTotal ?? 0;
+    final amountDue = invoice?.amountDue ?? journey?.amountDue ?? 0;
+    final paidAmount = invoice?.paidAmount ??
+        (finalTotal > amountDue ? finalTotal - amountDue : 0);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -22889,9 +23267,11 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        request.items.length == 1
-                            ? '1 item'
-                            : '${request.items.length} items',
+                        invoice != null
+                            ? 'Requested items'
+                            : request.items.length == 1
+                                ? '1 item'
+                                : '${request.items.length} items',
                         style: const TextStyle(
                           color: FarmColors.ink,
                           fontSize: 15,
@@ -22965,32 +23345,159 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: FarmColors.line),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Text(
-                                request.quotedTotal != null
-                                    ? 'Order total'
-                                    : 'Estimated total',
-                                style: const TextStyle(
+                            if (finalTotal > 0) ...[
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Final invoice total',
+                                      style: TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    formatJmd(finalTotal),
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (paidAmount > 0) ...[
+                                const SizedBox(height: 7),
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Paid',
+                                        style: TextStyle(
+                                          color: FarmColors.mutedText,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      formatJmd(paidAmount),
+                                      style: const TextStyle(
+                                        color: FarmColors.success,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const Divider(height: 18),
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Balance due',
+                                      style: TextStyle(
+                                        color: FarmColors.ink,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    formatJmd(amountDue),
+                                    style: TextStyle(
+                                      color: amountDue > 0
+                                          ? FarmColors.warning
+                                          : FarmColors.success,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Final amount is based on the invoiced / packed quantities.',
+                                style: TextStyle(
                                   color: FarmColors.mutedText,
-                                  fontWeight: FontWeight.w800,
+                                  fontSize: 9.5,
+                                  height: 1.3,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ),
-                            Text(
-                              request.quotedTotal != null
-                                  ? formatJmd(request.quotedTotal!)
-                                  : formatJmd(request.subtotalEstimate),
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
+                            ] else ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      request.quotedTotal != null
+                                          ? 'Quoted total'
+                                          : 'Estimated total',
+                                      style: const TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    request.quotedTotal != null
+                                        ? formatJmd(request.quotedTotal!)
+                                        : formatJmd(request.subtotalEstimate),
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ),
+                      if (invoice != null && invoice.items.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Final invoiced quantities',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        ...invoice.items.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 7),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${item.productName} • ${item.formattedQuantity}',
+                                    style: const TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  item.formattedLineTotal,
+                                  style: const TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                       if (journey != null) ...[
                         const SizedBox(height: 18),
                         const Text(
@@ -23011,6 +23518,113 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                             border: Border.all(color: FarmColors.line),
                           ),
                           child: _WholesaleJourneyTimeline(journey: journey),
+                        ),
+                      ],
+                      if (journey?.canConfirmReceipt == true) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(13),
+                          decoration: BoxDecoration(
+                            color: FarmColors.primarySoft,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: FarmColors.primary.withOpacity(0.22),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(
+                                    Icons.inventory_2_outlined,
+                                    color: FarmColors.primary,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Delivered by HPJ — confirm receipt',
+                                      style: TextStyle(
+                                        color: FarmColors.ink,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'After your business checks the delivery, confirm that it was received.',
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10.5,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (journey!.recipientName.isNotEmpty) ...[
+                                const SizedBox(height: 5),
+                                Text(
+                                  'Delivered to ${journey!.recipientName}',
+                                  style: const TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () async {
+                                    Navigator.of(sheetContext).pop();
+                                    await _confirmReceived(context, request);
+                                  },
+                                  icon: const Icon(
+                                    Icons.task_alt_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Confirm Received'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (journey?.businessReceivedAt != null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: FarmColors.success.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: FarmColors.success.withOpacity(0.24),
+                            ),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(
+                                Icons.verified_outlined,
+                                color: FarmColors.success,
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Your business confirmed this order was received.',
+                                  style: TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                       if (journey != null &&
@@ -23157,11 +23771,13 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
     BuildContext context,
     WholesaleOrderRequest request,
     WholesaleOrderJourney? journey,
+    WholesaleInvoice? invoice,
   ) {
     final status = _orderStatus(request, journey);
-    final dateLabel = _fulfilmentDateLabel(request);
-    final hasAmountDue = (journey?.amountDue ?? 0) > 0;
+    final dateLabel = _fulfilmentDateLabel(request, journey);
+    final hasAmountDue = (invoice?.amountDue ?? journey?.amountDue ?? 0) > 0;
     final isPast = _isPastOrder(request, journey);
+    final needsReceipt = journey?.canConfirmReceipt == true;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -23308,7 +23924,7 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                 request.items.length == 1
                     ? '1 item'
                     : '${request.items.length} items',
-                _orderAmountLabel(request),
+                _orderAmountLabel(request, journey, invoice),
               ].join(' • '),
               style: const TextStyle(
                 color: FarmColors.mutedText,
@@ -23364,7 +23980,7 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Payment due ${formatJmd(journey!.amountDue)}',
+                        'Payment due ${formatJmd(invoice?.amountDue ?? journey!.amountDue)}',
                         style: const TextStyle(
                           color: FarmColors.ink,
                           fontSize: 10.5,
@@ -23379,31 +23995,47 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: isPast
-                  ? OutlinedButton.icon(
+              child: needsReceipt
+                  ? ElevatedButton.icon(
                       onPressed: () => _showOrderDetails(
                         context,
                         request,
                         journey,
+                        invoice,
                       ),
                       icon: const Icon(
-                        Icons.receipt_long_outlined,
+                        Icons.task_alt_rounded,
                         size: 18,
                       ),
-                      label: const Text('View Order'),
+                      label: const Text('Confirm Receipt'),
                     )
-                  : ElevatedButton.icon(
-                      onPressed: () => _showOrderDetails(
-                        context,
-                        request,
-                        journey,
-                      ),
-                      icon: const Icon(
-                        Icons.local_shipping_outlined,
-                        size: 18,
-                      ),
-                      label: const Text('Track Order'),
-                    ),
+                  : isPast
+                      ? OutlinedButton.icon(
+                          onPressed: () => _showOrderDetails(
+                            context,
+                            request,
+                            journey,
+                            invoice,
+                          ),
+                          icon: const Icon(
+                            Icons.receipt_long_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('View Order'),
+                        )
+                      : ElevatedButton.icon(
+                          onPressed: () => _showOrderDetails(
+                            context,
+                            request,
+                            journey,
+                            invoice,
+                          ),
+                          icon: const Icon(
+                            Icons.local_shipping_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('Track Order'),
+                        ),
             ),
           ],
         ),
@@ -23415,11 +24047,13 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: embedded ? null : AppBar(title: const Text('Orders')),
+      appBar: widget.embedded ? null : AppBar(title: const Text('Orders')),
       body: FutureBuilder<List<Object>>(
+        key: ValueKey(_refreshKey),
         future: Future.wait<Object>([
           fetchMyWholesaleRequests(),
           fetchMyWholesaleOrderJourneys(),
+          fetchMyWholesaleInvoices(includePaid: true),
         ]),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
@@ -23445,7 +24079,7 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
               ? const <WholesaleOrderRequest>[]
               : data[0] as List<WholesaleOrderRequest>;
 
-          final requestedRequestId = initialRequestId?.trim() ?? '';
+          final requestedRequestId = widget.initialRequestId?.trim() ?? '';
           final focusedRequests = requestedRequestId.isEmpty
               ? const <WholesaleOrderRequest>[]
               : allRequests
@@ -23463,6 +24097,16 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
           final journeyByRequest = <String, WholesaleOrderJourney>{
             for (final journey in journeys) journey.requestId: journey,
           };
+
+          final invoices = data == null
+              ? const <WholesaleInvoice>[]
+              : data[2] as List<WholesaleInvoice>;
+          final invoiceByRequest = <String, WholesaleInvoice>{};
+          for (final invoice in invoices) {
+            final requestId = invoice.requestId.trim();
+            if (requestId.isEmpty || invoice.isVoid) continue;
+            invoiceByRequest.putIfAbsent(requestId, () => invoice);
+          }
 
           final ordered = List<WholesaleOrderRequest>.from(requests)
             ..sort((a, b) {
@@ -23501,7 +24145,7 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                 const Header(
                   title: 'Orders',
                   subtitle:
-                      'Track current orders and quickly review past orders.',
+                      'Track delivery, final invoice totals and receipt confirmation.',
                 ),
                 if (requestedRequestId.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -23585,6 +24229,7 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                         context,
                         request,
                         journeyByRequest[request.id],
+                        invoiceByRequest[request.id],
                       ),
                     ),
                   ],
@@ -23617,6 +24262,7 @@ class MyWholesaleRequestsScreen extends StatelessWidget {
                         context,
                         request,
                         journeyByRequest[request.id],
+                        invoiceByRequest[request.id],
                       ),
                     ),
                   ],
@@ -23634,6 +24280,36 @@ class _WholesaleJourneyTimeline extends StatelessWidget {
   final WholesaleOrderJourney journey;
 
   const _WholesaleJourneyTimeline({required this.journey});
+
+  String _timeLabel(DateTime? value) {
+    if (value == null) return '';
+
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    final date = value.toLocal();
+    final hour = date.hour == 0
+        ? 12
+        : date.hour > 12
+            ? date.hour - 12
+            : date.hour;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final meridiem = date.hour >= 12 ? 'PM' : 'AM';
+
+    return '${date.day} ${months[date.month - 1]} • $hour:$minute $meridiem';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23653,11 +24329,23 @@ class _WholesaleJourneyTimeline extends StatelessWidget {
             fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(height: 8),
+        if (journey.scheduledFor != null && !journey.isLogisticsComplete) ...[
+          const SizedBox(height: 3),
+          Text(
+            '${journey.isCollection ? 'Collection' : 'Delivery'} schedule • ${_timeLabel(journey.scheduledFor)}',
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+        const SizedBox(height: 9),
         ...List.generate(stages.length, (index) {
           final reached = !interrupted && index <= current;
           final isCurrent = !interrupted && index == current;
           final isLast = index == stages.length - 1;
+          final time = _timeLabel(journey.timestampForStage(index));
 
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -23678,14 +24366,17 @@ class _WholesaleJourneyTimeline extends StatelessWidget {
                         ),
                       ),
                       child: reached
-                          ? const Icon(Icons.check,
-                              size: 10, color: Colors.white)
+                          ? const Icon(
+                              Icons.check,
+                              size: 10,
+                              color: Colors.white,
+                            )
                           : null,
                     ),
                     if (!isLast)
                       Container(
                         width: 2,
-                        height: 18,
+                        height: time.isEmpty ? 22 : 31,
                         color: index < current
                             ? FarmColors.green
                             : FarmColors.line,
@@ -23697,13 +24388,41 @@ class _WholesaleJourneyTimeline extends StatelessWidget {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    stages[index],
-                    style: TextStyle(
-                      color: isCurrent ? FarmColors.ink : FarmColors.mutedText,
-                      fontSize: 10.5,
-                      fontWeight: isCurrent ? FontWeight.w900 : FontWeight.w700,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stages[index],
+                        style: TextStyle(
+                          color:
+                              isCurrent ? FarmColors.ink : FarmColors.mutedText,
+                          fontSize: 10.5,
+                          fontWeight:
+                              isCurrent ? FontWeight.w900 : FontWeight.w700,
+                        ),
+                      ),
+                      if (time.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          time,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ] else if (isCurrent && journey.canConfirmReceipt) ...[
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Waiting for business confirmation',
+                          style: TextStyle(
+                            color: FarmColors.warning,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
@@ -23944,10 +24663,356 @@ class _AdminWholesaleManagementTabState
 
   String demandFilter = 'active';
 
+  final TextEditingController _orderSearchController =
+      TextEditingController();
+  final TextEditingController _fulfillmentSearchController =
+      TextEditingController();
+  final TextEditingController _receivingSearchController =
+      TextEditingController();
+  final TextEditingController _dispatchSearchController =
+      TextEditingController();
+
+  String _orderStatusFilter = 'all';
+  String _orderDateFilter = 'all';
+  String _orderSort = 'newest';
+
+  String _fulfillmentStatusFilter = 'all';
+  String _fulfillmentDateFilter = 'all';
+
+  String _receivingStatusFilter = 'all';
+  String _receivingDateFilter = 'all';
+
+  String _dispatchStatusFilter = 'all';
+  String _dispatchDateFilter = 'all';
+
   @override
   void initState() {
     super.initState();
     _reloadAll();
+  }
+
+  @override
+  void dispose() {
+    _orderSearchController.dispose();
+    _fulfillmentSearchController.dispose();
+    _receivingSearchController.dispose();
+    _dispatchSearchController.dispose();
+    super.dispose();
+  }
+
+  String _opsDateTimeLabel(
+    DateTime? value,
+  ) {
+    if (value == null) return 'Date not available';
+
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    final date = value.toLocal();
+    final hour = date.hour == 0
+        ? 12
+        : date.hour > 12
+            ? date.hour - 12
+            : date.hour;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+
+    return '${date.day} ${months[date.month - 1]} ${date.year} • '
+        '$hour:$minute $period';
+  }
+
+  bool _opsDateMatches(
+    DateTime? value,
+    String filter,
+  ) {
+    if (filter == 'all') return true;
+    if (value == null) return false;
+
+    final now = DateTime.now();
+    final today = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    );
+    final local = value.toLocal();
+    final day = DateTime(
+      local.year,
+      local.month,
+      local.day,
+    );
+
+    switch (filter) {
+      case 'today':
+        return day == today;
+      case '7d':
+        return !day.isBefore(
+          today.subtract(
+            const Duration(days: 6),
+          ),
+        );
+      case '30d':
+        return !day.isBefore(
+          today.subtract(
+            const Duration(days: 29),
+          ),
+        );
+      case '90d':
+        return !day.isBefore(
+          today.subtract(
+            const Duration(days: 89),
+          ),
+        );
+      default:
+        return true;
+    }
+  }
+
+  bool _opsSearchMatches(
+    String query,
+    Iterable<String?> values,
+  ) {
+    final clean = query.trim().toLowerCase();
+    if (clean.isEmpty) return true;
+
+    final haystack = values
+        .whereType<String>()
+        .join(' ')
+        .toLowerCase();
+
+    final terms = clean
+        .split(RegExp(r'\s+'))
+        .where((term) => term.isNotEmpty);
+
+    return terms.every(haystack.contains);
+  }
+
+  DateTime? _receivingActivityDate(
+    WholesaleReceivingBatch batch,
+  ) {
+    return batch.completedAt ??
+        batch.inspectedAt ??
+        batch.receivedAt ??
+        batch.collectedAt ??
+        batch.updatedAt ??
+        batch.createdAt ??
+        batch.collectionDate;
+  }
+
+  Widget _operationsFilterBar({
+    required TextEditingController controller,
+    required String searchHint,
+    required String statusValue,
+    required Map<String, String> statusOptions,
+    required String dateValue,
+    String? sortValue,
+    required ValueChanged<String> onSearch,
+    required ValueChanged<String> onStatus,
+    required ValueChanged<String> onDate,
+    ValueChanged<String>? onSort,
+    required VoidCallback onClear,
+  }) {
+    const dateOptions = <String, String>{
+      'all': 'Any date',
+      'today': 'Today',
+      '7d': 'Last 7 days',
+      '30d': 'Last 30 days',
+      '90d': 'Last 90 days',
+    };
+
+    const sortOptions = <String, String>{
+      'newest': 'Newest first',
+      'oldest': 'Oldest first',
+    };
+
+    final hasFilter = controller.text.trim().isNotEmpty ||
+        statusValue != 'all' ||
+        dateValue != 'all' ||
+        (sortValue != null && sortValue != 'newest');
+
+    return FarmCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            onChanged: onSearch,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: searchHint,
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+              ),
+              suffixIcon: controller.text.trim().isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        controller.clear();
+                        onSearch('');
+                      },
+                      icon: const Icon(
+                        Icons.close_rounded,
+                      ),
+                    ),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 164,
+                child: DropdownButtonFormField<String>(
+                  value: statusOptions.containsKey(statusValue)
+                      ? statusValue
+                      : 'all',
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    isDense: true,
+                  ),
+                  items: statusOptions.entries
+                      .map(
+                        (entry) => DropdownMenuItem<String>(
+                          value: entry.key,
+                          child: Text(
+                            entry.value,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onStatus(value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 164,
+                child: DropdownButtonFormField<String>(
+                  value: dateOptions.containsKey(dateValue)
+                      ? dateValue
+                      : 'all',
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Date',
+                    isDense: true,
+                  ),
+                  items: dateOptions.entries
+                      .map(
+                        (entry) => DropdownMenuItem<String>(
+                          value: entry.key,
+                          child: Text(
+                            entry.value,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onDate(value);
+                  },
+                ),
+              ),
+              if (sortValue != null && onSort != null)
+                SizedBox(
+                  width: 164,
+                  child: DropdownButtonFormField<String>(
+                    value: sortOptions.containsKey(sortValue)
+                        ? sortValue
+                        : 'newest',
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Sort',
+                      isDense: true,
+                    ),
+                    items: sortOptions.entries
+                        .map(
+                          (entry) => DropdownMenuItem<String>(
+                            value: entry.key,
+                            child: Text(
+                              entry.value,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) onSort(value);
+                    },
+                  ),
+                ),
+              if (hasFilter)
+                TextButton.icon(
+                  onPressed: onClear,
+                  icon: const Icon(
+                    Icons.filter_alt_off_outlined,
+                    size: 18,
+                  ),
+                  label: const Text('Clear filters'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _operationsResultCount({
+    required int count,
+    required String singular,
+    String? note,
+  }) {
+    final label = count == 1 ? singular : '${singular}s';
+
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: 8,
+        bottom: 2,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$count $label shown',
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (note != null && note.trim().isNotEmpty)
+            Flexible(
+              child: Text(
+                note,
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 // =====================================================
 // DISPATCH HELPERS
@@ -24492,6 +25557,42 @@ class _AdminWholesaleManagementTabState
                 return;
               }
 
+              HpjImageSource source = HpjImageSource.gallery;
+
+              if (!kIsWeb) {
+                final selected = await showModalBottomSheet<HpjImageSource>(
+                  context: dialogContext,
+                  showDragHandle: true,
+                  builder: (sheetContext) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.camera_alt_outlined),
+                          title: const Text('Take proof photo'),
+                          onTap: () => Navigator.pop(
+                            sheetContext,
+                            HpjImageSource.camera,
+                          ),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.photo_library_outlined),
+                          title: const Text('Choose proof photo'),
+                          onTap: () => Navigator.pop(
+                            sheetContext,
+                            HpjImageSource.gallery,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                );
+
+                if (selected == null) return;
+                source = selected;
+              }
+
               setDialogState(() {
                 uploadingPhoto = true;
               });
@@ -24499,6 +25600,7 @@ class _AdminWholesaleManagementTabState
               try {
                 final url = await captureWholesaleDispatchProofPhoto(
                   dispatch,
+                  source: source,
                 );
 
                 if (!dialogContext.mounted) {
@@ -24664,14 +25766,14 @@ class _AdminWholesaleManagementTabState
                         icon: Icon(
                           proofPhotoUrl.isNotEmpty
                               ? Icons.check_circle_outline
-                              : Icons.camera_alt_outlined,
+                              : Icons.add_a_photo_outlined,
                         ),
                         label: Text(
                           uploadingPhoto
                               ? 'Uploading...'
                               : proofPhotoUrl.isNotEmpty
                                   ? 'Proof Photo Added'
-                                  : 'Capture Proof Photo',
+                                  : 'Add Proof Photo',
                         ),
                       ),
                     ),
@@ -25669,8 +26771,54 @@ class _AdminWholesaleManagementTabState
                 .toList();
 
         final exactRequestFound = focusedRequests.isNotEmpty;
-        final requests =
-            exactRequestFound ? focusedRequests : statusRequests;
+
+        final locallyFilteredRequests = statusRequests.where((request) {
+          if (_orderStatusFilter != 'all' &&
+              request.status != _orderStatusFilter) {
+            return false;
+          }
+
+          if (!_opsDateMatches(
+            request.createdAt,
+            _orderDateFilter,
+          )) {
+            return false;
+          }
+
+          final accountName =
+              request.businessAccount?.displayName ?? request.businessName;
+
+          return _opsSearchMatches(
+            _orderSearchController.text,
+            <String?>[
+              request.id,
+              request.shortId,
+              accountName,
+              request.businessName,
+              request.contactName,
+              request.contactPhone,
+              request.deliveryParish,
+              request.deliveryAddress,
+              request.status,
+              ...request.items.map((item) => item.productName),
+              ...request.items.map((item) => item.unit),
+            ],
+          );
+        }).toList();
+
+        locallyFilteredRequests.sort((a, b) {
+          final ad = a.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bd = b.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return _orderSort == 'oldest'
+              ? ad.compareTo(bd)
+              : bd.compareTo(ad);
+        });
+
+        final requests = exactRequestFound
+            ? focusedRequests
+            : locallyFilteredRequests;
 
         if (requests.isEmpty && requestedId.isEmpty) {
           return Center(
@@ -25697,6 +26845,51 @@ class _AdminWholesaleManagementTabState
                 ),
                 const SizedBox(height: 12),
               ],
+              if (requestedId.isEmpty) ...[
+                _operationsFilterBar(
+                  controller: _orderSearchController,
+                  searchHint:
+                      'Search business, order #, product, parish...',
+                  statusValue: _orderStatusFilter,
+                  statusOptions: const <String, String>{
+                    'all': 'All statuses',
+                    'pending': 'Pending',
+                    'quoted': 'Quote Ready',
+                    'approved': 'Confirmed',
+                    'fulfilled': 'Fulfilled',
+                    'rejected': 'Rejected',
+                    'cancelled': 'Cancelled',
+                  },
+                  dateValue: _orderDateFilter,
+                  sortValue: _orderSort,
+                  onSearch: (_) => setState(() {}),
+                  onStatus: (value) => setState(
+                    () => _orderStatusFilter = value,
+                  ),
+                  onDate: (value) => setState(
+                    () => _orderDateFilter = value,
+                  ),
+                  onSort: (value) => setState(
+                    () => _orderSort = value,
+                  ),
+                  onClear: () {
+                    _orderSearchController.clear();
+                    setState(() {
+                      _orderStatusFilter = 'all';
+                      _orderDateFilter = 'all';
+                      _orderSort = 'newest';
+                    });
+                  },
+                ),
+                _operationsResultCount(
+                  count: requests.length,
+                  singular: 'order',
+                  note: allRequests.length >= 500
+                      ? 'Filtering latest 500 loaded'
+                      : null,
+                ),
+                const SizedBox(height: 10),
+              ],
               ...List<Widget>.generate(requests.length, (index) {
               final request = requests[index];
               final accountName =
@@ -25722,6 +26915,27 @@ class _AdminWholesaleManagementTabState
                             ),
                           ),
                           _WholesaleStatusChip(status: request.status),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule_outlined,
+                            size: 15,
+                            color: FarmColors.mutedText,
+                          ),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              'Placed ${_opsDateTimeLabel(request.createdAt)}',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 7),
@@ -30583,7 +31797,41 @@ class _AdminWholesaleManagementTabState
       }
 
       // ---------------------------------------------------
-      // 3. REFRESH ADMIN WORKSPACE
+      // 3. AUTOMATIC WAREHOUSE HANDOFF
+      //
+      // Receiving remains the source of truth for accepted stock.
+      // The existing Phase 3Y reservation RPC remains the source of
+      // truth for FEFO stock allocation. This call simply asks HPJ to
+      // recheck waiting orders after new stock has arrived.
+      //
+      // IMPORTANT:
+      // - only fully coverable orders advance;
+      // - shortages stay in Waiting Stock;
+      // - any auto-flow problem must never undo completed receiving.
+      // ---------------------------------------------------
+
+      try {
+        final flow = await autoReleaseWaitingWarehouseOrders();
+
+        if (flow.released > 0) {
+          final orderWord =
+              flow.released == 1 ? 'order is' : 'orders are';
+
+          message = '$message '
+              '${flow.released} waiting $orderWord now Ready to Prepare.';
+        }
+      } catch (flowError) {
+        farmDebugLog(
+          'Warehouse auto-handoff skipped after receiving '
+          '${completedBatch.id}: $flowError',
+        );
+
+        message = '$message '
+            'Stock is available; waiting orders can be rechecked from Warehouse Today.';
+      }
+
+      // ---------------------------------------------------
+      // 4. REFRESH ADMIN WORKSPACE
       // ---------------------------------------------------
 
       await _refresh();
@@ -30593,7 +31841,7 @@ class _AdminWholesaleManagementTabState
       if (!mounted) return;
 
       // ---------------------------------------------------
-      // 4. CONFIRM RESULT
+      // 5. CONFIRM RESULT
       // ---------------------------------------------------
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -30613,7 +31861,7 @@ class _AdminWholesaleManagementTabState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            friendlyAppError(error),
+            _wholesaleReceivingCompletionError(error),
           ),
         ),
       );
@@ -30793,6 +32041,52 @@ class _AdminWholesaleManagementTabState
         final farmerMap = <String, FarmerProfile>{
           for (final item in farmers) item.id: item,
         };
+
+        visibleBatches = visibleBatches.where((batch) {
+          if (_receivingStatusFilter == 'issues') {
+            final hasIssue =
+                (batch.isReceived || batch.isInspected) &&
+                    (batch.rejectedQuantity > 0 ||
+                        batch.remainingToReceive > 0.001);
+            if (!hasIssue) return false;
+          } else if (_receivingStatusFilter != 'all' &&
+              batch.status != _receivingStatusFilter) {
+            return false;
+          }
+
+          if (!_opsDateMatches(
+            _receivingActivityDate(batch),
+            _receivingDateFilter,
+          )) {
+            return false;
+          }
+
+          final request = requestMap[batch.wholesaleRequestId];
+          final farmer = farmerMap[batch.farmerId];
+
+          return _opsSearchMatches(
+            _receivingSearchController.text,
+            <String?>[
+              batch.id,
+              batch.lotCode,
+              batch.productName,
+              batch.unit,
+              batch.status,
+              request?.shortId,
+              request?.businessName,
+              farmer?.farmName,
+              farmer?.farmerName,
+              farmer?.parish,
+            ],
+          );
+        }).toList()
+          ..sort((a, b) {
+            final ad = _receivingActivityDate(a) ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bd = _receivingActivityDate(b) ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return bd.compareTo(ad);
+          });
 
         double scheduledFor(
           String allocationId,
@@ -30977,7 +32271,47 @@ class _AdminWholesaleManagementTabState
               ),
 
               const SizedBox(
-                height: 20,
+                height: 12,
+              ),
+
+              _operationsFilterBar(
+                controller: _receivingSearchController,
+                searchHint:
+                    'Search product, lot, farmer, request #...',
+                statusValue: _receivingStatusFilter,
+                statusOptions: const <String, String>{
+                  'all': 'All statuses',
+                  'planned': 'Planned',
+                  'collection_scheduled': 'Scheduled',
+                  'collected': 'Collected',
+                  'received': 'Received',
+                  'inspected': 'Inspected',
+                  'completed': 'Completed',
+                  'issues': 'Issues only',
+                },
+                dateValue: _receivingDateFilter,
+                onSearch: (_) => setState(() {}),
+                onStatus: (value) => setState(
+                  () => _receivingStatusFilter = value,
+                ),
+                onDate: (value) => setState(
+                  () => _receivingDateFilter = value,
+                ),
+                onClear: () {
+                  _receivingSearchController.clear();
+                  setState(() {
+                    _receivingStatusFilter = 'all';
+                    _receivingDateFilter = 'all';
+                  });
+                },
+              ),
+              _operationsResultCount(
+                count: visibleBatches.length,
+                singular: 'batch',
+              ),
+
+              const SizedBox(
+                height: 18,
               ),
 
               // -----------------------------------------
@@ -31294,11 +32628,32 @@ class _AdminWholesaleManagementTabState
                                 '${batch.collectionMethodLabel} • ${_demandDateLabel(batch.collectionDate!)}',
                                 style: const TextStyle(
                                   color: FarmColors.ink,
-                                  fontSize: 10,
+                                  fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.schedule_outlined,
+                                  size: 14,
+                                  color: FarmColors.mutedText,
+                                ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    'Activity ${_opsDateTimeLabel(_receivingActivityDate(batch))}',
+                                    style: const TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                             const SizedBox(
                               height: 10,
                             ),
@@ -31912,11 +33267,52 @@ class _AdminWholesaleManagementTabState
             if (!dispatch.isCancelled) dispatch.fulfillmentId: dispatch,
         };
 
-        final activeFulfillments = fulfillments.where((fulfillment) {
+        final allActiveFulfillments = fulfillments.where((fulfillment) {
           if (fulfillment.isCancelled) return false;
           final dispatch = dispatchByFulfillment[fulfillment.id];
           return dispatch?.isComplete != true;
         }).toList();
+
+        final activeFulfillments = allActiveFulfillments.where((fulfillment) {
+          if (_fulfillmentStatusFilter != 'all' &&
+              fulfillment.status != _fulfillmentStatusFilter) {
+            return false;
+          }
+
+          final request = requestMap[fulfillment.requestId];
+          final date = request?.createdAt ?? fulfillment.createdAt;
+
+          if (!_opsDateMatches(
+            date,
+            _fulfillmentDateFilter,
+          )) {
+            return false;
+          }
+
+          return _opsSearchMatches(
+            _fulfillmentSearchController.text,
+            <String?>[
+              fulfillment.id,
+              fulfillment.requestId,
+              fulfillment.status,
+              request?.shortId,
+              request?.businessName,
+              request?.businessAccount?.displayName,
+              request?.deliveryParish,
+              ...fulfillment.items.map((item) => item.productName),
+              ...fulfillment.items.map((item) => item.unit),
+            ],
+          );
+        }).toList()
+          ..sort((a, b) {
+            final ad = requestMap[a.requestId]?.createdAt ??
+                a.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bd = requestMap[b.requestId]?.createdAt ??
+                b.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return bd.compareTo(ad);
+          });
 
         final fulfillmentRequestIds = fulfillments
             .map(
@@ -31924,15 +33320,43 @@ class _AdminWholesaleManagementTabState
             )
             .toSet();
 
-        final readyToCreate = requests
-            .where(
-              (request) =>
-                  request.status == 'approved' &&
-                  !fulfillmentRequestIds.contains(
-                    request.id,
-                  ),
-            )
-            .toList();
+        final readyToCreate = requests.where((request) {
+          if (request.status != 'approved' ||
+              fulfillmentRequestIds.contains(request.id)) {
+            return false;
+          }
+
+          if (_fulfillmentStatusFilter != 'all') {
+            return false;
+          }
+
+          if (!_opsDateMatches(
+            request.createdAt,
+            _fulfillmentDateFilter,
+          )) {
+            return false;
+          }
+
+          return _opsSearchMatches(
+            _fulfillmentSearchController.text,
+            <String?>[
+              request.id,
+              request.shortId,
+              request.businessName,
+              request.businessAccount?.displayName,
+              request.deliveryParish,
+              ...request.items.map((item) => item.productName),
+              ...request.items.map((item) => item.unit),
+            ],
+          );
+        }).toList()
+          ..sort((a, b) {
+            final ad = a.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bd = b.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return bd.compareTo(ad);
+          });
 
         final waiting = activeFulfillments
             .where(
@@ -32068,7 +33492,46 @@ class _AdminWholesaleManagementTabState
               ),
 
               const SizedBox(
-                height: 20,
+                height: 12,
+              ),
+
+              _operationsFilterBar(
+                controller: _fulfillmentSearchController,
+                searchHint:
+                    'Search business, request #, product...',
+                statusValue: _fulfillmentStatusFilter,
+                statusOptions: const <String, String>{
+                  'all': 'All statuses',
+                  'waiting_stock': 'Waiting Stock',
+                  'ready_to_prepare': 'Ready to Prepare',
+                  'preparing': 'Preparing',
+                  'packing': 'Packing',
+                  'ready_for_dispatch': 'Ready for Dispatch',
+                },
+                dateValue: _fulfillmentDateFilter,
+                onSearch: (_) => setState(() {}),
+                onStatus: (value) => setState(
+                  () => _fulfillmentStatusFilter = value,
+                ),
+                onDate: (value) => setState(
+                  () => _fulfillmentDateFilter = value,
+                ),
+                onClear: () {
+                  _fulfillmentSearchController.clear();
+                  setState(() {
+                    _fulfillmentStatusFilter = 'all';
+                    _fulfillmentDateFilter = 'all';
+                  });
+                },
+              ),
+              _operationsResultCount(
+                count: activeFulfillments.length +
+                    readyToCreate.length,
+                singular: 'warehouse order',
+              ),
+
+              const SizedBox(
+                height: 18,
               ),
 
               // ==========================================
@@ -32135,8 +33598,17 @@ class _AdminWholesaleManagementTabState
                                         'Request #${request.shortId}',
                                         style: const TextStyle(
                                           color: FarmColors.mutedText,
-                                          fontSize: 10,
+                                          fontSize: 10.5,
                                           fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Placed ${_opsDateTimeLabel(request.createdAt)}',
+                                        style: const TextStyle(
+                                          color: FarmColors.mutedText,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ],
@@ -32289,9 +33761,18 @@ class _AdminWholesaleManagementTabState
                         padding: const EdgeInsets.all(
                           14,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                        child: InkWell(
+                          onTap: request == null
+                              ? null
+                              : () => _updateRequest(
+                                    request,
+                                  ),
+                          borderRadius: BorderRadius.circular(
+                            16,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                             // ----------------------------
                             // ORDER HEADER
                             // ----------------------------
@@ -32343,11 +33824,20 @@ class _AdminWholesaleManagementTabState
                                       Text(
                                         request == null
                                             ? 'Wholesale request'
-                                            : 'Request #${request.shortId}',
+                                            : 'Request #${request.shortId} • Tap to open',
                                         style: const TextStyle(
                                           color: FarmColors.mutedText,
-                                          fontSize: 10,
+                                          fontSize: 10.5,
                                           fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Order ${_opsDateTimeLabel(request?.createdAt ?? fulfillment.createdAt)}',
+                                        style: const TextStyle(
+                                          color: FarmColors.mutedText,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ],
@@ -32370,11 +33860,21 @@ class _AdminWholesaleManagementTabState
                                     fulfillment.statusLabel,
                                     style: TextStyle(
                                       color: statusColor,
-                                      fontSize: 8.5,
+                                      fontSize: 9.5,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
                                 ),
+                                if (request != null) ...[
+                                  const SizedBox(
+                                    width: 5,
+                                  ),
+                                  const Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: FarmColors.mutedText,
+                                    size: 20,
+                                  ),
+                                ],
                               ],
                             ),
 
@@ -32697,7 +34197,8 @@ class _AdminWholesaleManagementTabState
                                   ],
                                 ),
                               ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -32719,6 +34220,7 @@ class _AdminWholesaleManagementTabState
         dispatchFuture,
         fulfillmentFuture,
         deliveryStaffFuture,
+        requestsFuture,
       ]),
       builder: (
         context,
@@ -32752,9 +34254,14 @@ class _AdminWholesaleManagementTabState
         final fulfillments = data[1] as List<WholesaleFulfillment>;
 
         final drivers = data[2] as List<WholesaleDeliveryStaff>;
+        final requests = data[3] as List<WholesaleOrderRequest>;
 
         final driverMap = <String, WholesaleDeliveryStaff>{
           for (final driver in drivers) driver.userId: driver,
+        };
+
+        final requestMap = <String, WholesaleOrderRequest>{
+          for (final request in requests) request.id: request,
         };
 
         final activeFulfillmentIds = dispatches
@@ -32766,15 +34273,103 @@ class _AdminWholesaleManagementTabState
             )
             .toSet();
 
-        final readyToDispatch = fulfillments
-            .where(
-              (item) =>
-                  item.isReadyForDispatch &&
-                  !activeFulfillmentIds.contains(
-                    item.id,
-                  ),
-            )
-            .toList();
+        var readyToDispatch = fulfillments.where((item) {
+          if (!item.isReadyForDispatch ||
+              activeFulfillmentIds.contains(item.id)) {
+            return false;
+          }
+
+          if (_dispatchStatusFilter != 'all' &&
+              _dispatchStatusFilter != 'ready_to_dispatch') {
+            return false;
+          }
+
+          final request = requestMap[item.requestId];
+          final date = request?.createdAt ?? item.readyAt ?? item.createdAt;
+
+          if (!_opsDateMatches(
+            date,
+            _dispatchDateFilter,
+          )) {
+            return false;
+          }
+
+          return _opsSearchMatches(
+            _dispatchSearchController.text,
+            <String?>[
+              item.id,
+              item.requestId,
+              request?.shortId,
+              request?.businessName,
+              request?.businessAccount?.displayName,
+              request?.deliveryParish,
+              ...item.items.map((line) => line.productName),
+            ],
+          );
+        }).toList()
+          ..sort((a, b) {
+            final ad = requestMap[a.requestId]?.createdAt ??
+                a.readyAt ??
+                a.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bd = requestMap[b.requestId]?.createdAt ??
+                b.readyAt ??
+                b.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return bd.compareTo(ad);
+          });
+
+        final visibleDispatches = dispatches.where((dispatch) {
+          if (_dispatchStatusFilter == 'ready_to_dispatch') {
+            return false;
+          }
+
+          if (_dispatchStatusFilter != 'all' &&
+              dispatch.status != _dispatchStatusFilter) {
+            return false;
+          }
+
+          final date = dispatch.scheduledFor ?? dispatch.createdAt;
+
+          if (!_opsDateMatches(
+            date,
+            _dispatchDateFilter,
+          )) {
+            return false;
+          }
+
+          final request = requestMap[dispatch.requestId];
+          final driver = dispatch.assignedDriverId == null
+              ? null
+              : driverMap[dispatch.assignedDriverId!];
+
+          return _opsSearchMatches(
+            _dispatchSearchController.text,
+            <String?>[
+              dispatch.id,
+              dispatch.requestId,
+              request?.shortId,
+              dispatch.businessName,
+              request?.businessName,
+              dispatch.contactName,
+              dispatch.contactPhone,
+              dispatch.deliveryAddress,
+              dispatch.deliveryParish,
+              dispatch.status,
+              dispatch.dispatchMethod,
+              driver?.displayName,
+            ],
+          );
+        }).toList()
+          ..sort((a, b) {
+            final ad = a.scheduledFor ??
+                a.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bd = b.scheduledFor ??
+                b.createdAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return bd.compareTo(ad);
+          });
 
         return RefreshIndicator(
           onRefresh: _refresh,
@@ -32872,6 +34467,44 @@ class _AdminWholesaleManagementTabState
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
+              _operationsFilterBar(
+                controller: _dispatchSearchController,
+                searchHint:
+                    'Search business, request #, driver, parish...',
+                statusValue: _dispatchStatusFilter,
+                statusOptions: const <String, String>{
+                  'all': 'All statuses',
+                  'ready_to_dispatch': 'Ready to Dispatch',
+                  'planned': 'Planned',
+                  'assigned': 'Assigned',
+                  'ready_for_pickup': 'Ready for Pickup',
+                  'out_for_delivery': 'Out for Delivery',
+                  'delivered': 'Delivered',
+                  'collected': 'Collected',
+                  'cancelled': 'Cancelled',
+                },
+                dateValue: _dispatchDateFilter,
+                onSearch: (_) => setState(() {}),
+                onStatus: (value) => setState(
+                  () => _dispatchStatusFilter = value,
+                ),
+                onDate: (value) => setState(
+                  () => _dispatchDateFilter = value,
+                ),
+                onClear: () {
+                  _dispatchSearchController.clear();
+                  setState(() {
+                    _dispatchStatusFilter = 'all';
+                    _dispatchDateFilter = 'all';
+                  });
+                },
+              ),
+              _operationsResultCount(
+                count: readyToDispatch.length +
+                    visibleDispatches.length,
+                singular: 'dispatch item',
+              ),
               if (readyToDispatch.isNotEmpty) ...[
                 const SizedBox(
                   height: 18,
@@ -32888,30 +34521,61 @@ class _AdminWholesaleManagementTabState
                   height: 9,
                 ),
                 ...readyToDispatch.map(
-                  (fulfillment) => Padding(
-                    padding: const EdgeInsets.only(
-                      bottom: 8,
-                    ),
-                    child: FarmCard(
-                      padding: const EdgeInsets.all(
-                        13,
+                  (fulfillment) {
+                    final request = requestMap[fulfillment.requestId];
+
+                    return Padding(
+                      padding: const EdgeInsets.only(
+                        bottom: 8,
                       ),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _openCreateDispatchSheet(
-                            fulfillment,
-                          ),
-                          icon: const Icon(
-                            Icons.local_shipping_outlined,
-                          ),
-                          label: const Text(
-                            'Create Dispatch',
-                          ),
+                      child: FarmCard(
+                        padding: const EdgeInsets.all(
+                          13,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              request?.businessAccount?.displayName ??
+                                  request?.businessName ??
+                                  'Wholesale Business',
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              request == null
+                                  ? 'Wholesale fulfillment'
+                                  : 'Request #${request.shortId} • ${_opsDateTimeLabel(request.createdAt)}',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _openCreateDispatchSheet(
+                                  fulfillment,
+                                ),
+                                icon: const Icon(
+                                  Icons.local_shipping_outlined,
+                                ),
+                                label: const Text(
+                                  'Create Dispatch',
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ],
               const SizedBox(
@@ -32928,7 +34592,7 @@ class _AdminWholesaleManagementTabState
               const SizedBox(
                 height: 9,
               ),
-              if (dispatches.isEmpty)
+              if (visibleDispatches.isEmpty)
                 const FarmCard(
                   padding: EdgeInsets.all(
                     20,
@@ -32939,7 +34603,7 @@ class _AdminWholesaleManagementTabState
                   ),
                 )
               else
-                ...dispatches.map(
+                ...visibleDispatches.map(
                   (dispatch) {
                     final color = _dispatchStatusColor(
                       dispatch,
@@ -32948,6 +34612,8 @@ class _AdminWholesaleManagementTabState
                     final driver = dispatch.assignedDriverId == null
                         ? null
                         : driverMap[dispatch.assignedDriverId!];
+
+                    final request = requestMap[dispatch.requestId];
 
                     return Padding(
                       padding: const EdgeInsets.only(
@@ -32997,6 +34663,19 @@ class _AdminWholesaleManagementTabState
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(
+                              height: 4,
+                            ),
+                            Text(
+                              request == null
+                                  ? 'Created ${_opsDateTimeLabel(dispatch.createdAt)}'
+                                  : 'Request #${request.shortId} • Created ${_opsDateTimeLabel(dispatch.createdAt)}',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             const SizedBox(
                               height: 6,

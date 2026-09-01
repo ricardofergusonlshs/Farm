@@ -1,39 +1,52 @@
-// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
+// Web-only browser notification implementation.
+// This file is selected only when dart.library.html is available.
 
 import 'dart:html' as html;
 
-final Map<String, DateTime> _recentBrowserNotifications = <String, DateTime>{};
+final Map<String, DateTime> _recentBrowserNotifications =
+    <String, DateTime>{};
 
 Future<bool> requestBrowserNotifications() async {
   try {
     if (!html.Notification.supported) {
-      html.window.console.log('Browser notification skipped');
+      html.window.console.log(
+        'Browser notification skipped',
+      );
       return false;
     }
 
-    final permission = html.Notification.permission;
+    final currentPermission =
+        html.Notification.permission;
 
-    if (permission == 'granted') {
-      html.window.console.log('Browser notifications granted');
+    if (currentPermission == 'granted') {
+      html.window.console.log(
+        'Browser notifications granted',
+      );
       return true;
     }
 
-    if (permission == 'denied') {
-      html.window.console.log('Browser notifications denied');
+    if (currentPermission == 'denied') {
+      html.window.console.log(
+        'Browser notifications denied',
+      );
       return false;
     }
 
-    final requested = await html.Notification.requestPermission();
+    final permission =
+        await html.Notification.requestPermission();
+    final granted = permission == 'granted';
 
-    if (requested == 'granted') {
-      html.window.console.log('Browser notifications granted');
-      return true;
-    }
+    html.window.console.log(
+      granted
+          ? 'Browser notifications granted'
+          : 'Browser notifications denied',
+    );
 
-    html.window.console.log('Browser notifications denied');
-    return false;
+    return granted;
   } catch (_) {
-    html.window.console.log('Browser notification skipped');
+    html.window.console.log(
+      'Browser notification skipped',
+    );
     return false;
   }
 }
@@ -45,33 +58,39 @@ void showBrowserNotification({
 }) {
   try {
     if (!html.Notification.supported) {
-      html.window.console.log('Browser notification skipped');
+      html.window.console.log(
+        'Browser notification skipped',
+      );
       return;
     }
 
     if (html.Notification.permission != 'granted') {
-      html.window.console.log('Browser notification skipped');
+      html.window.console.log(
+        'Browser notification skipped',
+      );
       return;
     }
 
-    final cleanTitle =
-        title.trim().isEmpty ? 'The Harvest Place Ja' : title.trim();
-
-    final cleanBody =
-        body.trim().isEmpty ? 'You have a new farm update.' : body.trim();
-
-    final cleanTag = (tag == null || tag.trim().isEmpty)
-        ? '$cleanTitle|$cleanBody'
-        : tag.trim();
+    final cleanTitle = title.trim().isEmpty
+        ? 'The Harvest Place Ja'
+        : title.trim();
+    final cleanBody = body.trim();
+    final cleanTag =
+        (tag ?? '$cleanTitle|$cleanBody').trim();
 
     final now = DateTime.now();
 
     _recentBrowserNotifications.removeWhere(
-      (_, shownAt) => now.difference(shownAt) > const Duration(seconds: 30),
+      (_, shownAt) =>
+          now.difference(shownAt) >
+          const Duration(seconds: 30),
     );
 
-    if (_recentBrowserNotifications.containsKey(cleanTag)) {
-      html.window.console.log('Browser notification skipped');
+    if (_recentBrowserNotifications
+        .containsKey(cleanTag)) {
+      html.window.console.log(
+        'Browser notification skipped',
+      );
       return;
     }
 
@@ -79,17 +98,25 @@ void showBrowserNotification({
 
     final notification = html.Notification(
       cleanTitle,
-      body: cleanBody,
-      tag: cleanTag,
-      icon: 'icons/Icon-192.png',
+      <String, dynamic>{
+        'body': cleanBody,
+        'tag': cleanTag,
+        'icon': 'icons/Icon-192.png',
+        'badge': 'icons/Icon-192.png',
+      },
     );
 
     notification.onClick.listen((_) {
+      html.window.focus();
       notification.close();
     });
 
-    html.window.console.log('Browser notification shown');
+    html.window.console.log(
+      'Browser notification shown',
+    );
   } catch (_) {
-    html.window.console.log('Browser notification skipped');
+    html.window.console.log(
+      'Browser notification skipped',
+    );
   }
 }

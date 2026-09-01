@@ -4,6 +4,11 @@ import 'dart:async';
 import 'dart:html' as html;
 import 'dart:typed_data';
 
+enum HpjImageSource {
+  gallery,
+  camera,
+}
+
 class PickedProductImage {
   final String fileName;
   final String mimeType;
@@ -16,46 +21,125 @@ class PickedProductImage {
   });
 }
 
-Future<PickedProductImage?> pickProductImageFromDevice() async {
-  final input = html.FileUploadInputElement()
-    ..accept = 'image/*'
-    ..multiple = false;
+String _mimeTypeFromName(String fileName) {
+  final lower = fileName.toLowerCase().trim();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
 
-  input.click();
-  await input.onChange.first;
+bool _hpjImagePickerBusy = false;
 
-  final files = input.files;
-  if (files == null || files.isEmpty) return null;
+bool get hpjImagePickerBusy => _hpjImagePickerBusy;
 
-  final file = files.first;
-  final reader = html.FileReader();
-  final completer = Completer<Uint8List>();
+Future<PickedProductImage?> pickProductImageFromDevice({
+  HpjImageSource source = HpjImageSource.gallery,
+}) async {
+  // Web intentionally uses the browser's native file chooser for both
+  // gallery and camera requests. This is reliable inside FlutLab/browser
+  // previews and avoids embedded-user-agent camera failures.
+  //
+  // Keep a shared busy signal while the browser owns focus. Staff/Wholesale
+  // workspace lifecycle observers use this to avoid rebuilding the entire
+  // navigation shell while the native chooser is closing.
+  if (_hpjImagePickerBusy) return null;
 
-  reader.onError.first.then((_) {
-    if (!completer.isCompleted) {
-      completer.completeError(Exception('Could not read selected image.'));
+  _hpjImagePickerBusy = true;
+
+  StreamSubscription<html.Event>? changeSubscription;
+  StreamSubscription<html.Event>? focusSubscription;
+
+  try {
+    final input = html.FileUploadInputElement()
+      ..accept = 'image/*'
+      ..multiple = false;
+
+    final selection = Completer<html.File?>();
+
+    void finishSelection(html.File? file) {
+      if (!selection.isCompleted) {
+        selection.complete(file);
+      }
     }
-  });
 
-  reader.onLoad.first.then((_) {
-    final result = reader.result;
-    if (result is ByteBuffer) {
-      completer.complete(Uint8List.view(result));
-      return;
-    }
-    if (result is Uint8List) {
-      completer.complete(result);
-      return;
-    }
-    completer.completeError(Exception('Could not read selected image.'));
-  });
+    changeSubscription = input.onChange.listen((_) {
+      final files = input.files;
+      finishSelection(
+        files != null && files.isNotEmpty ? files.first : null,
+      );
+    });
 
-  reader.readAsArrayBuffer(file);
-  final bytes = await completer.future;
+    // Some browsers do not dispatch a change event when the chooser is
+    // cancelled. When browser focus returns, give the input a moment to
+    // populate, then finish safely with null if no file was chosen.
+    focusSubscription = html.window.onFocus.listen((_) {
+      Future<void>.delayed(
+        const Duration(milliseconds: 280),
+        () {
+          if (selection.isCompleted) return;
 
-  return PickedProductImage(
-    fileName: file.name,
-    mimeType: file.type,
-    bytes: bytes,
-  );
+          final files = input.files;
+          finishSelection(
+            files != null && files.isNotEmpty ? files.first : null,
+          );
+        },
+      );
+    });
+
+    input.click();
+
+    final file = await selection.future.timeout(
+      const Duration(minutes: 2),
+      onTimeout: () => null,
+    );
+
+    if (file == null) return null;
+
+    final reader = html.FileReader();
+    final completer = Completer<Uint8List>();
+
+    reader.onError.first.then((_) {
+      if (!completer.isCompleted) {
+        completer.completeError(
+          Exception('Could not read selected image.'),
+        );
+      }
+    });
+
+    reader.onLoad.first.then((_) {
+      final result = reader.result;
+      if (result is ByteBuffer) {
+        completer.complete(Uint8List.view(result));
+        return;
+      }
+      if (result is Uint8List) {
+        completer.complete(result);
+        return;
+      }
+      completer.completeError(
+        Exception('Could not read selected image.'),
+      );
+    });
+
+    reader.readAsArrayBuffer(file);
+
+    final bytes = await completer.future;
+    if (bytes.isEmpty) return null;
+
+    final fileName = file.name.trim().isEmpty
+        ? 'harvest-image-${DateTime.now().millisecondsSinceEpoch}.jpg'
+        : file.name.trim();
+    final cleanMime = file.type.trim();
+
+    return PickedProductImage(
+      fileName: fileName,
+      mimeType: cleanMime.isEmpty ? _mimeTypeFromName(fileName) : cleanMime,
+      bytes: bytes,
+    );
+  } finally {
+    await changeSubscription?.cancel();
+    await focusSubscription?.cancel();
+    _hpjImagePickerBusy = false;
+  }
 }

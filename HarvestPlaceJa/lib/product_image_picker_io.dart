@@ -1,47 +1,85 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-Future<String> uploadImageFromComputer({
-  required String bucket,
-  required String folder,
-  required String fileNamePrefix,
+enum HpjImageSource {
+  gallery,
+  camera,
+}
+
+class PickedProductImage {
+  final String fileName;
+  final String mimeType;
+  final Uint8List bytes;
+
+  const PickedProductImage({
+    required this.fileName,
+    required this.mimeType,
+    required this.bytes,
+  });
+}
+
+String _safeFileName(String path, String fallback) {
+  final clean = path.trim();
+  if (clean.isEmpty) return fallback;
+
+  final parts = clean.split(RegExp(r'[\\/]'));
+  final name = parts.isEmpty ? fallback : parts.last.trim();
+  return name.isEmpty ? fallback : name;
+}
+
+String _contentTypeForFileName(String fileName) {
+  final lower = fileName.toLowerCase().trim();
+
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.heic')) return 'image/heic';
+  if (lower.endsWith('.heif')) return 'image/heif';
+
+  return 'image/jpeg';
+}
+
+bool _hpjImagePickerBusy = false;
+
+bool get hpjImagePickerBusy => _hpjImagePickerBusy;
+
+Future<PickedProductImage?> pickProductImageFromDevice({
+  HpjImageSource source = HpjImageSource.gallery,
 }) async {
-  final picker = ImagePicker();
+  // Prevent overlapping camera/gallery requests and let workspace lifecycle
+  // observers know that a media picker is temporarily controlling focus.
+  if (_hpjImagePickerBusy) return null;
 
-  final picked = await picker.pickImage(
-    source: ImageSource.gallery,
-    imageQuality: 78,
-    maxWidth: 1600,
-  );
+  _hpjImagePickerBusy = true;
 
-  if (picked == null) {
-    throw Exception('No image selected.');
+  try {
+    final picker = ImagePicker();
+
+    final picked = await picker.pickImage(
+      source: source == HpjImageSource.camera
+          ? ImageSource.camera
+          : ImageSource.gallery,
+      imageQuality: source == HpjImageSource.camera ? 82 : 88,
+      maxWidth: 1800,
+    );
+
+    if (picked == null) return null;
+
+    final bytes = await picked.readAsBytes();
+    if (bytes.isEmpty) return null;
+
+    final fileName = _safeFileName(
+      picked.name.isNotEmpty ? picked.name : picked.path,
+      'harvest-image-${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
+
+    return PickedProductImage(
+      fileName: fileName,
+      mimeType: picked.mimeType ?? _contentTypeForFileName(fileName),
+      bytes: bytes,
+    );
+  } finally {
+    _hpjImagePickerBusy = false;
   }
-
-  final file = File(picked.path);
-  final extension = picked.name.split('.').last.toLowerCase();
-  final safeExtension = extension.isEmpty ? 'jpg' : extension;
-
-  final safePrefix = fileNamePrefix
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
-      .replaceAll(RegExp(r'-+'), '-')
-      .replaceAll(RegExp(r'^-|-$'), '');
-
-  final filePath =
-      '$folder/${safePrefix.isEmpty ? 'product' : safePrefix}-${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
-
-  await Supabase.instance.client.storage.from(bucket).upload(
-        filePath,
-        file,
-        fileOptions: const FileOptions(
-          cacheControl: '3600',
-          upsert: true,
-        ),
-      );
-
-  return Supabase.instance.client.storage.from(bucket).getPublicUrl(filePath);
 }

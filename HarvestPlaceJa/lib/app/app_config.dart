@@ -3,7 +3,7 @@ part of harvest_place_app;
 class AppConfig {
   static const appName = 'The Harvest Place Ja';
   static const appVersion = '1.0.4';
-  static const appBuildNumber = '25';
+  static const appBuildNumber = '24';
   static const supportPhoneDisplay = '876-339-1395';
   static const supportPhoneDial = '+18763391395';
   static const supportWhatsAppNumber = '18763391395';
@@ -14,17 +14,17 @@ class AppConfig {
   // Cloudflare Turnstile CAPTCHA (public client configuration only).
   // IMPORTANT: Never put the Turnstile SECRET key in the Flutter app.
   //
-  // In FlutLab, replace the empty defaultValue strings below with the
-  // Turnstile SITE KEY and the HTTPS base URL/hostname you authorized in
-  // Cloudflare. In CI, you can instead provide TURNSTILE_SITE_KEY and
-  // TURNSTILE_BASE_URL using --dart-define.
+  // In FlutLab, provide TURNSTILE_SITE_KEY and TURNSTILE_BASE_URL using
+  // --dart-define, or place the public SITE KEY as the default value if that
+  // is how the existing HPJ project is configured.
   static const turnstileSiteKey = String.fromEnvironment(
     'TURNSTILE_SITE_KEY',
     defaultValue: '',
   );
-  // Native Android/iOS uses this as the WebView origin. It must be an
-  // http(s) URL whose hostname is authorized on the Cloudflare widget.
-  // Flutter Web automatically uses the current browser origin instead.
+
+  // Native Android/iOS uses this as the WebView origin. It must be an http(s)
+  // URL whose hostname is authorized on the Cloudflare Turnstile widget.
+  // Flutter Web automatically uses the current browser origin.
   static const turnstileNativeBaseUrl = String.fromEnvironment(
     'TURNSTILE_BASE_URL',
     defaultValue: '',
@@ -40,15 +40,18 @@ class AppConfig {
         path: '/',
       ).toString();
     }
+
     return turnstileNativeBaseUrl.trim();
   }
 
   static bool get turnstileConfigured {
     final siteKey = turnstileSiteKey.trim();
     final baseUrl = turnstileBaseUrl.trim();
+
     if (siteKey.isEmpty || baseUrl.isEmpty) return false;
 
     final uri = Uri.tryParse(baseUrl);
+
     return uri != null &&
         (uri.scheme == 'https' || uri.scheme == 'http') &&
         uri.host.trim().isNotEmpty;
@@ -120,6 +123,19 @@ class AppConfig {
   static String? get emailConfirmationRedirectTo {
     if (kIsWeb) return emailConfirmationUrl;
     return mobileAuthCallbackUrl;
+  }
+
+  // Google OAuth returns to the same trusted HPJ auth callback used by the
+  // installed app, but carries an explicit marker so it cannot be mistaken
+  // for an email-confirmation callback.
+  static String get googleOAuthWebUrl => '${webBaseUrl}?oauth=google';
+
+  static String get googleOAuthMobileUrl =>
+      '${mobileAuthCallbackUrl}?oauth=google';
+
+  static String? get googleOAuthRedirectTo {
+    if (kIsWeb) return googleOAuthWebUrl;
+    return googleOAuthMobileUrl;
   }
 
   static Map<String, String> get authCallbackParams {
@@ -229,9 +245,37 @@ class AppConfig {
         href.contains('type=recovery');
   }
 
+  static bool get _hasGoogleOAuthMarker {
+    final uri = activeAuthUri;
+    if (uri == null) return false;
+
+    final href = uri.toString().toLowerCase();
+    final oauth = (authCallbackParams['oauth'] ?? '').trim().toLowerCase();
+
+    return oauth == 'google' || href.contains('oauth=google');
+  }
+
+  static String? get googleOAuthCode {
+    if (!_hasGoogleOAuthMarker) return null;
+    return authCallbackCode;
+  }
+
+  static bool get hasGoogleOAuthCallback {
+    final uri = activeAuthUri;
+    if (uri == null || !_hasGoogleOAuthMarker) return false;
+
+    return googleOAuthCode != null ||
+        authCallbackParams['access_token']?.trim().isNotEmpty == true ||
+        authCallbackParams['refresh_token']?.trim().isNotEmpty == true;
+  }
+
   static bool get _hasEmailConfirmationMarker {
     final uri = activeAuthUri;
     if (uri == null) return false;
+
+    // Google OAuth also returns through farm://auth-callback. The explicit
+    // oauth=google marker keeps that flow out of email-confirmation handling.
+    if (_hasGoogleOAuthMarker) return false;
 
     final href = uri.toString().toLowerCase();
     final host = uri.host.toLowerCase();
@@ -277,7 +321,12 @@ class AppConfig {
   }
 
   static void cleanAuthCallbackUrl() {
-    if (!kIsWeb) return;
+    if (!kIsWeb) {
+      // Prevent a completed mobile OAuth/email callback from being interpreted
+      // again if AuthGate is rebuilt later in the same app process.
+      _mobileAuthUri = null;
+      return;
+    }
 
     try {
       final cleanPath = Uri.base.path.trim().isEmpty ? '/' : Uri.base.path;

@@ -6,6 +6,196 @@ part of harvest_place_app;
 final GlobalKey<NavigatorState> hpjRootNavigatorKey =
     GlobalKey<NavigatorState>();
 
+// =====================================================
+// HPJ HELP & TUTORIALS
+// Repair 030
+//
+// Tutorial content is managed from Admin and stored in Supabase. Public
+// entry screens only display a tutorial action when a matching tutorial is
+// published, so HPJ never shows a dead "Watch" button.
+// =====================================================
+
+const Map<String, String> hpjHelpTutorialPlacementLabels = <String, String>{
+  'signup': 'Sign Up',
+  'workspaces': 'Workspaces',
+  'customer': 'Customer Shopping',
+  'farmer': 'Farmer Partner',
+  'wholesale': 'Wholesale Business',
+  'orders': 'Orders & Tracking',
+  'general': 'General Help',
+};
+
+const Map<String, String> hpjHelpTutorialAudienceLabels = <String, String>{
+  'all': 'Everyone',
+  'customer': 'Customers',
+  'farmer': 'Farmers',
+  'wholesale': 'Wholesale',
+  'staff': 'Staff',
+};
+
+class HpjHelpTutorial {
+  final String id;
+  final String title;
+  final String buttonLabel;
+  final String description;
+  final String videoUrl;
+  final String? thumbnailUrl;
+  final String placement;
+  final String audience;
+  final bool isPublished;
+  final int sortOrder;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const HpjHelpTutorial({
+    required this.id,
+    required this.title,
+    required this.buttonLabel,
+    required this.description,
+    required this.videoUrl,
+    this.thumbnailUrl,
+    required this.placement,
+    required this.audience,
+    required this.isPublished,
+    required this.sortOrder,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory HpjHelpTutorial.fromSupabase(Map<String, dynamic> data) {
+    int parseSortOrder(Object? value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 100;
+    }
+
+    DateTime? parseDate(Object? value) {
+      final raw = value?.toString().trim() ?? '';
+      if (raw.isEmpty) return null;
+      return DateTime.tryParse(raw)?.toLocal();
+    }
+
+    final rawThumbnail = data['thumbnail_url']?.toString().trim() ?? '';
+
+    return HpjHelpTutorial(
+      id: (data['id'] ?? '').toString(),
+      title: (data['title'] ?? '').toString().trim(),
+      buttonLabel:
+          (data['button_label'] ?? 'Watch quick guide').toString().trim(),
+      description: (data['description'] ?? '').toString().trim(),
+      videoUrl: (data['video_url'] ?? '').toString().trim(),
+      thumbnailUrl: rawThumbnail.isEmpty ? null : rawThumbnail,
+      placement:
+          (data['placement'] ?? 'general').toString().trim().toLowerCase(),
+      audience: (data['audience'] ?? 'all').toString().trim().toLowerCase(),
+      isPublished: data['is_published'] == true,
+      sortOrder: parseSortOrder(data['sort_order']),
+      createdAt: parseDate(data['created_at']),
+      updatedAt: parseDate(data['updated_at']),
+    );
+  }
+
+  String get placementLabel =>
+      hpjHelpTutorialPlacementLabels[placement] ?? 'General Help';
+
+  String get audienceLabel =>
+      hpjHelpTutorialAudienceLabels[audience] ?? 'Everyone';
+}
+
+bool _isSafeHelpTutorialUrl(String value) {
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null || uri.host.trim().isEmpty) return false;
+  return uri.scheme.toLowerCase() == 'https' ||
+      uri.scheme.toLowerCase() == 'http';
+}
+
+Future<List<HpjHelpTutorial>> fetchPublishedHelpTutorials({
+  required String placement,
+  String audience = 'all',
+}) async {
+  final cleanPlacement = placement.trim().toLowerCase();
+  final cleanAudience = audience.trim().toLowerCase();
+
+  if (!hpjHelpTutorialPlacementLabels.containsKey(cleanPlacement)) {
+    return const <HpjHelpTutorial>[];
+  }
+
+  try {
+    final response = await supabase
+        .from('help_tutorials')
+        .select(
+          'id, title, button_label, description, video_url, thumbnail_url, placement, audience, is_published, sort_order, created_at, updated_at',
+        )
+        .eq('placement', cleanPlacement)
+        .eq('is_published', true)
+        .order('sort_order', ascending: true)
+        .order('updated_at', ascending: false)
+        .limit(20);
+
+    final tutorials = (response as List)
+        .map(
+          (item) => HpjHelpTutorial.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .where(
+          (tutorial) =>
+              tutorial.videoUrl.isNotEmpty &&
+              _isSafeHelpTutorialUrl(tutorial.videoUrl) &&
+              (cleanAudience == 'all' ||
+                  tutorial.audience == 'all' ||
+                  tutorial.audience == cleanAudience),
+        )
+        .toList();
+
+    return tutorials;
+  } catch (error) {
+    // The app remains clean before Repair 030 SQL is installed and whenever
+    // tutorial content is temporarily unavailable.
+    farmDebugLog('Published help tutorial lookup skipped: $error');
+    return const <HpjHelpTutorial>[];
+  }
+}
+
+Future<HpjHelpTutorial?> fetchPublishedHelpTutorial({
+  required String placement,
+  String audience = 'all',
+}) async {
+  final tutorials = await fetchPublishedHelpTutorials(
+    placement: placement,
+    audience: audience,
+  );
+  return tutorials.isEmpty ? null : tutorials.first;
+}
+
+Future<void> openHpjHelpTutorial(
+  BuildContext context,
+  HpjHelpTutorial tutorial,
+) async {
+  final videoUrl = tutorial.videoUrl.trim();
+
+  if (!_isSafeHelpTutorialUrl(videoUrl)) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('This tutorial video link is not available yet.'),
+      ),
+    );
+    return;
+  }
+
+  final opened = await openExternalShareUrl(videoUrl);
+
+  if (!context.mounted || opened) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text(
+        'Could not open the tutorial video. Please check your connection and try again.',
+      ),
+    ),
+  );
+}
+
 class FamilyFarmApp extends StatelessWidget {
   const FamilyFarmApp({super.key});
 
@@ -213,6 +403,7 @@ class _AuthGateState extends State<AuthGate> {
   // route password-reset links and signup confirmation links internally.
   bool hasEnteredMarket = AppConfig.hasPasswordRecoveryCallback ||
       AppConfig.hasEmailConfirmationCallback ||
+      AppConfig.hasGoogleOAuthCallback ||
       isLoggedIn;
 
   // Signed-in users resume their remembered safe workspace/tab. If no
@@ -221,12 +412,15 @@ class _AuthGateState extends State<AuthGate> {
   // startup destination.
   bool shouldChooseWorkspace = isLoggedIn &&
       !AppConfig.hasPasswordRecoveryCallback &&
-      !AppConfig.hasEmailConfirmationCallback;
+      !AppConfig.hasEmailConfirmationCallback &&
+      !AppConfig.hasGoogleOAuthCallback;
 
   bool isPasswordRecovery = AppConfig.hasPasswordRecoveryCallback;
   bool isEmailConfirmation = AppConfig.hasEmailConfirmationCallback;
+  bool isGoogleOAuthCallback = AppConfig.hasGoogleOAuthCallback;
   String? passwordRecoveryError;
   String? emailConfirmationError;
+  String? googleOAuthError;
   String? emailConfirmationMessage;
   late final StreamSubscription<AuthState> _authSubscription;
   String? _authUserId;
@@ -264,7 +458,9 @@ class _AuthGateState extends State<AuthGate> {
         } else {
           setState(() {
             hasEnteredMarket = true;
-            shouldChooseWorkspace = !isPasswordRecovery && !isEmailConfirmation;
+            shouldChooseWorkspace = !isPasswordRecovery &&
+                !isEmailConfirmation &&
+                !isGoogleOAuthCallback;
             _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
             _navigationPreferenceFuture = fetchHpjNavigationPreference();
           });
@@ -302,7 +498,9 @@ class _AuthGateState extends State<AuthGate> {
       });
     }
 
-    if (AppConfig.hasEmailConfirmationCallback) {
+    if (AppConfig.hasGoogleOAuthCallback) {
+      unawaited(_prepareGoogleOAuthSession());
+    } else if (AppConfig.hasEmailConfirmationCallback) {
       unawaited(_prepareEmailConfirmationSession());
     }
   }
@@ -349,8 +547,70 @@ class _AuthGateState extends State<AuthGate> {
       return;
     }
 
+    if (AppConfig.hasGoogleOAuthCallback) {
+      unawaited(_prepareGoogleOAuthSession());
+      return;
+    }
+
     if (AppConfig.hasEmailConfirmationCallback) {
       unawaited(_prepareEmailConfirmationSession());
+    }
+  }
+
+  Future<void> _prepareGoogleOAuthSession() async {
+    if (!AppConfig.hasGoogleOAuthCallback) return;
+
+    if (mounted) {
+      setState(() {
+        isGoogleOAuthCallback = true;
+        isEmailConfirmation = false;
+        isPasswordRecovery = false;
+        hasEnteredMarket = true;
+        shouldChooseWorkspace = false;
+        googleOAuthError = null;
+      });
+    }
+
+    try {
+      final code = AppConfig.googleOAuthCode;
+
+      // supabase_flutter normally completes the PKCE exchange automatically.
+      // This fallback covers Android/deep-link timing where the callback arrives
+      // before the SDK has established the session.
+      if (supabase.auth.currentSession == null &&
+          code != null &&
+          code.isNotEmpty) {
+        await supabase.auth.exchangeCodeForSession(code);
+      }
+
+      if (supabase.auth.currentSession == null) {
+        throw Exception(
+          'Google sign-in returned to HPJ but no session was created.',
+        );
+      }
+
+      FarmDataCache.clearAll();
+      AppConfig.cleanAuthCallbackUrl();
+
+      if (!mounted) return;
+      setState(() {
+        isGoogleOAuthCallback = false;
+        hasEnteredMarket = true;
+        shouldChooseWorkspace = true;
+        _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
+        _navigationPreferenceFuture = fetchHpjNavigationPreference();
+        googleOAuthError = null;
+      });
+    } catch (error) {
+      AppConfig.cleanAuthCallbackUrl();
+
+      if (!mounted) return;
+      setState(() {
+        isGoogleOAuthCallback = false;
+        hasEnteredMarket = false;
+        shouldChooseWorkspace = false;
+        googleOAuthError = friendlyAppError(error);
+      });
     }
   }
 
@@ -538,6 +798,10 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (isGoogleOAuthCallback) {
+      return const _SmartEntryLoadingView();
+    }
+
     if (isEmailConfirmation) {
       return const EmailConfirmationProgressScreen();
     }
@@ -582,6 +846,16 @@ class _AuthGateState extends State<AuthGate> {
                   Text('Email confirmation error: $emailConfirmationError')),
         );
         emailConfirmationError = null;
+      });
+    }
+
+    if (googleOAuthError != null && !hasEnteredMarket) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || googleOAuthError == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google sign-in error: $googleOAuthError')),
+        );
+        googleOAuthError = null;
       });
     }
 
@@ -1296,8 +1570,8 @@ class _ProfessionalVerifiedBanner extends StatelessWidget {
                   'All approved workspaces stay connected to your HPJ account.',
                   style: TextStyle(
                     color: Color(0xFFD4E3DB),
-                    fontSize: 11.2,
-                    height: 1.35,
+                    fontSize: 11.8,
+                    height: 1.4,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1506,7 +1780,7 @@ class _BalancedPhotoWorkspaceCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: const Color(0xFF69736E),
-                                fontSize: compact ? 10.2 : 10.7,
+                                fontSize: compact ? 11.2 : 11.5,
                                 height: 1.25,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -1518,7 +1792,7 @@ class _BalancedPhotoWorkspaceCard extends StatelessWidget {
                                   actionLabel,
                                   style: TextStyle(
                                     color: forest,
-                                    fontSize: compact ? 10.2 : 10.8,
+                                    fontSize: compact ? 11.2 : 11.5,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -1571,7 +1845,7 @@ class _BalancedStatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(
-        maxWidth: 84,
+        maxWidth: 96,
       ),
       padding: const EdgeInsets.symmetric(
         horizontal: 8,
@@ -1612,7 +1886,7 @@ class _BalancedStatusPill extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: color,
-                fontSize: 8.8,
+                fontSize: 10.0,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -1681,8 +1955,8 @@ class _ProfessionalAccountNote extends StatelessWidget {
                   'Switch workspaces without changing your approved permissions.',
                   style: TextStyle(
                     color: Color(0xFF65706B),
-                    fontSize: 10.9,
-                    height: 1.35,
+                    fontSize: 11.5,
+                    height: 1.4,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1792,7 +2066,7 @@ class _WorkspaceLegalFooter extends StatelessWidget {
         label,
         style: const TextStyle(
           color: Color(0xFF66706B),
-          fontSize: 9.5,
+          fontSize: 11.0,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -1824,7 +2098,7 @@ class _WorkspaceLegalFooter extends StatelessWidget {
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF969C98),
-              fontSize: 8.6,
+              fontSize: 10.0,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1882,7 +2156,7 @@ class _ProfessionalBenefit extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Color(0xFF104531),
-                    fontSize: 10.4,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -1894,7 +2168,7 @@ class _ProfessionalBenefit extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Color(0xFF7D8782),
-                    fontSize: 8.5,
+                    fontSize: 10.0,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -3226,6 +3500,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final TurnstileController _captchaController = TurnstileController();
 
   bool loading = false;
+  bool googleLoading = false;
+  bool googleFlowStarted = false;
+  StreamSubscription<AuthState>? _googleAuthSubscription;
   String? _captchaToken;
   bool hidePassword = true;
   bool isRegister = false;
@@ -3234,6 +3511,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String selectedBusinessType = 'Restaurant / Food Service';
   String? pendingConfirmationEmail;
   bool resendingConfirmation = false;
+  late Future<HpjHelpTutorial?> _signupTutorialFuture;
 
   static const List<String> _businessTypes = <String>[
     'Restaurant / Food Service',
@@ -3256,10 +3534,27 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     isRegister = widget.startInRegister;
+    _signupTutorialFuture = fetchPublishedHelpTutorial(
+      placement: 'signup',
+      audience: 'all',
+    );
+
+    _googleAuthSubscription = supabase.auth.onAuthStateChange.listen((data) {
+      if (!googleFlowStarted || data.session == null || !mounted) return;
+
+      googleFlowStarted = false;
+      FarmDataCache.clearAll();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _finishGoogleSignInNavigation();
+      });
+    });
   }
 
   @override
   void dispose() {
+    _googleAuthSubscription?.cancel();
     emailController.dispose();
     passwordController.dispose();
     fullNameController.dispose();
@@ -3268,6 +3563,56 @@ class _LoginScreenState extends State<LoginScreen> {
     businessParishController.dispose();
     _captchaController.dispose();
     super.dispose();
+  }
+
+  void _refreshSignupTutorial() {
+    if (!mounted) return;
+    setState(() {
+      _signupTutorialFuture = fetchPublishedHelpTutorial(
+        placement: 'signup',
+        audience: 'all',
+      );
+    });
+  }
+
+  Widget _signupTutorialAction() {
+    return FutureBuilder<HpjHelpTutorial?>(
+      future: _signupTutorialFuture,
+      builder: (context, snapshot) {
+        final tutorial = snapshot.data;
+
+        // No published signup tutorial = no button. This keeps the auth screen
+        // clean until Admin actually adds and publishes a video.
+        if (tutorial == null) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Center(
+            child: TextButton.icon(
+              onPressed: loading || googleLoading
+                  ? null
+                  : () => unawaited(
+                        openHpjHelpTutorial(context, tutorial),
+                      ),
+              icon: const Icon(
+                Icons.play_circle_outline_rounded,
+                size: 20,
+              ),
+              label: Text(
+                'Need help signing up? ${tutorial.buttonLabel}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _refreshCaptcha() async {
@@ -3338,6 +3683,173 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } finally {
       if (mounted) setState(() => resendingConfirmation = false);
+    }
+  }
+
+  void _finishGoogleSignInNavigation() {
+    if (!mounted) return;
+
+    if (googleLoading) {
+      setState(() => googleLoading = false);
+    }
+
+    if (widget.returnToPrevious) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const AuthGate(),
+      ),
+      (route) => false,
+    );
+  }
+
+  bool get _needsExternalFlutLabGooglePreview {
+    if (!kIsWeb) return false;
+
+    final uri = Uri.base;
+    final host = uri.host.trim().toLowerCase();
+    final isFlutLabPreview =
+        host == 'preview.flutlab.io' || host.endsWith('.preview.flutlab.io');
+
+    if (!isFlutLabPreview) return false;
+
+    // googleExternal=1 is added only to the normal browser tab that HPJ opens
+    // from FlutLab's embedded phone preview. In that tab Google OAuth may run.
+    return uri.queryParameters['googleExternal'] != '1';
+  }
+
+  Future<void> _openFlutLabGoogleBrowserTab() async {
+    final current = Uri.base;
+    final params = <String, String>{
+      ...current.queryParameters,
+      'googleExternal': '1',
+    };
+
+    final externalUrl = current.replace(
+      queryParameters: params,
+      fragment: '',
+    );
+
+    final opened = await openExternalShareUrl(
+      externalUrl.toString(),
+    );
+
+    if (!mounted || opened) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Could not open the browser tab. Use FlutLab\'s Open in New Tab button, then tap Continue with Google again.',
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmExternalFlutLabGooglePreview() async {
+    final open = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Open Google sign-in securely'),
+              content: const Text(
+                'Google does not allow account sign-in inside FlutLab\'s embedded phone preview. '
+                'HPJ will open this preview in a normal browser tab. In that tab, tap Continue with Google again.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(
+                    dialogContext,
+                    false,
+                  ),
+                  child: const Text('Not now'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(
+                    dialogContext,
+                    true,
+                  ),
+                  icon: const Icon(
+                    Icons.open_in_new_rounded,
+                  ),
+                  label: const Text('Open Browser Tab'),
+                ),
+              ],
+            );
+          },
+        ) ==
+        true;
+
+    if (!open || !mounted) return false;
+
+    await _openFlutLabGoogleBrowserTab();
+    return true;
+  }
+
+  Future<void> _continueWithGoogle() async {
+    if (loading || googleLoading) return;
+
+    // Google OAuth must not be started inside FlutLab's embedded web frame.
+    // The normal browser tab gets a one-use development marker and can then
+    // start the standard Supabase -> Google OAuth flow.
+    if (_needsExternalFlutLabGooglePreview) {
+      await _confirmExternalFlutLabGooglePreview();
+      return;
+    }
+
+    setState(() {
+      googleLoading = true;
+      googleFlowStarted = true;
+    });
+
+    try {
+      final launched = await supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: AppConfig.googleOAuthRedirectTo,
+      );
+
+      if (!launched) {
+        throw Exception('Google sign-in could not be opened.');
+      }
+
+      if (!mounted) return;
+
+      // Web navigates away immediately. On Android the browser is external,
+      // so release the button while AuthGate waits for farm://auth-callback.
+      if (!kIsWeb && supabase.auth.currentSession == null) {
+        setState(() => googleLoading = false);
+      }
+
+      if (supabase.auth.currentSession != null && googleFlowStarted) {
+        googleFlowStarted = false;
+        _finishGoogleSignInNavigation();
+      }
+    } on AuthException catch (error) {
+      googleFlowStarted = false;
+      if (!mounted) return;
+      setState(() => googleLoading = false);
+
+      final lower = error.message.toLowerCase();
+      final message = lower.contains('provider') && lower.contains('disabled')
+          ? 'Google Sign-In is not enabled in Supabase yet.'
+          : 'Google Sign-In could not start: ${error.message}';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (error) {
+      googleFlowStarted = false;
+      if (!mounted) return;
+      setState(() => googleLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Google Sign-In could not start: ${friendlyAppError(error)}',
+          ),
+        ),
+      );
     }
   }
 
@@ -3758,6 +4270,77 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 12),
                         ],
+                        SizedBox(
+                          height: 50,
+                          child: OutlinedButton(
+                            onPressed: loading || googleLoading
+                                ? null
+                                : _continueWithGoogle,
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: FarmColors.ink,
+                              side: const BorderSide(color: FarmColors.line),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: googleLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                    ),
+                                  )
+                                : const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _GoogleLetterMark(),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Continue with Google',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Google creates or signs into your HPJ account. You choose your workspace after sign-in.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 11.5,
+                            height: 1.4,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (isRegister) _signupTutorialAction(),
+                        const SizedBox(height: 14),
+                        const Row(
+                          children: [
+                            Expanded(child: Divider()),
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 10),
+                              child: Text(
+                                'OR USE EMAIL',
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.7,
+                                ),
+                              ),
+                            ),
+                            Expanded(child: Divider()),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
                         FarmCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4120,6 +4703,33 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleLetterMark extends StatelessWidget {
+  const _GoogleLetterMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: const Text(
+        'G',
+        style: TextStyle(
+          color: Color(0xFF334155),
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          height: 1,
         ),
       ),
     );

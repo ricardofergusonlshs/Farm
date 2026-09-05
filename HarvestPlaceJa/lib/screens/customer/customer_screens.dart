@@ -3161,8 +3161,34 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
     return FutureBuilder<List<HomeHeroSlide>>(
       future: _slidesFuture,
       builder: (context, snapshot) {
-        final existingSlides =
-            _cleanHomeHeroSlides(snapshot.data ?? defaultHomeHeroSlides());
+        // Do not flash the packaged/default hero photos while HPJ is still
+        // waiting for the uploaded/admin-selected images. Defaults remain a
+        // true fallback only after the remote lookup has completed.
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              height: 128,
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: FarmColors.line),
+                boxShadow: [
+                  BoxShadow(
+                    color: FarmColors.shadow.withOpacity(0.06),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final existingSlides = _cleanHomeHeroSlides(
+          snapshot.data ?? const <HomeHeroSlide>[],
+        );
 
         final firstSlide = existingSlides.isNotEmpty
             ? existingSlides.first
@@ -8698,8 +8724,34 @@ class _HomeScreenState extends State<HomeScreen> {
                         FutureBuilder<List<HomeHeroSlide>>(
                           future: homeHeroSlidesFuture,
                           builder: (context, heroSnapshot) {
-                            final heroSlides =
-                                heroSnapshot.data ?? defaultHomeHeroSlides();
+                            // Keep the customer home visually stable while
+                            // uploaded hero images are loading. Showing the
+                            // packaged defaults here caused a visible photo
+                            // swap just before the uploaded image appeared.
+                            if (heroSnapshot.connectionState ==
+                                    ConnectionState.waiting &&
+                                !heroSnapshot.hasData) {
+                              final screenWidth =
+                                  MediaQuery.sizeOf(context).width;
+                              final placeholderHeight = screenWidth < 360
+                                  ? 322.0
+                                  : screenWidth >= 700
+                                      ? 348.0
+                                      : 332.0;
+
+                              return Container(
+                                height: placeholderHeight,
+                                decoration: BoxDecoration(
+                                  color: FarmColors.primarySoft,
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(color: FarmColors.line),
+                                ),
+                              );
+                            }
+
+                            final heroSlides = _cleanHomeHeroSlides(
+                              heroSnapshot.data ?? const <HomeHeroSlide>[],
+                            );
 
                             return HPJHomeSwipeCarousel(
                               products: products,
@@ -8791,6 +8843,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               onCategoryTap: (categoryName) {
                                 widget.onCategoryTap(categoryName);
                               },
+                            ),
+                          ],
+                          if (userPreferences.showFarmStories) ...[
+                            const SizedBox(height: 20),
+                            FeaturedPublicFarmsSection(
+                              sourceWorkspace: 'customer',
+                              onAddProduct: _addProductToCart,
                             ),
                           ],
 // =====================================================
@@ -12809,6 +12868,73 @@ class _OrdersScreenState extends State<OrdersScreen> {
   StreamSubscription<AuthState>? _authSubscription;
   late Future<List<FarmOrder>> _ordersFuture;
 
+  // Phase 051B — lightweight customer order history filter.
+  // This is UI-only; the existing order query and newest-first sort remain unchanged.
+  String _orderFilter = 'all';
+
+  bool _orderMatchesFilter(FarmOrder order) {
+    final status = order.status.trim().toLowerCase();
+
+    final isReady =
+        status == 'ready' || status == 'ready_for_pickup';
+
+    final isCompleted =
+        status == 'completed' || status == 'delivered';
+
+    final isCancelled =
+        status == 'cancelled' ||
+        status == 'canceled' ||
+        status == 'rejected';
+
+    switch (_orderFilter) {
+      case 'ready':
+        return isReady;
+      case 'completed':
+        return isCompleted;
+      case 'active':
+        // Active means the order is still progressing, but is not yet in
+        // the dedicated Ready state and has not finished/cancelled.
+        return !isReady && !isCompleted && !isCancelled;
+      default:
+        return true;
+    }
+  }
+
+  String get _emptyFilterMessage {
+    switch (_orderFilter) {
+      case 'active':
+        return 'You do not have any active orders right now.';
+      case 'ready':
+        return 'You do not have any orders ready for pickup right now.';
+      case 'completed':
+        return 'Your completed orders will appear here.';
+      default:
+        return 'No orders match this filter.';
+    }
+  }
+
+  String _orderPlacedDateLabel(DateTime? value) {
+    if (value == null) return 'Placed date unavailable';
+
+    final date = value.toLocal();
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    return 'Placed ${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -12888,28 +13014,81 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   );
                 }
 
+                final filteredOrders =
+                    orders.where(_orderMatchesFilter).toList();
+
                 return Column(
-                  children: orders.map((order) {
-                    return OrderCard(
-                      order: '#${order.shortId}',
-                      status: _titleCase(order.status),
-                      type:
-                          '${order.formattedType} • ${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}',
-                      total: order.formattedTotal,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => OrderDetailsScreen(
-                              orderId: order.id,
-                              onAddToCart: widget.onAddToCart,
-                              onOpenMyBox: widget.onOpenMyBox,
-                            ),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          ChoiceChip(
+                            label: const Text('All'),
+                            selected: _orderFilter == 'all',
+                            onSelected: (_) {
+                              setState(() => _orderFilter = 'all');
+                            },
                           ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Active'),
+                            selected: _orderFilter == 'active',
+                            onSelected: (_) {
+                              setState(() => _orderFilter = 'active');
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Ready'),
+                            selected: _orderFilter == 'ready',
+                            onSelected: (_) {
+                              setState(() => _orderFilter = 'ready');
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Completed'),
+                            selected: _orderFilter == 'completed',
+                            onSelected: (_) {
+                              setState(() => _orderFilter = 'completed');
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (filteredOrders.isEmpty)
+                      FarmEmptyState(
+                        icon: Icons.receipt_long_outlined,
+                        title: 'No matching orders',
+                        message: _emptyFilterMessage,
+                      )
+                    else
+                      ...filteredOrders.map((order) {
+                        return OrderCard(
+                          order: '#${order.shortId}',
+                          status: _titleCase(order.status),
+                          type:
+                              '${_orderPlacedDateLabel(order.createdAt)}\n'
+                              '${order.formattedType} • ${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}',
+                          total: order.formattedTotal,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => OrderDetailsScreen(
+                                  orderId: order.id,
+                                  onAddToCart: widget.onAddToCart,
+                                  onOpenMyBox: widget.onOpenMyBox,
+                                ),
+                              ),
+                            );
+                          },
                         );
-                      },
-                    );
-                  }).toList(),
+                      }),
+                  ],
                 );
               },
             ),
@@ -18846,6 +19025,14 @@ class ProductDetailScreen extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
+                  if ((product.farmerId ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    PublicFarmProfileButton(
+                      product: product,
+                      sourceWorkspace: 'customer',
+                      onAddProduct: onAddProduct,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Text(
                     description,
@@ -19296,7 +19483,12 @@ class OrderSuccessScreen extends StatelessWidget {
             PrimaryFarmButton(
               label: 'View My Orders',
               onPressed: () {
-                Navigator.of(context).popUntil((route) => route.isFirst);
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const MainNavigation(initialIndex: 3),
+                  ),
+                  (route) => false,
+                );
               },
             ),
             const SizedBox(height: 12),
@@ -19713,6 +19905,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     HpjPrivateMutationLease? mutationLease;
+    String? placedOrderId;
+    double? placedOrderTotal;
 
     try {
       mutationLease = acquireHpjPrivateMutation(
@@ -19848,6 +20042,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         total = (secureSubtotal + deliveryFee).toDouble();
       }
 
+      // From this point forward the server has returned a valid order ID.
+      // Keep that success boundary so later follow-up failures can never be
+      // reported to the customer as though the order itself failed.
+      placedOrderId = orderId;
+      placedOrderTotal = total;
+
       final orderMetadata = <String, dynamic>{
         'fulfillment_type': fulfillmentType,
         'delivery_address': fulfillmentType == 'delivery' ? address : null,
@@ -19875,68 +20075,101 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       mutationLease.ensureCurrent();
 
-      await ensureStockReducedAfterCheckout(
-        orderId: orderId,
-        checkoutLines: secureQuote.lines,
-      );
+      // The secure checkout RPC has already created the order at this point.
+      // Everything below is post-checkout follow-up and must not make an
+      // already-created order appear to have failed to the customer.
+      try {
+        await ensureStockReducedAfterCheckout(
+          orderId: orderId,
+          checkoutLines: secureQuote.lines,
+        );
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout stock sync skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       mutationLease.ensureCurrent();
 
-      await createOrderConfirmationSupport(
-        orderId: orderId,
-        customerName: name,
-        customerPhone: phone,
-        customerEmail: signedInUser.email,
-        total: total,
-      );
+      try {
+        await createOrderConfirmationSupport(
+          orderId: orderId,
+          customerName: name,
+          customerPhone: phone,
+          customerEmail: signedInUser.email,
+          total: total,
+        );
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout support confirmation skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       mutationLease.ensureCurrent();
 
-      await createFarmNotification(
-        title: 'Order placed',
-        message: selectedPaymentMethod == 'bank_transfer'
-            ? 'Order #${shortIdLabel(orderId)} was received. Please complete your bank transfer of ${formatJmd(total)} and keep your reference number.'
-            : 'Order #${shortIdLabel(orderId)} was received by The Harvest Place Ja.',
-        type: 'order',
-        userId: signedInUser.id,
-        userEmail: signedInUser.email,
-        orderId: orderId,
-        actionType: 'order',
-        actionId: orderId,
-        dedupeKey: 'customer-order-created:$orderId',
-      );
+      try {
+        await createFarmNotification(
+          title: 'Order placed',
+          message: selectedPaymentMethod == 'bank_transfer'
+              ? 'Order #${shortIdLabel(orderId)} was received. Please complete your bank transfer of ${formatJmd(total)} and keep your reference number.'
+              : 'Order #${shortIdLabel(orderId)} was received by The Harvest Place Ja.',
+          type: 'order',
+          userId: signedInUser.id,
+          userEmail: signedInUser.email,
+          orderId: orderId,
+          actionType: 'order',
+          actionId: orderId,
+          dedupeKey: 'customer-order-created:$orderId',
+        );
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout customer notification skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       mutationLease.ensureCurrent();
 
-      await createAdminNotification(
-        title: 'New order received',
-        message:
-            '$name placed order #${shortIdLabel(orderId)} for ${formatJmd(total)}.',
-        type: 'admin',
-        orderId: orderId,
-        actionType: 'admin_customer_order',
-        actionId: orderId,
-        dedupeKey: 'admin-order-created:$orderId',
-      );
+      try {
+        await createAdminNotification(
+          title: 'New order received',
+          message:
+              '$name placed order #${shortIdLabel(orderId)} for ${formatJmd(total)}.',
+          type: 'admin',
+          orderId: orderId,
+          actionType: 'admin_customer_order',
+          actionId: orderId,
+          dedupeKey: 'admin-order-created:$orderId',
+        );
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout admin notification skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       mutationLease.ensureCurrent();
 
       if (selectedPaymentMethod == 'bank_transfer') {
-        await createAdminNotification(
-          title: 'Bank transfer to verify',
-          message:
-              'Order #${shortIdLabel(orderId)} is awaiting bank transfer verification. Reference: ${bankReference ?? 'not provided'}.',
-          type: 'payment',
-          orderId: orderId,
-          actionType: 'admin_customer_order',
-          actionId: orderId,
-          dedupeKey: 'admin-bank-transfer:$orderId',
-        );
+        try {
+          await createAdminNotification(
+            title: 'Bank transfer to verify',
+            message:
+                'Order #${shortIdLabel(orderId)} is awaiting bank transfer verification. Reference: ${bankReference ?? 'not provided'}.',
+            type: 'payment',
+            orderId: orderId,
+            actionType: 'admin_customer_order',
+            actionId: orderId,
+            dedupeKey: 'admin-bank-transfer:$orderId',
+          );
+        } catch (error, stackTrace) {
+          farmDebugLog('Post-checkout bank-transfer notification skipped: $error');
+          farmDebugLog('$stackTrace');
+        }
 
         mutationLease.ensureCurrent();
       }
 
-      await notifyAdminsAboutLowStockAfterCheckout(secureQuote.lines);
+      try {
+        await notifyAdminsAboutLowStockAfterCheckout(secureQuote.lines);
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout low-stock notification skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       mutationLease.ensureCurrent();
 
@@ -19944,13 +20177,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ? orderId.substring(0, 6).toUpperCase()
           : orderId.toUpperCase();
 
-      showBrowserNotification(
-        title: 'Order placed',
-        body:
-            'Your order #$orderShortId from The Harvest Place Ja was sent to the farm.',
-        orderId: orderId,
-        type: 'order',
-      );
+      try {
+        showBrowserNotification(
+          title: 'Order placed',
+          body:
+              'Your order #$orderShortId from The Harvest Place Ja was sent to the farm.',
+          orderId: orderId,
+          type: 'order',
+        );
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout browser notification skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
@@ -19959,15 +20197,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       mutationLease.ensureCurrent();
 
-      await _saveSmartCheckoutDefaults();
+      try {
+        await _saveSmartCheckoutDefaults();
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout preference save skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       mutationLease.ensureCurrent();
 
-// Clear the visible My Box immediately.
+      // Clear the visible My Box immediately.
       widget.onOrderPlaced();
 
-// Clear the saved Supabase cart.
-      await clearSavedCartForCurrentUser();
+      // Clear the saved Supabase cart. A cart-cleanup failure must not make an
+      // already-created order appear to have failed.
+      try {
+        await clearSavedCartForCurrentUser();
+      } catch (error, stackTrace) {
+        farmDebugLog('Post-checkout saved-cart cleanup skipped: $error');
+        farmDebugLog('$stackTrace');
+      }
 
       mutationLease.ensureCurrent();
 
@@ -19982,10 +20231,47 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
       widget.onInventoryChanged?.call();
+
+      final confirmedOrderId = placedOrderId?.trim() ?? '';
+      if (confirmedOrderId.isNotEmpty) {
+        farmDebugLog(
+          'Post-checkout follow-up interrupted after order creation: $error',
+        );
+        farmDebugLog('$stackTrace');
+
+        if (!mounted) return;
+
+        final currentUser = supabase.auth.currentUser;
+        final sameCheckoutUser = currentUser != null &&
+            currentUser.id.trim() == checkoutBoundary.userId;
+
+        if (sameCheckoutUser) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OrderSuccessScreen(
+                orderId: confirmedOrderId,
+                total: placedOrderTotal ?? widget.subtotal,
+              ),
+            ),
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your order was submitted before your session changed. Sign in again to view it in My Orders.',
+            ),
+          ),
+        );
+        return;
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Checkout failed: ${friendlyAppError(error)}')),

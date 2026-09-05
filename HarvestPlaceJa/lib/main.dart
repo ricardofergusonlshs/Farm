@@ -34,6 +34,7 @@ part 'screens/reels/fresh_reels.dart';
 part 'screens/admin/admin_screens.dart';
 part 'screens/admin/driver_delivery_management.dart';
 part 'screens/farmer/farmer_partner_tools.dart';
+part 'screens/farmer/farm_public_profile.dart';
 part 'screens/wholesale/wholesale_management.dart';
 part 'screens/warehouse/procurement_command_center.dart';
 part 'screens/warehouse/collection_planning.dart';
@@ -84,46 +85,116 @@ part 'screens/executive/release_readiness.dart';
 part 'widgets/shared_widgets.dart';
 part 'utils/formatters_and_helpers.dart';
 
+bool _hpjFirebaseMessagingReady = false;
+bool _hpjBackgroundHandlerRegistered = false;
+Future<bool>? _hpjFirebasePreparation;
+Future<void>? _hpjSupabasePreparation;
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(
   RemoteMessage message,
 ) async {
-  await Firebase.initializeApp();
+  try {
+    await Firebase.initializeApp();
 
-  debugPrint(
-    'Background notification received: ${message.messageId}',
-  );
+    debugPrint(
+      'Background notification received: ${message.messageId}',
+    );
+  } catch (error, stackTrace) {
+    debugPrint('Background Firebase initialisation failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+}
+
+Future<bool> _initialiseHpjFirebaseMessaging() async {
+  try {
+    await Firebase.initializeApp();
+
+    if (!_hpjBackgroundHandlerRegistered) {
+      FirebaseMessaging.onBackgroundMessage(
+        firebaseMessagingBackgroundHandler,
+      );
+      _hpjBackgroundHandlerRegistered = true;
+    }
+
+    _hpjFirebaseMessagingReady = true;
+    debugPrint('HPJ Firebase Messaging ready.');
+    return true;
+  } catch (error, stackTrace) {
+    _hpjFirebasePreparation = null;
+    debugPrint('Firebase Messaging startup unavailable: $error');
+    debugPrintStack(stackTrace: stackTrace);
+    return false;
+  }
+}
+
+Future<bool> _prepareHpjFirebaseMessaging() {
+  final isAndroidApp =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  if (!isAndroidApp) return Future<bool>.value(false);
+  if (_hpjFirebaseMessagingReady) return Future<bool>.value(true);
+
+  return _hpjFirebasePreparation ??= _initialiseHpjFirebaseMessaging();
+}
+
+Future<void> _initialiseHpjSupabase() async {
+  try {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+  } catch (_) {
+    _hpjSupabasePreparation = null;
+    rethrow;
+  }
+}
+
+Future<void> _prepareHpjSupabase() {
+  return _hpjSupabasePreparation ??= _initialiseHpjSupabase();
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final isAndroidApp =
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-
-  if (isAndroidApp) {
-    await Firebase.initializeApp();
-
-    FirebaseMessaging.onBackgroundMessage(
-      firebaseMessagingBackgroundHandler,
-    );
-  }
 
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        backgroundColor: const Color(0xFFF4F9F2),
-        body: SafeArea(
+    return Material(
+      color: const Color(0xFFF4F9F2),
+      child: SafeArea(
+        child: Center(
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: SingleChildScrollView(
-              child: Text(
-                'APP ERROR:\n\n${details.exceptionAsString()}',
-                style: const TextStyle(
-                  color: Colors.red,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.red,
+                    size: 42,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Something went wrong on this screen.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (kDebugMode) ...[
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      details.exceptionAsString(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -138,6 +209,9 @@ Future<void> main() async {
     return true;
   };
 
+  // Firebase/push is useful, but it must not delay the first HPJ screen.
+  unawaited(_prepareHpjFirebaseMessaging());
+
   runApp(const FarmBootstrapApp());
 }
 
@@ -150,6 +224,7 @@ class FarmBootstrapApp extends StatefulWidget {
 
 class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
   bool _ready = false;
+  bool _starting = false;
   Object? _error;
   StackTrace? _stackTrace;
 
@@ -160,29 +235,67 @@ class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
   }
 
   Future<void> _startApp() async {
-    try {
-      _installBrowserPreviewKeyboardWorkaround();
-      _syncKeyboardStateSafely();
+    if (_starting) return;
 
-      await Supabase.initialize(
-        url: AppConfig.supabaseUrl,
-        anonKey: AppConfig.supabaseAnonKey,
-      ).timeout(
+    setState(() {
+      _starting = true;
+      _error = null;
+      _stackTrace = null;
+    });
+
+    try {
+      try {
+        _installBrowserPreviewKeyboardWorkaround();
+        _syncKeyboardStateSafely();
+      } catch (error, stackTrace) {
+        // Preview keyboard helpers are non-essential to marketplace startup.
+        debugPrint('Keyboard preview setup skipped: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+
+      await _prepareHpjSupabase().timeout(
         const Duration(seconds: 20),
         onTimeout: () {
-          throw Exception(
-            'Supabase took too long to start. Check internet, Supabase URL, anon key, or FlutLab preview connection.',
+          throw TimeoutException(
+            'HPJ could not connect to Supabase within 20 seconds.',
           );
         },
       );
+
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        await PushNotificationService.initialise();
+        final firebaseReady = await _prepareHpjFirebaseMessaging().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint(
+              'Firebase Messaging startup timed out. HPJ will continue without push for this startup.',
+            );
+            return false;
+          },
+        );
+
+        if (firebaseReady) {
+          try {
+            await PushNotificationService.initialise().timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                debugPrint(
+                  'Push notification service startup timed out. HPJ will continue.',
+                );
+              },
+            );
+          } catch (error, stackTrace) {
+            // Push failure must never stop ordering, farmer, warehouse, or admin work.
+            debugPrint('Push notification service startup skipped: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          }
+        }
       }
 
       if (!mounted) return;
 
       setState(() {
         _ready = true;
+        _starting = false;
         _error = null;
         _stackTrace = null;
       });
@@ -194,10 +307,24 @@ class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
 
       setState(() {
         _ready = false;
+        _starting = false;
         _error = error;
         _stackTrace = stackTrace;
       });
     }
+  }
+
+  String _startupMessage() {
+    final errorText = _error?.toString().toLowerCase() ?? '';
+
+    if (errorText.contains('timeout') ||
+        errorText.contains('supabase') ||
+        errorText.contains('socket') ||
+        errorText.contains('network')) {
+      return 'HPJ could not connect to the marketplace service. Check your internet connection and try again.';
+    }
+
+    return 'HPJ could not finish starting. Please try again.';
   }
 
   @override
@@ -255,25 +382,31 @@ class _FarmBootstrapAppState extends State<FarmBootstrapApp> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          SelectableText(
-                            _error.toString(),
+                          Text(
+                            _startupMessage(),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: Colors.red,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                          if (kDebugMode && _error != null) ...[
+                            const SizedBox(height: 14),
+                            SelectableText(
+                              _error.toString(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 16),
                           ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _error = null;
-                                _stackTrace = null;
-                              });
-
-                              unawaited(_startApp());
-                            },
-                            child: const Text('Try again'),
+                            onPressed: _starting ? null : _startApp,
+                            child: Text(
+                              _starting ? 'Starting...' : 'Try again',
+                            ),
                           ),
                           if (kDebugMode && _stackTrace != null) ...[
                             const SizedBox(height: 18),

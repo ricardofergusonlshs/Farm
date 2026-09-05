@@ -1369,75 +1369,462 @@ class PayoutCard extends StatelessWidget {
           // =============================================
 
           if (onChanged != null) ...[
-            const SizedBox(
-              height: 12,
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: payout.payoutStatus == 'released'
-                      ? null
-                      : () async {
-                          await updateFarmerPayoutStatus(
-                            payoutId: payout.id,
-                            status: 'released',
-                          );
-
-                          onChanged?.call();
-                        },
-                  icon: const Icon(
-                    Icons.verified_outlined,
-                    size: 17,
-                  ),
-                  label: const Text(
-                    'Release',
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: payout.payoutStatus == 'held'
-                      ? null
-                      : () async {
-                          await updateFarmerPayoutStatus(
-                            payoutId: payout.id,
-                            status: 'held',
-                          );
-
-                          onChanged?.call();
-                        },
-                  icon: const Icon(
-                    Icons.pause_circle_outline,
-                    size: 17,
-                  ),
-                  label: const Text(
-                    'Hold',
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: payout.payoutStatus == 'disputed'
-                      ? null
-                      : () async {
-                          await updateFarmerPayoutStatus(
-                            payoutId: payout.id,
-                            status: 'disputed',
-                          );
-
-                          onChanged?.call();
-                        },
-                  icon: const Icon(
-                    Icons.report_problem_outlined,
-                    size: 17,
-                  ),
-                  label: const Text(
-                    'Dispute',
-                  ),
-                ),
-              ],
+            const SizedBox(height: 12),
+            _PayoutAdminActions(
+              payout: payout,
+              onChanged: onChanged!,
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _PayoutAdminActions extends StatefulWidget {
+  final FarmerPayout payout;
+  final VoidCallback onChanged;
+
+  const _PayoutAdminActions({
+    required this.payout,
+    required this.onChanged,
+  });
+
+  @override
+  State<_PayoutAdminActions> createState() => _PayoutAdminActionsState();
+}
+
+class _PayoutAdminActionsState extends State<_PayoutAdminActions> {
+  String? _busyStatus;
+
+  String _actionLabel(String status) {
+    switch (status) {
+      case 'released':
+        return 'Release';
+      case 'held':
+        return 'Hold';
+      case 'disputed':
+        return 'Dispute';
+      default:
+        return friendlyLabel(status);
+    }
+  }
+
+  Future<bool> _confirm(String status) async {
+    final label = _actionLabel(status);
+    final amount = formatJmd(widget.payout.netAmount);
+    final message = status == 'released'
+        ? 'Release this farmer payout of $amount? This changes the payout status to Released.'
+        : status == 'held'
+            ? 'Place this farmer payout of $amount on hold?'
+            : 'Mark this farmer payout of $amount as disputed?';
+
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('$label payout?'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text('Confirm $label'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _run(String status) async {
+    if (_busyStatus != null || widget.payout.payoutStatus == status) return;
+    if (!await _confirm(status) || !mounted) return;
+
+    setState(() => _busyStatus = status);
+    try {
+      await updateFarmerPayoutStatus(
+        payoutId: widget.payout.id,
+        status: status,
+      );
+      if (!mounted) return;
+      widget.onChanged();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Payout marked ${friendlyLabel(status).toLowerCase()}.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _busyStatus = null);
+    }
+  }
+
+  Widget _iconFor(String status, IconData icon) {
+    if (_busyStatus != status) return Icon(icon, size: 17);
+    return const SizedBox(
+      width: 17,
+      height: 17,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = _busyStatus != null;
+    final current = widget.payout.payoutStatus.trim().toLowerCase();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ElevatedButton.icon(
+          onPressed: busy || current == 'released'
+              ? null
+              : () => unawaited(_run('released')),
+          icon: _iconFor('released', Icons.verified_outlined),
+          label: const Text('Release'),
+        ),
+        OutlinedButton.icon(
+          onPressed:
+              busy || current == 'held' ? null : () => unawaited(_run('held')),
+          icon: _iconFor('held', Icons.pause_circle_outline),
+          label: const Text('Hold'),
+        ),
+        OutlinedButton.icon(
+          onPressed: busy || current == 'disputed'
+              ? null
+              : () => unawaited(_run('disputed')),
+          icon: _iconFor('disputed', Icons.report_problem_outlined),
+          label: const Text('Dispute'),
+        ),
+      ],
+    );
+  }
+}
+
+// =====================================================
+// HPJ PHASE 044A — MVP UI FOUNDATION
+//
+// Shared visual rules for Customer, Farmer and Wholesale cleanup.
+// Presentation only: no service, database, routing or business logic.
+// =====================================================
+
+class HpjMvpUi {
+  static const double screenPadding = 18;
+  static const double sectionGap = 20;
+  static const double cardGap = 12;
+  static const double cardPadding = 15;
+  static const double cardRadius = 18;
+  static const double controlRadius = 15;
+  static const double compactRadius = 12;
+
+  const HpjMvpUi._();
+}
+
+class HpjMvpActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback? onTap;
+  final bool emphasized;
+  final Widget? trailing;
+
+  const HpjMvpActionTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.onTap,
+    this.emphasized = false,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final iconBackground =
+        emphasized ? FarmColors.primary : FarmColors.primarySoft;
+    final iconColor = emphasized ? Colors.white : FarmColors.primary;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 170;
+
+        final iconBox = Container(
+          width: compact ? 35 : 38,
+          height: compact ? 35 : 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: enabled ? iconBackground : FarmColors.cardSoft,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(
+            icon,
+            size: compact ? 19 : 20,
+            color: enabled ? iconColor : FarmColors.muted,
+          ),
+        );
+
+        final titleText = Text(
+          title,
+          maxLines: compact ? 2 : 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: enabled ? FarmColors.ink : FarmColors.muted,
+            fontSize: compact ? 12.2 : 13,
+            fontWeight: FontWeight.w800,
+            height: 1.15,
+          ),
+        );
+
+        final subtitleText = subtitle != null && subtitle!.trim().isNotEmpty
+            ? Text(
+                subtitle!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.1,
+                  height: 1.24,
+                  fontWeight: FontWeight.w500,
+                ),
+              )
+            : null;
+
+        return Material(
+          color: emphasized
+              ? FarmColors.primarySoft.withOpacity(.42)
+              : FarmColors.surface,
+          borderRadius: BorderRadius.circular(HpjMvpUi.controlRadius),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(HpjMvpUi.controlRadius),
+            onTap: onTap,
+            child: Container(
+              height: compact ? 118 : null,
+              constraints: BoxConstraints(
+                minHeight: compact ? 118 : 78,
+              ),
+              padding: EdgeInsets.all(compact ? 11 : 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(HpjMvpUi.controlRadius),
+                border: Border.all(
+                  color: emphasized
+                      ? FarmColors.primary.withOpacity(.20)
+                      : FarmColors.line,
+                ),
+              ),
+              child: compact
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            iconBox,
+                            const Spacer(),
+                            trailing ??
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 18,
+                                  color: enabled
+                                      ? FarmColors.mutedText
+                                      : FarmColors.line,
+                                ),
+                          ],
+                        ),
+                        const SizedBox(height: 9),
+                        titleText,
+                        if (subtitleText != null) ...[
+                          const SizedBox(height: 3),
+                          subtitleText,
+                        ],
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        iconBox,
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              titleText,
+                              if (subtitleText != null) ...[
+                                const SizedBox(height: 3),
+                                subtitleText,
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        trailing ??
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 19,
+                              color: enabled
+                                  ? FarmColors.mutedText
+                                  : FarmColors.line,
+                            ),
+                      ],
+                    ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class HpjMvpStatusPill extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData? icon;
+
+  const HpjMvpStatusPill({
+    super.key,
+    required this.label,
+    this.color = FarmColors.primary,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.09),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 9.4,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .15,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HpjMvpListRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+  final Color iconColor;
+
+  const HpjMvpListRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.onTap,
+    this.trailing,
+    this.iconColor = FarmColors.primary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 300;
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(HpjMvpUi.compactRadius),
+            onTap: onTap,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                vertical: compact ? 10 : 11,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: compact ? 34 : 36,
+                    height: compact ? 34 : 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: iconColor.withOpacity(.09),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: compact ? 18 : 19,
+                      color: iconColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: compact ? 2 : 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 12.8,
+                            height: 1.18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (subtitle != null &&
+                            subtitle!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 10.4,
+                              height: 1.25,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  trailing ??
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: FarmColors.mutedText,
+                        size: 19,
+                      ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1474,10 +1861,20 @@ class FarmBottomOptionsBar extends StatelessWidget {
         ? 0
         : selectedIndex.clamp(0, destinations.length - 1).toInt();
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final compact = screenWidth < 360;
+    final iconSize = compact ? 20.0 : 21.0;
+    final labelSize = compact ? 8.9 : 10.0;
+
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+        padding: EdgeInsets.fromLTRB(
+          compact ? 4 : 8,
+          6,
+          compact ? 4 : 8,
+          6,
+        ),
         decoration: BoxDecoration(
           color: FarmColors.surface,
           border: const Border(
@@ -1485,9 +1882,9 @@ class FarmBottomOptionsBar extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: FarmColors.shadow.withOpacity(0.07),
-              blurRadius: 20,
-              offset: const Offset(0, -8),
+              color: FarmColors.shadow.withOpacity(.035),
+              blurRadius: 14,
+              offset: const Offset(0, -4),
             ),
           ],
         ),
@@ -1495,24 +1892,33 @@ class FarmBottomOptionsBar extends StatelessWidget {
           children: List.generate(destinations.length, (index) {
             final option = destinations[index];
             final selected = index == safeIndex;
+
             return Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (_) => _syncKeyboardStateSafely(),
                 onTap: () => onSelected(index),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  decoration: BoxDecoration(
-                    color:
-                        selected ? FarmColors.lightGreen : Colors.transparent,
-                    borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 1 : 2,
+                    vertical: 3,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        curve: Curves.easeOut,
+                        width: selected ? 28 : 22,
+                        height: 3,
+                        margin: const EdgeInsets.only(bottom: 5),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? FarmColors.primary
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
                       Stack(
                         clipBehavior: Clip.none,
                         alignment: Alignment.center,
@@ -1520,16 +1926,16 @@ class FarmBottomOptionsBar extends StatelessWidget {
                           IconTheme(
                             data: IconThemeData(
                               color: selected
-                                  ? FarmColors.green
+                                  ? FarmColors.primary
                                   : FarmColors.muted,
-                              size: 21,
+                              size: iconSize,
                             ),
                             child: selected ? option.selectedIcon : option.icon,
                           ),
                           if (option.badgeCount > 0)
                             Positioned(
                               top: -8,
-                              right: -14,
+                              right: compact ? -10 : -14,
                               child: Container(
                                 constraints: const BoxConstraints(
                                   minWidth: 18,
@@ -1542,14 +1948,6 @@ class FarmBottomOptionsBar extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: FarmColors.accent,
                                   borderRadius: BorderRadius.circular(999),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color:
-                                          FarmColors.shadow.withOpacity(0.12),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
                                 ),
                                 child: Text(
                                   option.badgeCount > 99
@@ -1558,25 +1956,27 @@ class FarmBottomOptionsBar extends StatelessWidget {
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     color: FarmColors.ink,
-                                    fontSize: 10,
+                                    fontSize: 9.2,
                                     height: 1,
-                                    fontWeight: FontWeight.w900,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                               ),
                             ),
                         ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
                         option.label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 10.2,
+                          fontSize: labelSize,
+                          height: 1.1,
                           fontWeight:
-                              selected ? FontWeight.w900 : FontWeight.w700,
-                          color: selected ? FarmColors.green : FarmColors.muted,
+                              selected ? FontWeight.w700 : FontWeight.w600,
+                          color:
+                              selected ? FarmColors.primary : FarmColors.muted,
                         ),
                       ),
                     ],
@@ -1597,17 +1997,26 @@ class FarmBottomOptionsBar extends StatelessWidget {
 // poor-network recovery. No passwords or auth secrets are stored here.
 // =====================================================
 class HpjSmartLocalStore {
-  static String _scopeKey(String key) {
+  static String _captureScope() {
     final userId = supabase.auth.currentUser?.id.trim();
-    final scope = userId == null || userId.isEmpty ? 'guest' : userId;
+    return userId == null || userId.isEmpty ? 'guest' : userId;
+  }
+
+  static String _scopeKeyFor(String scope, String key) {
     return 'hpj_smart_v1.$scope.$key';
   }
+
+  static bool _scopeIsCurrent(String scope) => _captureScope() == scope;
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
   static Future<String?> readString(String key) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      return (await _prefs()).getString(_scopeKey(key));
+      final prefs = await _prefs();
+      if (!_scopeIsCurrent(scope)) return null;
+      return prefs.getString(scoped);
     } catch (error) {
       farmDebugLog('Smart memory read skipped: $error');
       return null;
@@ -1615,9 +2024,10 @@ class HpjSmartLocalStore {
   }
 
   static Future<void> writeString(String key, String? value) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
       final prefs = await _prefs();
-      final scoped = _scopeKey(key);
       final clean = value?.trim() ?? '';
       if (clean.isEmpty) {
         await prefs.remove(scoped);
@@ -1630,8 +2040,12 @@ class HpjSmartLocalStore {
   }
 
   static Future<double?> readDouble(String key) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      return (await _prefs()).getDouble(_scopeKey(key));
+      final prefs = await _prefs();
+      if (!_scopeIsCurrent(scope)) return null;
+      return prefs.getDouble(scoped);
     } catch (error) {
       farmDebugLog('Smart memory read skipped: $error');
       return null;
@@ -1639,16 +2053,22 @@ class HpjSmartLocalStore {
   }
 
   static Future<void> writeDouble(String key, double value) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      await (await _prefs()).setDouble(_scopeKey(key), value);
+      await (await _prefs()).setDouble(scoped, value);
     } catch (error) {
       farmDebugLog('Smart memory write skipped: $error');
     }
   }
 
   static Future<int?> readInt(String key) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      return (await _prefs()).getInt(_scopeKey(key));
+      final prefs = await _prefs();
+      if (!_scopeIsCurrent(scope)) return null;
+      return prefs.getInt(scoped);
     } catch (error) {
       farmDebugLog('Smart memory read skipped: $error');
       return null;
@@ -1656,16 +2076,22 @@ class HpjSmartLocalStore {
   }
 
   static Future<void> writeInt(String key, int value) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      await (await _prefs()).setInt(_scopeKey(key), value);
+      await (await _prefs()).setInt(scoped, value);
     } catch (error) {
       farmDebugLog('Smart memory write skipped: $error');
     }
   }
 
   static Future<bool?> readBool(String key) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      return (await _prefs()).getBool(_scopeKey(key));
+      final prefs = await _prefs();
+      if (!_scopeIsCurrent(scope)) return null;
+      return prefs.getBool(scoped);
     } catch (error) {
       farmDebugLog('Smart memory read skipped: $error');
       return null;
@@ -1673,16 +2099,22 @@ class HpjSmartLocalStore {
   }
 
   static Future<void> writeBool(String key, bool value) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      await (await _prefs()).setBool(_scopeKey(key), value);
+      await (await _prefs()).setBool(scoped, value);
     } catch (error) {
       farmDebugLog('Smart memory write skipped: $error');
     }
   }
 
   static Future<List<String>> readStringList(String key) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      return (await _prefs()).getStringList(_scopeKey(key)) ?? <String>[];
+      final prefs = await _prefs();
+      if (!_scopeIsCurrent(scope)) return <String>[];
+      return prefs.getStringList(scoped) ?? <String>[];
     } catch (error) {
       farmDebugLog('Smart memory read skipped: $error');
       return <String>[];
@@ -1690,48 +2122,74 @@ class HpjSmartLocalStore {
   }
 
   static Future<void> writeStringList(String key, List<String> values) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
       final clean = values
           .map((value) => value.trim())
           .where((value) => value.isNotEmpty)
           .toList();
-      await (await _prefs()).setStringList(_scopeKey(key), clean);
+      await (await _prefs()).setStringList(scoped, clean);
     } catch (error) {
       farmDebugLog('Smart memory write skipped: $error');
     }
   }
 
   static Future<void> remove(String key) async {
+    final scope = _captureScope();
+    final scoped = _scopeKeyFor(scope, key);
     try {
-      await (await _prefs()).remove(_scopeKey(key));
+      await (await _prefs()).remove(scoped);
     } catch (error) {
       farmDebugLog('Smart memory remove skipped: $error');
     }
   }
 
   static Future<void> rememberRecentSearch(String query) async {
+    final scope = _captureScope();
     final clean = query.trim();
     if (clean.length < 2) return;
-    final current = await readStringList('recent_searches');
-    final next = <String>[
-      clean,
-      ...current.where((item) => item.toLowerCase() != clean.toLowerCase()),
-    ].take(6).toList();
-    await writeStringList('recent_searches', next);
+
+    final scoped = _scopeKeyFor(scope, 'recent_searches');
+    try {
+      final prefs = await _prefs();
+      if (!_scopeIsCurrent(scope)) return;
+      final current = prefs.getStringList(scoped) ?? <String>[];
+      final next = <String>[
+        clean,
+        ...current.where((item) => item.toLowerCase() != clean.toLowerCase()),
+      ].take(6).toList();
+      await prefs.setStringList(scoped, next);
+    } catch (error) {
+      farmDebugLog('Smart memory recent search skipped: $error');
+    }
   }
 }
 
 class OfflineCartStore {
   static const String _persistentCartKey = 'cart_product_ids';
   static final List<Product> _sessionCart = <Product>[];
+  static String? _sessionScope;
 
-  static List<Product> restore() => List<Product>.from(_sessionCart);
+  static void _ensureCurrentScope() {
+    final scope = HpjSmartLocalStore._captureScope();
+    if (_sessionScope == scope) return;
+    _sessionCart.clear();
+    _sessionScope = scope;
+  }
+
+  static List<Product> restore() {
+    _ensureCurrentScope();
+    return List<Product>.from(_sessionCart);
+  }
 
   static Future<List<String>> restorePersistentProductIds() async {
+    _ensureCurrentScope();
     return HpjSmartLocalStore.readStringList(_persistentCartKey);
   }
 
   static void save(List<Product> cart) {
+    _ensureCurrentScope();
     _sessionCart
       ..clear()
       ..addAll(cart);
@@ -1747,6 +2205,7 @@ class OfflineCartStore {
   }
 
   static Future<void> clearPersistent() async {
+    _ensureCurrentScope();
     _sessionCart.clear();
     await HpjSmartLocalStore.remove(_persistentCartKey);
   }
@@ -1769,16 +2228,13 @@ String personalizedFirstName(CustomerProfile? profile) {
         .replaceAll(RegExp(r'[._-]+'), ' ')
         .trim();
 
-    if (!cleaned.contains(' ') && cleaned.length > 12) {
-      // Common school/business handles sometimes join first + last + org code.
-      // This keeps the greeting human, e.g. ricardofergusonlshs -> Ricardo.
-      final lower = cleaned.toLowerCase();
-      if (lower.startsWith('ricardo')) cleaned = 'ricardo';
-    }
-
     final readable = titleCaseWords(cleaned).trim();
     if (readable.isEmpty) return 'there';
-    return readable.split(' ').first;
+    final first = readable.split(' ').first;
+    // Very long joined email handles are not reliable first names. Prefer a
+    // neutral greeting instead of shipping account-specific parsing rules.
+    if (!cleaned.contains(' ') && first.length > 18) return 'there';
+    return first;
   }
 
   // Never use role/fallback labels as the customer's display name.
@@ -5622,8 +6078,10 @@ class Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
+    final compact = MediaQuery.of(context).size.width < 360;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(1, 5, 1, 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -5637,42 +6095,45 @@ class Header extends StatelessWidget {
                     }
                   },
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: compact ? 8 : 10),
           ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title.toUpperCase(),
-                  maxLines: 1,
+                  title,
+                  maxLines: compact ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 12,
-                    letterSpacing: 0.8,
-                    color: FarmColors.mutedText,
+                    fontSize: compact ? 20 : 22,
+                    height: 1.08,
+                    letterSpacing: -0.25,
+                    color: FarmColors.ink,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 27,
-                    height: 1.08,
-                    fontWeight: FontWeight.w900,
-                    color: FarmColors.ink,
+                if (subtitle.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11.8,
+                      height: 1.3,
+                      fontWeight: FontWeight.w500,
+                      color: FarmColors.mutedText,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
           if (showNotifications) ...[
-            const SizedBox(width: 12),
+            SizedBox(width: compact ? 7 : 10),
             FarmNotificationButton(
-              size: 42,
+              size: compact ? 38 : 40,
               badgeColor: notificationBadgeColor ?? FarmColors.danger,
             ),
           ],
@@ -7888,21 +8349,14 @@ class FarmCard extends StatelessWidget {
       color: Colors.transparent,
       child: Container(
         margin: margin,
-        padding: padding ?? const EdgeInsets.all(14),
+        padding: padding ?? const EdgeInsets.all(HpjMvpUi.cardPadding),
         decoration: BoxDecoration(
           color: color ?? FarmColors.surface,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(HpjMvpUi.cardRadius),
           border: Border.all(
-            color: FarmColors.line,
-            width: 1.0,
+            color: FarmColors.line.withOpacity(.88),
+            width: 1,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.035),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: child,
       ),
@@ -7922,9 +8376,10 @@ class SectionTitle extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
-        fontSize: 20,
-        height: 1.05,
-        fontWeight: FontWeight.w900,
+        fontSize: 18,
+        height: 1.08,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.15,
         color: FarmColors.ink,
       ),
     );
@@ -7955,31 +8410,39 @@ class SectionHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SectionTitle(title),
-              const SizedBox(height: 1),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  height: 1.15,
+              if (subtitle.trim().isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    height: 1.28,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
-        if (actionLabel != null && onAction != null)
+        if (actionLabel != null && onAction != null) ...[
+          const SizedBox(width: 8),
           TextButton(
             style: TextButton.styleFrom(
               minimumSize: const Size(0, 30),
               padding: const EdgeInsets.symmetric(horizontal: 7),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             onPressed: onAction,
             child: Text(actionLabel!),
           ),
+        ],
       ],
     );
   }
@@ -8009,33 +8472,44 @@ Future<Product?> _hpjLookupProductForVisual({
       ? 'id:$cleanId'
       : 'name:${_hpjProductVisualKey(cleanName)}';
 
-  return _hpjProductVisualLookupCache.putIfAbsent(
-    key,
-    () async {
-      try {
-        final products = await fetchProducts();
+  final cached = _hpjProductVisualLookupCache[key];
+  if (cached != null) return cached;
 
-        if (cleanId.isNotEmpty) {
-          for (final product in products) {
-            if (product.id == cleanId) return product;
-          }
-        }
+  late final Future<Product?> lookup;
+  lookup = () async {
+    try {
+      final products = await fetchProducts();
 
-        final wanted = _hpjProductVisualKey(cleanName);
-        if (wanted.isNotEmpty) {
-          for (final product in products) {
-            if (_hpjProductVisualKey(product.name) == wanted) {
-              return product;
-            }
-          }
+      if (cleanId.isNotEmpty) {
+        for (final product in products) {
+          if (product.id == cleanId) return product;
         }
-      } catch (error) {
-        farmDebugLog('Product visual lookup unavailable: $error');
       }
 
-      return null;
-    },
-  );
+      final wanted = _hpjProductVisualKey(cleanName);
+      if (wanted.isNotEmpty) {
+        for (final product in products) {
+          if (_hpjProductVisualKey(product.name) == wanted) {
+            return product;
+          }
+        }
+      }
+    } catch (error) {
+      farmDebugLog('Product visual lookup unavailable: $error');
+    }
+
+    return null;
+  }()
+      .then((result) {
+    if (result == null &&
+        identical(_hpjProductVisualLookupCache[key], lookup)) {
+      _hpjProductVisualLookupCache.remove(key);
+    }
+    return result;
+  });
+
+  _hpjProductVisualLookupCache[key] = lookup;
+  return lookup;
 }
 
 class HpjProductThumb extends StatelessWidget {
@@ -8070,6 +8544,27 @@ class HpjProductThumb extends StatelessWidget {
         fallbackIcon,
         color: FarmColors.primary,
         size: (size * .38).clamp(20.0, 34.0).toDouble(),
+      ),
+    );
+  }
+
+  Widget _loading() {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: FarmColors.line.withOpacity(.75)),
+      ),
+      child: SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: FarmColors.primary.withOpacity(.72),
+        ),
       ),
     );
   }
@@ -8129,6 +8624,10 @@ class HpjProductThumb extends StatelessWidget {
         productName: productName,
       ),
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _loading();
+        }
+        if (snapshot.hasError) return _fallback();
         final resolved = snapshot.data;
         if (resolved == null) return _fallback();
         return _buildProduct(resolved);
@@ -9192,14 +9691,17 @@ class PrimaryFarmButton extends StatefulWidget {
 class _PrimaryFarmButtonState extends State<PrimaryFarmButton> {
   bool _tapLocked = false;
 
-  void _handlePressed() {
+  Future<void> _handlePressed() async {
     final action = widget.onPressed;
     if (action == null || _tapLocked) return;
 
     setState(() => _tapLocked = true);
 
     try {
-      action();
+      final result = Function.apply(action, const []);
+      if (result is Future) {
+        await result;
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -9207,9 +9709,7 @@ class _PrimaryFarmButtonState extends State<PrimaryFarmButton> {
         );
       }
     } finally {
-      Future.delayed(const Duration(milliseconds: 650), () {
-        if (mounted) setState(() => _tapLocked = false);
-      });
+      if (mounted) setState(() => _tapLocked = false);
     }
   }
 
@@ -9254,8 +9754,8 @@ class _PrimaryFarmButtonState extends State<PrimaryFarmButton> {
               label,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.1,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
               ),
             ),
           ),
@@ -9272,37 +9772,30 @@ class _PrimaryFarmButtonState extends State<PrimaryFarmButton> {
 
     return AnimatedScale(
       duration: const Duration(milliseconds: 110),
-      scale: isBusy ? 0.98 : 1,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: isEnabled || isBusy
-              ? [
-                  BoxShadow(
-                    color: FarmColors.green.withOpacity(isBusy ? 0.14 : 0.24),
-                    blurRadius: isBusy ? 12 : 22,
-                    offset: Offset(0, isBusy ? 5 : 10),
-                  ),
-                ]
-              : const [],
-        ),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: hasAction ? FarmColors.green : FarmColors.line,
-            foregroundColor: hasAction ? Colors.white : FarmColors.muted,
-            disabledBackgroundColor:
-                isBusy ? FarmColors.green.withOpacity(0.82) : FarmColors.line,
-            disabledForegroundColor: isBusy ? Colors.white : FarmColors.muted,
-            elevation: 0,
-            shadowColor: Colors.transparent,
-            padding: const EdgeInsets.symmetric(vertical: 17, horizontal: 20),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
+      scale: isBusy ? 0.985 : 1,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: hasAction ? FarmColors.green : FarmColors.line,
+          foregroundColor: hasAction ? Colors.white : FarmColors.muted,
+          disabledBackgroundColor:
+              isBusy ? FarmColors.green.withOpacity(.82) : FarmColors.line,
+          disabledForegroundColor: isBusy ? Colors.white : FarmColors.muted,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(
+            vertical: 14,
+            horizontal: 18,
           ),
-          onPressed: isEnabled ? _handlePressed : null,
-          child: _buttonContent(isBusy: isBusy),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(HpjMvpUi.controlRadius),
+          ),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
         ),
+        onPressed: isEnabled ? () => unawaited(_handlePressed()) : null,
+        child: _buttonContent(isBusy: isBusy),
       ),
     );
   }
@@ -9337,20 +9830,19 @@ class FarmEmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: compact ? 52 : 64,
-              width: compact ? 52 : 64,
+              height: compact ? 46 : 56,
+              width: compact ? 46 : 56,
               decoration: BoxDecoration(
                 color: FarmColors.primarySoft,
-                shape: BoxShape.circle,
-                border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+                borderRadius: BorderRadius.circular(16),
               ),
               child: Icon(
                 icon,
-                size: compact ? 26 : 32,
+                size: compact ? 23 : 28,
                 color: FarmColors.green,
               ),
             ),
-            SizedBox(height: compact ? 10 : 14),
+            SizedBox(height: compact ? 9 : 12),
             Text(
               title,
               textAlign: TextAlign.center,
@@ -9382,6 +9874,74 @@ class FarmEmptyState extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HpjInlineRetryState extends StatelessWidget {
+  final String title;
+  final String message;
+  final VoidCallback onRetry;
+
+  const _HpjInlineRetryState({
+    required this.title,
+    required this.message,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(13),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: FarmColors.warningSoft,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.wifi_off_rounded,
+              color: FarmColors.warning,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 10.5,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text('Retry'),
+          ),
+        ],
       ),
     );
   }
@@ -9455,12 +10015,15 @@ class _HpjAgricultureUpdatesSectionState
       limit: widget.limit + 8,
     );
 
-    final filtered = updates.where((update) {
-      final isEducation = update.category == 'education';
-      if (widget.onlyEducation) return isEducation;
-      if (!widget.showEducation && isEducation) return false;
-      return true;
-    }).take(widget.limit).toList();
+    final filtered = updates
+        .where((update) {
+          final isEducation = update.category == 'education';
+          if (widget.onlyEducation) return isEducation;
+          if (!widget.showEducation && isEducation) return false;
+          return true;
+        })
+        .take(widget.limit)
+        .toList();
 
     return filtered;
   }
@@ -9468,7 +10031,11 @@ class _HpjAgricultureUpdatesSectionState
   Future<void> _refresh() async {
     final next = _load();
     if (mounted) setState(() => _future = next);
-    await next;
+    try {
+      await next;
+    } catch (error) {
+      farmDebugLog('Agriculture updates refresh unavailable: $error');
+    }
   }
 
   @override
@@ -9482,6 +10049,13 @@ class _HpjAgricultureUpdatesSectionState
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: LinearProgressIndicator(minHeight: 2),
+          );
+        }
+        if (snapshot.hasError && updates.isEmpty) {
+          return _HpjInlineRetryState(
+            title: 'Updates unavailable',
+            message: 'HPJ could not refresh agriculture updates right now.',
+            onRetry: () => unawaited(_refresh()),
           );
         }
         if (updates.isEmpty) return const SizedBox.shrink();
@@ -9945,9 +10519,8 @@ class _HpjAgricultureUpdateCardState extends State<HpjAgricultureUpdateCard> {
   @override
   Widget build(BuildContext context) {
     final update = widget.update;
-    final imageUrl = widget.showImages
-        ? cleanHostedImageUrl(update.imageUrl)
-        : null;
+    final imageUrl =
+        widget.showImages ? cleanHostedImageUrl(update.imageUrl) : null;
     final priorityColor = _priorityColor;
     final actionLabel = (update.actionLabel ?? '').trim().isEmpty
         ? 'Open'
@@ -10229,7 +10802,11 @@ class _HpjJamaicaMarketPulseSectionState
   Future<void> _refresh() async {
     final next = _load();
     if (mounted) setState(() => _future = next);
-    await next;
+    try {
+      await next;
+    } catch (error) {
+      farmDebugLog('Jamaica market pulse refresh unavailable: $error');
+    }
   }
 
   String _date(DateTime? value) {
@@ -10353,6 +10930,15 @@ class _HpjJamaicaMarketPulseSectionState
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: LinearProgressIndicator(minHeight: 2),
+          );
+        }
+
+        if (snapshot.hasError && items.isEmpty) {
+          return _HpjInlineRetryState(
+            title: 'Market Pulse unavailable',
+            message:
+                'HPJ could not refresh Jamaica market intelligence right now.',
+            onRetry: () => unawaited(_refresh()),
           );
         }
 
@@ -11008,77 +11594,110 @@ class HpjCompactAccountHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final effectiveBadgeColor = badgeColor ?? FarmColors.primary;
 
-    return FarmCard(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: FarmColors.primarySoft,
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Icon(
-              icon,
-              color: FarmColors.primary,
-              size: 24,
-            ),
+    Widget badgeWidget() {
+      return Container(
+        constraints: const BoxConstraints(maxWidth: 142),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 9,
+          vertical: 5,
+        ),
+        decoration: BoxDecoration(
+          color: effectiveBadgeColor.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: effectiveBadgeColor.withOpacity(0.18),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+        ),
+        child: Text(
+          badge,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: effectiveBadgeColor,
+            fontSize: 8.8,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      );
+    }
+
+    return FarmCard(
+      padding: const EdgeInsets.all(15),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 315;
+
+          final identity = Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: compact ? 44 : 48,
+                height: compact ? 44 : 48,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(compact ? 14 : 15),
+                ),
+                child: Icon(
+                  icon,
+                  color: FarmColors.primary,
+                  size: compact ? 22 : 24,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title.trim().isEmpty ? 'HPJ Account' : title.trim(),
+                      maxLines: compact ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: compact ? 15 : 16,
+                        height: 1.1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (subtitle.trim().isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle.trim(),
+                        maxLines: compact ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 10,
+                          height: 1.2,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          if (compact) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title.trim().isEmpty ? 'HPJ Account' : title.trim(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                if (subtitle.trim().isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle.trim(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+                identity,
+                const SizedBox(height: 10),
+                badgeWidget(),
               ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 9,
-              vertical: 5,
-            ),
-            decoration: BoxDecoration(
-              color: effectiveBadgeColor.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: effectiveBadgeColor.withOpacity(0.18),
-              ),
-            ),
-            child: Text(
-              badge,
-              style: TextStyle(
-                color: effectiveBadgeColor,
-                fontSize: 8.8,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: identity),
+              const SizedBox(width: 10),
+              badgeWidget(),
+            ],
+          );
+        },
       ),
     );
   }
@@ -11214,7 +11833,6 @@ class HpjAccountHelpInfoScreen extends StatelessWidget {
     );
   }
 }
-
 
 // =====================================================
 // SHARED PARTNER INBOX ACTION

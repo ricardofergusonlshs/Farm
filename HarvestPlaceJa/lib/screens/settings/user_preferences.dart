@@ -92,16 +92,48 @@ class UserExperiencePreferences {
       return value == null || value.isEmpty ? fallback : value;
     }
 
+    String optionValue(
+      String key,
+      String fallback,
+      Set<String> allowed,
+    ) {
+      final value = textValue(key, fallback).toLowerCase();
+      return allowed.contains(value) ? value : fallback;
+    }
+
     return UserExperiencePreferences(
-      dietaryStyle: textValue('dietary_style', 'balanced'),
-      organicPreference: textValue('organic_preference', 'no_preference'),
-      recommendationStyle: textValue('recommendation_style', 'balanced'),
+      dietaryStyle: optionValue(
+        'dietary_style',
+        'balanced',
+        const {'balanced', 'vegan', 'vegetarian'},
+      ),
+      organicPreference: optionValue(
+        'organic_preference',
+        'no_preference',
+        const {'no_preference', 'prefer', 'only'},
+      ),
+      recommendationStyle: optionValue(
+        'recommendation_style',
+        'balanced',
+        const {
+          'balanced',
+          'favorites',
+          'healthy_variety',
+          'budget_first',
+          'organic_first',
+          'vegan',
+        },
+      ),
       showAgricultureNews: boolValue('show_agriculture_news', true),
       showRecommendations: boolValue('show_recommendations', true),
       showPromotions: boolValue('show_promotions', true),
       showMealIdeas: boolValue('show_meal_ideas', true),
       showFarmStories: boolValue('show_farm_stories', true),
-      feedImageMode: textValue('feed_image_mode', 'balanced'),
+      feedImageMode: optionValue(
+        'feed_image_mode',
+        'balanced',
+        const {'rich', 'balanced', 'data_saver'},
+      ),
       showFreshReels: boolValue('show_fresh_reels', true),
       reelsAutoplay: boolValue('reels_autoplay', true),
       reelsMutedByDefault: boolValue('reels_muted_by_default', true),
@@ -119,8 +151,7 @@ class UserExperiencePreferences {
           boolValue('use_location_for_recommendations', true),
       saveActivityHistory: boolValue('save_activity_history', true),
       farmerShowMarketUpdates: boolValue('farmer_show_market_updates', true),
-      farmerShowBuyingRequests:
-          boolValue('farmer_show_buying_requests', true),
+      farmerShowBuyingRequests: boolValue('farmer_show_buying_requests', true),
       farmerShowTrainingOpportunities:
           boolValue('farmer_show_training_opportunities', true),
       farmerShowAgricultureNews:
@@ -222,23 +253,20 @@ class UserExperiencePreferences {
       feedImageMode: feedImageMode ?? this.feedImageMode,
       showFreshReels: showFreshReels ?? this.showFreshReels,
       reelsAutoplay: reelsAutoplay ?? this.reelsAutoplay,
-      reelsMutedByDefault:
-          reelsMutedByDefault ?? this.reelsMutedByDefault,
+      reelsMutedByDefault: reelsMutedByDefault ?? this.reelsMutedByDefault,
       showFarmerReels: showFarmerReels ?? this.showFarmerReels,
       showRecipeReels: showRecipeReels ?? this.showRecipeReels,
       showNutritionReels: showNutritionReels ?? this.showNutritionReels,
-      showPromotionalReels:
-          showPromotionalReels ?? this.showPromotionalReels,
+      showPromotionalReels: showPromotionalReels ?? this.showPromotionalReels,
       pushOrderUpdates: pushOrderUpdates ?? this.pushOrderUpdates,
       pushMessages: pushMessages ?? this.pushMessages,
       pushPriceDrops: pushPriceDrops ?? this.pushPriceDrops,
       pushPromotions: pushPromotions ?? this.pushPromotions,
-      pushAgricultureNews:
-          pushAgricultureNews ?? this.pushAgricultureNews,
+      pushAgricultureNews: pushAgricultureNews ?? this.pushAgricultureNews,
       personalizationEnabled:
           personalizationEnabled ?? this.personalizationEnabled,
-      useLocationForRecommendations: useLocationForRecommendations ??
-          this.useLocationForRecommendations,
+      useLocationForRecommendations:
+          useLocationForRecommendations ?? this.useLocationForRecommendations,
       saveActivityHistory: saveActivityHistory ?? this.saveActivityHistory,
       farmerShowMarketUpdates:
           farmerShowMarketUpdates ?? this.farmerShowMarketUpdates,
@@ -248,13 +276,12 @@ class UserExperiencePreferences {
           this.farmerShowTrainingOpportunities,
       farmerShowAgricultureNews:
           farmerShowAgricultureNews ?? this.farmerShowAgricultureNews,
-      farmerShowFarmPhotos:
-          farmerShowFarmPhotos ?? this.farmerShowFarmPhotos,
+      farmerShowFarmPhotos: farmerShowFarmPhotos ?? this.farmerShowFarmPhotos,
       farmerPublicProfile: farmerPublicProfile ?? this.farmerPublicProfile,
       farmerNotifyCropDemand:
           farmerNotifyCropDemand ?? this.farmerNotifyCropDemand,
-      farmerNotifyCollectionChanges: farmerNotifyCollectionChanges ??
-          this.farmerNotifyCollectionChanges,
+      farmerNotifyCollectionChanges:
+          farmerNotifyCollectionChanges ?? this.farmerNotifyCollectionChanges,
       farmerNotifyPaymentUpdates:
           farmerNotifyPaymentUpdates ?? this.farmerNotifyPaymentUpdates,
     );
@@ -264,32 +291,78 @@ class UserExperiencePreferences {
 UserExperiencePreferences hpjCurrentUserExperiencePreferences =
     UserExperiencePreferences.defaults;
 
-Future<UserExperiencePreferences> fetchCurrentUserExperiencePreferences() async {
-  final user = supabase.auth.currentUser;
-  if (user == null) {
-    hpjCurrentUserExperiencePreferences = UserExperiencePreferences.defaults;
+String? _hpjCurrentUserExperiencePreferencesUserId;
+int _hpjUserExperiencePreferencesEpoch = 0;
+
+UserExperiencePreferences _hpjCachedPreferencesForUser(String? userId) {
+  if (userId != null &&
+      userId.isNotEmpty &&
+      _hpjCurrentUserExperiencePreferencesUserId == userId) {
     return hpjCurrentUserExperiencePreferences;
   }
+  return UserExperiencePreferences.defaults;
+}
+
+void _hpjResetPreferenceCache() {
+  _hpjUserExperiencePreferencesEpoch++;
+  _hpjCurrentUserExperiencePreferencesUserId = null;
+  hpjCurrentUserExperiencePreferences = UserExperiencePreferences.defaults;
+}
+
+Future<UserExperiencePreferences> fetchCurrentUserExperiencePreferences({
+  bool throwOnError = false,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    _hpjResetPreferenceCache();
+    return hpjCurrentUserExperiencePreferences;
+  }
+
+  final requestUserId = user.id;
+
+  if (_hpjCurrentUserExperiencePreferencesUserId != requestUserId) {
+    _hpjUserExperiencePreferencesEpoch++;
+    _hpjCurrentUserExperiencePreferencesUserId = requestUserId;
+    hpjCurrentUserExperiencePreferences = UserExperiencePreferences.defaults;
+  }
+
+  final requestEpoch = _hpjUserExperiencePreferencesEpoch;
 
   try {
     final response = await supabase
         .from('user_experience_preferences')
         .select()
-        .eq('user_id', user.id)
+        .eq('user_id', requestUserId)
         .maybeSingle();
 
-    if (response == null) {
-      hpjCurrentUserExperiencePreferences = UserExperiencePreferences.defaults;
-      return hpjCurrentUserExperiencePreferences;
+    final currentUserId = supabase.auth.currentUser?.id;
+    final requestStillCurrent = currentUserId == requestUserId &&
+        requestEpoch == _hpjUserExperiencePreferencesEpoch;
+
+    if (!requestStillCurrent) {
+      return _hpjCachedPreferencesForUser(currentUserId);
     }
 
-    hpjCurrentUserExperiencePreferences = UserExperiencePreferences.fromSupabase(
-      Map<String, dynamic>.from(response),
-    );
-    return hpjCurrentUserExperiencePreferences;
+    final preferences = response == null
+        ? UserExperiencePreferences.defaults
+        : UserExperiencePreferences.fromSupabase(
+            Map<String, dynamic>.from(response),
+          );
+
+    _hpjCurrentUserExperiencePreferencesUserId = requestUserId;
+    hpjCurrentUserExperiencePreferences = preferences;
+    return preferences;
   } catch (error) {
     farmDebugLog('User preferences unavailable: $error');
-    return hpjCurrentUserExperiencePreferences;
+
+    final currentUserId = supabase.auth.currentUser?.id;
+    if (currentUserId != requestUserId ||
+        requestEpoch != _hpjUserExperiencePreferencesEpoch) {
+      return _hpjCachedPreferencesForUser(currentUserId);
+    }
+
+    if (throwOnError) rethrow;
+    return _hpjCachedPreferencesForUser(requestUserId);
   }
 }
 
@@ -299,10 +372,17 @@ Future<void> saveCurrentUserExperiencePreferences(
   final user = supabase.auth.currentUser;
   if (user == null) throw Exception('Please sign in to save preferences.');
 
+  final userId = user.id;
+
   await supabase.from('user_experience_preferences').upsert(
-        preferences.toSupabase(user.id),
+        preferences.toSupabase(userId),
         onConflict: 'user_id',
       );
+
+  if (supabase.auth.currentUser?.id != userId) return;
+
+  _hpjUserExperiencePreferencesEpoch++;
+  _hpjCurrentUserExperiencePreferencesUserId = userId;
   hpjCurrentUserExperiencePreferences = preferences;
 }
 
@@ -331,11 +411,19 @@ class _HpjSettingsPreferencesScreenState
   @override
   void initState() {
     super.initState();
-    _future = fetchCurrentUserExperiencePreferences();
+    _future = fetchCurrentUserExperiencePreferences(throwOnError: true);
   }
 
   void _update(UserExperiencePreferences next) {
     setState(() => _preferences = next);
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _loaded = false;
+      _preferences = UserExperiencePreferences.defaults;
+      _future = fetchCurrentUserExperiencePreferences(throwOnError: true);
+    });
   }
 
   Future<void> _save() async {
@@ -384,8 +472,7 @@ class _HpjSettingsPreferencesScreenState
             _loaded = true;
           }
 
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !_loaded) {
+          if (snapshot.connectionState == ConnectionState.waiting && !_loaded) {
             return const SizedBox.expand(child: SkeletonList(count: 4));
           }
 
@@ -398,7 +485,9 @@ class _HpjSettingsPreferencesScreenState
                   child: TextButton.icon(
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.arrow_back_rounded),
-                    label: Text(_isFarmer ? 'Back to Farmer Account' : 'Back to Account'),
+                    label: Text(_isFarmer
+                        ? 'Back to Farmer Account'
+                        : 'Back to Account'),
                   ),
                 ),
                 const Header(
@@ -410,6 +499,15 @@ class _HpjSettingsPreferencesScreenState
                   icon: Icons.settings_outlined,
                   title: 'Could not load settings',
                   message: friendlyAppError(snapshot.error!),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _retryLoad,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry'),
+                  ),
                 ),
               ],
             );
@@ -424,7 +522,8 @@ class _HpjSettingsPreferencesScreenState
                 child: TextButton.icon(
                   onPressed: () => Navigator.of(context).maybePop(),
                   icon: const Icon(Icons.arrow_back_rounded),
-                  label: Text(_isFarmer ? 'Back to Farmer Account' : 'Back to Account'),
+                  label: Text(
+                      _isFarmer ? 'Back to Farmer Account' : 'Back to Account'),
                 ),
               ),
               const SizedBox(height: 4),
@@ -642,7 +741,8 @@ class _HpjSettingsPreferencesScreenState
                 children: [
                   _SettingsSwitch(
                     title: 'Show Fresh Reels',
-                    subtitle: 'Show approved short videos in your feed and Fresh Reels viewer.',
+                    subtitle:
+                        'Show approved short videos in your feed and Fresh Reels viewer.',
                     value: _preferences.showFreshReels,
                     onChanged: (value) => _update(
                       _preferences.copyWith(showFreshReels: value),
@@ -659,7 +759,8 @@ class _HpjSettingsPreferencesScreenState
                   ),
                   _SettingsSwitch(
                     title: 'Mute by default',
-                    subtitle: 'Start reels quietly and tap sound when you want it.',
+                    subtitle:
+                        'Start reels quietly and tap sound when you want it.',
                     value: _preferences.reelsMutedByDefault,
                     onChanged: (value) => _update(
                       _preferences.copyWith(reelsMutedByDefault: value),
@@ -692,7 +793,8 @@ class _HpjSettingsPreferencesScreenState
                     ),
                     _SettingsSwitch(
                       title: 'Promotional reels',
-                      subtitle: 'HPJ offers and clearly labelled future sponsored videos.',
+                      subtitle:
+                          'HPJ offers and clearly labelled future sponsored videos.',
                       value: _preferences.showPromotionalReels,
                       onChanged: (value) => _update(
                         _preferences.copyWith(showPromotionalReels: value),

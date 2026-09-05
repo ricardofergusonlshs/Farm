@@ -214,7 +214,7 @@ class _DriverManagementData {
     required this.tasks,
   });
 
-  bool get managerView => role == 'owner' || role == 'manager' || role.isEmpty;
+  bool get managerView => role == 'owner' || role == 'manager';
 }
 
 Future<List<DriverStaffOption>> fetchDeliveryDriverOptions() async {
@@ -259,13 +259,22 @@ Future<void> assignDriverToDelivery({
     },
   );
 
-  await createOrderCustomerNotification(
-    orderId: orderId,
-    title: 'Delivery assigned',
-    message:
-        'A driver has been assigned to order #${shortIdLabel(orderId)}. You will receive another update when it leaves for delivery.',
-    type: 'delivery',
-  );
+  try {
+    await createOrderCustomerNotification(
+      orderId: orderId,
+      title: 'Delivery assigned',
+      message:
+          'A driver has been assigned to order #${shortIdLabel(orderId)}. You will receive another update when it leaves for delivery.',
+      type: 'delivery',
+    );
+  } catch (error) {
+    // The assignment RPC above is the business commit boundary. A temporary
+    // notification failure must not make a successful assignment look failed
+    // or encourage the manager to submit it a second time.
+    farmDebugLog(
+      'Delivery assignment notification deferred for $orderId: $error',
+    );
+  }
 }
 
 Future<void> unassignDriverDelivery({
@@ -332,26 +341,40 @@ Future<void> updateDriverDeliveryTask({
     },
   );
 
-  await createOrderCustomerNotification(
-    orderId: task.orderId,
-    title: 'Delivery update',
-    message: _driverStatusCustomerMessage(
-      task,
-      status,
-      rescheduledFor: rescheduledFor,
-      recipientName: recipientName,
-    ),
-    type: 'delivery',
-  );
+  try {
+    await createOrderCustomerNotification(
+      orderId: task.orderId,
+      title: 'Delivery update',
+      message: _driverStatusCustomerMessage(
+        task,
+        status,
+        rescheduledFor: rescheduledFor,
+        recipientName: recipientName,
+      ),
+      type: 'delivery',
+    );
+  } catch (error) {
+    // hp_update_delivery_task is the business commit boundary. Keep delivery
+    // status truthful even if the secondary notification channel is unavailable.
+    farmDebugLog(
+      'Delivery customer notification deferred for ${task.orderId}: $error',
+    );
+  }
 
   if (status == 'failed') {
-    await createAdminNotification(
-      title: 'Delivery attempt failed',
-      message:
-          'Order #${task.shortId} could not be delivered. ${failureReason ?? ''}',
-      type: 'delivery',
-      orderId: task.orderId,
-    );
+    try {
+      await createAdminNotification(
+        title: 'Delivery attempt failed',
+        message:
+            'Order #${task.shortId} could not be delivered. ${failureReason ?? ''}',
+        type: 'delivery',
+        orderId: task.orderId,
+      );
+    } catch (error) {
+      farmDebugLog(
+        'Failed-delivery admin notification deferred for ${task.orderId}: $error',
+      );
+    }
   }
 }
 
@@ -416,6 +439,19 @@ Future<String?> createDeliveryProofSignedUrl(String? path) async {
   }
 }
 
+Future<void> deleteDeliveryProofPhoto(String? path) async {
+  final clean = (path ?? '').trim();
+  if (clean.isEmpty) return;
+
+  try {
+    await supabase.storage.from('delivery-proof').remove(<String>[clean]);
+  } catch (error) {
+    // Cleanup is best effort. Never hide the original delivery error because a
+    // temporary Storage problem prevented deletion of an unused proof image.
+    farmDebugLog('Unused delivery proof cleanup deferred for $clean: $error');
+  }
+}
+
 class AdminDriverManagementTab extends StatefulWidget {
   final int refreshKey;
   final VoidCallback onChanged;
@@ -433,6 +469,7 @@ class AdminDriverManagementTab extends StatefulWidget {
 
 class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
   late Future<_DriverManagementData> _future;
+  final Set<String> _busyOrderIds = <String>{};
 
   @override
   void initState() {
@@ -449,8 +486,22 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
   }
 
   Future<_DriverManagementData> _load() async {
-    final role = normalizeStaffRole(await fetchCurrentStaffRole());
-    final managerView = role == 'owner' || role == 'manager' || role.isEmpty;
+    var role = normalizeStaffRole(await fetchCurrentStaffRole());
+    var managerView = role == 'owner' || role == 'manager';
+
+    // Some owner/admin accounts may not have a normal staff-role row. Preserve
+    // legitimate owner access only after a separate database-backed admin check.
+    // Empty/unknown role data must never grant manager access by itself.
+    if (role.isEmpty) {
+      final isDatabaseAdmin = await isCurrentUserAdminFromDatabase();
+      if (!isDatabaseAdmin) {
+        throw StateError(
+          'Delivery staff access could not be verified. Please refresh or sign in again.',
+        );
+      }
+      role = 'owner';
+      managerView = true;
+    }
 
     if (managerView) {
       final results = await Future.wait<dynamic>([
@@ -476,10 +527,50 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
   }
 
   Future<void> _reload() async {
+    if (!mounted) return;
     final next = _load();
     setState(() => _future = next);
-    await next;
-    widget.onChanged();
+
+    try {
+      await next;
+      if (!mounted) return;
+      widget.onChanged();
+    } catch (error) {
+      // FutureBuilder owns the visible error state. Keep refresh button/pull
+      // refresh callbacks from surfacing an uncaught async exception.
+      farmDebugLog('Delivery management refresh failed: $error');
+    }
+  }
+
+  Future<void> _reloadAfterMutation() async {
+    // The mutation has already committed before this point. Refresh is
+    // deliberately secondary and cannot turn the business action into failure.
+    await _reload();
+  }
+
+  bool _isOrderBusy(DriverDeliveryTask task) {
+    return _busyOrderIds.contains(task.orderId.trim());
+  }
+
+  bool _beginOrderMutation(DriverDeliveryTask task) {
+    final orderId = task.orderId.trim();
+    if (!mounted || orderId.isEmpty || _busyOrderIds.contains(orderId)) {
+      return false;
+    }
+
+    setState(() => _busyOrderIds.add(orderId));
+    return true;
+  }
+
+  void _endOrderMutation(DriverDeliveryTask task) {
+    final orderId = task.orderId.trim();
+    if (orderId.isEmpty) return;
+
+    if (mounted) {
+      setState(() => _busyOrderIds.remove(orderId));
+    } else {
+      _busyOrderIds.remove(orderId);
+    }
   }
 
   void _showMessage(String message, {bool error = false}) {
@@ -571,134 +662,145 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
       );
       return;
     }
+    if (!_beginOrderMutation(task)) return;
 
-    var selectedDriverId = task.driverUserId ?? drivers.first.userId;
+    final requestedDriverId = (task.driverUserId ?? '').trim();
+    var selectedDriverId =
+        drivers.any((item) => item.userId == requestedDriverId)
+            ? requestedDriverId
+            : drivers.first.userId;
     final notesController =
         TextEditingController(text: task.managerNotes ?? '');
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(
-                task.assignmentId == null
-                    ? 'Assign order #${task.shortId}'
-                    : 'Reassign order #${task.shortId}',
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value:
-                          drivers.any((item) => item.userId == selectedDriverId)
-                              ? selectedDriverId
-                              : drivers.first.userId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Delivery driver',
-                        prefixIcon: Icon(Icons.local_shipping_outlined),
-                      ),
-                      items: drivers
-                          .map(
-                            (driver) => DropdownMenuItem<String>(
-                              value: driver.userId,
-                              child: Text(
-                                driver.displayName,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setDialogState(() => selectedDriverId = value);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: notesController,
-                      minLines: 2,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Driver instructions (optional)',
-                        hintText: 'Gate, landmark, customer preference...',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Assign'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
     try {
-      await assignDriverToDelivery(
-        orderId: task.orderId,
-        driverUserId: selectedDriverId,
-        managerNotes: notesController.text.trim(),
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: Text(
+                  task.assignmentId == null
+                      ? 'Assign order #${task.shortId}'
+                      : 'Reassign order #${task.shortId}',
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: selectedDriverId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Delivery driver',
+                          prefixIcon: Icon(Icons.local_shipping_outlined),
+                        ),
+                        items: drivers
+                            .map(
+                              (driver) => DropdownMenuItem<String>(
+                                value: driver.userId,
+                                child: Text(
+                                  driver.displayName,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => selectedDriverId = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: notesController,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Driver instructions (optional)',
+                          hintText: 'Gate, landmark, customer preference...',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: const Text('Assign'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       );
-      _showMessage('Driver assigned to order #${task.shortId}.');
-      await _reload();
-    } catch (error) {
-      _showMessage(friendlyAppError(error), error: true);
+
+      if (confirmed != true) return;
+
+      try {
+        await assignDriverToDelivery(
+          orderId: task.orderId,
+          driverUserId: selectedDriverId,
+          managerNotes: notesController.text.trim(),
+        );
+        _showMessage('Driver assigned to order #${task.shortId}.');
+        await _reloadAfterMutation();
+      } catch (error) {
+        _showMessage(friendlyAppError(error), error: true);
+      }
     } finally {
       notesController.dispose();
+      _endOrderMutation(task);
     }
   }
 
   Future<void> _unassign(DriverDeliveryTask task) async {
+    if (!_beginOrderMutation(task)) return;
     final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Unassign order #${task.shortId}?'),
-        content: TextField(
-          controller: controller,
-          minLines: 2,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Reason (optional)',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Unassign'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (reason == null) return;
 
     try {
-      await unassignDriverDelivery(orderId: task.orderId, reason: reason);
-      _showMessage('Order #${task.shortId} is now unassigned.');
-      await _reload();
-    } catch (error) {
-      _showMessage(friendlyAppError(error), error: true);
+      final reason = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Unassign order #${task.shortId}?'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Reason (optional)',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Unassign'),
+            ),
+          ],
+        ),
+      );
+      if (reason == null) return;
+
+      try {
+        await unassignDriverDelivery(orderId: task.orderId, reason: reason);
+        _showMessage('Order #${task.shortId} is now unassigned.');
+        await _reloadAfterMutation();
+      } catch (error) {
+        _showMessage(friendlyAppError(error), error: true);
+      }
+    } finally {
+      controller.dispose();
+      _endOrderMutation(task);
     }
   }
 
@@ -706,12 +808,16 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
     DriverDeliveryTask task,
     String status,
   ) async {
+    if (!_beginOrderMutation(task)) return;
+
     try {
       await updateDriverDeliveryTask(task: task, status: status);
       _showMessage('Order #${task.shortId}: ${friendlyLabel(status)}.');
-      await _reload();
+      await _reloadAfterMutation();
     } catch (error) {
       _showMessage(friendlyAppError(error), error: true);
+    } finally {
+      _endOrderMutation(task);
     }
   }
 
@@ -758,26 +864,164 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
   }
 
   Future<void> _completeDelivery(DriverDeliveryTask task) async {
+    if (!_beginOrderMutation(task)) return;
+
     final recipientController = TextEditingController();
     final noteController = TextEditingController();
     PickedProductImage? proofFile;
+    String? uploadedProofPath;
+    var deliveryCommitted = false;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text('Complete order #${task.shortId}'),
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text('Complete order #${task.shortId}'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: recipientController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Received by',
+                      hintText: 'Customer or recipient name',
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteController,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Delivery note (optional)',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: Icon(
+                        proofFile == null
+                            ? Icons.add_a_photo_outlined
+                            : Icons.check_circle_outline,
+                      ),
+                      label: Text(
+                        proofFile == null
+                            ? 'Add proof photo'
+                            : 'Proof photo selected',
+                      ),
+                      onPressed: () async {
+                        final file = await _pickProofImage();
+                        if (file != null) {
+                          setDialogState(() => proofFile = file);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Enter the recipient name or attach a proof photo before marking the order delivered.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 12,
+                      height: 1.3,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (recipientController.text.trim().isEmpty &&
+                      proofFile == null) {
+                    _showMessage(
+                      'Enter the recipient name or attach a proof photo.',
+                      error: true,
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext, true);
+                },
+                child: const Text('Mark Delivered'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (confirmed != true) return;
+
+      try {
+        if (proofFile != null) {
+          uploadedProofPath = await uploadDeliveryProofPhoto(
+            orderId: task.orderId,
+            image: proofFile!,
+          );
+        }
+
+        await updateDriverDeliveryTask(
+          task: task,
+          status: 'delivered',
+          driverNotes: noteController.text.trim(),
+          proofPhotoPath: uploadedProofPath,
+          recipientName: recipientController.text.trim(),
+        );
+        deliveryCommitted = true;
+
+        _showMessage('Order #${task.shortId} marked delivered.');
+        await _reloadAfterMutation();
+      } on PostgrestException catch (error) {
+        // A PostgREST rejection is an explicit server-side failure, so the RPC
+        // transaction did not commit and a newly uploaded proof can be removed.
+        // Do not perform this cleanup for ambiguous network/timeout failures.
+        if (!deliveryCommitted && uploadedProofPath != null) {
+          await deleteDeliveryProofPhoto(uploadedProofPath);
+        }
+        _showMessage(friendlyAppError(error), error: true);
+      } catch (error) {
+        // A transport failure can occur after the server committed. Preserve the
+        // proof image rather than risk deleting evidence referenced by the order.
+        _showMessage(friendlyAppError(error), error: true);
+      }
+    } finally {
+      recipientController.dispose();
+      noteController.dispose();
+      _endOrderMutation(task);
+    }
+  }
+
+  Future<void> _reportFailed(DriverDeliveryTask task) async {
+    if (!_beginOrderMutation(task)) return;
+
+    final reasonController = TextEditingController();
+    final noteController = TextEditingController();
+
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Failed delivery #${task.shortId}'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: recipientController,
-                  textCapitalization: TextCapitalization.words,
+                  controller: reasonController,
+                  minLines: 2,
+                  maxLines: 4,
                   decoration: const InputDecoration(
-                    labelText: 'Received by',
-                    hintText: 'Customer or recipient name',
-                    prefixIcon: Icon(Icons.person_outline),
+                    labelText: 'Reason',
+                    hintText: 'Customer unavailable, address issue...',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -786,39 +1030,7 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
                   minLines: 2,
                   maxLines: 4,
                   decoration: const InputDecoration(
-                    labelText: 'Delivery note (optional)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: Icon(
-                      proofFile == null
-                          ? Icons.add_a_photo_outlined
-                          : Icons.check_circle_outline,
-                    ),
-                    label: Text(
-                      proofFile == null
-                          ? 'Add proof photo'
-                          : 'Proof photo selected',
-                    ),
-                    onPressed: () async {
-                      final file = await _pickProofImage();
-                      if (file != null) {
-                        setDialogState(() => proofFile = file);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Enter the recipient name or attach a proof photo before marking the order delivered.',
-                  style: TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 12,
-                    height: 1.3,
-                    fontWeight: FontWeight.w700,
+                    labelText: 'Additional note (optional)',
                   ),
                 ),
               ],
@@ -831,202 +1043,125 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
             ),
             ElevatedButton(
               onPressed: () {
-                if (recipientController.text.trim().isEmpty &&
-                    proofFile == null) {
+                if (reasonController.text.trim().isEmpty) {
                   _showMessage(
-                    'Enter the recipient name or attach a proof photo.',
+                    'Enter a reason for the failed attempt.',
                     error: true,
                   );
                   return;
                 }
                 Navigator.pop(dialogContext, true);
               },
-              child: const Text('Mark Delivered'),
+              child: const Text('Save Failed Attempt'),
             ),
           ],
         ),
-      ),
-    );
+      );
 
-    if (confirmed != true) {
-      recipientController.dispose();
-      noteController.dispose();
-      return;
-    }
+      if (confirmed != true) return;
 
-    try {
-      String? proofPath;
-      if (proofFile != null) {
-        proofPath = await uploadDeliveryProofPhoto(
-          orderId: task.orderId,
-          image: proofFile!,
+      try {
+        await updateDriverDeliveryTask(
+          task: task,
+          status: 'failed',
+          driverNotes: noteController.text.trim(),
+          failureReason: reasonController.text.trim(),
         );
+        _showMessage('Failed delivery attempt recorded.');
+        await _reloadAfterMutation();
+      } catch (error) {
+        _showMessage(friendlyAppError(error), error: true);
       }
-
-      await updateDriverDeliveryTask(
-        task: task,
-        status: 'delivered',
-        driverNotes: noteController.text.trim(),
-        proofPhotoPath: proofPath,
-        recipientName: recipientController.text.trim(),
-      );
-
-      _showMessage('Order #${task.shortId} marked delivered.');
-      await _reload();
-    } catch (error) {
-      _showMessage(friendlyAppError(error), error: true);
-    } finally {
-      recipientController.dispose();
-      noteController.dispose();
-    }
-  }
-
-  Future<void> _reportFailed(DriverDeliveryTask task) async {
-    final reasonController = TextEditingController();
-    final noteController = TextEditingController();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Failed delivery #${task.shortId}'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: reasonController,
-                minLines: 2,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: 'Reason',
-                  hintText: 'Customer unavailable, address issue...',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: noteController,
-                minLines: 2,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: 'Additional note (optional)',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (reasonController.text.trim().isEmpty) {
-                _showMessage('Enter a reason for the failed attempt.',
-                    error: true);
-                return;
-              }
-              Navigator.pop(dialogContext, true);
-            },
-            child: const Text('Save Failed Attempt'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) {
-      reasonController.dispose();
-      noteController.dispose();
-      return;
-    }
-
-    try {
-      await updateDriverDeliveryTask(
-        task: task,
-        status: 'failed',
-        driverNotes: noteController.text.trim(),
-        failureReason: reasonController.text.trim(),
-      );
-      _showMessage('Failed delivery attempt recorded.');
-      await _reload();
-    } catch (error) {
-      _showMessage(friendlyAppError(error), error: true);
     } finally {
       reasonController.dispose();
       noteController.dispose();
+      _endOrderMutation(task);
     }
   }
 
   Future<void> _reschedule(DriverDeliveryTask task) async {
-    final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: now.add(const Duration(days: 1)),
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: now.add(const Duration(days: 90)),
-    );
-    if (date == null || !mounted) return;
-
-    final time = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 10, minute: 0),
-    );
-    if (time == null) return;
-
-    final noteController = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Reschedule order #${task.shortId}'),
-        content: TextField(
-          controller: noteController,
-          minLines: 2,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Reason or instructions (optional)',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Reschedule'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) {
-      noteController.dispose();
-      return;
-    }
-
-    final rescheduledFor = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
+    if (!_beginOrderMutation(task)) return;
 
     try {
-      await updateDriverDeliveryTask(
-        task: task,
-        status: 'rescheduled',
-        driverNotes: noteController.text.trim(),
-        rescheduledFor: rescheduledFor,
+      final now = DateTime.now();
+      final date = await showDatePicker(
+        context: context,
+        initialDate: now.add(const Duration(days: 1)),
+        firstDate: DateTime(now.year, now.month, now.day),
+        lastDate: now.add(const Duration(days: 90)),
       );
-      _showMessage(
-        'Order #${task.shortId} rescheduled for ${formatCustomerDateTime(rescheduledFor)}.',
+      if (date == null || !mounted) return;
+
+      final time = await showTimePicker(
+        context: context,
+        initialTime: const TimeOfDay(hour: 10, minute: 0),
       );
-      await _reload();
-    } catch (error) {
-      _showMessage(friendlyAppError(error), error: true);
+      if (time == null || !mounted) return;
+
+      final rescheduledFor = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+
+      if (!rescheduledFor.isAfter(DateTime.now())) {
+        _showMessage(
+          'Choose a delivery date and time that is still in the future.',
+          error: true,
+        );
+        return;
+      }
+
+      final noteController = TextEditingController();
+      try {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('Reschedule order #${task.shortId}'),
+            content: TextField(
+              controller: noteController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Reason or instructions (optional)',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Reschedule'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed != true) return;
+
+        try {
+          await updateDriverDeliveryTask(
+            task: task,
+            status: 'rescheduled',
+            driverNotes: noteController.text.trim(),
+            rescheduledFor: rescheduledFor,
+          );
+          _showMessage(
+            'Order #${task.shortId} rescheduled for ${formatCustomerDateTime(rescheduledFor)}.',
+          );
+          await _reloadAfterMutation();
+        } catch (error) {
+          _showMessage(friendlyAppError(error), error: true);
+        }
+      } finally {
+        noteController.dispose();
+      }
     } finally {
-      noteController.dispose();
+      _endOrderMutation(task);
     }
   }
 
@@ -1042,6 +1177,7 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
 
         if (snapshot.hasError) {
           return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
             children: [
               const Header(
@@ -1051,9 +1187,15 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
               const SizedBox(height: 18),
               FarmEmptyState(
                 icon: Icons.local_shipping_outlined,
-                title: 'Driver tools are not ready',
+                title: 'Driver tools could not load',
                 message:
-                    '${friendlyAppError(snapshot.error!)}\n\nRun the driver delivery SQL migration, then refresh.',
+                    '${friendlyAppError(snapshot.error!)}\n\nCheck your connection and access, then try again.',
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _reload,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Try Again'),
               ),
             ],
           );
@@ -1159,6 +1301,7 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
                     (task) => _DriverDeliveryCard(
                       task: task,
                       managerView: true,
+                      busy: _isOrderBusy(task),
                       onCall: () => _callCustomer(task),
                       onWhatsApp: () => _messageCustomer(task),
                       onMaps: () => _openMaps(task),
@@ -1189,6 +1332,7 @@ class _AdminDriverManagementTabState extends State<AdminDriverManagementTab> {
                   (task) => _DriverDeliveryCard(
                     task: task,
                     managerView: data.managerView,
+                    busy: _isOrderBusy(task),
                     onCall: () => _callCustomer(task),
                     onWhatsApp: () => _messageCustomer(task),
                     onMaps: () => _openMaps(task),
@@ -1312,6 +1456,7 @@ class _DriverSectionHeading extends StatelessWidget {
 class _DriverDeliveryCard extends StatelessWidget {
   final DriverDeliveryTask task;
   final bool managerView;
+  final bool busy;
   final VoidCallback onCall;
   final VoidCallback onWhatsApp;
   final VoidCallback onMaps;
@@ -1326,6 +1471,7 @@ class _DriverDeliveryCard extends StatelessWidget {
   const _DriverDeliveryCard({
     required this.task,
     required this.managerView,
+    this.busy = false,
     required this.onCall,
     required this.onWhatsApp,
     required this.onMaps,
@@ -1559,6 +1705,10 @@ class _DriverDeliveryCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (busy) ...[
+              const SizedBox(height: 10),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
             if (onAssign != null ||
                 onUnassign != null ||
                 onAccept != null ||
@@ -1573,7 +1723,7 @@ class _DriverDeliveryCard extends StatelessWidget {
                 children: [
                   if (onAssign != null)
                     ElevatedButton.icon(
-                      onPressed: onAssign,
+                      onPressed: busy ? null : onAssign,
                       icon:
                           const Icon(Icons.person_add_alt_1_outlined, size: 18),
                       label: Text(
@@ -1584,31 +1734,31 @@ class _DriverDeliveryCard extends StatelessWidget {
                     ),
                   if (onUnassign != null)
                     TextButton.icon(
-                      onPressed: onUnassign,
+                      onPressed: busy ? null : onUnassign,
                       icon: const Icon(Icons.person_remove_outlined, size: 18),
                       label: const Text('Unassign'),
                     ),
                   if (onAccept != null)
                     ElevatedButton.icon(
-                      onPressed: onAccept,
+                      onPressed: busy ? null : onAccept,
                       icon: const Icon(Icons.task_alt_outlined, size: 18),
                       label: const Text('Accept'),
                     ),
                   if (onStart != null)
                     ElevatedButton.icon(
-                      onPressed: onStart,
+                      onPressed: busy ? null : onStart,
                       icon: const Icon(Icons.local_shipping_outlined, size: 18),
                       label: const Text('Start Delivery'),
                     ),
                   if (onComplete != null)
                     ElevatedButton.icon(
-                      onPressed: onComplete,
+                      onPressed: busy ? null : onComplete,
                       icon: const Icon(Icons.check_circle_outline, size: 18),
                       label: const Text('Delivered'),
                     ),
                   if (onFailed != null)
                     OutlinedButton.icon(
-                      onPressed: onFailed,
+                      onPressed: busy ? null : onFailed,
                       icon: const Icon(Icons.report_problem_outlined, size: 18),
                       label: const Text('Failed'),
                       style: OutlinedButton.styleFrom(
@@ -1617,7 +1767,7 @@ class _DriverDeliveryCard extends StatelessWidget {
                     ),
                   if (onReschedule != null)
                     OutlinedButton.icon(
-                      onPressed: onReschedule,
+                      onPressed: busy ? null : onReschedule,
                       icon: const Icon(Icons.event_repeat_outlined, size: 18),
                       label: const Text('Reschedule'),
                     ),

@@ -2,44 +2,44 @@
 // Compile repair base: Hotfix 002 + visible verification marker.
 part of harvest_place_app;
 
-List<HomeHeroSlide> _mergeHomeHeroSlidesToFour(
-  List<HomeHeroSlide> savedSlides,
-) {
-  final byPosition = <int, HomeHeroSlide>{};
+Future<List<HomeHeroSlide>> fetchAdminHomeHeroSlides() async {
+  List<HomeHeroSlide> mergeSlidesToFour(
+    List<HomeHeroSlide> savedSlides,
+  ) {
+    final byPosition = <int, HomeHeroSlide>{};
 
-  for (final slide in savedSlides) {
-    if (slide.position >= 1 && slide.position <= 4) {
-      byPosition[slide.position] = slide;
+    for (final slide in savedSlides) {
+      if (slide.position >= 1 && slide.position <= 4) {
+        byPosition[slide.position] = slide;
+      }
     }
+
+    final defaults = defaultHomeHeroSlides();
+
+    return List<HomeHeroSlide>.generate(
+      4,
+      (index) {
+        final position = index + 1;
+        final savedSlide = byPosition[position];
+
+        if (savedSlide != null) {
+          return savedSlide;
+        }
+
+        if (index < defaults.length) {
+          return defaults[index];
+        }
+
+        return HomeHeroSlide(
+          id: 'default-$position',
+          position: position,
+          imageUrl: defaults.isNotEmpty ? defaults.last.imageUrl : '',
+          isActive: true,
+        );
+      },
+    );
   }
 
-  final defaults = defaultHomeHeroSlides();
-
-  return List<HomeHeroSlide>.generate(
-    4,
-    (index) {
-      final position = index + 1;
-
-      final savedSlide = byPosition[position];
-      if (savedSlide != null) {
-        return savedSlide;
-      }
-
-      if (index < defaults.length) {
-        return defaults[index];
-      }
-
-      return HomeHeroSlide(
-        id: 'default-$position',
-        position: position,
-        imageUrl: defaults.isNotEmpty ? defaults.last.imageUrl : '',
-        isActive: true,
-      );
-    },
-  );
-}
-
-Future<List<HomeHeroSlide>> fetchAdminHomeHeroSlides() async {
   await requireAdminAccess();
 
   try {
@@ -58,19 +58,56 @@ Future<List<HomeHeroSlide>> fetchAdminHomeHeroSlides() async {
         )
         .toList();
 
-    return _mergeHomeHeroSlidesToFour(slides);
+    return mergeSlidesToFour(slides);
   } catch (error) {
     farmDebugLog(
       'Admin hero slides unavailable: $error',
     );
 
-    return _mergeHomeHeroSlidesToFour(
+    return mergeSlidesToFour(
       const <HomeHeroSlide>[],
     );
   }
 }
 
 Future<List<HomeHeroSlide>> fetchPublicHomeHeroSlides() async {
+  List<HomeHeroSlide> mergeSlidesToFour(
+    List<HomeHeroSlide> savedSlides,
+  ) {
+    final byPosition = <int, HomeHeroSlide>{};
+
+    for (final slide in savedSlides) {
+      if (slide.position >= 1 && slide.position <= 4) {
+        byPosition[slide.position] = slide;
+      }
+    }
+
+    final defaults = defaultHomeHeroSlides();
+
+    return List<HomeHeroSlide>.generate(
+      4,
+      (index) {
+        final position = index + 1;
+        final savedSlide = byPosition[position];
+
+        if (savedSlide != null) {
+          return savedSlide;
+        }
+
+        if (index < defaults.length) {
+          return defaults[index];
+        }
+
+        return HomeHeroSlide(
+          id: 'default-$position',
+          position: position,
+          imageUrl: defaults.isNotEmpty ? defaults.last.imageUrl : '',
+          isActive: true,
+        );
+      },
+    );
+  }
+
   try {
     final response = await supabase
         .from('home_hero_slides')
@@ -88,14 +125,75 @@ Future<List<HomeHeroSlide>> fetchPublicHomeHeroSlides() async {
         )
         .toList();
 
-    return _mergeHomeHeroSlidesToFour(slides);
+    return mergeSlidesToFour(slides);
   } catch (error) {
     farmDebugLog(
       'Public home hero slides unavailable: $error',
     );
 
-    return _mergeHomeHeroSlidesToFour(
+    return mergeSlidesToFour(
       const <HomeHeroSlide>[],
+    );
+  }
+}
+
+const String _welcomeBackgroundSettingKey = 'welcome_background';
+final ValueNotifier<String?> hpjWelcomeBackgroundUrlNotifier =
+    ValueNotifier<String?>(null);
+
+Future<String?> fetchPublicWelcomeBackgroundUrl() async {
+  try {
+    final response = await supabase
+        .from('public_landing_settings')
+        .select('image_url')
+        .eq('setting_key', _welcomeBackgroundSettingKey)
+        .maybeSingle();
+
+    if (response == null) return null;
+
+    final row = Map<String, dynamic>.from(response as Map);
+    final cleanUrl = cleanHostedImageUrl(row['image_url']?.toString());
+
+    if (cleanUrl != null &&
+        hpjWelcomeBackgroundUrlNotifier.value != cleanUrl) {
+      hpjWelcomeBackgroundUrlNotifier.value = cleanUrl;
+    }
+
+    return cleanUrl;
+  } catch (error) {
+    farmDebugLog(
+      'Welcome screen background unavailable: $error',
+    );
+    return null;
+  }
+}
+
+Future<void> saveWelcomeBackgroundUrl(String imageUrl) async {
+  await requireAdminAccess();
+
+  final cleanUrl = cleanHostedImageUrl(imageUrl);
+  if (cleanUrl == null || cleanUrl.isEmpty) {
+    throw Exception('The uploaded welcome background URL is invalid.');
+  }
+
+  try {
+    await supabase.from('public_landing_settings').upsert(
+      <String, dynamic>{
+        'setting_key': _welcomeBackgroundSettingKey,
+        'image_url': cleanUrl,
+        'updated_at': DateTime.now().toIso8601String(),
+        'updated_by': supabase.auth.currentUser?.id,
+      },
+      onConflict: 'setting_key',
+    );
+
+    hpjWelcomeBackgroundUrlNotifier.value = cleanUrl;
+  } catch (error) {
+    farmDebugLog(
+      'Could not save welcome screen background: $error',
+    );
+    throw Exception(
+      'Could not save the welcome screen background. Run the welcome background SQL setup and try again.',
     );
   }
 }
@@ -426,9 +524,13 @@ Future<List<AuditLogEntry>> fetchAdminAuditLogs({
       .toList();
 }
 
-Future<List<AdminOrder>> fetchAdminOrders() async {
-  final allowed = await isCurrentUserAdminFromDatabase();
-  if (!allowed) return [];
+Future<List<AdminOrder>> _fetchAdminOrdersPage({
+  required int limit,
+  required int offset,
+  required bool throwOnError,
+}) async {
+  final safeLimit = limit.clamp(1, 500).toInt();
+  final safeOffset = offset < 0 ? 0 : offset;
 
   try {
     final response = await supabase
@@ -437,15 +539,73 @@ Future<List<AdminOrder>> fetchAdminOrders() async {
           'id, order_status, fulfillment_type, subtotal, delivery_fee, discount_amount, total, payment_status, payment_method, bank_reference, delivery_status, delivery_address, delivery_zone, scheduled_date, scheduled_time, notes, box_photo_url, box_photo_uploaded_at, box_photo_note, created_at, customers(full_name, phone, address), order_items(product_name, quantity, line_total)',
         )
         .order('created_at', ascending: false)
-        .limit(50);
+        .range(
+          safeOffset,
+          safeOffset + safeLimit - 1,
+        );
 
     return (response as List)
-        .map((item) => AdminOrder.fromSupabase(Map<String, dynamic>.from(item)))
+        .map(
+          (item) => AdminOrder.fromSupabase(
+            Map<String, dynamic>.from(item),
+          ),
+        )
         .toList();
   } catch (error) {
     farmDebugLog('Failed to fetch admin orders: $error');
-    return [];
+
+    if (throwOnError) {
+      rethrow;
+    }
+
+    return <AdminOrder>[];
   }
+}
+
+Future<List<AdminOrder>> fetchAdminOrders({
+  int limit = 50,
+  int offset = 0,
+  bool throwOnError = false,
+}) async {
+  final allowed = await isCurrentUserAdminFromDatabase();
+  if (!allowed) return <AdminOrder>[];
+
+  return _fetchAdminOrdersPage(
+    limit: limit,
+    offset: offset,
+    throwOnError: throwOnError,
+  );
+}
+
+/// Reports and Analytics need complete order history, not only the newest
+/// operational page. Page through Supabase in bounded 250-row requests.
+Future<List<AdminOrder>> fetchAllAdminOrdersForReporting({
+  int pageSize = 250,
+}) async {
+  final allowed = await isCurrentUserAdminFromDatabase();
+  if (!allowed) return <AdminOrder>[];
+
+  final safePageSize = pageSize.clamp(50, 500).toInt();
+  final all = <AdminOrder>[];
+  var offset = 0;
+
+  while (true) {
+    final page = await _fetchAdminOrdersPage(
+      limit: safePageSize,
+      offset: offset,
+      throwOnError: true,
+    );
+
+    all.addAll(page);
+
+    if (page.length < safePageSize) {
+      break;
+    }
+
+    offset += page.length;
+  }
+
+  return all;
 }
 
 Future<void> notifyAdminsAboutLowStockAfterCheckout(
@@ -532,8 +692,7 @@ bool staffRoleCanManageStaff(String? value) {
 }
 
 bool staffRoleCanManageBusinessSettings(String? value) {
-  final role = normalizeStaffRole(value);
-  return role == 'owner' || role.isEmpty;
+  return normalizeStaffRole(value) == 'owner';
 }
 
 const List<String> staffAssignableRoles = <String>[
@@ -769,6 +928,62 @@ Future<bool> _refreshHpJAuthSession() async {
   }
 }
 
+Future<bool> _hasLegacyOwnerAdminRecord({
+  required String userId,
+  required String email,
+}) async {
+  final cleanUserId = userId.trim();
+  final cleanEmail = email.trim().toLowerCase();
+
+  if (cleanUserId.isNotEmpty) {
+    try {
+      final response = await supabase
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', cleanUserId)
+          .maybeSingle();
+
+      if (response != null) return true;
+    } catch (error) {
+      farmDebugLog(
+        'Legacy owner user_id lookup skipped: $error',
+      );
+    }
+
+    try {
+      final response = await supabase
+          .from('admin_users')
+          .select('id')
+          .eq('id', cleanUserId)
+          .maybeSingle();
+
+      if (response != null) return true;
+    } catch (error) {
+      farmDebugLog(
+        'Legacy owner id lookup skipped: $error',
+      );
+    }
+  }
+
+  if (cleanEmail.isNotEmpty) {
+    try {
+      final response = await supabase
+          .from('admin_users')
+          .select('email')
+          .ilike('email', cleanEmail)
+          .maybeSingle();
+
+      if (response != null) return true;
+    } catch (error) {
+      farmDebugLog(
+        'Legacy owner email lookup skipped: $error',
+      );
+    }
+  }
+
+  return false;
+}
+
 Future<String> _fetchCurrentStaffRoleOnce() async {
   final user = supabase.auth.currentUser;
   if (user == null) return '';
@@ -776,8 +991,7 @@ Future<String> _fetchCurrentStaffRoleOnce() async {
   Object? rpcError;
 
   try {
-    final response =
-        await supabase.rpc(
+    final response = await supabase.rpc(
       'current_staff_role',
     );
 
@@ -791,71 +1005,63 @@ Future<String> _fetchCurrentStaffRoleOnce() async {
   } catch (error) {
     rpcError = error;
 
-    if (!_isSupabaseJwtTimingError(
-      error,
-    )) {
+    if (!_isSupabaseJwtTimingError(error)) {
       farmDebugLog(
         'Staff role RPC lookup skipped: $error',
       );
     }
   }
 
-  final email =
-      (user.email ?? '')
-          .trim()
-          .toLowerCase();
+  final email = (user.email ?? '').trim().toLowerCase();
 
-  if (email.isEmpty) {
-    if (rpcError != null &&
-        _isSupabaseJwtTimingError(
-          rpcError,
-        )) {
-      throw rpcError;
-    }
+  if (email.isNotEmpty) {
+    try {
+      final response = await supabase
+          .from('staff_users')
+          .select('role, is_active')
+          .ilike('email', email)
+          .eq('is_active', true)
+          .maybeSingle();
 
-    return '';
-  }
+      if (response != null) {
+        final row = Map<String, dynamic>.from(
+          response as Map,
+        );
 
-  try {
-    final response = await supabase
-        .from('staff_users')
-        .select('role, is_active')
-        .ilike('email', email)
-        .eq('is_active', true)
-        .maybeSingle();
+        final role = normalizeStaffRole(
+          row['role']?.toString(),
+        );
 
-    if (response == null) {
-      if (rpcError != null &&
-          _isSupabaseJwtTimingError(
-            rpcError,
-          )) {
-        throw rpcError;
+        if (role.isNotEmpty) {
+          return role;
+        }
+      }
+    } catch (error) {
+      if (_isSupabaseJwtTimingError(error)) {
+        rethrow;
       }
 
-      return '';
+      farmDebugLog(
+        'Staff role direct lookup skipped: $error',
+      );
     }
-
-    final row =
-        Map<String, dynamic>.from(
-      response as Map,
-    );
-
-    return normalizeStaffRole(
-      row['role']?.toString(),
-    );
-  } catch (error) {
-    if (_isSupabaseJwtTimingError(
-      error,
-    )) {
-      rethrow;
-    }
-
-    farmDebugLog(
-      'Staff role direct lookup skipped: $error',
-    );
-
-    return '';
   }
+
+  final legacyOwner = await _hasLegacyOwnerAdminRecord(
+    userId: user.id,
+    email: email,
+  );
+
+  if (legacyOwner) {
+    return 'owner';
+  }
+
+  if (rpcError != null &&
+      _isSupabaseJwtTimingError(rpcError)) {
+    throw rpcError;
+  }
+
+  return '';
 }
 
 Future<String> fetchCurrentStaffRole() async {
@@ -2179,9 +2385,9 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
   }
 
   static const _pageTitles = <String>[
-    'Farmer Home',
+    'My Farm',
     'My Supply',
-    'Orders',
+    'Operations',
     'My Payments',
     'Account',
   ];
@@ -2198,6 +2404,40 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
         tab: safeIndex,
       ),
     );
+  }
+
+  int get _farmerBottomIndex {
+    switch (selectedIndex) {
+      case 0:
+        return 0;
+      case 1:
+        return 1;
+      case 2:
+      case 3:
+        return 2;
+      case 4:
+      default:
+        return 3;
+    }
+  }
+
+  void _selectFarmerBottomOption(int index) {
+    switch (index) {
+      case 0:
+        _selectFarmerTab(0);
+        return;
+      case 1:
+        _selectFarmerTab(1);
+        return;
+      case 2:
+        _selectFarmerTab(2);
+        return;
+      case 3:
+        _selectFarmerTab(4);
+        return;
+      default:
+        _selectFarmerTab(0);
+    }
   }
 
   void _switchWorkspace() {
@@ -2244,10 +2484,12 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
             ? widget.initialRecordId
             : null,
       ),
-      FarmerOrdersScreen(
+      FarmerOperationsScreen(
         profile: profile,
         refreshKey: refreshKey,
       ),
+      // Legacy hidden route retained for existing payment notifications /
+      // remembered tab 3. It appears under the visible Operations tab.
       FarmerEarningsScreen(
         profile: profile,
         refreshKey: refreshKey,
@@ -2272,14 +2514,9 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
         label: 'Supply',
       ),
       const FarmBottomOption(
-        icon: Icon(Icons.receipt_long_outlined),
-        selectedIcon: Icon(Icons.receipt_long),
-        label: 'Orders',
-      ),
-      const FarmBottomOption(
-        icon: Icon(Icons.payments_outlined),
-        selectedIcon: Icon(Icons.payments),
-        label: 'Payments',
+        icon: Icon(Icons.dashboard_customize_outlined),
+        selectedIcon: Icon(Icons.dashboard_customize_rounded),
+        label: 'Operations',
       ),
       const FarmBottomOption(
         icon: Icon(Icons.person_outline),
@@ -2296,13 +2533,22 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
         if (selectedIndex != 0) {
           _selectFarmerTab(0);
         }
-        // On Feed, Back intentionally does nothing. Switching workspaces is
-        // available only through the Switch Workspace button in the app bar.
+        // Farmer Home is the workspace root. Switching workspaces remains
+        // available through the Switch Workspace button in the app bar.
       },
       child: Scaffold(
         backgroundColor: FarmColors.background,
         appBar: AppBar(
           automaticallyImplyLeading: false,
+          leading: selectedIndex == 0
+              ? null
+              : IconButton(
+                  tooltip: 'Back to Farmer Home',
+                  onPressed: () => _selectFarmerTab(0),
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                  ),
+                ),
           title: Text(_pageTitles[selectedIndex]),
           actions: [
             const HpjInboxActionButton(),
@@ -2315,9 +2561,9 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
         ),
         body: pages[selectedIndex],
         bottomNavigationBar: FarmBottomOptionsBar(
-          selectedIndex: selectedIndex,
+          selectedIndex: _farmerBottomIndex,
           destinations: destinations,
-          onSelected: _selectFarmerTab,
+          onSelected: _selectFarmerBottomOption,
         ),
       ),
     );
@@ -2403,48 +2649,63 @@ class _FarmerTodaySnapshot {
 Future<_FarmerTodaySnapshot> fetchFarmerTodaySnapshot(
   FarmerProfile profile,
 ) async {
-  var supplies = <FarmerSupplyForecast>[];
-  var demand = <FarmerMarketDemandOpportunity>[];
-  var collections = <FarmerCollectionScheduleItem>[];
-  var payouts = <FarmerPayout>[];
-  var preferences = UserExperiencePreferences.defaults;
-
-  try {
-    supplies = await fetchFarmerSupplyForecasts(profile.id);
-  } catch (error) {
-    farmDebugLog('Farmer Today — supply unavailable: $error');
+  Future<List<FarmerSupplyForecast>> loadSupplies() async {
+    try {
+      return await fetchFarmerSupplyForecasts(profile.id);
+    } catch (error) {
+      farmDebugLog('Farmer Today — supply unavailable: $error');
+      return <FarmerSupplyForecast>[];
+    }
   }
 
-  try {
-    demand = await fetchFarmerMarketDemandBoard(30);
-  } catch (error) {
-    farmDebugLog('Farmer Today — demand unavailable: $error');
+  Future<List<FarmerMarketDemandOpportunity>> loadDemand() async {
+    try {
+      return await fetchFarmerMarketDemandBoard(30);
+    } catch (error) {
+      farmDebugLog('Farmer Today — demand unavailable: $error');
+      return <FarmerMarketDemandOpportunity>[];
+    }
   }
 
-  try {
-    collections = await fetchFarmerCollectionSchedule();
-  } catch (error) {
-    farmDebugLog('Farmer Today — collections unavailable: $error');
+  Future<List<FarmerCollectionScheduleItem>> loadCollections() async {
+    try {
+      return await fetchFarmerCollectionSchedule();
+    } catch (error) {
+      farmDebugLog('Farmer Today — collections unavailable: $error');
+      return <FarmerCollectionScheduleItem>[];
+    }
   }
 
-  try {
-    payouts = await fetchFarmerPayouts(farmerId: profile.id);
-  } catch (error) {
-    farmDebugLog('Farmer Today — payouts unavailable: $error');
+  Future<List<FarmerPayout>> loadPayouts() async {
+    try {
+      return await fetchFarmerPayouts(farmerId: profile.id);
+    } catch (error) {
+      farmDebugLog('Farmer Today — payouts unavailable: $error');
+      return <FarmerPayout>[];
+    }
   }
 
-  try {
-    preferences = await fetchCurrentUserExperiencePreferences();
-  } catch (error) {
-    farmDebugLog('Farmer Today — preferences unavailable: $error');
+  Future<UserExperiencePreferences> loadPreferences() async {
+    try {
+      return await fetchCurrentUserExperiencePreferences();
+    } catch (error) {
+      farmDebugLog('Farmer Today — preferences unavailable: $error');
+      return UserExperiencePreferences.defaults;
+    }
   }
+
+  final suppliesFuture = loadSupplies();
+  final demandFuture = loadDemand();
+  final collectionsFuture = loadCollections();
+  final payoutsFuture = loadPayouts();
+  final preferencesFuture = loadPreferences();
 
   return _FarmerTodaySnapshot(
-    supplies: supplies,
-    demand: demand,
-    collections: collections,
-    payouts: payouts,
-    preferences: preferences,
+    supplies: await suppliesFuture,
+    demand: await demandFuture,
+    collections: await collectionsFuture,
+    payouts: await payoutsFuture,
+    preferences: await preferencesFuture,
   );
 }
 
@@ -2742,167 +3003,236 @@ class FarmerDashboardScreen extends StatelessWidget {
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
                   children: [
-                    _FarmerSocialFeedFilters(
-                      selected: feedFilter,
-                      showDemand: preferences.farmerShowBuyingRequests,
-                      showMarket: preferences.farmerShowMarketUpdates,
-                      showNews: preferences.farmerShowAgricultureNews ||
-                          preferences.farmerShowTrainingOpportunities,
-                      onSelected: (value) {
-                        setFeedState(() => feedFilter = value);
-                      },
+                    _FarmerPublicIdentityCard(
+                      profile: profile,
+                      refreshKey: refreshKey,
+                      onOpenAccount: onOpenAccount,
+                    ),
+                    const SizedBox(height: 18),
+                    _FarmerCoreActionsCard(
+                      onOpenSupply: onOpenSupply,
+                      onOpenDemand: onOpenDemand,
+                      onOpenCollections: onOpenCollections,
+                      onOpenPayments: onOpenPayments,
+                    ),
+                    if (farmerNotifications.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      const SectionHeader(
+                        title: 'Action needed',
+                        subtitle: 'The most important update right now.',
+                      ),
+                      const SizedBox(height: 9),
+                      FarmCard(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                        child: Column(
+                          children: [
+                            HpjMvpListRow(
+                              icon: farmerNotifications.first.icon,
+                              title: farmerNotifications.first.title,
+                              subtitle: farmerNotifications.first.message,
+                              onTap: farmerNotifications.first.onTap,
+                              trailing: farmerNotifications.length > 1
+                                  ? HpjMvpStatusPill(
+                                      label: '+${farmerNotifications.length - 1}',
+                                      color: FarmColors.warning,
+                                    )
+                                  : null,
+                            ),
+                            if (farmerNotifications.length > 1) ...[
+                              const Divider(height: 1),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: () => _showFarmerNotifications(
+                                    context,
+                                    farmerNotifications,
+                                  ),
+                                  child: Text(
+                                    'View all ${farmerNotifications.length} updates',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (!activationComplete) ...[
+                      const SizedBox(height: 12),
+                      _FarmerSetupNudge(
+                        contactReady: contactReady,
+                        payoutReady: payoutReady,
+                        supplyReady: supplyReady,
+                        onTap: setupAction,
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    _FarmerBusinessSnapshotCard(
+                      farmName: profile.farmName,
+                      sales30: sales30,
+                      sales90: sales90,
+                      supplyTransactions30: supplyTransactions30,
+                      confirmedCropCount: confirmedCropCount,
+                      opportunityCount: demandForMyCrops.length,
+                      upcomingCollections: upcomingCollections.length,
+                      topOpportunity: demandForMyCrops.isEmpty
+                          ? null
+                          : demandForMyCrops.first,
+                      onOpenDemand: onOpenDemand,
+                      onOpenSupply: onOpenSupply,
+                      onOpenPayments: onOpenPayments,
                     ),
                     const SizedBox(height: 14),
-
-                    if (feedFilter == 'For You') ...[
-                      _FarmerBusinessSnapshotCard(
-                        farmName: profile.farmName,
-                        sales30: sales30,
-                        sales90: sales90,
-                        supplyTransactions30: supplyTransactions30,
-                        confirmedCropCount: confirmedCropCount,
-                        opportunityCount: demandForMyCrops.length,
-                        upcomingCollections: upcomingCollections.length,
-                        topOpportunity: demandForMyCrops.isEmpty
-                            ? null
-                            : demandForMyCrops.first,
-                        onOpenDemand: onOpenDemand,
-                        onOpenSupply: onOpenSupply,
-                        onOpenPayments: onOpenPayments,
-                      ),
-                      if (!activationComplete) ...[
-                        const SizedBox(height: 12),
-                        _FarmerSetupNudge(
-                          contactReady: contactReady,
-                          payoutReady: payoutReady,
-                          supplyReady: supplyReady,
-                          onTap: setupAction,
+                    FarmCard(
+                      padding: EdgeInsets.zero,
+                      child: ExpansionTile(
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 2),
+                        childrenPadding: const EdgeInsets.fromLTRB(15, 0, 15, 15),
+                        leading: const Icon(Icons.insights_outlined, color: FarmColors.primary),
+                        title: const Text(
+                          'Updates & intelligence',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ],
-                      const SizedBox(height: 16),
-                    ],
-
-                    if (showFeed('Market')) ...[
-                      HpjJamaicaMarketPulseSection(
-                        audience: 'farmer',
-                        refreshKey: refreshKey,
-                        limit: 8,
-                        socialStyle: true,
-                        preferredCropNames: activeSupply
-                            .map((item) => item.cropName)
-                            .toList(growable: false),
-                        onPrimaryAction: (insight) async {
-                          if (insight.hasShortage) {
-                            onOpenDemand();
-                          } else {
-                            onOpenSupply();
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    if (feedFilter == 'For You' &&
-                        preferences.showFreshReels) ...[
-                      FreshReelFeedPreviewCard(
-                        preferences: preferences,
-                        audience: 'farmer',
-                        placement: freshReelPlacementFarmerFeed,
-                        refreshKey: refreshKey,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    if (showFeed('News')) ...[
-                      HpjAgricultureUpdatesSection(
-                        audience: 'farmer',
-                        workspace: 'farmer',
-                        limit: newsLimit,
-                        refreshKey: refreshKey,
-                        socialStyle: true,
-                        showImages: preferences.showFeedImages,
-                        showEducation:
-                            preferences.farmerShowTrainingOpportunities,
-                        onlyEducation:
-                            !preferences.farmerShowAgricultureNews &&
+                        subtitle: const Text(
+                          'Demand, market pulse, reels and agriculture updates',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.8,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        children: [
+                          _FarmerSocialFeedFilters(
+                            selected: feedFilter,
+                            showDemand: preferences.farmerShowBuyingRequests,
+                            showMarket: preferences.farmerShowMarketUpdates,
+                            showNews: preferences.farmerShowAgricultureNews ||
                                 preferences.farmerShowTrainingOpportunities,
-                        title: 'Agriculture intelligence',
-                        subtitle:
-                            'Market news, official notices and opportunities relevant to farmers.',
-                        onAction: (update) =>
-                            _handleAgricultureFeedAction(context, update),
-                      ),
-                    ],
-
-                    if (showFeed('Alerts') && supplyNeedingReview.isNotEmpty) ...[
-                      _FarmerFeedActionCard(
-                        eyebrow: 'SUPPLY CHECK',
-                        productName: supplyNeedingReview.first.cropName,
-                        title: 'Keep your supply current',
-                        message:
-                            '${supplyNeedingReview.length} crop report${supplyNeedingReview.length == 1 ? '' : 's'} need a quick check so HPJ can match you accurately.',
-                        actionLabel: 'Review supply',
-                        icon: Icons.agriculture_rounded,
-                        onTap: onOpenSupply,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    if (showFeed('Demand'))
-                      ...opportunities.take(demandLimit).map(
-                            (opportunity) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _FarmerOpportunityCard(
-                                opportunity: opportunity,
-                                matchesMySupply: matchesMySupply(opportunity),
-                                onTap: onOpenDemand,
-                                onSupplied: onRefreshFeed,
+                            onSelected: (value) {
+                              setFeedState(() => feedFilter = value);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          if (showFeed('Market')) ...[
+                            HpjJamaicaMarketPulseSection(
+                              audience: 'farmer',
+                              refreshKey: refreshKey,
+                              limit: 8,
+                              socialStyle: true,
+                              preferredCropNames: activeSupply
+                                  .map((item) => item.cropName)
+                                  .toList(growable: false),
+                              onPrimaryAction: (insight) async {
+                                if (insight.hasShortage) {
+                                  onOpenDemand();
+                                } else {
+                                  onOpenSupply();
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (feedFilter == 'For You' && preferences.showFreshReels) ...[
+                            FreshReelFeedPreviewCard(
+                              preferences: preferences,
+                              audience: 'farmer',
+                              placement: freshReelPlacementFarmerFeed,
+                              refreshKey: refreshKey,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (showFeed('News')) ...[
+                            HpjAgricultureUpdatesSection(
+                              audience: 'farmer',
+                              workspace: 'farmer',
+                              limit: newsLimit,
+                              refreshKey: refreshKey,
+                              socialStyle: true,
+                              showImages: preferences.showFeedImages,
+                              showEducation: preferences.farmerShowTrainingOpportunities,
+                              onlyEducation: !preferences.farmerShowAgricultureNews &&
+                                  preferences.farmerShowTrainingOpportunities,
+                              title: 'Agriculture intelligence',
+                              subtitle: 'Useful market news, official notices and opportunities.',
+                              onAction: (update) =>
+                                  _handleAgricultureFeedAction(context, update),
+                            ),
+                          ],
+                          if (showFeed('Alerts') && supplyNeedingReview.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            _FarmerFeedActionCard(
+                              eyebrow: 'SUPPLY CHECK',
+                              productName: supplyNeedingReview.first.cropName,
+                              title: 'Keep your supply current',
+                              message:
+                                  '${supplyNeedingReview.length} crop report${supplyNeedingReview.length == 1 ? '' : 's'} need a quick check so HPJ can match you accurately.',
+                              actionLabel: 'Review supply',
+                              icon: Icons.agriculture_rounded,
+                              onTap: onOpenSupply,
+                            ),
+                          ],
+                          if (showFeed('Demand'))
+                            ...opportunities.take(demandLimit).map(
+                                  (opportunity) => Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: _FarmerOpportunityCard(
+                                      opportunity: opportunity,
+                                      matchesMySupply: matchesMySupply(opportunity),
+                                      onTap: onOpenDemand,
+                                      onSupplied: onRefreshFeed,
+                                    ),
+                                  ),
+                                ),
+                          if (showFeed('Alerts') && nextCollection != null) ...[
+                            const SizedBox(height: 12),
+                            _FarmerFeedActionCard(
+                              eyebrow: 'COLLECTION',
+                              productName: nextCollection.productName,
+                              title: 'Collection coming up',
+                              message:
+                                  '${nextCollection.productName} • ${_farmerPartnerNumber(nextCollection.plannedQuantity)} ${nextCollection.unit} • ${_farmerPartnerDate(nextCollection.collectionDate)}',
+                              actionLabel: 'View collection',
+                              icon: Icons.local_shipping_rounded,
+                              onTap: onOpenCollections,
+                            ),
+                          ],
+                          if (showFeed('Alerts') && hasPaymentUpdate) ...[
+                            const SizedBox(height: 12),
+                            _FarmerFeedActionCard(
+                              eyebrow: heldPayout > 0 ? 'PAYMENT REVIEW' : 'PAYMENT',
+                              title: heldPayout > 0
+                                  ? '${formatJmd(heldPayout)} needs review'
+                                  : '${formatJmd(pendingPayout)} on the way',
+                              message: heldPayout > 0
+                                  ? 'Open Payments to see what needs attention.'
+                                  : 'Your pending HPJ settlement is visible in Payments.',
+                              actionLabel: 'View payments',
+                              icon: Icons.payments_rounded,
+                              onTap: onOpenPayments,
+                            ),
+                          ],
+                          if (feedFilter == 'Demand' && opportunities.length > demandLimit)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: onOpenDemand,
+                                icon: const Icon(Icons.arrow_forward_rounded, size: 17),
+                                label: Text('See all ${opportunities.length} buyer needs'),
                               ),
                             ),
-                          ),
-
-                    if (showFeed('Alerts') && nextCollection != null) ...[
-                      _FarmerFeedActionCard(
-                        eyebrow: 'COLLECTION',
-                        productName: nextCollection.productName,
-                        title: 'Collection coming up',
-                        message:
-                            '${nextCollection.productName} • ${_farmerPartnerNumber(nextCollection.plannedQuantity)} ${nextCollection.unit} • ${_farmerPartnerDate(nextCollection.collectionDate)}',
-                        actionLabel: 'View collection',
-                        icon: Icons.local_shipping_rounded,
-                        onTap: onOpenCollections,
+                          if (feedUpdateCount == 0 && activationComplete) ...[
+                            const SizedBox(height: 12),
+                            const _FarmerAllClearCard(),
+                          ],
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    if (showFeed('Alerts') && hasPaymentUpdate) ...[
-                      _FarmerFeedActionCard(
-                        eyebrow: heldPayout > 0 ? 'PAYMENT REVIEW' : 'PAYMENT',
-                        title: heldPayout > 0
-                            ? '${formatJmd(heldPayout)} needs review'
-                            : '${formatJmd(pendingPayout)} on the way',
-                        message: heldPayout > 0
-                            ? 'Open Payments to see what needs attention.'
-                            : 'Your pending HPJ settlement is visible in Payments.',
-                        actionLabel: 'View payments',
-                        icon: Icons.payments_rounded,
-                        onTap: onOpenPayments,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    if (feedFilter == 'Demand' && opportunities.length > demandLimit)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: onOpenDemand,
-                          icon: const Icon(Icons.arrow_forward_rounded, size: 17),
-                          label: Text('See all ${opportunities.length} buyer needs'),
-                        ),
-                      ),
-
-                    if (feedUpdateCount == 0 && activationComplete)
-                      const _FarmerAllClearCard(),
+                    ),
                   ],
                 ),
               );
@@ -2913,6 +3243,7 @@ class FarmerDashboardScreen extends StatelessWidget {
     );
   }
 }
+
 
 class _FarmerBusinessSnapshotCard extends StatelessWidget {
   final String farmName;
@@ -2941,162 +3272,87 @@ class _FarmerBusinessSnapshotCard extends StatelessWidget {
     required this.onOpenPayments,
   });
 
-  String _qty(double value) {
-    return value == value.roundToDouble()
-        ? value.toInt().toString()
-        : value.toStringAsFixed(1);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final opportunity = topOpportunity;
-
     return FarmCard(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                height: 38,
-                width: 38,
-                decoration: const BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.query_stats_rounded,
-                  color: FarmColors.primary,
-                  size: 21,
+              const Expanded(
+                child: Text(
+                  'Business status',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      farmName.trim().isEmpty ? 'My farm business' : farmName.trim(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Private HPJ activity • last 30 days',
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.lock_outline_rounded,
-                  size: 16, color: FarmColors.mutedText),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _FarmerBusinessMetric(
-                  label: 'Sales to HPJ',
-                  value: formatJmd(sales30),
-                  note: '$supplyTransactions30 transaction${supplyTransactions30 == 1 ? '' : 's'}',
-                  onTap: onOpenPayments,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _FarmerBusinessMetric(
-                  label: 'Demand gaps',
-                  value: '$opportunityCount',
-                  note: opportunityCount == 0 ? 'No open gap' : 'For your crops',
-                  onTap: onOpenDemand,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _FarmerBusinessMetric(
-                  label: 'Confirmed crops',
-                  value: '$confirmedCropCount',
-                  note: 'Ready for matching',
-                  onTap: onOpenSupply,
-                ),
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 15,
+                color: FarmColors.mutedText.withOpacity(.75),
               ),
             ],
           ),
-          if (opportunity != null) ...[
-            const SizedBox(height: 13),
-            const Divider(height: 1),
-            const SizedBox(height: 11),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    opportunity.productName,
-                    style: const TextStyle(
-                      color: FarmColors.ink,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 13.5,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: onOpenDemand,
-                  child: const Text('View demand'),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: _FarmerDecisionMetric(
-                    label: 'Demand',
-                    value: '${_qty(opportunity.visibleDemand)} ${opportunity.unit}',
-                  ),
-                ),
-                Expanded(
-                  child: _FarmerDecisionMetric(
-                    label: 'My confirmed',
-                    value: '${_qty(opportunity.myHpjConfirmedSupply)} ${opportunity.unit}',
-                  ),
-                ),
-                Expanded(
-                  child: _FarmerDecisionMetric(
-                    label: 'Opportunity',
-                    value: '${_qty(opportunity.opportunityGap)} ${opportunity.unit}',
-                    emphasize: true,
-                  ),
-                ),
-              ],
-            ),
-          ],
           const SizedBox(height: 11),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final twoColumns = constraints.maxWidth < 310;
+              final itemWidth = twoColumns
+                  ? (constraints.maxWidth - 8) / 2
+                  : (constraints.maxWidth - 16) / 3;
+
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  SizedBox(
+                    width: itemWidth,
+                    child: _FarmerBusinessMetric(
+                      label: 'Sales',
+                      value: formatJmd(sales30),
+                      note:
+                          '$supplyTransactions30 transaction${supplyTransactions30 == 1 ? '' : 's'}',
+                      onTap: onOpenPayments,
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _FarmerBusinessMetric(
+                      label: 'Demand',
+                      value: '$opportunityCount',
+                      note: opportunityCount == 0
+                          ? 'No open gap'
+                          : 'For your crops',
+                      onTap: onOpenDemand,
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _FarmerBusinessMetric(
+                      label: 'Confirmed',
+                      value: '$confirmedCropCount',
+                      note: 'Crops',
+                      onTap: onOpenSupply,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 9),
           Text(
-            '90-day sales ${formatJmd(sales90)} • $upcomingCollections upcoming collection${upcomingCollections == 1 ? '' : 's'}',
+            '$upcomingCollections upcoming collection${upcomingCollections == 1 ? '' : 's'} • 90-day sales ${formatJmd(sales90)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: FarmColors.mutedText,
-              fontSize: 10.5,
-              height: 1.3,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            'Demand is planning guidance, not a guaranteed HPJ purchase.',
-            style: TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 9.5,
-              height: 1.25,
-              fontWeight: FontWeight.w600,
+              fontSize: 9.8,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -3104,6 +3360,8 @@ class _FarmerBusinessSnapshotCard extends StatelessWidget {
     );
   }
 }
+
+
 
 class _FarmerBusinessMetric extends StatelessWidget {
   final String label;
@@ -5147,10 +5405,6365 @@ class _FarmerQuickAction extends StatelessWidget {
   }
 }
 
+
+// =====================================================
+// HPJ PHASE 045 — UNIFIED FARMER PRODUCT + MARKET CHANNELS
+// Farmer reports supply once, then tells HPJ where that supply may be sold.
+// Sellable marketplace approval/pricing remains HPJ controlled.
+// =====================================================
+
+Future<void> setFarmerSupplyMarketChannels({
+  required String supplyId,
+  String? linkedProductId,
+  required bool sellToCustomer,
+  required bool sellToWholesale,
+}) async {
+  final cleanSupplyId = supplyId.trim();
+  final cleanProductId = linkedProductId?.trim();
+
+  if (cleanSupplyId.isEmpty) {
+    throw Exception('Supply report ID is required.');
+  }
+
+  if (!sellToCustomer && !sellToWholesale) {
+    throw Exception(
+      'Choose Customer Marketplace, Wholesale Business, or both.',
+    );
+  }
+
+  await supabase.rpc(
+    'farmer_set_supply_market_channels',
+    params: <String, dynamic>{
+      'p_supply_id': cleanSupplyId,
+      'p_product_id':
+          cleanProductId == null || cleanProductId.isEmpty
+              ? null
+              : cleanProductId,
+      'p_sell_customer': sellToCustomer,
+      'p_sell_wholesale': sellToWholesale,
+    },
+  );
+}
+
+
+
+// =====================================================
+// HPJ PHASE 048 — UNIFIED SUPPLY ALLOCATION + MARKET INVENTORY
+//
+// One HPJ-confirmed Farmer Supply record can be split into:
+// - Customer Marketplace
+// - Wholesale Business
+// - HPJ Reserve / Buffer
+// - Unallocated balance
+//
+// Farmers report supply once. HPJ controls the allocation.
+// Customer product stock is synchronized from Customer allocations.
+// Existing wholesale demand reservations cannot exceed the Wholesale bucket.
+// =====================================================
+
+class HpjMarketAllocationRow {
+  final String allocationId;
+  final String supplyId;
+  final String farmerId;
+  final String farmName;
+  final String cropName;
+  final String unit;
+  final String productId;
+  final String productName;
+  final double confirmedQuantity;
+  final double customerQuantity;
+  final double wholesaleQuantity;
+  final double reserveQuantity;
+  final double wholesaleCommittedQuantity;
+  final bool sellToCustomer;
+  final bool sellToWholesale;
+  final DateTime? updatedAt;
+
+  const HpjMarketAllocationRow({
+    required this.allocationId,
+    required this.supplyId,
+    required this.farmerId,
+    required this.farmName,
+    required this.cropName,
+    required this.unit,
+    required this.productId,
+    required this.productName,
+    required this.confirmedQuantity,
+    required this.customerQuantity,
+    required this.wholesaleQuantity,
+    required this.reserveQuantity,
+    required this.wholesaleCommittedQuantity,
+    required this.sellToCustomer,
+    required this.sellToWholesale,
+    this.updatedAt,
+  });
+
+  factory HpjMarketAllocationRow.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    double number(dynamic value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    DateTime? date(dynamic value) {
+      final clean = (value ?? '').toString().trim();
+      return clean.isEmpty ? null : DateTime.tryParse(clean);
+    }
+
+    return HpjMarketAllocationRow(
+      allocationId: (data['allocation_id'] ?? '').toString().trim(),
+      supplyId: (data['supply_id'] ?? '').toString().trim(),
+      farmerId: (data['farmer_id'] ?? '').toString().trim(),
+      farmName: (data['farm_name'] ?? '').toString().trim(),
+      cropName: (data['crop_name'] ?? '').toString().trim(),
+      unit: (data['unit'] ?? '').toString().trim(),
+      productId: (data['product_id'] ?? '').toString().trim(),
+      productName: (data['product_name'] ?? '').toString().trim(),
+      confirmedQuantity: number(data['confirmed_quantity']),
+      customerQuantity: number(data['customer_quantity']),
+      wholesaleQuantity: number(data['wholesale_quantity']),
+      reserveQuantity: number(data['reserve_quantity']),
+      wholesaleCommittedQuantity:
+          number(data['wholesale_committed_quantity']),
+      sellToCustomer: data['sell_to_customer'] == true,
+      sellToWholesale: data['sell_to_wholesale'] == true,
+      updatedAt: date(data['updated_at']),
+    );
+  }
+
+  bool get hasAllocation => allocationId.isNotEmpty;
+
+  bool get hasLinkedProduct => productId.isNotEmpty;
+
+  double get allocatedQuantity =>
+      customerQuantity + wholesaleQuantity + reserveQuantity;
+
+  double get unallocatedQuantity {
+    final value = confirmedQuantity - allocatedQuantity;
+    return value <= 0 ? 0 : value;
+  }
+
+  double get wholesaleAvailableQuantity {
+    final value = wholesaleQuantity - wholesaleCommittedQuantity;
+    return value <= 0 ? 0 : value;
+  }
+}
+
+Future<List<HpjMarketAllocationRow>> fetchHpjAdminMarketAllocations({
+  String? supplyId,
+  String? productId,
+}) async {
+  await requireAdminAccess();
+
+  final cleanSupplyId = supplyId?.trim() ?? '';
+  final cleanProductId = productId?.trim() ?? '';
+
+  final response = await supabase.rpc(
+    'hpj_admin_market_allocation_rows',
+    params: <String, dynamic>{
+      'p_supply_id': cleanSupplyId.isEmpty ? null : cleanSupplyId,
+      'p_product_id': cleanProductId.isEmpty ? null : cleanProductId,
+    },
+  );
+
+  return (response as List)
+      .map(
+        (row) => HpjMarketAllocationRow.fromSupabase(
+          Map<String, dynamic>.from(row as Map),
+        ),
+      )
+      .toList();
+}
+
+Future<HpjMarketAllocationRow?> fetchHpjAdminMarketAllocationForSupply(
+  String supplyId,
+) async {
+  final rows = await fetchHpjAdminMarketAllocations(
+    supplyId: supplyId,
+  );
+  return rows.isEmpty ? null : rows.first;
+}
+
+Future<void> saveHpjAdminMarketAllocation({
+  required String supplyId,
+  String? productId,
+  required double customerQuantity,
+  required double wholesaleQuantity,
+  required double reserveQuantity,
+  String notes = '',
+}) async {
+  await requireAdminAccess();
+
+  if (customerQuantity < 0 ||
+      wholesaleQuantity < 0 ||
+      reserveQuantity < 0 ||
+      customerQuantity.isNaN ||
+      wholesaleQuantity.isNaN ||
+      reserveQuantity.isNaN ||
+      customerQuantity.isInfinite ||
+      wholesaleQuantity.isInfinite ||
+      reserveQuantity.isInfinite) {
+    throw Exception('Market allocation quantities cannot be negative.');
+  }
+
+  await supabase.rpc(
+    'hpj_admin_save_market_allocation',
+    params: <String, dynamic>{
+      'p_supply_id': supplyId.trim(),
+      'p_product_id': (productId ?? '').trim().isEmpty
+          ? null
+          : productId!.trim(),
+      'p_customer_quantity': customerQuantity,
+      'p_wholesale_quantity': wholesaleQuantity,
+      'p_reserve_quantity': reserveQuantity,
+      'p_notes': notes.trim(),
+    },
+  );
+
+  FarmDataCache.clearProducts();
+}
+
+
+// =====================================================
+// HPJ PHASE 054 — RADA/JAMIS + FARMER/HPJ MARKET DEAL MVP
+// =====================================================
+
+class HpjSupplyDealSnapshot {
+  final String supplyId;
+  final String farmerId;
+  final String farmName;
+  final String cropName;
+  final String unit;
+  final String productId;
+  final String status;
+  final double confirmedQuantity;
+  final double reserveQuantity;
+  final bool sellToCustomer;
+  final bool sellToWholesale;
+  final double customerQuantity;
+  final double wholesaleQuantity;
+  final double farmerAskPrice;
+  final double hpjOfferPrice;
+  final double agreedPrice;
+  final double customerSellPrice;
+  final double wholesaleSellPrice;
+  final String farmerNote;
+  final String hpjNote;
+  final String marketGuideId;
+  final String marketSource;
+  final String marketPeriod;
+  final double radaFarmgateLow;
+  final double radaFarmgateReference;
+  final double radaFarmgateHigh;
+  final double radaWholesaleReference;
+  final double radaRetailLow;
+  final double radaRetailHigh;
+  final double hpjFarmerMin;
+  final double hpjFarmerMax;
+  final double hpjCustomerMin;
+  final double hpjCustomerMax;
+  final double hpjWholesaleMin;
+  final double hpjWholesaleMax;
+  final double collectionCost;
+  final double handlingCost;
+  final double packagingCost;
+  final double paymentCost;
+  final double spoilageCost;
+  final double customerMarginTarget;
+  final double wholesaleMarginTarget;
+  final DateTime? agreedAt;
+  final DateTime? appliedAt;
+
+  const HpjSupplyDealSnapshot({
+    required this.supplyId,
+    required this.farmerId,
+    required this.farmName,
+    required this.cropName,
+    required this.unit,
+    required this.productId,
+    required this.status,
+    required this.confirmedQuantity,
+    required this.reserveQuantity,
+    required this.sellToCustomer,
+    required this.sellToWholesale,
+    required this.customerQuantity,
+    required this.wholesaleQuantity,
+    required this.farmerAskPrice,
+    required this.hpjOfferPrice,
+    required this.agreedPrice,
+    required this.customerSellPrice,
+    required this.wholesaleSellPrice,
+    required this.farmerNote,
+    required this.hpjNote,
+    required this.marketGuideId,
+    required this.marketSource,
+    required this.marketPeriod,
+    required this.radaFarmgateLow,
+    required this.radaFarmgateReference,
+    required this.radaFarmgateHigh,
+    required this.radaWholesaleReference,
+    required this.radaRetailLow,
+    required this.radaRetailHigh,
+    required this.hpjFarmerMin,
+    required this.hpjFarmerMax,
+    required this.hpjCustomerMin,
+    required this.hpjCustomerMax,
+    required this.hpjWholesaleMin,
+    required this.hpjWholesaleMax,
+    required this.collectionCost,
+    required this.handlingCost,
+    required this.packagingCost,
+    required this.paymentCost,
+    required this.spoilageCost,
+    required this.customerMarginTarget,
+    required this.wholesaleMarginTarget,
+    required this.agreedAt,
+    required this.appliedAt,
+  });
+
+  factory HpjSupplyDealSnapshot.fromRpc(dynamic raw) {
+    final data = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
+
+    double number(String key) {
+      final value = data[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    bool flag(String key) => data[key] == true;
+
+    DateTime? date(String key) {
+      final clean = (data[key] ?? '').toString().trim();
+      return clean.isEmpty ? null : DateTime.tryParse(clean);
+    }
+
+    return HpjSupplyDealSnapshot(
+      supplyId: (data['supply_id'] ?? '').toString().trim(),
+      farmerId: (data['farmer_id'] ?? '').toString().trim(),
+      farmName: (data['farm_name'] ?? '').toString().trim(),
+      cropName: (data['crop_name'] ?? '').toString().trim(),
+      unit: (data['unit'] ?? '').toString().trim(),
+      productId: (data['product_id'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'none').toString().trim().toLowerCase(),
+      confirmedQuantity: number('confirmed_quantity'),
+      reserveQuantity: number('reserve_quantity'),
+      sellToCustomer: flag('sell_to_customer'),
+      sellToWholesale: flag('sell_to_wholesale'),
+      customerQuantity: number('customer_quantity'),
+      wholesaleQuantity: number('wholesale_quantity'),
+      farmerAskPrice: number('farmer_ask_price'),
+      hpjOfferPrice: number('hpj_offer_price'),
+      agreedPrice: number('agreed_price'),
+      customerSellPrice: number('customer_sell_price'),
+      wholesaleSellPrice: number('wholesale_sell_price'),
+      farmerNote: (data['farmer_note'] ?? '').toString().trim(),
+      hpjNote: (data['hpj_note'] ?? '').toString().trim(),
+      marketGuideId: (data['market_guide_id'] ?? '').toString().trim(),
+      marketSource: (data['market_source'] ?? 'RADA/JAMIS').toString().trim(),
+      marketPeriod: (data['market_period'] ?? '').toString().trim(),
+      radaFarmgateLow: number('rada_farmgate_low'),
+      radaFarmgateReference: number('rada_farmgate_reference'),
+      radaFarmgateHigh: number('rada_farmgate_high'),
+      radaWholesaleReference: number('rada_wholesale_reference'),
+      radaRetailLow: number('rada_retail_low'),
+      radaRetailHigh: number('rada_retail_high'),
+      hpjFarmerMin: number('hpj_farmer_min'),
+      hpjFarmerMax: number('hpj_farmer_max'),
+      hpjCustomerMin: number('hpj_customer_min'),
+      hpjCustomerMax: number('hpj_customer_max'),
+      hpjWholesaleMin: number('hpj_wholesale_min'),
+      hpjWholesaleMax: number('hpj_wholesale_max'),
+      collectionCost: number('collection_cost'),
+      handlingCost: number('handling_cost'),
+      packagingCost: number('packaging_cost'),
+      paymentCost: number('payment_cost'),
+      spoilageCost: number('spoilage_cost'),
+      customerMarginTarget: number('customer_margin_target'),
+      wholesaleMarginTarget: number('wholesale_margin_target'),
+      agreedAt: date('agreed_at'),
+      appliedAt: date('applied_at'),
+    );
+  }
+
+  bool get hasDeal => status != 'none' && status.isNotEmpty;
+  bool get hasMarketGuide => marketGuideId.isNotEmpty;
+  bool get isFarmerOffer => status == 'farmer_offer' || status == 'farmer_counter';
+  bool get isHpjCounter => status == 'hpj_counter';
+  bool get isAgreed => status == 'agreed';
+  bool get isApplied => appliedAt != null;
+
+  String get statusLabel {
+    switch (status) {
+      case 'farmer_offer': return 'Farmer offer';
+      case 'farmer_counter': return 'Farmer counter';
+      case 'hpj_counter': return 'HPJ counter';
+      case 'agreed': return isApplied ? 'Agreed & applied' : 'Agreed';
+      case 'declined': return 'Declined';
+      default: return 'No deal yet';
+    }
+  }
+
+  double landedCost(double farmerPrice) =>
+      farmerPrice + collectionCost + handlingCost + packagingCost + paymentCost + spoilageCost;
+
+  double _priceForMargin(double landed, double marginPercent) {
+    if (landed <= 0) return 0;
+    final fraction = marginPercent / 100;
+    if (fraction <= 0 || fraction >= .95) return landed;
+    return landed / (1 - fraction);
+  }
+
+  double recommendedCustomerPrice(double farmerPrice) =>
+      _priceForMargin(landedCost(farmerPrice), customerMarginTarget);
+
+  double recommendedWholesalePrice(double farmerPrice) =>
+      _priceForMargin(landedCost(farmerPrice), wholesaleMarginTarget);
+
+  double grossMarginPercent(double sellPrice, double farmerPrice) {
+    if (sellPrice <= 0) return 0;
+    return ((sellPrice - landedCost(farmerPrice)) / sellPrice) * 100;
+  }
+}
+
+// =====================================================
+// HPJ PHASE 055 — CENTRAL MARKET PRICE GUIDE MVP
+//
+// One RADA/JAMIS guide belongs to a produce + unit combination,
+// not to an individual farmer. Every Farmer/HPJ deal for the same
+// produce + unit can reuse the same weekly market reference.
+// =====================================================
+
+class HpjMarketPriceGuideRow {
+  final String guideId;
+  final String cropName;
+  final String unit;
+  final String marketSource;
+  final String marketPeriod;
+
+  final double radaFarmgateLow;
+  final double radaFarmgateReference;
+  final double radaFarmgateHigh;
+  final double radaWholesaleReference;
+  final double radaRetailLow;
+  final double radaRetailHigh;
+
+  final double hpjFarmerMin;
+  final double hpjFarmerMax;
+  final double hpjCustomerMin;
+  final double hpjCustomerMax;
+  final double hpjWholesaleMin;
+  final double hpjWholesaleMax;
+
+  final double collectionCost;
+  final double handlingCost;
+  final double packagingCost;
+  final double paymentCost;
+  final double spoilageCost;
+
+  final double customerMarginTarget;
+  final double wholesaleMarginTarget;
+
+  final int confirmedSupplyCount;
+  final DateTime? updatedAt;
+
+  const HpjMarketPriceGuideRow({
+    required this.guideId,
+    required this.cropName,
+    required this.unit,
+    required this.marketSource,
+    required this.marketPeriod,
+    required this.radaFarmgateLow,
+    required this.radaFarmgateReference,
+    required this.radaFarmgateHigh,
+    required this.radaWholesaleReference,
+    required this.radaRetailLow,
+    required this.radaRetailHigh,
+    required this.hpjFarmerMin,
+    required this.hpjFarmerMax,
+    required this.hpjCustomerMin,
+    required this.hpjCustomerMax,
+    required this.hpjWholesaleMin,
+    required this.hpjWholesaleMax,
+    required this.collectionCost,
+    required this.handlingCost,
+    required this.packagingCost,
+    required this.paymentCost,
+    required this.spoilageCost,
+    required this.customerMarginTarget,
+    required this.wholesaleMarginTarget,
+    required this.confirmedSupplyCount,
+    required this.updatedAt,
+  });
+
+  factory HpjMarketPriceGuideRow.fromRpc(
+    Map<String, dynamic> data,
+  ) {
+    double number(String key) {
+      final value = data[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    int whole(String key) {
+      final value = data[key];
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    DateTime? date(String key) {
+      final clean = (data[key] ?? '').toString().trim();
+      return clean.isEmpty ? null : DateTime.tryParse(clean);
+    }
+
+    return HpjMarketPriceGuideRow(
+      guideId: (data['guide_id'] ?? '').toString().trim(),
+      cropName: (data['crop_name'] ?? '').toString().trim(),
+      unit: (data['unit'] ?? '').toString().trim(),
+      marketSource:
+          (data['market_source'] ?? 'RADA/JAMIS').toString().trim(),
+      marketPeriod: (data['market_period'] ?? '').toString().trim(),
+      radaFarmgateLow: number('rada_farmgate_low'),
+      radaFarmgateReference: number('rada_farmgate_reference'),
+      radaFarmgateHigh: number('rada_farmgate_high'),
+      radaWholesaleReference: number('rada_wholesale_reference'),
+      radaRetailLow: number('rada_retail_low'),
+      radaRetailHigh: number('rada_retail_high'),
+      hpjFarmerMin: number('hpj_farmer_min'),
+      hpjFarmerMax: number('hpj_farmer_max'),
+      hpjCustomerMin: number('hpj_customer_min'),
+      hpjCustomerMax: number('hpj_customer_max'),
+      hpjWholesaleMin: number('hpj_wholesale_min'),
+      hpjWholesaleMax: number('hpj_wholesale_max'),
+      collectionCost: number('collection_cost'),
+      handlingCost: number('handling_cost'),
+      packagingCost: number('packaging_cost'),
+      paymentCost: number('payment_cost'),
+      spoilageCost: number('spoilage_cost'),
+      customerMarginTarget: number('customer_margin_target'),
+      wholesaleMarginTarget: number('wholesale_margin_target'),
+      confirmedSupplyCount: whole('confirmed_supply_count'),
+      updatedAt: date('updated_at'),
+    );
+  }
+
+  bool get hasGuide => guideId.isNotEmpty;
+
+  bool get hasRadaPrice =>
+      radaFarmgateLow > 0 ||
+      radaFarmgateReference > 0 ||
+      radaFarmgateHigh > 0;
+
+  String get identityKey =>
+      '${cropName.trim().toLowerCase()}|${unit.trim().toLowerCase()}';
+}
+
+Future<List<HpjMarketPriceGuideRow>>
+    fetchHpjAdminMarketPriceGuideRows() async {
+  await requireAdminAccess();
+
+  final response = await supabase.rpc(
+    'hpj_admin_market_price_guide_rows',
+  );
+
+  return (response as List)
+      .map(
+        (row) => HpjMarketPriceGuideRow.fromRpc(
+          Map<String, dynamic>.from(row as Map),
+        ),
+      )
+      .toList();
+}
+
+Future<void> hpjAdminSaveMarketPriceGuideDirect({
+  required String cropName,
+  required String unit,
+  required String marketSource,
+  required String marketPeriod,
+  required double radaFarmgateLow,
+  required double radaFarmgateReference,
+  required double radaFarmgateHigh,
+  required double radaWholesaleReference,
+  required double radaRetailLow,
+  required double radaRetailHigh,
+  required double hpjFarmerMin,
+  required double hpjFarmerMax,
+  required double hpjCustomerMin,
+  required double hpjCustomerMax,
+  required double hpjWholesaleMin,
+  required double hpjWholesaleMax,
+  required double collectionCost,
+  required double handlingCost,
+  required double packagingCost,
+  required double paymentCost,
+  required double spoilageCost,
+  required double customerMarginTarget,
+  required double wholesaleMarginTarget,
+}) async {
+  await requireAdminAccess();
+
+  await supabase.rpc(
+    'hpj_admin_save_market_price_guide_direct',
+    params: <String, dynamic>{
+      'p_crop_name': cropName.trim(),
+      'p_unit': unit.trim(),
+      'p_market_source': marketSource.trim(),
+      'p_market_period': marketPeriod.trim(),
+      'p_rada_farmgate_low': radaFarmgateLow,
+      'p_rada_farmgate_reference': radaFarmgateReference,
+      'p_rada_farmgate_high': radaFarmgateHigh,
+      'p_rada_wholesale_reference': radaWholesaleReference,
+      'p_rada_retail_low': radaRetailLow,
+      'p_rada_retail_high': radaRetailHigh,
+      'p_hpj_farmer_min': hpjFarmerMin,
+      'p_hpj_farmer_max': hpjFarmerMax,
+      'p_hpj_customer_min': hpjCustomerMin,
+      'p_hpj_customer_max': hpjCustomerMax,
+      'p_hpj_wholesale_min': hpjWholesaleMin,
+      'p_hpj_wholesale_max': hpjWholesaleMax,
+      'p_collection_cost': collectionCost,
+      'p_handling_cost': handlingCost,
+      'p_packaging_cost': packagingCost,
+      'p_payment_cost': paymentCost,
+      'p_spoilage_cost': spoilageCost,
+      'p_customer_margin_target': customerMarginTarget,
+      'p_wholesale_margin_target': wholesaleMarginTarget,
+    },
+  );
+}
+
+Future<void> hpjAdminBulkSaveMarketPriceGuides({
+  required String marketSource,
+  required String marketPeriod,
+  required List<Map<String, dynamic>> rows,
+}) async {
+  await requireAdminAccess();
+
+  await supabase.rpc(
+    'hpj_admin_bulk_save_market_price_guides',
+    params: <String, dynamic>{
+      'p_market_source': marketSource.trim(),
+      'p_market_period': marketPeriod.trim(),
+      'p_rows': rows,
+    },
+  );
+}
+
+Future<HpjSupplyDealSnapshot> fetchFarmerSupplyDealSnapshot(String supplyId) async {
+  final response = await supabase.rpc(
+    'farmer_supply_deal_snapshot',
+    params: <String, dynamic>{'p_supply_id': supplyId.trim()},
+  );
+  return HpjSupplyDealSnapshot.fromRpc(response);
+}
+
+Future<HpjSupplyDealSnapshot> fetchHpjAdminSupplyDealSnapshot(String supplyId) async {
+  await requireAdminAccess();
+  final response = await supabase.rpc(
+    'hpj_admin_supply_deal_snapshot',
+    params: <String, dynamic>{'p_supply_id': supplyId.trim()},
+  );
+  return HpjSupplyDealSnapshot.fromRpc(response);
+}
+
+Future<void> farmerSubmitSupplyDealOffer({
+  required String supplyId,
+  required double customerQuantity,
+  required double wholesaleQuantity,
+  required double askingPrice,
+  String note = '',
+}) async {
+  await supabase.rpc(
+    'farmer_submit_supply_deal_offer',
+    params: <String, dynamic>{
+      'p_supply_id': supplyId.trim(),
+      'p_customer_quantity': customerQuantity,
+      'p_wholesale_quantity': wholesaleQuantity,
+      'p_asking_price': askingPrice,
+      'p_note': note.trim(),
+    },
+  );
+}
+
+Future<void> farmerAcceptHpjSupplyDealOffer(String supplyId) async {
+  await supabase.rpc(
+    'farmer_accept_hpj_supply_deal',
+    params: <String, dynamic>{'p_supply_id': supplyId.trim()},
+  );
+}
+
+Future<void> farmerDeclineSupplyDeal(String supplyId) async {
+  await supabase.rpc(
+    'farmer_decline_supply_deal',
+    params: <String, dynamic>{'p_supply_id': supplyId.trim()},
+  );
+}
+
+Future<void> hpjAdminSaveMarketPriceGuide({
+  required String supplyId,
+  required String marketSource,
+  required String marketPeriod,
+  required double radaFarmgateLow,
+  required double radaFarmgateReference,
+  required double radaFarmgateHigh,
+  required double radaWholesaleReference,
+  required double radaRetailLow,
+  required double radaRetailHigh,
+  required double hpjFarmerMin,
+  required double hpjFarmerMax,
+  required double hpjCustomerMin,
+  required double hpjCustomerMax,
+  required double hpjWholesaleMin,
+  required double hpjWholesaleMax,
+  required double collectionCost,
+  required double handlingCost,
+  required double packagingCost,
+  required double paymentCost,
+  required double spoilageCost,
+  required double customerMarginTarget,
+  required double wholesaleMarginTarget,
+}) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_save_market_price_guide',
+    params: <String, dynamic>{
+      'p_supply_id': supplyId.trim(),
+      'p_market_source': marketSource.trim(),
+      'p_market_period': marketPeriod.trim(),
+      'p_rada_farmgate_low': radaFarmgateLow,
+      'p_rada_farmgate_reference': radaFarmgateReference,
+      'p_rada_farmgate_high': radaFarmgateHigh,
+      'p_rada_wholesale_reference': radaWholesaleReference,
+      'p_rada_retail_low': radaRetailLow,
+      'p_rada_retail_high': radaRetailHigh,
+      'p_hpj_farmer_min': hpjFarmerMin,
+      'p_hpj_farmer_max': hpjFarmerMax,
+      'p_hpj_customer_min': hpjCustomerMin,
+      'p_hpj_customer_max': hpjCustomerMax,
+      'p_hpj_wholesale_min': hpjWholesaleMin,
+      'p_hpj_wholesale_max': hpjWholesaleMax,
+      'p_collection_cost': collectionCost,
+      'p_handling_cost': handlingCost,
+      'p_packaging_cost': packagingCost,
+      'p_payment_cost': paymentCost,
+      'p_spoilage_cost': spoilageCost,
+      'p_customer_margin_target': customerMarginTarget,
+      'p_wholesale_margin_target': wholesaleMarginTarget,
+    },
+  );
+}
+
+Future<void> hpjAdminCounterSupplyDeal({
+  required String supplyId,
+  required double offerPrice,
+  required double customerQuantity,
+  required double wholesaleQuantity,
+  required double customerSellPrice,
+  required double wholesaleSellPrice,
+  String note = '',
+}) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_counter_supply_deal',
+    params: <String, dynamic>{
+      'p_supply_id': supplyId.trim(),
+      'p_offer_price': offerPrice,
+      'p_customer_quantity': customerQuantity,
+      'p_wholesale_quantity': wholesaleQuantity,
+      'p_customer_sell_price': customerSellPrice,
+      'p_wholesale_sell_price': wholesaleSellPrice,
+      'p_note': note.trim(),
+    },
+  );
+}
+
+Future<void> hpjAdminAcceptFarmerSupplyDeal({
+  required String supplyId,
+  required double customerSellPrice,
+  required double wholesaleSellPrice,
+  String note = '',
+}) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_accept_farmer_supply_deal',
+    params: <String, dynamic>{
+      'p_supply_id': supplyId.trim(),
+      'p_customer_sell_price': customerSellPrice,
+      'p_wholesale_sell_price': wholesaleSellPrice,
+      'p_note': note.trim(),
+    },
+  );
+}
+
+Future<void> hpjAdminApplySupplyDeal(String supplyId) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_apply_supply_deal',
+    params: <String, dynamic>{'p_supply_id': supplyId.trim()},
+  );
+  FarmDataCache.clearProducts();
+}
+
+Future<void> hpjAdminDeclineSupplyDeal(String supplyId, {String note = ''}) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_decline_supply_deal',
+    params: <String, dynamic>{
+      'p_supply_id': supplyId.trim(),
+      'p_note': note.trim(),
+    },
+  );
+}
+
+// =====================================================
+// HPJ PHASE 047 — FARMER SHOP LISTING REQUESTS
+// Farmer can ask HPJ to publish a crop in the Customer Shop.
+// HPJ still owns price, stock, approval and publishing.
+// =====================================================
+
+class FarmerShopListingRequest {
+  final String id;
+  final String farmerId;
+  final String supplyId;
+  final String existingProductId;
+  final String approvedProductId;
+  final String farmName;
+  final String productName;
+  final String category;
+  final String unit;
+  final String imageUrl;
+  final String description;
+  final String status;
+  final String adminNotes;
+  final bool sellToWholesale;
+  final DateTime? expectedHarvestDate;
+  final DateTime? createdAt;
+  final DateTime? reviewedAt;
+
+  const FarmerShopListingRequest({
+    required this.id,
+    required this.farmerId,
+    required this.supplyId,
+    required this.existingProductId,
+    required this.approvedProductId,
+    required this.farmName,
+    required this.productName,
+    required this.category,
+    required this.unit,
+    required this.imageUrl,
+    required this.description,
+    required this.status,
+    required this.adminNotes,
+    required this.sellToWholesale,
+    this.expectedHarvestDate,
+    this.createdAt,
+    this.reviewedAt,
+  });
+
+  factory FarmerShopListingRequest.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    DateTime? parseDate(dynamic value) {
+      final clean = (value ?? '').toString().trim();
+      return clean.isEmpty ? null : DateTime.tryParse(clean);
+    }
+
+    return FarmerShopListingRequest(
+      id: (data['id'] ?? '').toString().trim(),
+      farmerId: (data['farmer_id'] ?? '').toString().trim(),
+      supplyId: (data['supply_id'] ?? '').toString().trim(),
+      existingProductId:
+          (data['existing_product_id'] ?? '').toString().trim(),
+      approvedProductId:
+          (data['approved_product_id'] ?? '').toString().trim(),
+      farmName: (data['farm_name'] ?? '').toString().trim(),
+      productName: (data['product_name'] ?? '').toString().trim(),
+      category: (data['category'] ?? '').toString().trim(),
+      unit: (data['unit'] ?? '').toString().trim(),
+      imageUrl: (data['image_url'] ?? '').toString().trim(),
+      description: (data['description'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'pending').toString().trim().toLowerCase(),
+      adminNotes: (data['admin_notes'] ?? '').toString().trim(),
+      sellToWholesale: data['sell_to_wholesale'] == true,
+      expectedHarvestDate: parseDate(data['expected_harvest_date']),
+      createdAt: parseDate(data['created_at']),
+      reviewedAt: parseDate(data['reviewed_at']),
+    );
+  }
+
+  String get statusLabel {
+    switch (status) {
+      case 'live':
+        return 'Live in Shop';
+      case 'approved':
+        return 'Approved';
+      case 'needs_changes':
+        return 'Needs changes';
+      case 'rejected':
+        return 'Not approved';
+      default:
+        return 'Pending HPJ Review';
+    }
+  }
+
+  Color get statusColor {
+    switch (status) {
+      case 'live':
+      case 'approved':
+        return FarmColors.success;
+      case 'needs_changes':
+        return FarmColors.warning;
+      case 'rejected':
+        return FarmColors.danger;
+      default:
+        return FarmColors.primary;
+    }
+  }
+
+  bool get isOpen => status == 'pending';
+}
+
+const String _farmerShopListingRequestSelect = '''
+id,
+farmer_id,
+supply_id,
+existing_product_id,
+approved_product_id,
+farm_name,
+product_name,
+category,
+unit,
+image_url,
+description,
+status,
+admin_notes,
+sell_to_wholesale,
+expected_harvest_date,
+created_at,
+reviewed_at
+''';
+
+Future<List<FarmerShopListingRequest>> fetchFarmerShopListingRequests({
+  String? farmerId,
+  bool adminView = false,
+  int limit = 20,
+}) async {
+  if (adminView) {
+    await requireAdminAccess();
+  }
+
+  final cleanFarmerId = farmerId?.trim() ?? '';
+  final safeLimit = limit.clamp(1, 100).toInt();
+
+  final response = adminView
+      ? cleanFarmerId.isEmpty
+          ? await supabase
+              .from('farmer_product_listing_requests')
+              .select(_farmerShopListingRequestSelect)
+              .eq('status', 'pending')
+              .order('created_at', ascending: true)
+              .limit(safeLimit)
+          : await supabase
+              .from('farmer_product_listing_requests')
+              .select(_farmerShopListingRequestSelect)
+              .eq('farmer_id', cleanFarmerId)
+              .eq('status', 'pending')
+              .order('created_at', ascending: true)
+              .limit(safeLimit)
+      : cleanFarmerId.isEmpty
+          ? await supabase
+              .from('farmer_product_listing_requests')
+              .select(_farmerShopListingRequestSelect)
+              .order('created_at', ascending: false)
+              .limit(safeLimit)
+          : await supabase
+              .from('farmer_product_listing_requests')
+              .select(_farmerShopListingRequestSelect)
+              .eq('farmer_id', cleanFarmerId)
+              .order('created_at', ascending: false)
+              .limit(safeLimit);
+
+  return (response as List)
+      .map(
+        (row) => FarmerShopListingRequest.fromSupabase(
+          Map<String, dynamic>.from(row as Map),
+        ),
+      )
+      .toList();
+}
+
+Future<String> createFarmerShopListingRequest({
+  required String supplyId,
+  String? existingProductId,
+  required String productName,
+  required String category,
+  required String unit,
+  String? imageUrl,
+  String? description,
+  required bool sellToWholesale,
+}) async {
+  final cleanSupplyId = supplyId.trim();
+  final cleanName = productName.trim();
+
+  if (cleanSupplyId.isEmpty) {
+    throw Exception('Supply report ID is required.');
+  }
+
+  if (cleanName.isEmpty) {
+    throw Exception('Product name is required.');
+  }
+
+  final result = await supabase.rpc(
+    'farmer_create_shop_listing_request',
+    params: <String, dynamic>{
+      'p_supply_id': cleanSupplyId,
+      'p_existing_product_id':
+          (existingProductId ?? '').trim().isEmpty
+              ? null
+              : existingProductId!.trim(),
+      'p_product_name': cleanName,
+      'p_category': category.trim(),
+      'p_unit': unit.trim(),
+      'p_image_url': cleanHostedImageUrl(imageUrl),
+      'p_description': (description ?? '').trim(),
+      'p_sell_to_wholesale': sellToWholesale,
+    },
+  );
+
+  return result?.toString() ?? '';
+}
+
+
+
+Future<String> createFarmerShopProductRecord({
+  required FarmerShopListingRequest request,
+  required double price,
+  required int stockQuantity,
+}) async {
+  await requireAdminAccess();
+
+  final imageUrl = cleanHostedImageUrl(request.imageUrl);
+  if (imageUrl == null) {
+    throw Exception(
+      'A new Shop product needs a clear product image before publishing.',
+    );
+  }
+
+  final fullPayload = <String, dynamic>{
+    'name': request.productName,
+    'price': price,
+    'stock_quantity': stockQuantity,
+    'is_available': true,
+    'category': normalizeProductCategory(request.category),
+    'is_organic': false,
+    'is_local': true,
+    'harvest_date': todayIsoDate(),
+    'description': request.description.trim().isEmpty
+        ? null
+        : request.description.trim(),
+    'unit': request.unit.trim().isEmpty ? null : request.unit.trim(),
+    'image_url': imageUrl,
+    'original_price': null,
+    'discount_price': null,
+    'discount_percent': null,
+    'discount_label': null,
+    'discount_starts_at': null,
+    'discount_ends_at': null,
+    'is_discount_active': false,
+    'product_status': 'available',
+    'ready_soon': false,
+    'estimated_ready_date': null,
+    'expected_stock_quantity': null,
+    'is_deal_of_day': false,
+    'deal_rank': null,
+    'subscribe_save_enabled': false,
+    'subscribe_save_discount_percent': null,
+    'nutrient_strong': const <String>[],
+    'nutrient_good': const <String>[],
+    'nutrient_contains': const <String>[],
+    'nutrition_verified': false,
+    'serving_size_g': 100,
+  };
+
+  Map<String, dynamic>? inserted;
+
+  try {
+    inserted = await supabase
+        .from('products')
+        .insert(fullPayload)
+        .select('id')
+        .maybeSingle();
+  } catch (error) {
+    final errorText = error.toString().toLowerCase();
+    final compatibilityIssue =
+        errorText.contains('schema cache') ||
+        errorText.contains('pgrst204') ||
+        errorText.contains('column');
+
+    if (!compatibilityIssue) {
+      rethrow;
+    }
+
+    // Match the mature createProduct() compatibility strategy already used
+    // elsewhere in HPJ. Older product schemas may not yet expose every
+    // discount/nutrition/ready-soon field.
+    farmDebugLog(
+      'Phase 048H full Farmer Shop product insert unavailable; '
+      'retrying compatible insert: $error',
+    );
+
+    inserted = await supabase
+        .from('products')
+        .insert(<String, dynamic>{
+          'name': request.productName,
+          'price': price,
+          'stock_quantity': stockQuantity,
+          'is_available': true,
+          'category': normalizeProductCategory(request.category),
+          'is_organic': false,
+          'harvest_date': todayIsoDate(),
+          'description': request.description.trim().isEmpty
+              ? null
+              : request.description.trim(),
+          'unit': request.unit.trim().isEmpty
+              ? null
+              : request.unit.trim(),
+          'image_url': imageUrl,
+        })
+        .select('id')
+        .maybeSingle();
+  }
+
+  final productId =
+      inserted == null ? '' : (inserted['id'] ?? '').toString().trim();
+
+  if (productId.isEmpty) {
+    throw Exception('HPJ created the product but could not read its ID.');
+  }
+
+  return productId;
+}
+
+
+Future<String> adminApproveFarmerShopListingRequest({
+  required FarmerShopListingRequest request,
+  required double price,
+  required int stockQuantity,
+}) async {
+  await requireAdminAccess();
+
+  if (price <= 0) {
+    throw Exception('Enter a valid selling price.');
+  }
+
+  if (stockQuantity <= 0) {
+    throw Exception(
+      'Enter the Customer Shop quantity to publish.',
+    );
+  }
+
+  // Phase 048: Shop stock must come from HPJ-confirmed Farmer Supply.
+  final marketRow =
+      await fetchHpjAdminMarketAllocationForSupply(request.supplyId);
+
+  if (marketRow == null || marketRow.confirmedQuantity <= 0) {
+    throw Exception(
+      'Verify this Farmer Supply in Procurement before publishing it to the Customer Shop.',
+    );
+  }
+
+  final wholesaleFloor =
+      marketRow.wholesaleQuantity > marketRow.wholesaleCommittedQuantity
+          ? marketRow.wholesaleQuantity
+          : marketRow.wholesaleCommittedQuantity;
+
+  final requiredTotal =
+      stockQuantity + wholesaleFloor + marketRow.reserveQuantity;
+
+  if (requiredTotal > marketRow.confirmedQuantity + 0.0001) {
+    final availableForCustomer =
+        marketRow.confirmedQuantity -
+            wholesaleFloor -
+            marketRow.reserveQuantity;
+
+    throw Exception(
+      'Only ${availableForCustomer <= 0 ? '0' : availableForCustomer.toStringAsFixed(availableForCustomer == availableForCustomer.roundToDouble() ? 0 : 1)} ${marketRow.unit} remains for the Customer Shop after Wholesale and Reserve allocations.',
+    );
+  }
+
+  String productId = request.existingProductId.trim();
+
+  if (productId.isNotEmpty) {
+    final existing = await fetchProductById(productId);
+
+    if (existing == null) {
+      throw Exception('The linked HPJ product could not be found.');
+    }
+
+    await updateProductDetails(
+      productId: existing.id,
+      name: request.productName,
+      price: price,
+      stockQuantity: stockQuantity,
+      isAvailable: true,
+      category: request.category.trim().isEmpty
+          ? existing.category
+          : request.category,
+      isOrganic: existing.isOrganic,
+      isLocal: existing.isLocal,
+      description: request.description.trim().isEmpty
+          ? existing.description
+          : request.description,
+      unit: request.unit.trim().isEmpty
+          ? existing.unit
+          : request.unit,
+      imageUrl:
+          cleanHostedImageUrl(request.imageUrl) ?? existing.imageUrl,
+      productStatus: 'available',
+      readySoon: false,
+      isDiscountActive: existing.isDiscountActive,
+      originalPrice: existing.originalPrice,
+      discountPrice: existing.discountPrice,
+      discountPercent: existing.discountPercent,
+      discountLabel: existing.discountLabel,
+      subscribeSaveEnabled: existing.subscribeSaveEnabled,
+      subscribeSaveDiscountPercent:
+          existing.subscribeSaveDiscountPercent,
+    );
+
+    await updateAdminProductSupplier(
+      productId: existing.id,
+      farmerId: request.farmerId,
+    );
+
+    productId = existing.id;
+  } else {
+    // Phase 048H:
+    // Use HPJ's compatibility-safe product creation path instead of one
+    // brittle all-columns insert. This is important for databases where
+    // some newer Product columns have not yet reached the schema cache.
+    productId = await createFarmerShopProductRecord(
+      request: request,
+      price: price,
+      stockQuantity: stockQuantity,
+    );
+
+    await updateProductApproval(productId, 'approved');
+
+    await updateAdminProductSupplier(
+      productId: productId,
+      farmerId: request.farmerId,
+    );
+  }
+
+  await saveHpjAdminMarketAllocation(
+    supplyId: request.supplyId,
+    productId: productId,
+    customerQuantity: stockQuantity.toDouble(),
+    wholesaleQuantity: wholesaleFloor,
+    reserveQuantity: marketRow.reserveQuantity,
+    notes: 'Seeded from Farmer Shop listing approval.',
+  );
+
+  await supabase.rpc(
+    'hpj_admin_complete_farmer_shop_listing_request',
+    params: <String, dynamic>{
+      'p_request_id': request.id,
+      'p_product_id': productId,
+    },
+  );
+
+  FarmDataCache.clearProducts();
+  return productId;
+}
+
+
+Future<void> adminReviewFarmerShopListingRequest({
+  required String requestId,
+  required String status,
+  String? adminNotes,
+}) async {
+  await requireAdminAccess();
+
+  await supabase.rpc(
+    'hpj_admin_review_farmer_shop_listing_request',
+    params: <String, dynamic>{
+      'p_request_id': requestId.trim(),
+      'p_status': status.trim().toLowerCase(),
+      'p_admin_notes': (adminNotes ?? '').trim(),
+    },
+  );
+}
+
+class _FarmerShopListingRequestSummary extends StatelessWidget {
+  final String farmerId;
+  final int refreshKey;
+
+  const _FarmerShopListingRequestSummary({
+    required this.farmerId,
+    required this.refreshKey,
+  });
+
+  String _date(DateTime? value) {
+    if (value == null) return '';
+    return '${value.day}/${value.month}/${value.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<FarmerShopListingRequest>>(
+      key: ValueKey('farmer-shop-listing-$farmerId-$refreshKey'),
+      future: fetchFarmerShopListingRequests(
+        farmerId: farmerId,
+        limit: 6,
+      ),
+      builder: (context, snapshot) {
+        final requests =
+            snapshot.data ?? const <FarmerShopListingRequest>[];
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            requests.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        if (requests.isEmpty) return const SizedBox.shrink();
+
+        final visible = requests.take(3).toList(growable: false);
+
+        return FarmCard(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(
+                    Icons.storefront_outlined,
+                    color: FarmColors.primary,
+                    size: 19,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Shop listing requests',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 13.2,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              const Text(
+                'HPJ reviews price, stock, image and publishing before a product goes live.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 9.4,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 9),
+              for (var i = 0; i < visible.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: visible[i].statusColor.withOpacity(.09),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          visible[i].status == 'live'
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.inventory_2_outlined,
+                          color: visible[i].statusColor,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              visible[i].productName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 11.2,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              visible[i].adminNotes.isNotEmpty
+                                  ? visible[i].adminNotes
+                                  : [
+                                      visible[i].statusLabel,
+                                      if (visible[i].expectedHarvestDate != null)
+                                        'Expected ${_date(visible[i].expectedHarvestDate)}',
+                                    ].join(' • '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 8.9,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      HpjMvpStatusPill(
+                        label: visible[i].statusLabel,
+                        color: visible[i].statusColor,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AdminFarmerShopListingRequestsPanel extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onProductChanged;
+
+  const _AdminFarmerShopListingRequestsPanel({
+    required this.refreshKey,
+    required this.onProductChanged,
+  });
+
+  @override
+  State<_AdminFarmerShopListingRequestsPanel> createState() =>
+      _AdminFarmerShopListingRequestsPanelState();
+}
+
+class _AdminFarmerShopListingRequestsPanelState
+    extends State<_AdminFarmerShopListingRequestsPanel> {
+  int localRefreshKey = 0;
+
+  void _refresh() {
+    if (!mounted) return;
+    setState(() => localRefreshKey++);
+  }
+
+  Future<void> _review(FarmerShopListingRequest request) async {
+    final priceController = TextEditingController();
+    final stockController = TextEditingController(text: '0');
+    final noteController =
+        TextEditingController(text: request.adminNotes);
+    final verifyQuantityController = TextEditingController();
+
+    var saving = false;
+    var verifying = false;
+    HpjMarketAllocationRow? marketRow;
+    FarmerSupplyForecast? sourceSupply;
+    String supplyLoadError = '';
+
+    String number(double value) {
+      return value == value.roundToDouble()
+          ? value.toInt().toString()
+          : value.toStringAsFixed(1);
+    }
+
+    double reportedQuantity(FarmerSupplyForecast? supply) {
+      if (supply == null) return 0;
+      return supply.harvestedQuantity ??
+          supply.expectedQuantity ??
+          supply.quantityGrowing ??
+          0;
+    }
+
+    Future<void> loadSupplyState() async {
+      try {
+        marketRow = await fetchHpjAdminMarketAllocationForSupply(
+          request.supplyId,
+        );
+
+        final allSupplies = await fetchAdminFarmerSupplyForecasts();
+        FarmerSupplyForecast? match;
+
+        for (final supply in allSupplies) {
+          if (supply.id == request.supplyId) {
+            match = supply;
+            break;
+          }
+        }
+
+        sourceSupply = match;
+        supplyLoadError = '';
+
+        final reported = reportedQuantity(sourceSupply);
+        if (verifyQuantityController.text.trim().isEmpty &&
+            reported > 0) {
+          verifyQuantityController.text = number(reported);
+        }
+      } catch (error) {
+        supplyLoadError = friendlyAppError(error);
+      }
+    }
+
+    await loadSupplyState();
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: !saving && !verifying,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              final isVerified =
+                  marketRow != null && marketRow!.confirmedQuantity > 0;
+
+              Future<void> verifySupplyHere() async {
+                if (saving || verifying || isVerified) return;
+
+                if (sourceSupply == null) {
+                  setDialogState(() => verifying = true);
+                  await loadSupplyState();
+
+                  if (!dialogContext.mounted) return;
+                  setDialogState(() => verifying = false);
+
+                  if (sourceSupply == null) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          supplyLoadError.isEmpty
+                              ? 'This Farmer Supply could not be loaded for verification.'
+                              : supplyLoadError,
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                }
+
+                final reported = reportedQuantity(sourceSupply);
+                final confirmed = double.tryParse(
+                  verifyQuantityController.text
+                      .trim()
+                      .replaceAll(',', ''),
+                );
+
+                if (confirmed == null || confirmed <= 0) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Enter the quantity HPJ is confirming before publishing.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (reported > 0 && confirmed > reported + 0.0001) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'HPJ confirmed quantity cannot exceed the farmer-reported '
+                        '${number(reported)} ${request.unit}.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                setDialogState(() => verifying = true);
+
+                try {
+                  await adminConfirmFarmerSupplyForecast(
+                    supply: sourceSupply!,
+                    confirmedQuantity: confirmed,
+                  );
+
+                  final refreshed =
+                      await fetchHpjAdminMarketAllocationForSupply(
+                    request.supplyId,
+                  );
+
+                  if (!dialogContext.mounted) return;
+
+                  setDialogState(() {
+                    marketRow = refreshed;
+                    verifying = false;
+                  });
+
+                  if (marketRow == null ||
+                      marketRow!.confirmedQuantity <= 0) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Supply was verified, but the allocation row is not ready yet. Refresh and try again.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  _refresh();
+
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${request.productName} supply verified at '
+                        '${number(marketRow!.confirmedQuantity)} ${marketRow!.unit}. '
+                        'You can now approve and publish.',
+                      ),
+                    ),
+                  );
+                } catch (error) {
+                  farmDebugLog(
+                    'Phase 055B inline Farmer Shop verification failed: $error',
+                  );
+
+                  if (!dialogContext.mounted) return;
+
+                  setDialogState(() => verifying = false);
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(friendlyAppError(error))),
+                  );
+                }
+              }
+
+              Future<void> setReviewStatus(String status) async {
+                if (saving || verifying) return;
+
+                setDialogState(() => saving = true);
+
+                try {
+                  await adminReviewFarmerShopListingRequest(
+                    requestId: request.id,
+                    status: status,
+                    adminNotes: noteController.text,
+                  );
+
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+
+                  _refresh();
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          status == 'needs_changes'
+                              ? 'Sent back to the farmer for changes.'
+                              : 'Listing request rejected.',
+                        ),
+                      ),
+                    );
+                  }
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    setDialogState(() => saving = false);
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text(friendlyAppError(error))),
+                    );
+                  }
+                }
+              }
+
+              Future<void> approveAndPublish() async {
+                if (saving || verifying) return;
+
+                if (!isVerified) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Verify this Farmer Supply in the verification section first.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                final price =
+                    double.tryParse(priceController.text.trim());
+                final stock =
+                    int.tryParse(stockController.text.trim());
+
+                if (price == null || price <= 0) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Enter the HPJ customer selling price.'),
+                    ),
+                  );
+                  return;
+                }
+
+                if (stock == null || stock <= 0) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Confirm stock greater than zero before publishing.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (request.existingProductId.isEmpty &&
+                    cleanHostedImageUrl(request.imageUrl) == null) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'A new Shop product needs a clear product image. '
+                        'Choose Needs Changes and ask the farmer to upload one.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                setDialogState(() => saving = true);
+
+                try {
+                  final productId =
+                      await adminApproveFarmerShopListingRequest(
+                    request: request,
+                    price: price,
+                    stockQuantity: stock,
+                  );
+
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+
+                  _refresh();
+                  widget.onProductChanged();
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          productId.trim().isEmpty
+                              ? 'Farmer product approved and published.'
+                              : 'Published ${request.productName} in the Customer Shop.',
+                        ),
+                      ),
+                    );
+                  }
+                } catch (error) {
+                  farmDebugLog(
+                    'Phase 055B Farmer Shop Approve & Publish failed: $error',
+                  );
+
+                  if (dialogContext.mounted) {
+                    setDialogState(() => saving = false);
+
+                    final friendly = friendlyAppError(error);
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          friendly.toLowerCase().contains(
+                                    'something went wrong',
+                                  )
+                              ? 'Publish failed. Check FlutLab Output for the exact Supabase error.'
+                              : friendly,
+                        ),
+                      ),
+                    );
+                  }
+                }
+              }
+
+              final imageUrl = cleanHostedImageUrl(request.imageUrl);
+              final reported = reportedQuantity(sourceSupply);
+              final confirmed = marketRow?.confirmedQuantity ?? 0;
+              final supplyUnit = (marketRow?.unit ?? request.unit).trim();
+
+              return AlertDialog(
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 18,
+                ),
+                title: const Text('Farmer Shop Listing'),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (imageUrl != null) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.network(
+                              imageUrl,
+                              width: double.infinity,
+                              height: 155,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const SizedBox(
+                                height: 90,
+                                child: Center(
+                                  child: Icon(
+                                    Icons.image_not_supported_outlined,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Text(
+                          request.productName,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          request.farmName.isEmpty
+                              ? 'Approved HPJ Farmer'
+                              : request.farmName,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 7,
+                          children: [
+                            HpjMvpStatusPill(
+                              label: request.statusLabel,
+                              color: request.statusColor,
+                            ),
+                            HpjMvpStatusPill(
+                              label: request.existingProductId.isEmpty
+                                  ? 'New Shop product'
+                                  : 'Existing product',
+                              color: request.existingProductId.isEmpty
+                                  ? FarmColors.primary
+                                  : FarmColors.success,
+                            ),
+                            if (request.sellToWholesale)
+                              const HpjMvpStatusPill(
+                                label: 'Wholesale too',
+                                color: FarmColors.primary,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          [
+                            request.category,
+                            request.unit,
+                            if (request.expectedHarvestDate != null)
+                              'Expected ${request.expectedHarvestDate!.day}/${request.expectedHarvestDate!.month}/${request.expectedHarvestDate!.year}',
+                          ].where((item) => item.trim().isNotEmpty).join(' • '),
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 10,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (request.description.isNotEmpty) ...[
+                          const SizedBox(height: 9),
+                          Text(
+                            request.description,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 10.5,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isVerified
+                                ? FarmColors.success.withOpacity(.08)
+                                : const Color(0xFFFFF7E8),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isVerified
+                                  ? FarmColors.success.withOpacity(.20)
+                                  : FarmColors.warning.withOpacity(.28),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    isVerified
+                                        ? Icons.verified_outlined
+                                        : Icons.fact_check_outlined,
+                                    color: isVerified
+                                        ? FarmColors.success
+                                        : FarmColors.warning,
+                                    size: 19,
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Expanded(
+                                    child: Text(
+                                      isVerified
+                                          ? 'Farmer Supply verified'
+                                          : 'Verify Farmer Supply before publishing',
+                                      style: TextStyle(
+                                        color: isVerified
+                                            ? FarmColors.success
+                                            : FarmColors.ink,
+                                        fontSize: 11.2,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              if (isVerified)
+                                Text(
+                                  'HPJ confirmed ${number(confirmed)} '
+                                  '${supplyUnit.isEmpty ? request.unit : supplyUnit}. '
+                                  'Customer allocation must fit inside confirmed supply after Wholesale and Reserve.',
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 9.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                )
+                              else ...[
+                                Text(
+                                  reported > 0
+                                      ? 'Farmer reported ${number(reported)} ${request.unit}. Confirm what HPJ is prepared to stand behind.'
+                                      : 'Enter the quantity HPJ has verified for this Farmer Supply.',
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 9.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 9),
+                                TextField(
+                                  controller: verifyQuantityController,
+                                  enabled: !saving && !verifying,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: 'HPJ verified supply',
+                                    suffixText: request.unit.isEmpty
+                                        ? null
+                                        : request.unit,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: saving || verifying
+                                        ? null
+                                        : verifySupplyHere,
+                                    icon: const Icon(
+                                      Icons.verified_outlined,
+                                      size: 17,
+                                    ),
+                                    label: Text(
+                                      verifying
+                                          ? 'Verifying...'
+                                          : 'Verify Supply Here',
+                                    ),
+                                  ),
+                                ),
+                                if (supplyLoadError.isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    supplyLoadError,
+                                    style: const TextStyle(
+                                      color: FarmColors.danger,
+                                      fontSize: 8.8,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: priceController,
+                          enabled: !saving && !verifying,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'HPJ customer price',
+                            prefixText: 'J\$ ',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: stockController,
+                          enabled: !saving && !verifying,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText:
+                                'Initial Customer allocation (${request.unit.isEmpty ? 'units' : request.unit})',
+                            helperText: isVerified
+                                ? 'Must fit inside HPJ-confirmed Farmer Supply.'
+                                : 'Verify Farmer Supply above before publishing.',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: noteController,
+                          enabled: !saving && !verifying,
+                          minLines: 2,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Review note',
+                            hintText:
+                                'Use this when the farmer needs to change something.',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Approve & Publish creates or activates the farmer-linked HPJ product, '
+                          'then assigns the approved quantity to the Customer Marketplace. '
+                          'Supply verification stays mandatory, but you can now complete it in this same review.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.2,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: saving || verifying
+                        ? null
+                        : () => setReviewStatus('rejected'),
+                    child: const Text('Reject'),
+                  ),
+                  OutlinedButton(
+                    onPressed: saving || verifying
+                        ? null
+                        : () => setReviewStatus('needs_changes'),
+                    child: const Text('Needs Changes'),
+                  ),
+                  ElevatedButton(
+                    onPressed: saving || verifying || !isVerified
+                        ? null
+                        : approveAndPublish,
+                    child: Text(
+                      saving
+                          ? 'Saving...'
+                          : isVerified
+                              ? 'Approve & Publish'
+                              : 'Verify Supply First',
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      priceController.dispose();
+      stockController.dispose();
+      noteController.dispose();
+      verifyQuantityController.dispose();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<FarmerShopListingRequest>>(
+      key: ValueKey(
+        'admin-farmer-shop-requests-${widget.refreshKey}-$localRefreshKey',
+      ),
+      future: fetchFarmerShopListingRequests(
+        adminView: true,
+        limit: 30,
+      ),
+      builder: (context, snapshot) {
+        final requests =
+            snapshot.data ?? const <FarmerShopListingRequest>[];
+
+        final open = requests
+            .where((request) => request.isOpen)
+            .toList(growable: false);
+
+        final loading =
+            snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData;
+
+        final error = snapshot.error;
+
+        final visible = open.take(5).toList(growable: false);
+
+        return FarmCard(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.storefront_outlined,
+                    color: FarmColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Farmer Shop requests',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Approve farmer products before they go live in the Customer Shop.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.3,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  HpjMvpStatusPill(
+                    label: loading
+                        ? 'Loading'
+                        : error != null
+                            ? 'Check setup'
+                            : '${open.length} waiting',
+                    color: error != null
+                        ? FarmColors.danger
+                        : open.isNotEmpty
+                            ? FarmColors.warning
+                            : FarmColors.success,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 9),
+
+              if (loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Checking for Farmer Shop listing requests...',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (error != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: FarmColors.danger.withOpacity(.06),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: FarmColors.danger.withOpacity(.18),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: FarmColors.danger,
+                            size: 20,
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Farmer Shop Requests could not load.',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Make sure the Phase 047 Farmer Shop Listing SQL is installed. '
+                        'If you have already run it, refresh the Supabase schema cache and try again.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 9.6,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _refresh,
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            size: 17,
+                          ),
+                          label: const Text('Try Again'),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (open.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7FAF5),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: FarmColors.line.withOpacity(.75),
+                    ),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.task_alt_rounded,
+                        color: FarmColors.success,
+                        size: 20,
+                      ),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'No product requests waiting for approval',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 10.8,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 3),
+                            Text(
+                              'A request appears here after a farmer opens Supply, chooses Customer Marketplace, and taps Request Shop Listing.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 9.4,
+                                height: 1.35,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                for (var i = 0; i < visible.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  HpjMvpListRow(
+                    icon: Icons.inventory_2_outlined,
+                    title: visible[i].productName,
+                    subtitle: [
+                      visible[i].farmName,
+                      visible[i].statusLabel,
+                      if (visible[i].unit.isNotEmpty) visible[i].unit,
+                    ].where((item) => item.trim().isNotEmpty).join(' • '),
+                    iconColor: visible[i].statusColor,
+                    trailing: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Approve',
+                          style: TextStyle(
+                            color: FarmColors.primary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(width: 2),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: FarmColors.primary,
+                          size: 17,
+                        ),
+                      ],
+                    ),
+                    onTap: () => _review(visible[i]),
+                  ),
+                ],
+                if (open.length > visible.length) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      '${open.length - visible.length} more request(s) waiting. '
+                      'Use Refresh after completing the visible requests.',
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.2,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+class _AdminMarketPriceGuidePanel extends StatefulWidget {
+  final int refreshKey;
+
+  const _AdminMarketPriceGuidePanel({
+    required this.refreshKey,
+  });
+
+  @override
+  State<_AdminMarketPriceGuidePanel> createState() =>
+      _AdminMarketPriceGuidePanelState();
+}
+
+class _AdminMarketPriceGuidePanelState
+    extends State<_AdminMarketPriceGuidePanel> {
+  int localRefreshKey = 0;
+
+  String _money(double value) {
+    if (value <= 0) return 'Not set';
+    return formatJmd(value);
+  }
+
+  Future<void> _openManager() async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _AdminMarketPriceGuideManagerSheet(),
+    );
+
+    if (changed == true && mounted) {
+      setState(() => localRefreshKey++);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<HpjMarketPriceGuideRow>>(
+      key: ValueKey(
+        'phase055-market-guide-${widget.refreshKey}-$localRefreshKey',
+      ),
+      future: fetchHpjAdminMarketPriceGuideRows(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const FarmCard(
+            padding: EdgeInsets.all(14),
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return FarmCard(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.price_change_outlined,
+                      color: FarmColors.warning,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Market Price Guide',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                const Text(
+                  'Run the Phase 055 SQL to manage RADA/JAMIS prices centrally.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.7,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  friendlyAppError(snapshot.error!),
+                  style: const TextStyle(
+                    color: FarmColors.danger,
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final rows =
+            snapshot.data ?? const <HpjMarketPriceGuideRow>[];
+
+        final priced = rows.where((row) => row.hasRadaPrice).length;
+        final missing = rows.length - priced;
+        final withConfirmedSupply =
+            rows.where((row) => row.confirmedSupplyCount > 0).length;
+
+        final visible = rows.take(3).toList(growable: false);
+
+        return FarmCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: FarmColors.primary.withOpacity(.10),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.price_change_outlined,
+                      color: FarmColors.primary,
+                      size: 21,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Market Price Guide',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Enter RADA/JAMIS once per produce + unit. '
+                          'Every farmer deal for that produce reuses the same guide.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.3,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  HpjMvpStatusPill(
+                    label: '$priced priced',
+                    color: FarmColors.success,
+                  ),
+                  HpjMvpStatusPill(
+                    label: '$missing need prices',
+                    color: missing > 0
+                        ? FarmColors.warning
+                        : FarmColors.success,
+                  ),
+                  HpjMvpStatusPill(
+                    label: '$withConfirmedSupply with confirmed supply',
+                    color: FarmColors.primary,
+                  ),
+                ],
+              ),
+              if (visible.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                const SizedBox(height: 6),
+                for (final row in visible)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Row(
+                      children: [
+                        HpjProductThumb(
+                          productName: row.cropName,
+                          size: 32,
+                          radius: 8,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${row.cropName} • ${row.unit}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 10.7,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                row.hasRadaPrice
+                                    ? 'Farmgate ref ${_money(row.radaFarmgateReference)}'
+                                    : 'RADA/JAMIS price not entered',
+                                style: TextStyle(
+                                  color: row.hasRadaPrice
+                                      ? FarmColors.mutedText
+                                      : FarmColors.warning,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (row.marketPeriod.isNotEmpty)
+                          Flexible(
+                            child: Text(
+                              row.marketPeriod,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _openManager,
+                  icon: const Icon(
+                    Icons.table_rows_outlined,
+                    size: 17,
+                  ),
+                  label: const Text(
+                    'Manage & Bulk Update Prices',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+class _AdminMarketPriceGuideManagerSheet extends StatefulWidget {
+  const _AdminMarketPriceGuideManagerSheet();
+
+  @override
+  State<_AdminMarketPriceGuideManagerSheet> createState() =>
+      _AdminMarketPriceGuideManagerSheetState();
+}
+
+class _AdminMarketPriceGuideManagerSheetState
+    extends State<_AdminMarketPriceGuideManagerSheet> {
+  final searchController = TextEditingController();
+  late Future<List<HpjMarketPriceGuideRow>> future;
+  String query = '';
+  bool changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    future = fetchHpjAdminMarketPriceGuideRows();
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
+
+  void _reload() {
+    setState(() {
+      future = fetchHpjAdminMarketPriceGuideRows();
+    });
+  }
+
+  String _money(double value) {
+    if (value <= 0) return '—';
+    return formatJmd(value);
+  }
+
+  Future<void> _edit(HpjMarketPriceGuideRow row) async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AdminMarketPriceGuideEditSheet(
+        row: row,
+      ),
+    );
+
+    if (saved == true && mounted) {
+      changed = true;
+      _reload();
+    }
+  }
+
+  Future<void> _bulk(
+    List<HpjMarketPriceGuideRow> rows,
+  ) async {
+    if (rows.isEmpty) return;
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AdminMarketPriceGuideBulkSheet(
+        rows: rows,
+      ),
+    );
+
+    if (saved == true && mounted) {
+      changed = true;
+      _reload();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: MediaQuery.of(context).size.height * .94,
+        decoration: const BoxDecoration(
+          color: FarmColors.card,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(28),
+          ),
+        ),
+        child: FutureBuilder<List<HpjMarketPriceGuideRow>>(
+          future: future,
+          builder: (context, snapshot) {
+            final rows =
+                snapshot.data ?? const <HpjMarketPriceGuideRow>[];
+
+            final cleanQuery = query.trim().toLowerCase();
+
+            final filtered = rows.where((row) {
+              if (cleanQuery.isEmpty) return true;
+
+              return row.cropName.toLowerCase().contains(cleanQuery) ||
+                  row.unit.toLowerCase().contains(cleanQuery) ||
+                  row.marketPeriod.toLowerCase().contains(cleanQuery);
+            }).toList();
+
+            final priced =
+                rows.where((row) => row.hasRadaPrice).length;
+            final missing = rows.length - priced;
+
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    16,
+                    10,
+                    10,
+                    10,
+                  ),
+                  child: Column(
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: FarmColors.line,
+                            borderRadius:
+                                BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 13),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.price_change_outlined,
+                            color: FarmColors.deepGreen,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Market Price Guide',
+                                  style: TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 18,
+                                    fontWeight:
+                                        FontWeight.w900,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'One guide per produce + unit — reused across farmers.',
+                                  style: TextStyle(
+                                    color:
+                                        FarmColors.mutedText,
+                                    fontSize: 9.5,
+                                    fontWeight:
+                                        FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Close',
+                            onPressed: () =>
+                                Navigator.of(context).pop(changed),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          HpjMvpStatusPill(
+                            label: '$priced priced',
+                            color: FarmColors.success,
+                          ),
+                          HpjMvpStatusPill(
+                            label: '$missing need prices',
+                            color: missing > 0
+                                ? FarmColors.warning
+                                : FarmColors.success,
+                          ),
+                          HpjMvpStatusPill(
+                            label: '${rows.length} produce + unit guides',
+                            color: FarmColors.primary,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: searchController,
+                        onChanged: (value) {
+                          setState(() => query = value);
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search produce or unit...',
+                          prefixIcon:
+                              const Icon(Icons.search_rounded),
+                          suffixIcon: query.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    searchController.clear();
+                                    setState(() => query = '');
+                                  },
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: snapshot.connectionState ==
+                              ConnectionState.waiting &&
+                          !snapshot.hasData
+                      ? const Center(
+                          child: CircularProgressIndicator(),
+                        )
+                      : snapshot.hasError
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(20),
+                                child: Text(
+                                  friendlyAppError(
+                                    snapshot.error!,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            )
+                          : filtered.isEmpty
+                              ? const Center(
+                                  child: FarmEmptyState(
+                                    icon: Icons.search_off_rounded,
+                                    title: 'No price guides found',
+                                    message:
+                                        'Try another search or verify Farmer Supply to add more produce.',
+                                  ),
+                                )
+                              : ListView.separated(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(
+                                    14,
+                                    8,
+                                    14,
+                                    110,
+                                  ),
+                                  itemCount: filtered.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (_, index) {
+                                    final row = filtered[index];
+
+                                    final marketRange =
+                                        row.hasRadaPrice
+                                            ? '${_money(row.radaFarmgateLow)} – '
+                                                '${_money(row.radaFarmgateHigh)}'
+                                            : 'Not set';
+
+                                    return ListTile(
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 3,
+                                      ),
+                                      leading: HpjProductThumb(
+                                        productName: row.cropName,
+                                        size: 40,
+                                        radius: 9,
+                                      ),
+                                      title: Text(
+                                        '${row.cropName} • ${row.unit}',
+                                        style: const TextStyle(
+                                          color: FarmColors.ink,
+                                          fontWeight:
+                                              FontWeight.w900,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        [
+                                          'Farmgate $marketRange',
+                                          if (row.radaFarmgateReference > 0)
+                                            'Ref ${_money(row.radaFarmgateReference)}',
+                                          if (row.marketPeriod.isNotEmpty)
+                                            row.marketPeriod,
+                                          if (row.confirmedSupplyCount > 0)
+                                            '${row.confirmedSupplyCount} confirmed supply record${row.confirmedSupplyCount == 1 ? '' : 's'}',
+                                        ].join(' • '),
+                                        maxLines: 3,
+                                        overflow:
+                                            TextOverflow.ellipsis,
+                                      ),
+                                      trailing: Text(
+                                        row.hasGuide ? 'Edit' : 'Add',
+                                        style: TextStyle(
+                                          color: row.hasGuide
+                                              ? FarmColors.primary
+                                              : FarmColors.warning,
+                                          fontSize: 10,
+                                          fontWeight:
+                                              FontWeight.w900,
+                                        ),
+                                      ),
+                                      onTap: () => _edit(row),
+                                    );
+                                  },
+                                ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(
+                      14,
+                      9,
+                      14,
+                      12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: FarmColors.card,
+                      border: Border(
+                        top: BorderSide(
+                          color:
+                              FarmColors.line.withOpacity(.75),
+                        ),
+                      ),
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            rows.isEmpty ? null : () => _bulk(rows),
+                        icon: const Icon(
+                          Icons.edit_calendar_outlined,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'Weekly Bulk Update',
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+
+class _AdminMarketPriceGuideEditSheet extends StatefulWidget {
+  final HpjMarketPriceGuideRow row;
+
+  const _AdminMarketPriceGuideEditSheet({
+    required this.row,
+  });
+
+  @override
+  State<_AdminMarketPriceGuideEditSheet> createState() =>
+      _AdminMarketPriceGuideEditSheetState();
+}
+
+class _AdminMarketPriceGuideEditSheetState
+    extends State<_AdminMarketPriceGuideEditSheet> {
+  late final TextEditingController sourceController;
+  late final TextEditingController periodController;
+
+  late final TextEditingController farmLowController;
+  late final TextEditingController farmRefController;
+  late final TextEditingController farmHighController;
+  late final TextEditingController wholesaleRefController;
+  late final TextEditingController retailLowController;
+  late final TextEditingController retailHighController;
+
+  late final TextEditingController farmerMinController;
+  late final TextEditingController farmerMaxController;
+  late final TextEditingController customerMinController;
+  late final TextEditingController customerMaxController;
+  late final TextEditingController wholesaleMinController;
+  late final TextEditingController wholesaleMaxController;
+
+  late final TextEditingController collectionController;
+  late final TextEditingController handlingController;
+  late final TextEditingController packagingController;
+  late final TextEditingController paymentController;
+  late final TextEditingController spoilageController;
+
+  late final TextEditingController customerMarginController;
+  late final TextEditingController wholesaleMarginController;
+
+  bool saving = false;
+
+  HpjMarketPriceGuideRow get row => widget.row;
+
+  String _number(double value) {
+    if (value <= 0) return '';
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(2);
+  }
+
+  double _value(TextEditingController controller) {
+    return double.tryParse(
+          controller.text.trim().replaceAll(',', ''),
+        ) ??
+        0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    sourceController = TextEditingController(
+      text: row.marketSource.isEmpty
+          ? 'RADA/JAMIS'
+          : row.marketSource,
+    );
+    periodController = TextEditingController(
+      text: row.marketPeriod,
+    );
+
+    farmLowController =
+        TextEditingController(text: _number(row.radaFarmgateLow));
+    farmRefController = TextEditingController(
+      text: _number(row.radaFarmgateReference),
+    );
+    farmHighController =
+        TextEditingController(text: _number(row.radaFarmgateHigh));
+    wholesaleRefController = TextEditingController(
+      text: _number(row.radaWholesaleReference),
+    );
+    retailLowController =
+        TextEditingController(text: _number(row.radaRetailLow));
+    retailHighController =
+        TextEditingController(text: _number(row.radaRetailHigh));
+
+    farmerMinController =
+        TextEditingController(text: _number(row.hpjFarmerMin));
+    farmerMaxController =
+        TextEditingController(text: _number(row.hpjFarmerMax));
+    customerMinController =
+        TextEditingController(text: _number(row.hpjCustomerMin));
+    customerMaxController =
+        TextEditingController(text: _number(row.hpjCustomerMax));
+    wholesaleMinController =
+        TextEditingController(text: _number(row.hpjWholesaleMin));
+    wholesaleMaxController =
+        TextEditingController(text: _number(row.hpjWholesaleMax));
+
+    collectionController =
+        TextEditingController(text: _number(row.collectionCost));
+    handlingController =
+        TextEditingController(text: _number(row.handlingCost));
+    packagingController =
+        TextEditingController(text: _number(row.packagingCost));
+    paymentController =
+        TextEditingController(text: _number(row.paymentCost));
+    spoilageController =
+        TextEditingController(text: _number(row.spoilageCost));
+
+    customerMarginController = TextEditingController(
+      text: row.customerMarginTarget > 0
+          ? _number(row.customerMarginTarget)
+          : '25',
+    );
+    wholesaleMarginController = TextEditingController(
+      text: row.wholesaleMarginTarget > 0
+          ? _number(row.wholesaleMarginTarget)
+          : '15',
+    );
+  }
+
+  @override
+  void dispose() {
+    sourceController.dispose();
+    periodController.dispose();
+
+    farmLowController.dispose();
+    farmRefController.dispose();
+    farmHighController.dispose();
+    wholesaleRefController.dispose();
+    retailLowController.dispose();
+    retailHighController.dispose();
+
+    farmerMinController.dispose();
+    farmerMaxController.dispose();
+    customerMinController.dispose();
+    customerMaxController.dispose();
+    wholesaleMinController.dispose();
+    wholesaleMaxController.dispose();
+
+    collectionController.dispose();
+    handlingController.dispose();
+    packagingController.dispose();
+    paymentController.dispose();
+    spoilageController.dispose();
+
+    customerMarginController.dispose();
+    wholesaleMarginController.dispose();
+
+    super.dispose();
+  }
+
+  bool _validRange(double low, double high) {
+    return low <= 0 || high <= 0 || low <= high;
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+
+    final source = sourceController.text.trim();
+    final period = periodController.text.trim();
+
+    if (source.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter the market source.'),
+        ),
+      );
+      return;
+    }
+
+    final values = <double>[
+      _value(farmLowController),
+      _value(farmRefController),
+      _value(farmHighController),
+      _value(wholesaleRefController),
+      _value(retailLowController),
+      _value(retailHighController),
+      _value(farmerMinController),
+      _value(farmerMaxController),
+      _value(customerMinController),
+      _value(customerMaxController),
+      _value(wholesaleMinController),
+      _value(wholesaleMaxController),
+      _value(collectionController),
+      _value(handlingController),
+      _value(packagingController),
+      _value(paymentController),
+      _value(spoilageController),
+      _value(customerMarginController),
+      _value(wholesaleMarginController),
+    ];
+
+    if (values.any((value) => value < 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Price and cost values cannot be negative.'),
+        ),
+      );
+      return;
+    }
+
+    if (!_validRange(
+          _value(farmLowController),
+          _value(farmHighController),
+        ) ||
+        !_validRange(
+          _value(farmerMinController),
+          _value(farmerMaxController),
+        ) ||
+        !_validRange(
+          _value(customerMinController),
+          _value(customerMaxController),
+        ) ||
+        !_validRange(
+          _value(wholesaleMinController),
+          _value(wholesaleMaxController),
+        ) ||
+        !_validRange(
+          _value(retailLowController),
+          _value(retailHighController),
+        )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A minimum/low value cannot be above its maximum/high value.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final customerMargin = _value(customerMarginController);
+    final wholesaleMargin = _value(wholesaleMarginController);
+
+    if (customerMargin >= 95 || wholesaleMargin >= 95) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Margin targets must be below 95%.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+
+    try {
+      await hpjAdminSaveMarketPriceGuideDirect(
+        cropName: row.cropName,
+        unit: row.unit,
+        marketSource: source,
+        marketPeriod: period,
+        radaFarmgateLow: _value(farmLowController),
+        radaFarmgateReference: _value(farmRefController),
+        radaFarmgateHigh: _value(farmHighController),
+        radaWholesaleReference:
+            _value(wholesaleRefController),
+        radaRetailLow: _value(retailLowController),
+        radaRetailHigh: _value(retailHighController),
+        hpjFarmerMin: _value(farmerMinController),
+        hpjFarmerMax: _value(farmerMaxController),
+        hpjCustomerMin: _value(customerMinController),
+        hpjCustomerMax: _value(customerMaxController),
+        hpjWholesaleMin: _value(wholesaleMinController),
+        hpjWholesaleMax: _value(wholesaleMaxController),
+        collectionCost: _value(collectionController),
+        handlingCost: _value(handlingController),
+        packagingCost: _value(packagingController),
+        paymentCost: _value(paymentController),
+        spoilageCost: _value(spoilageController),
+        customerMarginTarget: customerMargin,
+        wholesaleMarginTarget: wholesaleMargin,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyAppError(error)),
+        ),
+      );
+    }
+  }
+
+  Widget _moneyField(
+    TextEditingController controller,
+    String label, {
+    String? helper,
+  }) {
+    return TextField(
+      controller: controller,
+      enabled: !saving,
+      keyboardType:
+          const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixText: r'J$ ',
+        helperText: helper,
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: 15,
+        bottom: 8,
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: FarmColors.deepGreen,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: MediaQuery.of(context).size.height * .94,
+        decoration: const BoxDecoration(
+          color: FarmColors.card,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(28),
+          ),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                10,
+                8,
+                8,
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: FarmColors.line,
+                        borderRadius:
+                            BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 13),
+                  Row(
+                    children: [
+                      HpjProductThumb(
+                        productName: row.cropName,
+                        size: 46,
+                        radius: 10,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Edit Market Price Guide',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 17,
+                                fontWeight:
+                                    FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${row.cropName} • ${row.unit}',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10,
+                                fontWeight:
+                                    FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: saving
+                            ? null
+                            : () =>
+                                Navigator.of(context).pop(false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  12,
+                  16,
+                  24,
+                ),
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: sourceController,
+                      enabled: !saving,
+                      decoration: const InputDecoration(
+                        labelText: 'Market source',
+                        hintText: 'RADA/JAMIS',
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    TextField(
+                      controller: periodController,
+                      enabled: !saving,
+                      decoration: const InputDecoration(
+                        labelText: 'Price week / period',
+                        hintText:
+                            'e.g. Week ending Sep 4, 2026',
+                      ),
+                    ),
+
+                    _sectionTitle('RADA/JAMIS market reference'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _moneyField(
+                            farmLowController,
+                            'Farmgate low',
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: _moneyField(
+                            farmRefController,
+                            'Reference',
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: _moneyField(
+                            farmHighController,
+                            'Farmgate high',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    _moneyField(
+                      wholesaleRefController,
+                      'Wholesale reference',
+                    ),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _moneyField(
+                            retailLowController,
+                            'Retail low',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _moneyField(
+                            retailHighController,
+                            'Retail high',
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    _sectionTitle('HPJ private price guardrails'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _moneyField(
+                            farmerMinController,
+                            'Farmer buy min',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _moneyField(
+                            farmerMaxController,
+                            'Farmer buy max',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _moneyField(
+                            customerMinController,
+                            'Customer min',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _moneyField(
+                            customerMaxController,
+                            'Customer max',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _moneyField(
+                            wholesaleMinController,
+                            'Wholesale min',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _moneyField(
+                            wholesaleMaxController,
+                            'Wholesale max',
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    _sectionTitle('HPJ operating cost per unit'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _moneyField(
+                            collectionController,
+                            'Collection',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _moneyField(
+                            handlingController,
+                            'Handling',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _moneyField(
+                            packagingController,
+                            'Packaging',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _moneyField(
+                            paymentController,
+                            'Payment',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    _moneyField(
+                      spoilageController,
+                      'Spoilage allowance',
+                    ),
+
+                    _sectionTitle('Target gross margins'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller:
+                                customerMarginController,
+                            enabled: !saving,
+                            keyboardType: const TextInputType
+                                .numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Customer',
+                              suffixText: '%',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller:
+                                wholesaleMarginController,
+                            enabled: !saving,
+                            keyboardType: const TextInputType
+                                .numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Wholesale',
+                              suffixText: '%',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'These HPJ ranges, operating costs and target margins '
+                      'remain private. Farmers only see the public RADA/JAMIS '
+                      'market reference and the price HPJ offers them.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.4,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  14,
+                  8,
+                  14,
+                  12,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: saving ? null : _save,
+                    icon: const Icon(Icons.save_outlined),
+                    label: Text(
+                      saving ? 'Saving...' : 'Save Price Guide',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _AdminMarketPriceBulkDraft {
+  final HpjMarketPriceGuideRow row;
+  bool selected;
+
+  final TextEditingController farmLow;
+  final TextEditingController farmReference;
+  final TextEditingController farmHigh;
+  final TextEditingController wholesaleReference;
+  final TextEditingController retailLow;
+  final TextEditingController retailHigh;
+
+  _AdminMarketPriceBulkDraft({
+    required this.row,
+    required this.selected,
+    required this.farmLow,
+    required this.farmReference,
+    required this.farmHigh,
+    required this.wholesaleReference,
+    required this.retailLow,
+    required this.retailHigh,
+  });
+
+  void dispose() {
+    farmLow.dispose();
+    farmReference.dispose();
+    farmHigh.dispose();
+    wholesaleReference.dispose();
+    retailLow.dispose();
+    retailHigh.dispose();
+  }
+}
+
+
+class _AdminMarketPriceGuideBulkSheet extends StatefulWidget {
+  final List<HpjMarketPriceGuideRow> rows;
+
+  const _AdminMarketPriceGuideBulkSheet({
+    required this.rows,
+  });
+
+  @override
+  State<_AdminMarketPriceGuideBulkSheet> createState() =>
+      _AdminMarketPriceGuideBulkSheetState();
+}
+
+class _AdminMarketPriceGuideBulkSheetState
+    extends State<_AdminMarketPriceGuideBulkSheet> {
+  late final TextEditingController sourceController;
+  late final TextEditingController periodController;
+  late final List<_AdminMarketPriceBulkDraft> drafts;
+
+  bool saving = false;
+  bool showWeekCalendar = false;
+  DateTime? selectedWeekEnding;
+
+  String _number(double value) {
+    if (value <= 0) return '';
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(2);
+  }
+
+  double _value(TextEditingController controller) {
+    return double.tryParse(
+          controller.text.trim().replaceAll(',', ''),
+        ) ??
+        0;
+  }
+
+  String _weekEndingLabel(DateTime value) {
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    return 'Week ending ${months[value.month - 1]} '
+        '${value.day}, ${value.year}';
+  }
+
+  void _toggleWeekCalendar() {
+    if (saving) return;
+
+    setState(() {
+      showWeekCalendar = !showWeekCalendar;
+    });
+  }
+
+  void _selectWeekEnding(DateTime picked) {
+    if (saving) return;
+
+    setState(() {
+      selectedWeekEnding = picked;
+      periodController.text = _weekEndingLabel(picked);
+      showWeekCalendar = false;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    final rows = List<HpjMarketPriceGuideRow>.from(
+      widget.rows,
+    )..sort(
+        (a, b) => a.cropName.toLowerCase().compareTo(
+              b.cropName.toLowerCase(),
+            ),
+      );
+
+    String mostUsefulPeriod = '';
+    String mostUsefulSource = 'RADA/JAMIS';
+
+    for (final row in rows) {
+      if (mostUsefulPeriod.isEmpty &&
+          row.marketPeriod.trim().isNotEmpty) {
+        mostUsefulPeriod = row.marketPeriod.trim();
+      }
+
+      if (row.marketSource.trim().isNotEmpty) {
+        mostUsefulSource = row.marketSource.trim();
+        break;
+      }
+    }
+
+    sourceController = TextEditingController(
+      text: mostUsefulSource,
+    );
+    selectedWeekEnding = DateTime.now();
+    periodController = TextEditingController(
+      text: mostUsefulPeriod.isEmpty
+          ? _weekEndingLabel(selectedWeekEnding!)
+          : mostUsefulPeriod,
+    );
+
+    drafts = rows.map((row) {
+      return _AdminMarketPriceBulkDraft(
+        row: row,
+        selected: !row.hasRadaPrice,
+        farmLow: TextEditingController(
+          text: _number(row.radaFarmgateLow),
+        ),
+        farmReference: TextEditingController(
+          text: _number(row.radaFarmgateReference),
+        ),
+        farmHigh: TextEditingController(
+          text: _number(row.radaFarmgateHigh),
+        ),
+        wholesaleReference: TextEditingController(
+          text: _number(row.radaWholesaleReference),
+        ),
+        retailLow: TextEditingController(
+          text: _number(row.radaRetailLow),
+        ),
+        retailHigh: TextEditingController(
+          text: _number(row.radaRetailHigh),
+        ),
+      );
+    }).toList();
+
+    if (!drafts.any((draft) => draft.selected)) {
+      for (final draft in drafts) {
+        draft.selected = true;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    sourceController.dispose();
+    periodController.dispose();
+    for (final draft in drafts) {
+      draft.dispose();
+    }
+    super.dispose();
+  }
+
+  void _selectAll() {
+    setState(() {
+      for (final draft in drafts) {
+        draft.selected = true;
+      }
+    });
+  }
+
+  void _selectMissing() {
+    setState(() {
+      for (final draft in drafts) {
+        draft.selected = !draft.row.hasRadaPrice;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      for (final draft in drafts) {
+        draft.selected = false;
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+
+    final source = sourceController.text.trim();
+    final period = periodController.text.trim();
+
+    final selected = drafts
+        .where((draft) => draft.selected)
+        .toList(growable: false);
+
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select at least one produce.'),
+        ),
+      );
+      return;
+    }
+
+    if (source.isEmpty || period.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enter the market source and the week / price period.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final payload = <Map<String, dynamic>>[];
+
+    for (final draft in selected) {
+      final low = _value(draft.farmLow);
+      final reference = _value(draft.farmReference);
+      final high = _value(draft.farmHigh);
+      final wholesale =
+          _value(draft.wholesaleReference);
+      final retailLow = _value(draft.retailLow);
+      final retailHigh = _value(draft.retailHigh);
+
+      if (low < 0 ||
+          reference < 0 ||
+          high < 0 ||
+          wholesale < 0 ||
+          retailLow < 0 ||
+          retailHigh < 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${draft.row.cropName}: prices cannot be negative.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (reference <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${draft.row.cropName}: enter the RADA/JAMIS farmgate reference.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (low > 0 &&
+          high > 0 &&
+          low > high) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${draft.row.cropName}: farmgate low cannot be above high.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (retailLow > 0 &&
+          retailHigh > 0 &&
+          retailLow > retailHigh) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${draft.row.cropName}: retail low cannot be above high.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      payload.add(
+        <String, dynamic>{
+          'crop_name': draft.row.cropName,
+          'unit': draft.row.unit,
+          'rada_farmgate_low': low,
+          'rada_farmgate_reference': reference,
+          'rada_farmgate_high': high,
+          'rada_wholesale_reference': wholesale,
+          'rada_retail_low': retailLow,
+          'rada_retail_high': retailHigh,
+        },
+      );
+    }
+
+    setState(() => saving = true);
+
+    try {
+      await hpjAdminBulkSaveMarketPriceGuides(
+        marketSource: source,
+        marketPeriod: period,
+        rows: payload,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyAppError(error)),
+        ),
+      );
+    }
+  }
+
+  Widget _priceField(
+    TextEditingController controller,
+    String label,
+  ) {
+    return TextField(
+      controller: controller,
+      enabled: !saving,
+      keyboardType:
+          const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixText: r'J$ ',
+        isDense: true,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedCount =
+        drafts.where((draft) => draft.selected).length;
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: MediaQuery.of(context).size.height * .95,
+        decoration: const BoxDecoration(
+          color: FarmColors.card,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(28),
+          ),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                10,
+                8,
+                9,
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: FarmColors.line,
+                        borderRadius:
+                            BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 13),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.edit_calendar_outlined,
+                        color: FarmColors.deepGreen,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Weekly Bulk Price Update',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 17,
+                                fontWeight:
+                                    FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Enter the week once, then update several produce in one save.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 9.4,
+                                fontWeight:
+                                    FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: saving
+                            ? null
+                            : () =>
+                                Navigator.of(context).pop(false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 9),
+                  TextField(
+                    controller: sourceController,
+                    enabled: !saving,
+                    decoration: const InputDecoration(
+                      labelText: 'Market source',
+                      hintText: 'RADA/JAMIS',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: periodController,
+                    readOnly: true,
+                    enabled: !saving,
+                    onTap: _toggleWeekCalendar,
+                    decoration: InputDecoration(
+                      labelText: 'Week ending',
+                      hintText: 'Select date',
+                      suffixIcon: IconButton(
+                        tooltip: showWeekCalendar
+                            ? 'Hide calendar'
+                            : 'Choose week ending date',
+                        onPressed:
+                            saving ? null : _toggleWeekCalendar,
+                        icon: Icon(
+                          showWeekCalendar
+                              ? Icons.expand_less_rounded
+                              : Icons.calendar_month_outlined,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (showWeekCalendar) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      height: 318,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: FarmColors.line,
+                        ),
+                      ),
+                      child: CalendarDatePicker(
+                        initialDate:
+                            selectedWeekEnding ?? DateTime.now(),
+                        firstDate: DateTime(
+                          DateTime.now().year - 5,
+                          1,
+                          1,
+                        ),
+                        lastDate: DateTime(
+                          DateTime.now().year + 2,
+                          12,
+                          31,
+                        ),
+                        onDateChanged: _selectWeekEnding,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 9),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        OutlinedButton(
+                          onPressed:
+                              saving ? null : _selectAll,
+                          child: const Text('Select all'),
+                        ),
+                        const SizedBox(width: 7),
+                        OutlinedButton(
+                          onPressed:
+                              saving ? null : _selectMissing,
+                          child: const Text('Need prices'),
+                        ),
+                        const SizedBox(width: 7),
+                        TextButton(
+                          onPressed:
+                              saving ? null : _clearSelection,
+                          child: const Text('Clear'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.separated(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(
+                  12,
+                  8,
+                  12,
+                  100,
+                ),
+                itemCount: drafts.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: 8),
+                itemBuilder: (_, index) {
+                  final draft = drafts[index];
+
+                  return Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: draft.selected
+                          ? FarmColors.primary.withOpacity(.055)
+                          : Colors.white,
+                      borderRadius:
+                          BorderRadius.circular(14),
+                      border: Border.all(
+                        color: draft.selected
+                            ? FarmColors.primary.withOpacity(.24)
+                            : FarmColors.line,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: draft.selected,
+                              onChanged: saving
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        draft.selected =
+                                            value == true;
+                                      });
+                                    },
+                            ),
+                            HpjProductThumb(
+                              productName:
+                                  draft.row.cropName,
+                              size: 34,
+                              radius: 8,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    draft.row.cropName,
+                                    maxLines: 1,
+                                    overflow:
+                                        TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 11.5,
+                                      fontWeight:
+                                          FontWeight.w900,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${draft.row.unit} • '
+                                    '${draft.row.hasRadaPrice ? 'Current guide loaded' : 'Needs price'}',
+                                    style: TextStyle(
+                                      color:
+                                          draft.row.hasRadaPrice
+                                              ? FarmColors
+                                                  .mutedText
+                                              : FarmColors.warning,
+                                      fontSize: 8.8,
+                                      fontWeight:
+                                          FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (draft.selected) ...[
+                          const SizedBox(height: 9),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _priceField(
+                                  draft.farmLow,
+                                  'Farm low',
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _priceField(
+                                  draft.farmReference,
+                                  'Farm ref',
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _priceField(
+                                  draft.farmHigh,
+                                  'Farm high',
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 7),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _priceField(
+                                  draft.wholesaleReference,
+                                  'Wholesale ref',
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _priceField(
+                                  draft.retailLow,
+                                  'Retail low',
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _priceField(
+                                  draft.retailHigh,
+                                  'Retail high',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  14,
+                  8,
+                  14,
+                  12,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed:
+                        saving || selectedCount == 0
+                            ? null
+                            : _save,
+                    icon: const Icon(Icons.save_outlined),
+                    label: Text(
+                      saving
+                          ? 'Saving...'
+                          : 'Save $selectedCount Price Guide${selectedCount == 1 ? '' : 's'}',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+
+class _AdminMarketAllocationPanel extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onProductChanged;
+
+  const _AdminMarketAllocationPanel({
+    required this.refreshKey,
+    required this.onProductChanged,
+  });
+
+  @override
+  State<_AdminMarketAllocationPanel> createState() =>
+      _AdminMarketAllocationPanelState();
+}
+
+class _AdminMarketAllocationPanelState
+    extends State<_AdminMarketAllocationPanel> {
+  int localRefreshKey = 0;
+
+  String _quantity(double value, String unit) {
+    final clean = value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(1);
+    return unit.trim().isEmpty ? clean : '$clean ${unit.trim()}';
+  }
+
+  Future<void> _openDeal(HpjMarketAllocationRow row) async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AdminSupplyMarketDealSheet(
+        row: row,
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (result == 'allocation') {
+      await _edit(row);
+      return;
+    }
+
+    if (result == 'changed') {
+      setState(() => localRefreshKey++);
+      widget.onProductChanged();
+    }
+  }
+
+  Future<void> _edit(HpjMarketAllocationRow row) async {
+    final customerController = TextEditingController(
+      text: row.customerQuantity == row.customerQuantity.roundToDouble()
+          ? row.customerQuantity.toInt().toString()
+          : row.customerQuantity.toStringAsFixed(1),
+    );
+
+    final wholesaleStart =
+        row.wholesaleQuantity > row.wholesaleCommittedQuantity
+            ? row.wholesaleQuantity
+            : row.wholesaleCommittedQuantity;
+
+    final wholesaleController = TextEditingController(
+      text: wholesaleStart == wholesaleStart.roundToDouble()
+          ? wholesaleStart.toInt().toString()
+          : wholesaleStart.toStringAsFixed(1),
+    );
+
+    final reserveController = TextEditingController(
+      text: row.reserveQuantity == row.reserveQuantity.roundToDouble()
+          ? row.reserveQuantity.toInt().toString()
+          : row.reserveQuantity.toStringAsFixed(1),
+    );
+
+    final noteController = TextEditingController();
+
+    bool saving = false;
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: !saving,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              double number(TextEditingController controller) {
+                return double.tryParse(
+                      controller.text.trim().replaceAll(',', ''),
+                    ) ??
+                    0;
+              }
+
+              final customer = number(customerController);
+              final wholesale = number(wholesaleController);
+              final reserve = number(reserveController);
+              final total = customer + wholesale + reserve;
+              final free = row.confirmedQuantity - total;
+              final over = free < -0.0001;
+              final belowCommitted =
+                  wholesale + 0.0001 < row.wholesaleCommittedQuantity;
+
+              Future<void> save() async {
+                if (saving) return;
+
+                if (customer < 0 || wholesale < 0 || reserve < 0) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Allocation quantities cannot be negative.'),
+                    ),
+                  );
+                  return;
+                }
+
+                if (over) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Customer + Wholesale + Reserve cannot exceed HPJ-confirmed supply.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (belowCommitted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Wholesale cannot be lower than ${_quantity(row.wholesaleCommittedQuantity, row.unit)} already committed to business demand.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (customer > 0 && !row.hasLinkedProduct) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Publish or link the HPJ Customer product before assigning Customer quantity.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                setDialogState(() => saving = true);
+
+                try {
+                  await saveHpjAdminMarketAllocation(
+                    supplyId: row.supplyId,
+                    productId:
+                        row.hasLinkedProduct ? row.productId : null,
+                    customerQuantity: customer,
+                    wholesaleQuantity: wholesale,
+                    reserveQuantity: reserve,
+                    notes: noteController.text,
+                  );
+
+                  if (!dialogContext.mounted) return;
+                  Navigator.of(dialogContext).pop();
+
+                  if (!mounted) return;
+                  setState(() => localRefreshKey++);
+                  widget.onProductChanged();
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${row.cropName} market allocation updated.',
+                      ),
+                    ),
+                  );
+                } catch (error) {
+                  if (!dialogContext.mounted) return;
+                  setDialogState(() => saving = false);
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                      content: Text(friendlyAppError(error)),
+                    ),
+                  );
+                }
+              }
+
+              Widget allocationField({
+                required TextEditingController controller,
+                required String label,
+                required IconData icon,
+                required bool enabled,
+                String? helper,
+              }) {
+                return TextField(
+                  controller: controller,
+                  enabled: enabled && !saving,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                  decoration: InputDecoration(
+                    labelText: label,
+                    helperText: helper,
+                    prefixIcon: Icon(icon),
+                    suffixText: row.unit,
+                  ),
+                );
+              }
+
+              return AlertDialog(
+                title: const Text('Allocate confirmed supply'),
+                content: SizedBox(
+                  width: 520,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          row.cropName,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          [
+                            row.farmName,
+                            'Confirmed ${_quantity(row.confirmedQuantity, row.unit)}',
+                            if (row.hasLinkedProduct) row.productName,
+                          ].where((item) => item.trim().isNotEmpty).join(' • '),
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 10.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        allocationField(
+                          controller: customerController,
+                          label: 'Customer Marketplace',
+                          icon: Icons.shopping_bag_outlined,
+                          enabled:
+                              row.sellToCustomer && row.hasLinkedProduct,
+                          helper: row.hasLinkedProduct
+                              ? null
+                              : 'Link/publish an HPJ product first.',
+                        ),
+                        const SizedBox(height: 10),
+                        allocationField(
+                          controller: wholesaleController,
+                          label: 'Wholesale Business',
+                          icon: Icons.business_outlined,
+                          enabled: row.sellToWholesale,
+                          helper: row.wholesaleCommittedQuantity > 0
+                              ? '${_quantity(row.wholesaleCommittedQuantity, row.unit)} already committed'
+                              : null,
+                        ),
+                        const SizedBox(height: 10),
+                        allocationField(
+                          controller: reserveController,
+                          label: 'HPJ Reserve / Buffer',
+                          icon: Icons.shield_outlined,
+                          enabled: true,
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: over
+                                ? FarmColors.danger.withOpacity(.08)
+                                : const Color(0xFFF0F4EC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: over
+                                  ? FarmColors.danger.withOpacity(.30)
+                                  : FarmColors.line,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                over
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.account_balance_wallet_outlined,
+                                color: over
+                                    ? FarmColors.danger
+                                    : FarmColors.deepGreen,
+                                size: 19,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  over
+                                      ? 'Over allocated by ${_quantity(-free, row.unit)}'
+                                      : 'Unallocated ${_quantity(free < 0 ? 0 : free, row.unit)}',
+                                  style: TextStyle(
+                                    color: over
+                                        ? FarmColors.danger
+                                        : FarmColors.deepGreen,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: noteController,
+                          enabled: !saving,
+                          minLines: 2,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Internal allocation note',
+                            hintText:
+                                'Optional reason, buffer plan or procurement note',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Customer stock is synchronized from the Customer allocation. '
+                          'Wholesale reservations cannot exceed the Wholesale allocation. '
+                          'Reserve is protected from both channels.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.4,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed:
+                        saving ? null : () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: saving ? null : save,
+                    child: Text(saving ? 'Saving...' : 'Save Allocation'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      customerController.dispose();
+      wholesaleController.dispose();
+      reserveController.dispose();
+      noteController.dispose();
+    }
+  }
+
+  Widget _row(HpjMarketAllocationRow row) {
+    final managed = row.hasAllocation;
+
+    return HpjMvpListRow(
+      icon: Icons.hub_outlined,
+      iconColor: managed ? FarmColors.success : FarmColors.warning,
+      title: row.cropName,
+      subtitle: [
+        row.farmName,
+        'Confirmed ${_quantity(row.confirmedQuantity, row.unit)}',
+        if (managed)
+          'Customer ${_quantity(row.customerQuantity, row.unit)}',
+        if (managed)
+          'Wholesale ${_quantity(row.wholesaleQuantity, row.unit)}',
+        if (managed)
+          'Reserve ${_quantity(row.reserveQuantity, row.unit)}',
+        if (managed)
+          'Free ${_quantity(row.unallocatedQuantity, row.unit)}',
+      ].join(' • '),
+      trailing: const Text(
+        'Deal',
+        style: TextStyle(
+          color: FarmColors.primary,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      onTap: () => _openDeal(row),
+    );
+  }
+
+  Future<void> _showAll(
+    List<HpjMarketAllocationRow> rows,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(26),
+        ),
+      ),
+      builder: (sheetContext) {
+        return SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * .88,
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: FarmColors.line,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 16, 18, 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.hub_outlined,
+                      color: FarmColors.primary,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Confirmed Supply Allocation',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
+                  itemCount: rows.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, index) {
+                    final row = rows[index];
+                    return ListTile(
+                      leading: const Icon(
+                        Icons.inventory_2_outlined,
+                        color: FarmColors.deepGreen,
+                      ),
+                      title: Text(
+                        row.cropName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${row.farmName} • ${_quantity(row.confirmedQuantity, row.unit)} confirmed',
+                      ),
+                      trailing: const Text(
+                        'Deal',
+                        style: TextStyle(
+                          color: FarmColors.primary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        Future<void>.delayed(
+                          const Duration(milliseconds: 120),
+                          () {
+                            if (mounted) {
+                              unawaited(_openDeal(row));
+                            }
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<HpjMarketAllocationRow>>(
+      key: ValueKey(
+        'phase048-market-allocation-${widget.refreshKey}-$localRefreshKey',
+      ),
+      future: fetchHpjAdminMarketAllocations(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return FarmCard(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Loading confirmed supply allocation...',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return FarmCard(
+            padding: const EdgeInsets.all(14),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: FarmColors.warning,
+                ),
+                SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'Market Allocation is unavailable. Run the Phase 048 SQL in Supabase, wait for the schema cache to refresh, then refresh Products.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 10,
+                      height: 1.35,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final rows = snapshot.data ?? const <HpjMarketAllocationRow>[];
+        final managed =
+            rows.where((row) => row.hasAllocation).length;
+        final visible = rows.take(5).toList(growable: false);
+
+        return FarmCard(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.hub_outlined,
+                    color: FarmColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Market Allocation',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Review the Farmer/HPJ price deal, RADA/JAMIS guide, margins and final allocation.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.3,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  HpjMvpStatusPill(
+                    label: '$managed managed',
+                    color: managed > 0
+                        ? FarmColors.success
+                        : FarmColors.warning,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 9),
+              if (rows.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No HPJ-confirmed farmer supply is ready to allocate yet. Verify supply in Procurement first.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 10,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else ...[
+                for (var i = 0; i < visible.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  _row(visible[i]),
+                ],
+                if (rows.length > visible.length) ...[
+                  const Divider(height: 1),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _showAll(rows),
+                      icon: const Icon(
+                        Icons.list_alt_outlined,
+                        size: 17,
+                      ),
+                      label: Text('See all ${rows.length}'),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+class _FarmerSupplyMarketDealSheet extends StatefulWidget {
+  final FarmerSupplyForecast supply;
+
+  const _FarmerSupplyMarketDealSheet({required this.supply});
+
+  @override
+  State<_FarmerSupplyMarketDealSheet> createState() =>
+      _FarmerSupplyMarketDealSheetState();
+}
+
+class _FarmerSupplyMarketDealSheetState
+    extends State<_FarmerSupplyMarketDealSheet> {
+  late Future<HpjSupplyDealSnapshot> future;
+  final customerController = TextEditingController();
+  final wholesaleController = TextEditingController();
+  final priceController = TextEditingController();
+  final noteController = TextEditingController();
+  bool hydrated = false;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    future = fetchFarmerSupplyDealSnapshot(widget.supply.id);
+  }
+
+  @override
+  void dispose() {
+    customerController.dispose();
+    wholesaleController.dispose();
+    priceController.dispose();
+    noteController.dispose();
+    super.dispose();
+  }
+
+  String _money(double value) => value > 0 ? formatJmd(value) : 'Not set';
+
+  String _qty(double value, String unit) {
+    final clean = value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(1);
+    return unit.trim().isEmpty ? clean : '$clean ${unit.trim()}';
+  }
+
+  String _numberText(double value) {
+    if (value <= 0) return '0';
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(1);
+  }
+
+  double _number(TextEditingController controller) =>
+      double.tryParse(controller.text.trim().replaceAll(',', '')) ?? 0;
+
+  void _hydrate(HpjSupplyDealSnapshot deal) {
+    if (hydrated) return;
+    hydrated = true;
+    customerController.text = _numberText(deal.customerQuantity);
+    wholesaleController.text = _numberText(deal.wholesaleQuantity);
+    final initialAsk = deal.farmerAskPrice > 0
+        ? deal.farmerAskPrice
+        : deal.radaFarmgateReference;
+    priceController.text = initialAsk > 0 ? initialAsk.toStringAsFixed(0) : '';
+    noteController.text = deal.farmerNote;
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      hydrated = false;
+      future = fetchFarmerSupplyDealSnapshot(widget.supply.id);
+    });
+  }
+
+  Future<void> _send(HpjSupplyDealSnapshot deal) async {
+    if (saving) return;
+    final customer = deal.sellToCustomer ? _number(customerController) : 0.0;
+    final wholesale = deal.sellToWholesale ? _number(wholesaleController) : 0.0;
+    final ask = _number(priceController);
+    final usable = deal.confirmedQuantity - deal.reserveQuantity;
+
+    if (customer < 0 || wholesale < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Allocation quantities cannot be negative.')),
+      );
+      return;
+    }
+    if (customer + wholesale > usable + .0001) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Customer + Wholesale cannot exceed ${_qty(usable, deal.unit)} after HPJ Reserve.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (ask <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the price you want HPJ to pay you.')),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      await farmerSubmitSupplyDealOffer(
+        supplyId: deal.supplyId,
+        customerQuantity: customer,
+        wholesaleQuantity: wholesale,
+        askingPrice: ask,
+        note: noteController.text,
+      );
+      if (!mounted) return;
+      setState(() => saving = false);
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your market offer was sent to HPJ.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Future<void> _accept(HpjSupplyDealSnapshot deal) async {
+    if (saving) return;
+    setState(() => saving = true);
+    try {
+      await farmerAcceptHpjSupplyDealOffer(deal.supplyId);
+      if (!mounted) return;
+      setState(() => saving = false);
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Price agreed at ${_money(deal.hpjOfferPrice)} / ${deal.unit}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Future<void> _decline(HpjSupplyDealSnapshot deal) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Decline price discussion?'),
+        content: const Text(
+          'Your supply report stays active, but this price discussion will close.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep negotiating'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Decline'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || saving) return;
+    setState(() => saving = true);
+    try {
+      await farmerDeclineSupplyDeal(deal.supplyId);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Widget _marketGuide(HpjSupplyDealSnapshot deal) {
+    if (!deal.hasMarketGuide) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7E8),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: FarmColors.warning.withOpacity(.24)),
+        ),
+        child: const Text(
+          'HPJ has not entered the current RADA/JAMIS reference yet. You can still send your offer.',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 10.2,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F4EC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights_outlined, color: FarmColors.deepGreen, size: 18),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '${deal.marketSource.isEmpty ? 'RADA/JAMIS' : deal.marketSource} market reference',
+                  style: const TextStyle(
+                    color: FarmColors.deepGreen,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Farmgate ${_money(deal.radaFarmgateLow)} – ${_money(deal.radaFarmgateHigh)} / ${deal.unit}',
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (deal.radaFarmgateReference > 0)
+            Text(
+              'Reference ${_money(deal.radaFarmgateReference)}'
+              '${deal.marketPeriod.isEmpty ? '' : ' • ${deal.marketPeriod}'}',
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 9.6,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          const SizedBox(height: 5),
+          const Text(
+            'Market guidance only — your final farmer price is negotiated with HPJ.',
+            style: TextStyle(color: FarmColors.mutedText, fontSize: 9, height: 1.3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 160),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * .92),
+        decoration: const BoxDecoration(
+          color: FarmColors.card,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: FutureBuilder<HpjSupplyDealSnapshot>(
+          future: future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+              return const SizedBox(height: 360, child: Center(child: CircularProgressIndicator()));
+            }
+            if (snapshot.hasError || snapshot.data == null) {
+              return const Padding(
+                padding: EdgeInsets.all(22),
+                child: FarmEmptyState(
+                  icon: Icons.info_outline,
+                  title: 'Market & Price is unavailable',
+                  message: 'Run the Phase 054 SQL, then refresh My Supply.',
+                ),
+              );
+            }
+
+            final deal = snapshot.data!;
+            _hydrate(deal);
+            final locked = deal.isAgreed || deal.status == 'declined';
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: FarmColors.line,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      HpjProductThumb(productName: deal.cropName, size: 58, radius: 13),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Market Allocation & Price',
+                              style: TextStyle(color: FarmColors.ink, fontSize: 19, fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${deal.cropName} • ${_qty(deal.confirmedQuantity, deal.unit)} HPJ confirmed',
+                              style: const TextStyle(color: FarmColors.mutedText, fontSize: 10.3, fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _marketGuide(deal),
+                  if (deal.isHpjCounter) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: FarmColors.line),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('HPJ counteroffer', style: TextStyle(color: FarmColors.deepGreen, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${_money(deal.hpjOfferPrice)} / ${deal.unit}',
+                            style: const TextStyle(color: FarmColors.deepGreen, fontSize: 18, fontWeight: FontWeight.w900),
+                          ),
+                          if (deal.hpjNote.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(deal.hpjNote, style: const TextStyle(color: FarmColors.mutedText, fontSize: 10, height: 1.3)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (deal.isAgreed) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(11),
+                      decoration: BoxDecoration(
+                        color: FarmColors.success.withOpacity(.08),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: Text(
+                        'Agreed farmer price: ${_money(deal.agreedPrice)} / ${deal.unit}. '
+                        '${deal.isApplied ? 'HPJ market allocation is active.' : 'HPJ will apply the agreement.'}',
+                        style: const TextStyle(color: FarmColors.success, fontSize: 10.5, height: 1.35, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Offer this HPJ-confirmed supply',
+                    style: TextStyle(color: FarmColors.ink, fontSize: 12, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 9),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: customerController,
+                          enabled: deal.sellToCustomer && !locked && !saving,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Customer Shop',
+                            suffixText: deal.unit,
+                            helperText: deal.sellToCustomer ? null : 'Channel off',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: TextField(
+                          controller: wholesaleController,
+                          enabled: deal.sellToWholesale && !locked && !saving,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Wholesale',
+                            suffixText: deal.unit,
+                            helperText: deal.sellToWholesale ? null : 'Channel off',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (deal.reserveQuantity > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'HPJ Reserve protects ${_qty(deal.reserveQuantity, deal.unit)}.',
+                      style: const TextStyle(color: FarmColors.mutedText, fontSize: 9.4, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: priceController,
+                    enabled: !locked && !saving,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Your asking price',
+                      prefixText: r'J$ ',
+                      suffixText: '/ ${deal.unit}',
+                      helperText: 'This is what HPJ would pay you.',
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  TextField(
+                    controller: noteController,
+                    enabled: !locked && !saving,
+                    maxLines: 2,
+                    decoration: const InputDecoration(labelText: 'Note to HPJ (optional)'),
+                  ),
+                  const SizedBox(height: 16),
+                  if (deal.isHpjCounter && !locked) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: saving ? null : () => _accept(deal),
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: Text('Accept ${_money(deal.hpjOfferPrice)} / ${deal.unit}'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: saving ? null : () => _send(deal),
+                        icon: const Icon(Icons.swap_horiz_rounded),
+                        label: const Text('Send Counteroffer'),
+                      ),
+                    ),
+                  ] else if (!locked) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: saving ? null : () => _send(deal),
+                        icon: const Icon(Icons.send_outlined),
+                        label: Text(deal.hasDeal ? 'Update Offer' : 'Send Offer to HPJ'),
+                      ),
+                    ),
+                  ],
+                  if (deal.hasDeal && !deal.isAgreed && deal.status != 'declined')
+                    Align(
+                      alignment: Alignment.center,
+                      child: TextButton(
+                        onPressed: saving ? null : () => _decline(deal),
+                        child: const Text('Decline price discussion'),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminSupplyMarketDealSheet extends StatefulWidget {
+  final HpjMarketAllocationRow row;
+
+  const _AdminSupplyMarketDealSheet({required this.row});
+
+  @override
+  State<_AdminSupplyMarketDealSheet> createState() =>
+      _AdminSupplyMarketDealSheetState();
+}
+
+class _AdminSupplyMarketDealSheetState
+    extends State<_AdminSupplyMarketDealSheet> {
+  late Future<HpjSupplyDealSnapshot> future;
+  final hpjOfferController = TextEditingController();
+  final customerController = TextEditingController();
+  final wholesaleController = TextEditingController();
+  final customerSellController = TextEditingController();
+  final wholesaleSellController = TextEditingController();
+  final noteController = TextEditingController();
+  bool hydrated = false;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    future = fetchHpjAdminSupplyDealSnapshot(widget.row.supplyId);
+  }
+
+  @override
+  void dispose() {
+    hpjOfferController.dispose();
+    customerController.dispose();
+    wholesaleController.dispose();
+    customerSellController.dispose();
+    wholesaleSellController.dispose();
+    noteController.dispose();
+    super.dispose();
+  }
+
+  double _number(TextEditingController controller) =>
+      double.tryParse(controller.text.trim().replaceAll(',', '')) ?? 0;
+
+  String _money(double value) => value > 0 ? formatJmd(value) : '—';
+
+  String _qty(double value, String unit) {
+    final clean = value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(1);
+    return unit.trim().isEmpty ? clean : '$clean ${unit.trim()}';
+  }
+
+  String _clean(double value) {
+    if (value <= 0) return '';
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(2);
+  }
+
+  void _hydrate(HpjSupplyDealSnapshot deal) {
+    if (hydrated) return;
+    hydrated = true;
+
+    customerController.text = _clean(
+      deal.customerQuantity > 0
+          ? deal.customerQuantity
+          : widget.row.customerQuantity,
+    );
+    wholesaleController.text = _clean(
+      deal.wholesaleQuantity > 0
+          ? deal.wholesaleQuantity
+          : widget.row.wholesaleQuantity,
+    );
+
+    final baseFarmerPrice = deal.hpjOfferPrice > 0
+        ? deal.hpjOfferPrice
+        : deal.farmerAskPrice > 0
+            ? deal.farmerAskPrice
+            : deal.radaFarmgateReference;
+    hpjOfferController.text = _clean(baseFarmerPrice);
+
+    customerSellController.text = _clean(
+      deal.customerSellPrice > 0
+          ? deal.customerSellPrice
+          : deal.recommendedCustomerPrice(baseFarmerPrice),
+    );
+    wholesaleSellController.text = _clean(
+      deal.wholesaleSellPrice > 0
+          ? deal.wholesaleSellPrice
+          : deal.recommendedWholesalePrice(baseFarmerPrice),
+    );
+    noteController.text = deal.hpjNote;
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      hydrated = false;
+      future = fetchHpjAdminSupplyDealSnapshot(widget.row.supplyId);
+    });
+  }
+
+  bool _outside(double price, double low, double high) {
+    if (price <= 0) return false;
+    if (low > 0 && price < low) return true;
+    if (high > 0 && price > high) return true;
+    return false;
+  }
+
+  Future<void> _editGuide(HpjSupplyDealSnapshot deal) async {
+    final source = TextEditingController(
+      text: deal.marketSource.isEmpty ? 'RADA/JAMIS' : deal.marketSource,
+    );
+    final period = TextEditingController(text: deal.marketPeriod);
+    TextEditingController c(double value) => TextEditingController(text: _clean(value));
+
+    final farmLow = c(deal.radaFarmgateLow);
+    final farmRef = c(deal.radaFarmgateReference);
+    final farmHigh = c(deal.radaFarmgateHigh);
+    final wholesaleRef = c(deal.radaWholesaleReference);
+    final retailLow = c(deal.radaRetailLow);
+    final retailHigh = c(deal.radaRetailHigh);
+    final farmerMin = c(deal.hpjFarmerMin);
+    final farmerMax = c(deal.hpjFarmerMax);
+    final customerMin = c(deal.hpjCustomerMin);
+    final customerMax = c(deal.hpjCustomerMax);
+    final wholesaleMin = c(deal.hpjWholesaleMin);
+    final wholesaleMax = c(deal.hpjWholesaleMax);
+    final collection = c(deal.collectionCost);
+    final handling = c(deal.handlingCost);
+    final packaging = c(deal.packagingCost);
+    final payment = c(deal.paymentCost);
+    final spoilage = c(deal.spoilageCost);
+    final customerMargin = TextEditingController(
+      text: _clean(deal.customerMarginTarget > 0 ? deal.customerMarginTarget : 25),
+    );
+    final wholesaleMargin = TextEditingController(
+      text: _clean(deal.wholesaleMarginTarget > 0 ? deal.wholesaleMarginTarget : 15),
+    );
+
+    final controllers = <TextEditingController>[
+      source, period, farmLow, farmRef, farmHigh, wholesaleRef, retailLow,
+      retailHigh, farmerMin, farmerMax, customerMin, customerMax,
+      wholesaleMin, wholesaleMax, collection, handling, packaging,
+      payment, spoilage, customerMargin, wholesaleMargin,
+    ];
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        builder: (sheetContext) {
+          bool localSaving = false;
+          return StatefulBuilder(
+            builder: (sheetContext, setSheetState) {
+              double n(TextEditingController controller) =>
+                  double.tryParse(controller.text.trim().replaceAll(',', '')) ?? 0;
+
+              Widget moneyField(TextEditingController controller, String label) {
+                return TextField(
+                  controller: controller,
+                  enabled: !localSaving,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(labelText: label, prefixText: r'J$ '),
+                );
+              }
+
+              Future<void> saveGuide() async {
+                if (localSaving) return;
+                final nonNegative = <TextEditingController>[
+                  farmLow, farmRef, farmHigh, wholesaleRef, retailLow, retailHigh,
+                  farmerMin, farmerMax, customerMin, customerMax,
+                  wholesaleMin, wholesaleMax, collection, handling, packaging,
+                  payment, spoilage,
+                ];
+                if (nonNegative.any((item) => n(item) < 0)) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    const SnackBar(content: Text('Price guide values cannot be negative.')),
+                  );
+                  return;
+                }
+                if (n(farmLow) > 0 && n(farmHigh) > 0 && n(farmLow) > n(farmHigh)) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    const SnackBar(content: Text('Farmgate low cannot be above farmgate high.')),
+                  );
+                  return;
+                }
+                if (n(customerMargin) < 0 || n(customerMargin) >= 95 ||
+                    n(wholesaleMargin) < 0 || n(wholesaleMargin) >= 95) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    const SnackBar(content: Text('Margin targets must be between 0% and 95%.')),
+                  );
+                  return;
+                }
+
+                setSheetState(() => localSaving = true);
+                try {
+                  await hpjAdminSaveMarketPriceGuide(
+                    supplyId: deal.supplyId,
+                    marketSource: source.text,
+                    marketPeriod: period.text,
+                    radaFarmgateLow: n(farmLow),
+                    radaFarmgateReference: n(farmRef),
+                    radaFarmgateHigh: n(farmHigh),
+                    radaWholesaleReference: n(wholesaleRef),
+                    radaRetailLow: n(retailLow),
+                    radaRetailHigh: n(retailHigh),
+                    hpjFarmerMin: n(farmerMin),
+                    hpjFarmerMax: n(farmerMax),
+                    hpjCustomerMin: n(customerMin),
+                    hpjCustomerMax: n(customerMax),
+                    hpjWholesaleMin: n(wholesaleMin),
+                    hpjWholesaleMax: n(wholesaleMax),
+                    collectionCost: n(collection),
+                    handlingCost: n(handling),
+                    packagingCost: n(packaging),
+                    paymentCost: n(payment),
+                    spoilageCost: n(spoilage),
+                    customerMarginTarget: n(customerMargin),
+                    wholesaleMarginTarget: n(wholesaleMargin),
+                  );
+                  if (!sheetContext.mounted) return;
+                  Navigator.of(sheetContext).pop();
+                } catch (error) {
+                  if (!sheetContext.mounted) return;
+                  setSheetState(() => localSaving = false);
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(content: Text(friendlyAppError(error))),
+                  );
+                }
+              }
+
+              return SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * .94,
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    18, 12, 18, MediaQuery.of(sheetContext).viewInsets.bottom + 26,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: FarmColors.line,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 15),
+                      const Text(
+                        'RADA/JAMIS + HPJ Price Guide',
+                        style: TextStyle(color: FarmColors.ink, fontSize: 19, fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('${deal.cropName} • ${deal.unit}', style: const TextStyle(color: FarmColors.mutedText, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 12),
+                      TextField(controller: source, decoration: const InputDecoration(labelText: 'Market source')),
+                      const SizedBox(height: 8),
+                      TextField(controller: period, decoration: const InputDecoration(labelText: 'Price week / period')),
+                      const SizedBox(height: 14),
+                      const Text('RADA/JAMIS market reference', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: moneyField(farmLow, 'Farmgate low')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(farmRef, 'Reference')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(farmHigh, 'Farmgate high')),
+                      ]),
+                      const SizedBox(height: 8),
+                      moneyField(wholesaleRef, 'Wholesale reference'),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: moneyField(retailLow, 'Retail low')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(retailHigh, 'Retail high')),
+                      ]),
+                      const SizedBox(height: 14),
+                      const Text('HPJ private price ranges', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: moneyField(farmerMin, 'Farmer min')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(farmerMax, 'Farmer max')),
+                      ]),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: moneyField(customerMin, 'Customer min')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(customerMax, 'Customer max')),
+                      ]),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: moneyField(wholesaleMin, 'Wholesale min')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(wholesaleMax, 'Wholesale max')),
+                      ]),
+                      const SizedBox(height: 14),
+                      const Text('HPJ direct cost per unit', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: moneyField(collection, 'Collection')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(handling, 'Handling')),
+                      ]),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: moneyField(packaging, 'Packaging')),
+                        const SizedBox(width: 7),
+                        Expanded(child: moneyField(payment, 'Payment')),
+                      ]),
+                      const SizedBox(height: 8),
+                      moneyField(spoilage, 'Spoilage allowance'),
+                      const SizedBox(height: 14),
+                      const Text('Target gross margin', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(
+                          child: TextField(
+                            controller: customerMargin,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Customer', suffixText: '%'),
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: TextField(
+                            controller: wholesaleMargin,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Wholesale', suffixText: '%'),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: localSaving ? null : saveGuide,
+                          icon: const Icon(Icons.save_outlined),
+                          label: Text(localSaving ? 'Saving...' : 'Save Price Guide'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+      await _reload();
+    } finally {
+      for (final controller in controllers) {
+        controller.dispose();
+      }
+    }
+  }
+
+  Future<void> _counter(HpjSupplyDealSnapshot deal) async {
+    if (saving) return;
+    final offer = _number(hpjOfferController);
+    final customer = _number(customerController);
+    final wholesale = _number(wholesaleController);
+    final customerSell = _number(customerSellController);
+    final wholesaleSell = _number(wholesaleSellController);
+    final usable = deal.confirmedQuantity - deal.reserveQuantity;
+
+    if (offer <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid HPJ farmer price offer.')),
+      );
+      return;
+    }
+    if (customer < 0 || wholesale < 0 || customer + wholesale > usable + .0001) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Customer + Wholesale must fit inside ${_qty(usable, deal.unit)} available after HPJ Reserve.')),
+      );
+      return;
+    }
+    if (customer > 0 && customerSell <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the final Customer Shop price.')),
+      );
+      return;
+    }
+    if (wholesale > 0 && wholesaleSell <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the final Wholesale price.')),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      await hpjAdminCounterSupplyDeal(
+        supplyId: deal.supplyId,
+        offerPrice: offer,
+        customerQuantity: customer,
+        wholesaleQuantity: wholesale,
+        customerSellPrice: customerSell,
+        wholesaleSellPrice: wholesaleSell,
+        note: noteController.text,
+      );
+      if (!mounted) return;
+      setState(() => saving = false);
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Counteroffer sent to farmer.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Future<void> _acceptFarmer(HpjSupplyDealSnapshot deal) async {
+    if (saving) return;
+    final customerSell = _number(customerSellController);
+    final wholesaleSell = _number(wholesaleSellController);
+    if (deal.customerQuantity > 0 && customerSell <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the final Customer Shop price.')),
+      );
+      return;
+    }
+    if (deal.wholesaleQuantity > 0 && wholesaleSell <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the final Wholesale price.')),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      await hpjAdminAcceptFarmerSupplyDeal(
+        supplyId: deal.supplyId,
+        customerSellPrice: customerSell,
+        wholesaleSellPrice: wholesaleSell,
+        note: noteController.text,
+      );
+      if (!mounted) return;
+      setState(() => saving = false);
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Future<void> _apply(HpjSupplyDealSnapshot deal) async {
+    if (saving) return;
+    setState(() => saving = true);
+    try {
+      await hpjAdminApplySupplyDeal(deal.supplyId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Agreement applied to Market Allocation and HPJ selling prices.')),
+      );
+      Navigator.of(context).pop('changed');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Future<void> _decline(HpjSupplyDealSnapshot deal) async {
+    if (saving) return;
+    setState(() => saving = true);
+    try {
+      await hpjAdminDeclineSupplyDeal(deal.supplyId, note: noteController.text);
+      if (!mounted) return;
+      Navigator.of(context).pop('changed');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Widget _guide(HpjSupplyDealSnapshot deal) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F4EC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights_outlined, color: FarmColors.deepGreen, size: 19),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'RADA/JAMIS + HPJ Price Guide',
+                  style: TextStyle(color: FarmColors.deepGreen, fontWeight: FontWeight.w900),
+                ),
+              ),
+              TextButton(
+                onPressed: saving ? null : () => _editGuide(deal),
+                child: Text(deal.hasMarketGuide ? 'Edit' : 'Add'),
+              ),
+            ],
+          ),
+          Text(
+            deal.hasMarketGuide
+                ? 'Farmgate ${_money(deal.radaFarmgateLow)} – ${_money(deal.radaFarmgateHigh)} / ${deal.unit}'
+                : 'No market guide entered yet.',
+            style: const TextStyle(color: FarmColors.ink, fontSize: 10.5, fontWeight: FontWeight.w800),
+          ),
+          if (deal.radaWholesaleReference > 0)
+            Text('Wholesale reference ${_money(deal.radaWholesaleReference)}', style: const TextStyle(color: FarmColors.mutedText, fontSize: 9.4)),
+          if (deal.radaRetailLow > 0 || deal.radaRetailHigh > 0)
+            Text('Retail ${_money(deal.radaRetailLow)} – ${_money(deal.radaRetailHigh)}', style: const TextStyle(color: FarmColors.mutedText, fontSize: 9.4)),
+          if (deal.hpjFarmerMin > 0 || deal.hpjFarmerMax > 0)
+            Text('HPJ farmer target ${_money(deal.hpjFarmerMin)} – ${_money(deal.hpjFarmerMax)}', style: const TextStyle(color: FarmColors.primary, fontSize: 9.4, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 160),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * .94),
+        decoration: const BoxDecoration(
+          color: FarmColors.card,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: FutureBuilder<HpjSupplyDealSnapshot>(
+          future: future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+              return const SizedBox(height: 420, child: Center(child: CircularProgressIndicator()));
+            }
+            if (snapshot.hasError || snapshot.data == null) {
+              return const Padding(
+                padding: EdgeInsets.all(22),
+                child: FarmEmptyState(
+                  icon: Icons.price_change_outlined,
+                  title: 'Market Deal is unavailable',
+                  message: 'Run the Phase 054 SQL, then refresh Products.',
+                ),
+              );
+            }
+
+            final deal = snapshot.data!;
+            _hydrate(deal);
+            final farmerPrice = _number(hpjOfferController) > 0
+                ? _number(hpjOfferController)
+                : deal.farmerAskPrice;
+            final landed = deal.landedCost(farmerPrice);
+            final customerRecommended = deal.recommendedCustomerPrice(farmerPrice);
+            final wholesaleRecommended = deal.recommendedWholesalePrice(farmerPrice);
+            final customerSell = _number(customerSellController);
+            final wholesaleSell = _number(wholesaleSellController);
+            final farmerOutside = _outside(deal.farmerAskPrice, deal.hpjFarmerMin, deal.hpjFarmerMax);
+            final customerOutside = _outside(customerSell, deal.hpjCustomerMin, deal.hpjCustomerMax);
+            final wholesaleOutside = _outside(wholesaleSell, deal.hpjWholesaleMin, deal.hpjWholesaleMax);
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(color: FarmColors.line, borderRadius: BorderRadius.circular(99)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      HpjProductThumb(productName: deal.cropName, size: 58, radius: 13),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Farmer Market Deal', style: TextStyle(color: FarmColors.ink, fontSize: 19, fontWeight: FontWeight.w900)),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${deal.cropName} • ${deal.farmName} • ${_qty(deal.confirmedQuantity, deal.unit)} confirmed',
+                              style: const TextStyle(color: FarmColors.mutedText, fontSize: 10.2, fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                      HpjMvpStatusPill(
+                        label: deal.statusLabel,
+                        color: deal.isAgreed
+                            ? FarmColors.success
+                            : deal.isHpjCounter
+                                ? FarmColors.primary
+                                : FarmColors.warning,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _guide(deal),
+                  if (!deal.hasDeal) ...[
+                    const SizedBox(height: 12),
+                    const FarmEmptyState(
+                      icon: Icons.handshake_outlined,
+                      title: 'Waiting for farmer offer',
+                      message: 'The farmer can propose Customer / Wholesale quantities and the price HPJ should pay.',
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: farmerOutside ? const Color(0xFFFFF7E8) : Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: farmerOutside ? FarmColors.warning.withOpacity(.3) : FarmColors.line),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Farmer proposal', style: TextStyle(color: FarmColors.ink, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 4),
+                          Text('Asking ${_money(deal.farmerAskPrice)} / ${deal.unit}', style: const TextStyle(color: FarmColors.deepGreen, fontSize: 15, fontWeight: FontWeight.w900)),
+                          Text(
+                            'Customer ${_qty(deal.customerQuantity, deal.unit)} • Wholesale ${_qty(deal.wholesaleQuantity, deal.unit)}',
+                            style: const TextStyle(color: FarmColors.mutedText, fontSize: 9.7, fontWeight: FontWeight.w700),
+                          ),
+                          if (farmerOutside)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 4),
+                              child: Text('Farmer ask is outside the HPJ target buying range.', style: TextStyle(color: FarmColors.warning, fontSize: 9.2, fontWeight: FontWeight.w800)),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (!deal.isAgreed) ...[
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(
+                          child: TextField(
+                            controller: customerController,
+                            enabled: !saving && deal.sellToCustomer,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(labelText: 'Customer allocation', suffixText: deal.unit),
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: TextField(
+                            controller: wholesaleController,
+                            enabled: !saving && deal.sellToWholesale,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(labelText: 'Wholesale allocation', suffixText: deal.unit),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: hpjOfferController,
+                        enabled: !saving,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(labelText: 'HPJ farmer price', prefixText: r'J$ ', suffixText: '/ ${deal.unit}'),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFCF5),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: FarmColors.gold.withOpacity(.16)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('HPJ margin check', style: TextStyle(color: FarmColors.deepGreen, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 4),
+                          Text('Landed cost ${_money(landed)} / ${deal.unit}', style: const TextStyle(color: FarmColors.ink, fontSize: 10.3, fontWeight: FontWeight.w800)),
+                          Text('Recommended Customer ${_money(customerRecommended)} • ${deal.customerMarginTarget.toStringAsFixed(0)}% target', style: const TextStyle(color: FarmColors.mutedText, fontSize: 9.3)),
+                          Text('Recommended Wholesale ${_money(wholesaleRecommended)} • ${deal.wholesaleMarginTarget.toStringAsFixed(0)}% target', style: const TextStyle(color: FarmColors.mutedText, fontSize: 9.3)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: customerSellController,
+                          enabled: !saving && !deal.isApplied,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Customer Shop price',
+                            prefixText: r'J$ ',
+                            suffixText: '/ ${deal.unit}',
+                            helperText: customerOutside ? 'Outside HPJ range' : null,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: TextField(
+                          controller: wholesaleSellController,
+                          enabled: !saving && !deal.isApplied,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Wholesale price',
+                            prefixText: r'J$ ',
+                            suffixText: '/ ${deal.unit}',
+                            helperText: wholesaleOutside ? 'Outside HPJ range' : null,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: noteController,
+                      enabled: !saving && !deal.isApplied,
+                      maxLines: 2,
+                      decoration: const InputDecoration(labelText: 'Deal note'),
+                    ),
+                    const SizedBox(height: 13),
+                    if (deal.isAgreed && !deal.isApplied)
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: saving ? null : () => _apply(deal),
+                          icon: const Icon(Icons.publish_outlined),
+                          label: const Text('Apply Agreement to Market'),
+                        ),
+                      )
+                    else if (deal.isApplied)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(color: FarmColors.success.withOpacity(.08), borderRadius: BorderRadius.circular(13)),
+                        child: const Text(
+                          'Agreement applied. Market Allocation and HPJ selling prices are active.',
+                          style: TextStyle(color: FarmColors.success, fontSize: 10.3, fontWeight: FontWeight.w800),
+                        ),
+                      )
+                    else if (deal.isFarmerOffer) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: saving ? null : () => _acceptFarmer(deal),
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: Text('Accept Farmer Price ${_money(deal.farmerAskPrice)}'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: saving ? null : () => _counter(deal),
+                          icon: const Icon(Icons.swap_horiz_rounded),
+                          label: const Text('Send Counteroffer'),
+                        ),
+                      ),
+                    ] else if (deal.isHpjCounter)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: saving ? null : () => _counter(deal),
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('Update HPJ Counteroffer'),
+                        ),
+                      ),
+                    if (!deal.isAgreed && deal.status != 'declined')
+                      Align(
+                        alignment: Alignment.center,
+                        child: TextButton(
+                          onPressed: saving ? null : () => _decline(deal),
+                          child: const Text('Decline deal'),
+                        ),
+                      ),
+                  ],
+                  const Divider(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: saving ? null : () => Navigator.of(context).pop('allocation'),
+                      icon: const Icon(Icons.hub_outlined),
+                      label: const Text('Adjust Allocation Manually'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class _FarmerSupplyEntrySheet extends StatefulWidget {
+  final String farmerId;
   final List<FarmerSupplyForecast> recentSupplies;
 
   const _FarmerSupplyEntrySheet({
+    required this.farmerId,
     required this.recentSupplies,
   });
 
@@ -5192,6 +11805,14 @@ class _FarmerSupplyEntrySheetState
 
   bool saving = false;
   bool showMoreDetails = false;
+
+  Product? selectedProduct;
+  bool sellToCustomer = true;
+  bool sellToWholesale = true;
+
+  bool requestShopListing = true;
+  bool uploadingListingImage = false;
+  String? listingImageUrl;
 
   List<FarmerSupplyForecast> get recentCrops {
     final unique =
@@ -5240,6 +11861,14 @@ class _FarmerSupplyEntrySheetState
     final unit = await HpjSmartLocalStore.readString('farmer_supply_unit');
     final harvestMs = await HpjSmartLocalStore.readInt('farmer_supply_harvest_ms');
     final savedStep = await HpjSmartLocalStore.readInt('farmer_supply_step');
+    final savedCustomer =
+        await HpjSmartLocalStore.readInt('farmer_supply_sell_customer');
+    final savedWholesale =
+        await HpjSmartLocalStore.readInt('farmer_supply_sell_wholesale');
+    final savedShopListing =
+        await HpjSmartLocalStore.readInt('farmer_supply_request_shop_listing');
+    final savedListingImage =
+        await HpjSmartLocalStore.readString('farmer_supply_listing_image_url');
 
     if (!mounted) return;
     final hasDraft = (crop?.isNotEmpty ?? false) || (quantity?.isNotEmpty ?? false);
@@ -5257,6 +11886,23 @@ class _FarmerSupplyEntrySheetState
         expectedHarvestDate = DateTime.fromMillisecondsSinceEpoch(harvestMs);
       }
       step = (savedStep ?? 0).clamp(0, 1).toInt();
+      if (savedCustomer != null) {
+        sellToCustomer = savedCustomer == 1;
+      }
+      if (savedWholesale != null) {
+        sellToWholesale = savedWholesale == 1;
+      }
+      if (!sellToCustomer && !sellToWholesale) {
+        sellToWholesale = true;
+      }
+      if (savedShopListing != null) {
+        requestShopListing = savedShopListing == 1;
+      }
+      final cleanListingImage =
+          cleanHostedImageUrl(savedListingImage);
+      if (cleanListingImage != null) {
+        listingImageUrl = cleanListingImage;
+      }
     });
   }
 
@@ -5271,6 +11917,30 @@ class _FarmerSupplyEntrySheetState
       expectedHarvestDate.millisecondsSinceEpoch,
     ));
     unawaited(HpjSmartLocalStore.writeInt('farmer_supply_step', step));
+    unawaited(
+      HpjSmartLocalStore.writeInt(
+        'farmer_supply_sell_customer',
+        sellToCustomer ? 1 : 0,
+      ),
+    );
+    unawaited(
+      HpjSmartLocalStore.writeInt(
+        'farmer_supply_sell_wholesale',
+        sellToWholesale ? 1 : 0,
+      ),
+    );
+    unawaited(
+      HpjSmartLocalStore.writeInt(
+        'farmer_supply_request_shop_listing',
+        requestShopListing ? 1 : 0,
+      ),
+    );
+    unawaited(
+      HpjSmartLocalStore.writeString(
+        'farmer_supply_listing_image_url',
+        listingImageUrl ?? '',
+      ),
+    );
   }
 
   Future<void> _clearSmartDraft() async {
@@ -5282,6 +11952,10 @@ class _FarmerSupplyEntrySheetState
       'farmer_supply_unit',
       'farmer_supply_harvest_ms',
       'farmer_supply_step',
+      'farmer_supply_sell_customer',
+      'farmer_supply_sell_wholesale',
+      'farmer_supply_request_shop_listing',
+      'farmer_supply_listing_image_url',
     ]) {
       await HpjSmartLocalStore.remove(key);
     }
@@ -5371,8 +12045,18 @@ class _FarmerSupplyEntrySheetState
     final category = product.category.trim();
     final unit = (product.unit ?? '').trim().toLowerCase();
 
+    final productFarmerId = product.farmerId?.trim() ?? '';
+    final linkedToThisFarm =
+        productFarmerId.isNotEmpty && productFarmerId == widget.farmerId;
+
     setState(() {
       cropController.text = product.name;
+      selectedProduct = linkedToThisFarm ? product : null;
+
+      if (linkedToThisFarm) {
+        listingImageUrl = cleanHostedImageUrl(product.imageUrl);
+        requestShopListing = !product.canAddToCart;
+      }
 
       selectedCategory = allowedCategories.contains(category)
           ? category
@@ -5383,6 +12067,57 @@ class _FarmerSupplyEntrySheetState
       }
     });
     _persistSmartDraft();
+
+    if (!linkedToThisFarm && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Crop selected. This farm does not yet have a linked marketplace product for it; HPJ can link one later.',
+          ),
+        ),
+      );
+    }
+  }
+
+
+  Future<void> _uploadShopListingImage() async {
+    if (saving || uploadingListingImage) return;
+
+    final picked = await pickProductImageFromDevice();
+    if (picked == null || !mounted) return;
+
+    setState(() => uploadingListingImage = true);
+
+    try {
+      final url = await farmerUploadOwnPublicFarmImage(
+        farmerId: widget.farmerId,
+        slot: 'shop-listing-request',
+        image: picked,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        listingImageUrl = url;
+      });
+      _persistSmartDraft();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Product photo ready for HPJ review.'),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyAppError(error))),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => uploadingListingImage = false);
+      }
+    }
   }
 
   bool _validateStepOne() {
@@ -5464,7 +12199,22 @@ class _FarmerSupplyEntrySheetState
     });
 
     try {
-      await createFarmerSupplyForecast(
+      if (!sellToCustomer && !sellToWholesale) {
+        throw Exception(
+          'Choose Customer Marketplace, Wholesale Business, or both.',
+        );
+      }
+
+      if (requestShopListing &&
+          sellToCustomer &&
+          selectedProduct == null &&
+          cleanHostedImageUrl(listingImageUrl) == null) {
+        throw Exception(
+          'Add a clear product photo before requesting a new Customer Shop listing.',
+        );
+      }
+
+      final createdSupply = await createFarmerSupplyForecast(
         cropName: crop,
         category: selectedCategory,
         quantityGrowing: quantity,
@@ -5476,7 +12226,59 @@ class _FarmerSupplyEntrySheetState
         notes: notesController.text.trim(),
       );
 
+      String? channelWarning;
+      try {
+        await setFarmerSupplyMarketChannels(
+          supplyId: createdSupply.id,
+          linkedProductId: selectedProduct?.id,
+          sellToCustomer: sellToCustomer,
+          sellToWholesale: sellToWholesale,
+        );
+      } catch (error) {
+        channelWarning =
+            'Supply was saved, but HPJ could not save the market-channel link. '
+            'Please ask HPJ to review it.';
+        farmDebugLog(
+          'Farmer supply channel link unavailable: $error',
+        );
+      }
+
+      String? listingWarning;
+      if (requestShopListing && sellToCustomer) {
+        try {
+          await createFarmerShopListingRequest(
+            supplyId: createdSupply.id,
+            existingProductId: selectedProduct?.id,
+            productName: crop,
+            category: selectedCategory,
+            unit: selectedUnit,
+            imageUrl: listingImageUrl ?? selectedProduct?.imageUrl,
+            description: notesController.text,
+            sellToWholesale: sellToWholesale,
+          );
+        } catch (error) {
+          listingWarning =
+              'Supply was saved, but the Shop listing request could not be sent. '
+              'Please try again from My Supply.';
+          farmDebugLog(
+            'Farmer Shop listing request unavailable: $error',
+          );
+        }
+      }
+
       if (!mounted) return;
+
+      if (channelWarning != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(channelWarning)),
+        );
+      }
+
+      if (listingWarning != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(listingWarning)),
+        );
+      }
 
       await _clearSmartDraft();
       if (!mounted) return;
@@ -5637,7 +12439,7 @@ class _FarmerSupplyEntrySheetState
           child: OutlinedButton.icon(
             onPressed: saving ? null : _chooseCropByPicture,
             icon: const Icon(Icons.photo_library_outlined),
-            label: const Text('Choose crop by picture'),
+            label: const Text('Choose HPJ product by picture'),
           ),
         ),
 
@@ -5650,6 +12452,17 @@ class _FarmerSupplyEntrySheetState
               TextCapitalization.words,
           autofocus:
               recentCrops.isEmpty,
+          onChanged: (value) {
+            final linked = selectedProduct;
+            if (linked != null &&
+                linked.name.trim().toLowerCase() !=
+                    value.trim().toLowerCase()) {
+              setState(() {
+                selectedProduct = null;
+                listingImageUrl = null;
+              });
+            }
+          },
           decoration:
               const InputDecoration(
             labelText: 'Crop',
@@ -5657,6 +12470,32 @@ class _FarmerSupplyEntrySheetState
                 'e.g. Callaloo',
           ),
         ),
+
+        if (selectedProduct != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(
+                Icons.link_rounded,
+                size: 16,
+                color: FarmColors.success,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Linked to HPJ product: ${selectedProduct!.name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.success,
+                    fontSize: 9.8,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
 
         const SizedBox(height: 11),
 
@@ -5756,6 +12595,10 @@ class _FarmerSupplyEntrySheetState
         )
         .inDays;
 
+    final listingPreview = cleanHostedImageUrl(
+      listingImageUrl ?? selectedProduct?.imageUrl,
+    );
+
     return Column(
       crossAxisAlignment:
           CrossAxisAlignment.start,
@@ -5844,7 +12687,233 @@ class _FarmerSupplyEntrySheetState
           ),
         ),
 
+        const SizedBox(height: 16),
+
+        const Text(
+          'Sell through HPJ to',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Choose where HPJ may offer this supply. HPJ still controls final listing approval, pricing and allocation.',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 9.5,
+            height: 1.35,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        FarmCard(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 2,
+          ),
+          child: Column(
+            children: [
+              CheckboxListTile(
+                value: sellToCustomer,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Customer Marketplace',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Home shoppers and My Box',
+                  style: TextStyle(fontSize: 9.4),
+                ),
+                onChanged: saving
+                    ? null
+                    : (value) {
+                        setState(() {
+                          sellToCustomer = value == true;
+                        });
+                        _persistSmartDraft();
+                      },
+              ),
+              const Divider(height: 1),
+              CheckboxListTile(
+                value: sellToWholesale,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Wholesale Business',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Restaurants, hotels and business buyers',
+                  style: TextStyle(fontSize: 9.4),
+                ),
+                onChanged: saving
+                    ? null
+                    : (value) {
+                        setState(() {
+                          sellToWholesale = value == true;
+                        });
+                        _persistSmartDraft();
+                      },
+              ),
+            ],
+          ),
+        ),
+
         const SizedBox(height: 10),
+
+        if (sellToCustomer) ...[
+          FarmCard(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.storefront_outlined,
+                      color: FarmColors.primary,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Customer Shop listing',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 12.3,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (selectedProduct != null)
+                      const HpjMvpStatusPill(
+                        label: 'Existing HPJ product',
+                        color: FarmColors.success,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  selectedProduct == null
+                      ? 'Ask HPJ to create and publish this crop in the Customer Shop.'
+                      : selectedProduct!.canAddToCart
+                          ? 'This product is already live in the Customer Shop.'
+                          : 'Ask HPJ to review and activate the existing product for Customer Shop stock.',
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.4,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                if (selectedProduct?.canAddToCart == true)
+                  const HpjMvpListRow(
+                    icon: Icons.check_circle_outline_rounded,
+                    title: 'Already live in Customer Shop',
+                    subtitle: 'No additional listing request is needed.',
+                    iconColor: FarmColors.success,
+                  )
+                else
+                  CheckboxListTile(
+                    value: requestShopListing,
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text(
+                      'Request Shop Listing',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 11.2,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'HPJ sets the selling price, confirms stock and publishes.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.1,
+                      ),
+                    ),
+                    onChanged: saving
+                        ? null
+                        : (value) {
+                            setState(() {
+                              requestShopListing = value == true;
+                            });
+                            _persistSmartDraft();
+                          },
+                  ),
+                if (requestShopListing &&
+                    selectedProduct?.canAddToCart != true) ...[
+                  const SizedBox(height: 6),
+                  if (listingPreview != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(13),
+                      child: Image.network(
+                        listingPreview,
+                        width: double.infinity,
+                        height: 118,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  if (listingPreview != null)
+                    const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: saving || uploadingListingImage
+                          ? null
+                          : _uploadShopListingImage,
+                      icon: uploadingListingImage
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.add_a_photo_outlined),
+                      label: Text(
+                        uploadingListingImage
+                            ? 'Uploading...'
+                            : selectedProduct == null
+                                ? listingPreview == null
+                                    ? 'Add real product photo'
+                                    : 'Replace product photo'
+                                : 'Add a newer farm product photo',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    selectedProduct == null
+                        ? 'A clear real product photo is required for a new Shop listing.'
+                        : 'The current HPJ product image can be used, or you may submit a newer farm photo.',
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 8.8,
+                      height: 1.3,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
 
         Material(
           color: FarmColors.background,
@@ -6155,6 +13224,301 @@ class _FarmerSupplyEntrySheetState
 }
 
 
+
+class _FarmerExistingSupplyShopRequestSheet extends StatefulWidget {
+  final String farmerId;
+  final FarmerSupplyForecast supply;
+
+  const _FarmerExistingSupplyShopRequestSheet({
+    required this.farmerId,
+    required this.supply,
+  });
+
+  @override
+  State<_FarmerExistingSupplyShopRequestSheet> createState() =>
+      _FarmerExistingSupplyShopRequestSheetState();
+}
+
+class _FarmerExistingSupplyShopRequestSheetState
+    extends State<_FarmerExistingSupplyShopRequestSheet> {
+  final descriptionController = TextEditingController();
+
+  Product? selectedProduct;
+  String? imageUrl;
+  bool uploading = false;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    descriptionController.text = (widget.supply.notes ?? '').trim();
+  }
+
+  @override
+  void dispose() {
+    descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _chooseExistingProduct() async {
+    if (saving) return;
+
+    final product = await showHpjProductPicturePicker(
+      context,
+      title: 'Choose this farm’s HPJ product',
+    );
+
+    if (!mounted || product == null) return;
+
+    final productFarmerId = product.farmerId?.trim() ?? '';
+
+    if (productFarmerId != widget.farmerId.trim()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'That HPJ product is not linked to this farm. '
+            'Upload a product photo and HPJ can create the listing.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      selectedProduct = product;
+      imageUrl = cleanHostedImageUrl(product.imageUrl);
+    });
+  }
+
+  Future<void> _uploadImage() async {
+    if (saving || uploading) return;
+
+    final picked = await pickProductImageFromDevice();
+    if (picked == null || !mounted) return;
+
+    setState(() => uploading = true);
+
+    try {
+      final url = await farmerUploadOwnPublicFarmImage(
+        farmerId: widget.farmerId,
+        slot: 'shop-listing-request',
+        image: picked,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        imageUrl = url;
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyAppError(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => uploading = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (saving) return;
+
+    if (selectedProduct?.canAddToCart == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This product is already live in the Customer Shop.'),
+        ),
+      );
+      return;
+    }
+
+    if (selectedProduct == null &&
+        cleanHostedImageUrl(imageUrl) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add a clear real product photo for HPJ to review.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+
+    try {
+      await createFarmerShopListingRequest(
+        supplyId: widget.supply.id,
+        existingProductId: selectedProduct?.id,
+        productName: widget.supply.cropName,
+        category: (widget.supply.category ?? '').trim(),
+        unit: widget.supply.unit,
+        imageUrl: imageUrl ?? selectedProduct?.imageUrl,
+        description: descriptionController.text,
+        sellToWholesale: false,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview =
+        cleanHostedImageUrl(imageUrl ?? selectedProduct?.imageUrl);
+    final alreadyLive = selectedProduct?.canAddToCart == true;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: FarmColors.card,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(24),
+          ),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          18,
+          12,
+          18,
+          MediaQuery.of(context).viewInsets.bottom + 18,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: FarmColors.line,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Request Customer Shop Listing',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.supply.cropName,
+                style: const TextStyle(
+                  color: FarmColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: saving ? null : _chooseExistingProduct,
+                icon: const Icon(Icons.link_rounded),
+                label: Text(
+                  selectedProduct == null
+                      ? 'Link existing HPJ product'
+                      : 'Linked: ${selectedProduct!.name}',
+                ),
+              ),
+              const SizedBox(height: 9),
+              if (alreadyLive)
+                const HpjMvpListRow(
+                  icon: Icons.check_circle_outline_rounded,
+                  title: 'Already live in Customer Shop',
+                  subtitle: 'No new request is needed for this product.',
+                  iconColor: FarmColors.success,
+                )
+              else ...[
+                if (preview != null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.network(
+                      preview,
+                      width: double.infinity,
+                      height: 145,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const SizedBox.shrink(),
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: saving || uploading ? null : _uploadImage,
+                    icon: uploading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.add_a_photo_outlined),
+                    label: Text(
+                      uploading
+                          ? 'Uploading...'
+                          : preview == null
+                              ? 'Add real product photo'
+                              : 'Replace product photo',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                TextField(
+                  controller: descriptionController,
+                  enabled: !saving,
+                  minLines: 2,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Product notes (optional)',
+                    hintText:
+                        'Variety, quality, size, or anything HPJ should know',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'HPJ will confirm the customer price and available stock before publishing.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.2,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: PrimaryFarmButton(
+                    label: saving
+                        ? 'Sending...'
+                        : 'Send to HPJ for Review',
+                    onPressed: saving ? null : _submit,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FarmerRecordFocusNotice extends StatelessWidget {
   final bool found;
   final String foundMessage;
@@ -6252,6 +13616,7 @@ class _FarmerSupplyScreenState
           Colors.transparent,
       builder: (_) =>
           _FarmerSupplyEntrySheet(
+        farmerId: widget.profile.id,
         recentSupplies:
             recentSupplies,
       ),
@@ -6442,6 +13807,13 @@ class _FarmerSupplyScreenState
 
               const SizedBox(height: 14),
 
+              _FarmerShopListingRequestSummary(
+                farmerId: widget.profile.id,
+                refreshKey: localRefreshKey,
+              ),
+
+              const SizedBox(height: 14),
+
               if (requestedSupplyId.isNotEmpty) ...[
                 _FarmerRecordFocusNotice(
                   found: exactSupplyFound,
@@ -6500,6 +13872,7 @@ class _FarmerSupplyScreenState
                     ),
                     child:
                         _FarmerSupplyCard(
+                      farmerId: widget.profile.id,
                       supply: supply,
                       onChanged:
                           refreshSupply,
@@ -6559,6 +13932,7 @@ class _FarmerSupplyScreenState
                             ),
                             child:
                                 _FarmerSupplyCard(
+                              farmerId: widget.profile.id,
                               supply:
                                   supply,
                               onChanged:
@@ -7205,10 +14579,12 @@ class _FarmerSupplyUpdateSheetState
 }
 
 class _FarmerSupplyCard extends StatelessWidget {
+  final String farmerId;
   final FarmerSupplyForecast supply;
   final VoidCallback onChanged;
 
   const _FarmerSupplyCard({
+    required this.farmerId,
     required this.supply,
     required this.onChanged,
   });
@@ -7309,6 +14685,51 @@ class _FarmerSupplyCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _openShopListing(
+    BuildContext context,
+  ) async {
+    final sent = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _FarmerExistingSupplyShopRequestSheet(
+        farmerId: farmerId,
+        supply: supply,
+      ),
+    );
+
+    if (sent != true || !context.mounted) return;
+
+    onChanged();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${supply.cropName} was sent to HPJ for Shop review.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMarketAndPrice(
+    BuildContext context,
+  ) async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _FarmerSupplyMarketDealSheet(
+        supply: supply,
+      ),
+    );
+
+    if (changed == true) {
+      onChanged();
+    }
   }
 
   Future<void> _openUpdate(
@@ -7681,8 +15102,37 @@ class _FarmerSupplyCard extends StatelessWidget {
             ),
           ],
 
-          if (!_locked) ...[
+          if (supply.isActive) ...[
             const SizedBox(height: 12),
+            if (supply.isHpjConfirmed) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(
+                    Icons.handshake_outlined,
+                    size: 17,
+                  ),
+                  label: const Text('Market Allocation & Price'),
+                  onPressed: () => _openMarketAndPrice(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(
+                  Icons.storefront_outlined,
+                  size: 17,
+                ),
+                label: const Text('Request Customer Shop Listing'),
+                onPressed: () => _openShopListing(context),
+              ),
+            ),
+          ],
+
+          if (!_locked) ...[
+            const SizedBox(height: 8),
 
             if (_farmerSupplyNeedsReview(supply)) ...[
               SizedBox(
@@ -8206,6 +15656,568 @@ class FarmerProductsScreen extends StatelessWidget {
   }
 }
 
+
+// =====================================================
+// HPJ PHASE 040 — FARMER HEADQUARTERS MVP
+//
+// Home = farm identity + the four jobs that matter most.
+// Existing operational screens are retained and grouped under Operations.
+// =====================================================
+
+class _FarmerPublicIdentityCard extends StatefulWidget {
+  final FarmerProfile profile;
+  final int refreshKey;
+  final VoidCallback onOpenAccount;
+
+  const _FarmerPublicIdentityCard({
+    required this.profile,
+    required this.refreshKey,
+    required this.onOpenAccount,
+  });
+
+  @override
+  State<_FarmerPublicIdentityCard> createState() =>
+      _FarmerPublicIdentityCardState();
+}
+
+class _FarmerPublicIdentityCardState extends State<_FarmerPublicIdentityCard> {
+  late Future<FarmPublicProfileRecord?> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FarmerPublicIdentityCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profile.id != widget.profile.id ||
+        oldWidget.refreshKey != widget.refreshKey) {
+      _future = _load();
+    }
+  }
+
+  Future<FarmPublicProfileRecord?> _load() {
+    return fetchFarmPublicProfile(widget.profile.id, includeUnpublished: true);
+  }
+
+  void _preview(FarmPublicProfileRecord farm) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PublicFarmProfileScreen(
+          farmerId: widget.profile.id,
+          previewUnpublished: true,
+          sourceWorkspace: 'farmer',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editPublicPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FarmerPublicProfileEditorScreen(farmer: widget.profile),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _future = _load();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<FarmPublicProfileRecord?>(
+      future: _future,
+      builder: (context, snapshot) {
+        final farm = snapshot.data;
+        final fallbackName = widget.profile.farmName.trim().isEmpty
+            ? widget.profile.farmerName.trim()
+            : widget.profile.farmName.trim();
+        final farmName = (farm?.publicName.trim().isNotEmpty ?? false)
+            ? farm!.publicName.trim()
+            : fallbackName;
+        final community = farm?.community.trim() ?? '';
+        final parish = (farm?.parish.trim().isNotEmpty ?? false)
+            ? farm!.parish.trim()
+            : widget.profile.parish.trim();
+        final locationParts = <String>[
+          if (community.isNotEmpty) community,
+          if (parish.isNotEmpty) parish,
+        ];
+        final logo = cleanHostedImageUrl(farm?.logoImageUrl);
+        final isLive = farm?.isPublished == true;
+        final isVerified = farm?.hpjVerified == true;
+
+        return FarmCard(
+          padding: const EdgeInsets.all(15),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: FarmColors.primarySoft,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: logo != null
+                        ? Image.network(
+                            logo,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.agriculture_rounded,
+                              color: FarmColors.primary,
+                              size: 25,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.agriculture_rounded,
+                            color: FarmColors.primary,
+                            size: 25,
+                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                farmName.isEmpty ? 'My Farm' : farmName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 17,
+                                  height: 1.08,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -.2,
+                                ),
+                              ),
+                            ),
+                            if (isVerified) ...[
+                              const SizedBox(width: 5),
+                              const Icon(Icons.verified_rounded,
+                                  color: FarmColors.primary, size: 17),
+                            ],
+                          ],
+                        ),
+                        if (locationParts.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            locationParts.join(' • '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  HpjMvpStatusPill(
+                    label: isLive ? 'LIVE' : 'DRAFT',
+                    color: isLive ? FarmColors.success : FarmColors.warning,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Divider(height: 1),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: farm == null ? null : () => _preview(farm),
+                      icon: const Icon(Icons.visibility_outlined, size: 16),
+                      label: const Text('Preview'),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: _editPublicPage,
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Edit page'),
+                    ),
+                  ),
+                ],
+              ),
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  farm == null) ...[
+                const SizedBox(height: 5),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+class _FarmerCoreActionsCard extends StatelessWidget {
+  final VoidCallback onOpenSupply;
+  final VoidCallback onOpenDemand;
+  final VoidCallback onOpenCollections;
+  final VoidCallback onOpenPayments;
+
+  const _FarmerCoreActionsCard({
+    required this.onOpenSupply,
+    required this.onOpenDemand,
+    required this.onOpenCollections,
+    required this.onOpenPayments,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeader(
+          title: 'Farm tools',
+          subtitle: 'The four jobs you use most.',
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = (constraints.maxWidth - 10) / 2;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SizedBox(
+                  width: width,
+                  child: HpjMvpActionTile(
+                    icon: Icons.grass_rounded,
+                    title: 'Supply',
+                    subtitle: 'Update crops',
+                    onTap: onOpenSupply,
+                    emphasized: true,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: HpjMvpActionTile(
+                    icon: Icons.trending_up_rounded,
+                    title: 'Demand',
+                    subtitle: 'Buyer needs',
+                    onTap: onOpenDemand,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: HpjMvpActionTile(
+                    icon: Icons.local_shipping_outlined,
+                    title: 'Collections',
+                    subtitle: 'Pickup schedule',
+                    onTap: onOpenCollections,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: HpjMvpActionTile(
+                    icon: Icons.payments_outlined,
+                    title: 'Payments',
+                    subtitle: 'Earnings',
+                    onTap: onOpenPayments,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+
+class _FarmerMvpActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _FarmerMvpActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: FarmColors.background,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 86),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: FarmColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: FarmColors.primary,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(height: 9),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: FarmColors.mutedText,
+                    size: 17,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 9.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FarmerOperationsSnapshot {
+  final List<FarmerOrderSummary> orders;
+  final List<FarmerCollectionScheduleItem> collections;
+  final List<FarmerPayout> payouts;
+
+  const _FarmerOperationsSnapshot({
+    required this.orders,
+    required this.collections,
+    required this.payouts,
+  });
+}
+
+Future<_FarmerOperationsSnapshot> fetchFarmerOperationsSnapshot(
+  FarmerProfile profile,
+) async {
+  var orders = <FarmerOrderSummary>[];
+  var collections = <FarmerCollectionScheduleItem>[];
+  var payouts = <FarmerPayout>[];
+
+  try {
+    orders = await fetchFarmerOrderSummaries(profile.id);
+  } catch (error) {
+    farmDebugLog('Farmer Operations — orders unavailable: $error');
+  }
+
+  try {
+    collections = await fetchFarmerCollectionSchedule();
+  } catch (error) {
+    farmDebugLog('Farmer Operations — collections unavailable: $error');
+  }
+
+  try {
+    payouts = await fetchFarmerPayouts(farmerId: profile.id);
+  } catch (error) {
+    farmDebugLog('Farmer Operations — payouts unavailable: $error');
+  }
+
+  return _FarmerOperationsSnapshot(
+    orders: orders,
+    collections: collections,
+    payouts: payouts,
+  );
+}
+
+class FarmerOperationsScreen extends StatelessWidget {
+  final FarmerProfile profile;
+  final int refreshKey;
+
+  const FarmerOperationsScreen({
+    super.key,
+    required this.profile,
+    required this.refreshKey,
+  });
+
+  void _open(BuildContext context, Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => screen),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmPage(
+      child: FutureBuilder<_FarmerOperationsSnapshot>(
+        key: ValueKey('farmer-operations-$refreshKey'),
+        future: fetchFarmerOperationsSnapshot(profile),
+        builder: (context, snapshot) {
+          final data = snapshot.data ??
+              const _FarmerOperationsSnapshot(
+                orders: <FarmerOrderSummary>[],
+                collections: <FarmerCollectionScheduleItem>[],
+                payouts: <FarmerPayout>[],
+              );
+
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+
+          final upcomingCollections = data.collections
+              .where(
+                (item) =>
+                    !item.collectionDate.isBefore(today) &&
+                    item.stopStatus != 'cancelled' &&
+                    item.stopStatus != 'completed',
+              )
+              .toList();
+
+          final pendingPayout = data.payouts
+              .where((item) => item.payoutStatus == 'pending')
+              .fold<double>(0, (sum, item) => sum + item.netAmount);
+
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
+            children: [
+              const Header(
+                title: 'Farm Operations',
+                subtitle: 'Orders, collections, payments and history in one place',
+              ),
+              const SizedBox(height: 14),
+              FarmCard(
+                padding: const EdgeInsets.all(15),
+                child: AccountActionGrid(
+                  actions: [
+                    AccountActionItem(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'Orders',
+                      subtitle: '${data.orders.length} recent',
+                      onTap: () => _open(
+                        context,
+                        FarmerOrdersScreen(
+                          profile: profile,
+                          refreshKey: refreshKey,
+                        ),
+                      ),
+                    ),
+                    AccountActionItem(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'Collections',
+                      subtitle: '${upcomingCollections.length} upcoming',
+                      onTap: () => _open(
+                        context,
+                        FarmerCollectionScheduleScreen(profile: profile),
+                      ),
+                    ),
+                    AccountActionItem(
+                      icon: Icons.payments_outlined,
+                      title: 'Payments',
+                      subtitle: pendingPayout > 0
+                          ? '${formatJmd(pendingPayout)} pending'
+                          : 'View earnings',
+                      onTap: () => _open(
+                        context,
+                        FarmerEarningsScreen(
+                          profile: profile,
+                          refreshKey: refreshKey,
+                        ),
+                      ),
+                    ),
+                    AccountActionItem(
+                      icon: Icons.description_outlined,
+                      title: 'History',
+                      subtitle: 'Activity statement',
+                      onTap: () => _open(
+                        context,
+                        _FarmerActivityStatementScreen(profile: profile),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  snapshot.data == null) ...[
+                const SizedBox(height: 14),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
+              const SizedBox(height: 14),
+              const FarmCard(
+                padding: EdgeInsets.all(15),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: FarmColors.primary,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Supply stays under My Supply. Buyer demand is available from Home. Operations is for the movement of produce and money after HPJ starts working with your supply.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 10.6,
+                          height: 1.4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class FarmerOrdersScreen extends StatelessWidget {
   final FarmerProfile profile;
   final int refreshKey;
@@ -8368,6 +16380,7 @@ class FarmerEarningsScreen extends StatelessWidget {
 }
 
 
+
 class FarmerAccountScreen extends StatelessWidget {
   final FarmerProfile profile;
   final Future<void> Function() onProfileChanged;
@@ -8430,71 +16443,7 @@ class FarmerAccountScreen extends StatelessWidget {
             badge: profile.statusLabel,
             badgeColor: statusColor,
           ),
-          const SizedBox(height: 12),
-
-          const _FarmerWorkspaceSwitchCard(),
-          const SizedBox(height: 14),
-
-          FarmCard(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const AccountSectionHeading(
-                  title: 'Quick access',
-                  subtitle: 'The farmer tools used most often.',
-                ),
-                const SizedBox(height: 14),
-                AccountActionGrid(
-                  actions: [
-                    AccountActionItem(
-                      icon: Icons.grass_rounded,
-                      title: 'Supply',
-                      subtitle: 'Update crops',
-                      onTap: () => _open(
-                        context,
-                        FarmerSupplyScreen(
-                          profile: profile,
-                          refreshKey: 0,
-                        ),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.trending_up_rounded,
-                      title: 'Demand',
-                      subtitle: 'Buyer needs',
-                      onTap: () => _open(
-                        context,
-                        FarmerDemandBoardScreen(profile: profile),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.local_shipping_outlined,
-                      title: 'Collections',
-                      subtitle: 'Pickup schedule',
-                      onTap: () => _open(
-                        context,
-                        FarmerCollectionScheduleScreen(profile: profile),
-                      ),
-                    ),
-                    AccountActionItem(
-                      icon: Icons.payments_outlined,
-                      title: 'Payments',
-                      subtitle: 'Track earnings',
-                      onTap: () => _open(
-                        context,
-                        FarmerEarningsScreen(
-                          profile: profile,
-                          refreshKey: 0,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           FarmCard(
             padding: EdgeInsets.zero,
@@ -8502,10 +16451,10 @@ class FarmerAccountScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                  padding: EdgeInsets.fromLTRB(15, 14, 15, 5),
                   child: AccountSectionHeading(
-                    title: 'Farmer account',
-                    subtitle: 'Profile, records and preferences.',
+                    title: 'Farm & records',
+                    subtitle: 'Your farm identity and HPJ history.',
                   ),
                 ),
                 AccountListTile(
@@ -8517,12 +16466,41 @@ class FarmerAccountScreen extends StatelessWidget {
                   onTap: () => _editProfile(context),
                 ),
                 AccountListTile(
+                  icon: Icons.storefront_outlined,
+                  title: 'Public farm page',
+                  subtitle: 'Story, cover image and farm photos.',
+                  onTap: () => _open(
+                    context,
+                    FarmerPublicProfileEditorScreen(
+                      farmer: profile,
+                    ),
+                  ),
+                ),
+                AccountListTile(
                   icon: Icons.description_outlined,
                   title: 'Activity Statement',
                   subtitle: 'Supply, collection and payout history.',
+                  isLast: true,
                   onTap: () => _open(
                     context,
                     _FarmerActivityStatementScreen(profile: profile),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          FarmCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(15, 14, 15, 5),
+                  child: AccountSectionHeading(
+                    title: 'Preferences',
+                    subtitle: 'Media, alerts and account settings.',
                   ),
                 ),
                 AccountListTile(
@@ -8549,7 +16527,10 @@ class FarmerAccountScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
+
+          const _FarmerWorkspaceSwitchCard(),
+          const SizedBox(height: 12),
 
           FarmCard(
             padding: EdgeInsets.zero,
@@ -8566,23 +16547,25 @@ class FarmerAccountScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           OutlinedButton.icon(
-            icon: const Icon(Icons.logout_outlined),
+            icon: const Icon(Icons.logout_outlined, size: 18),
             label: const Text('Sign Out'),
             style: OutlinedButton.styleFrom(
               foregroundColor: FarmColors.danger,
               side: BorderSide(
-                color: FarmColors.danger.withOpacity(0.26),
+                color: FarmColors.danger.withOpacity(.24),
               ),
               backgroundColor: FarmColors.card,
               padding: const EdgeInsets.symmetric(
-                vertical: 15,
-                horizontal: 18,
+                vertical: 13,
+                horizontal: 16,
               ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(
+                  HpjMvpUi.controlRadius,
+                ),
               ),
             ),
             onPressed: () async {
@@ -8603,6 +16586,7 @@ class FarmerAccountScreen extends StatelessWidget {
     );
   }
 }
+
 
 
 
@@ -9864,92 +17848,32 @@ class _FarmerProfileEditScreenState
   }
 }
 
-class _FarmerWorkspaceSwitchCard
-    extends StatelessWidget {
+
+class _FarmerWorkspaceSwitchCard extends StatelessWidget {
   const _FarmerWorkspaceSwitchCard();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: FarmColors.card,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+    return FarmCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 1),
+      child: HpjMvpListRow(
+        icon: Icons.apps_rounded,
+        title: 'Switch workspace',
+        subtitle: 'Open another approved HPJ workspace.',
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) =>
-                  const OwnerWorkspaceSwitcherScreen(
+              builder: (_) => const OwnerWorkspaceSwitcherScreen(
                 currentWorkspace: 'farmer',
               ),
             ),
           );
         },
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius:
-                BorderRadius.circular(18),
-            border: Border.all(
-              color: FarmColors.line,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(
-                  0xFF183D30,
-                ).withOpacity(0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: const Row(
-            children: [
-              Icon(
-                Icons.apps_rounded,
-                color: FarmColors.primary,
-                size: 25,
-              ),
-              SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Switch workspace',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 13,
-                        fontWeight:
-                            FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Move between your approved HPJ workspaces',
-                      style: TextStyle(
-                        color:
-                            FarmColors.mutedText,
-                        fontSize: 9.8,
-                        fontWeight:
-                            FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: FarmColors.mutedText,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
 }
+
 
 class FarmerStatusCard extends StatelessWidget {
   final FarmerProfile profile;
@@ -10549,6 +18473,10 @@ class _AdminFarmerSupplyQueue extends StatefulWidget {
 
 class _AdminFarmerSupplyQueueState extends State<_AdminFarmerSupplyQueue> {
   late Future<List<Object>> future;
+  final Set<String> verifyingSupplyIds = <String>{};
+
+  // Phase 054C — keep the queue focused on the owner's current job.
+  String queueFilter = 'waiting';
 
   @override
   void initState() {
@@ -10569,30 +18497,957 @@ class _AdminFarmerSupplyQueueState extends State<_AdminFarmerSupplyQueue> {
         fetchFarmerProfiles(),
       ]);
 
-  String _qty(FarmerSupplyForecast supply) {
-    final value = supply.harvestedQuantity ??
+  double _potentialQuantity(FarmerSupplyForecast supply) {
+    return supply.harvestedQuantity ??
         supply.expectedQuantity ??
         supply.quantityGrowing ??
         0;
-    final number = value == value.roundToDouble()
+  }
+
+  String _number(double value) {
+    return value == value.roundToDouble()
         ? value.toInt().toString()
         : value.toStringAsFixed(1);
-    return '$number ${supply.unit}';
+  }
+
+  String _qty(FarmerSupplyForecast supply) {
+    return '${_number(_potentialQuantity(supply))} ${supply.unit}';
   }
 
   String _date(DateTime? value) {
-    if (value == null) return 'Harvest date not set';
+    if (value == null) return 'Date not set';
+
     const months = [
-      'Jan','Feb','Mar','Apr','May','Jun',
-      'Jul','Aug','Sep','Oct','Nov','Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
+
     return '${value.day} ${months[value.month - 1]}';
+  }
+
+  String _farmName(FarmerProfile? farmer) {
+    if (farmer?.farmName.trim().isNotEmpty == true) {
+      return farmer!.farmName.trim();
+    }
+
+    if (farmer?.farmerName.trim().isNotEmpty == true) {
+      return farmer!.farmerName.trim();
+    }
+
+    return 'Farmer';
+  }
+
+  String _farmParish(FarmerProfile? farmer) {
+    return (farmer?.parish ?? '').trim();
+  }
+
+  DateTime _sortDate(FarmerSupplyForecast supply) {
+    return supply.expectedHarvestDate ?? DateTime(2999);
   }
 
   Future<void> _refresh() async {
     final next = _load();
-    setState(() => future = next);
+
+    setState(() {
+      future = next;
+    });
+
     await next;
+  }
+
+  Widget _produceThumb(
+    FarmerSupplyForecast supply, {
+    double size = 50,
+  }) {
+    final outer = size + 14;
+
+    return Container(
+      width: outer,
+      height: outer,
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: FarmColors.line.withOpacity(.85),
+        ),
+      ),
+      child: Center(
+        child: HpjProductThumb(
+          productName: supply.cropName,
+          size: size,
+          radius: 10,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _verifySupply({
+    required FarmerSupplyForecast supply,
+    required FarmerProfile? farmer,
+  }) async {
+    if (verifyingSupplyIds.contains(supply.id)) return;
+
+    final reported = _potentialQuantity(supply);
+
+    if (reported <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This supply report does not contain a quantity that HPJ can verify.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final quantityController = TextEditingController(
+      text: _number(reported),
+    );
+
+    final farmName = _farmName(farmer);
+    final parish = _farmParish(farmer);
+
+    // Keep verification as a focused single job.
+    final quantity = await showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 18,
+            right: 18,
+            top: 10,
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: FarmColors.line,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    _produceThumb(supply, size: 46),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Review Farmer Supply',
+                            style: TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            supply.cropName,
+                            style: const TextStyle(
+                              color: FarmColors.deepGreen,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  [
+                    farmName,
+                    if (parish.isNotEmpty) parish,
+                    supply.statusLabel,
+                    _date(supply.expectedHarvestDate),
+                  ].join(' • '),
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 10.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F8F2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: FarmColors.line.withOpacity(.80),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.agriculture_outlined,
+                        color: FarmColors.deepGreen,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Farmer reported ${_number(reported)} ${supply.unit}.',
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: quantityController,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'HPJ verified quantity',
+                    suffixText: supply.unit,
+                    helperText:
+                        'Use only the quantity HPJ is prepared to stand behind.',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'After verification, this supply can move into Market Allocation '
+                  '& Price, Wholesale matching, HPJ Reserve, collection and receiving.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.6,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            Navigator.of(sheetContext).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final entered = double.tryParse(
+                            quantityController.text
+                                .trim()
+                                .replaceAll(',', ''),
+                          );
+
+                          if (entered == null || entered <= 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Enter a valid verified quantity.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (entered > reported + 0.0001) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Maximum reported quantity is '
+                                  '${_number(reported)} ${supply.unit}.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          Navigator.of(sheetContext).pop(entered);
+                        },
+                        icon: const Icon(
+                          Icons.verified_outlined,
+                          size: 17,
+                        ),
+                        label: const Text('Verify Supply'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+
+                      Future<void>.delayed(
+                        const Duration(milliseconds: 120),
+                        () {
+                          if (mounted) {
+                            widget.onOpenMatching();
+                          }
+                        },
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.account_tree_outlined,
+                      size: 16,
+                    ),
+                    label: const Text('Match to Demand instead'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    quantityController.dispose();
+
+    if (quantity == null || quantity <= 0 || !mounted) return;
+
+    setState(() {
+      verifyingSupplyIds.add(supply.id);
+    });
+
+    try {
+      await adminConfirmFarmerSupplyForecast(
+        supply: supply,
+        confirmedQuantity: quantity,
+      );
+
+      await _refresh();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${supply.cropName} verified at '
+            '${_number(quantity)} ${supply.unit}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      farmDebugLog(
+        'Phase 054C Farmer Supply verification failed: $error',
+      );
+
+      if (!mounted) return;
+
+      final friendly = friendlyAppError(error);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            friendly.toLowerCase().contains('something went wrong')
+                ? 'Supply verification failed. Check FlutLab Output for the exact Supabase error.'
+                : friendly,
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          verifyingSupplyIds.remove(supply.id);
+        });
+      }
+    }
+  }
+
+  Future<void> _openFarmSupplies({
+    required FarmerProfile? farmer,
+    required List<FarmerSupplyForecast> supplies,
+  }) async {
+    final farmName = _farmName(farmer);
+    final parish = _farmParish(farmer);
+
+    final sorted = List<FarmerSupplyForecast>.from(supplies)
+      ..sort((a, b) {
+        if (a.isHpjConfirmed != b.isHpjConfirmed) {
+          return a.isHpjConfirmed ? 1 : -1;
+        }
+
+        final dateCompare = _sortDate(a).compareTo(_sortDate(b));
+        if (dateCompare != 0) return dateCompare;
+
+        return a.cropName.toLowerCase().compareTo(
+              b.cropName.toLowerCase(),
+            );
+      });
+
+    final waiting =
+        sorted.where((supply) => !supply.isHpjConfirmed).length;
+    final verified =
+        sorted.where((supply) => supply.isHpjConfirmed).length;
+
+    final justVerifiedSupplyIds = <String>{};
+
+    int currentWaitingCount() {
+      return sorted.where((supply) {
+        return !supply.isHpjConfirmed &&
+            !justVerifiedSupplyIds.contains(supply.id);
+      }).length;
+    }
+
+    int currentVerifiedCount() {
+      return sorted.where((supply) {
+        return supply.isHpjConfirmed ||
+            justVerifiedSupplyIds.contains(supply.id);
+      }).length;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(26),
+        ),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .88,
+              child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: FarmColors.line,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: FarmColors.primary.withOpacity(.10),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: const Icon(
+                            Icons.agriculture_outlined,
+                            color: FarmColors.deepGreen,
+                            size: 25,
+                          ),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                farmName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                parish.isEmpty
+                                    ? '${sorted.length} active supply reports'
+                                    : '$parish • ${sorted.length} active supply reports',
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: [
+                        HpjMvpStatusPill(
+                          label: '${currentWaitingCount()} need review',
+                          color: currentWaitingCount() > 0
+                              ? FarmColors.warning
+                              : FarmColors.success,
+                        ),
+                        HpjMvpStatusPill(
+                          label: '${currentVerifiedCount()} verified',
+                          color: FarmColors.success,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  itemCount: sorted.length,
+                  separatorBuilder: (_, __) => const Divider(height: 14),
+                  itemBuilder: (context, index) {
+                    final supply = sorted[index];
+                    final isVerifying =
+                        verifyingSupplyIds.contains(supply.id);
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _produceThumb(supply, size: 38),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                supply.cropName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${_qty(supply)} • ${supply.statusLabel} • '
+                                '${_date(supply.expectedHarvestDate)}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 9.5,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (supply.isHpjConfirmed ||
+                            justVerifiedSupplyIds.contains(supply.id))
+                          const HpjMvpStatusPill(
+                            label: 'Verified',
+                            color: FarmColors.success,
+                          )
+                        else
+                          SizedBox(
+                            height: 36,
+                            child: ElevatedButton(
+                              onPressed: isVerifying
+                                  ? null
+                                  : () async {
+                                      // Keep the farm queue open while reviewing.
+                                      await _verifySupply(
+                                        supply: supply,
+                                        farmer: farmer,
+                                      );
+
+                                      if (!mounted ||
+                                          !sheetContext.mounted) {
+                                        return;
+                                      }
+
+                                      try {
+                                        final refreshed =
+                                            await fetchAdminFarmerSupplyForecasts();
+
+                                        var confirmed = false;
+                                        for (final item in refreshed) {
+                                          if (item.id == supply.id) {
+                                            confirmed = item.isHpjConfirmed;
+                                            break;
+                                          }
+                                        }
+
+                                        if (confirmed &&
+                                            sheetContext.mounted) {
+                                          setSheetState(() {
+                                            justVerifiedSupplyIds.add(
+                                              supply.id,
+                                            );
+                                          });
+                                        }
+                                      } catch (error) {
+                                        farmDebugLog(
+                                          'Phase 054D in-farm refresh skipped: $error',
+                                        );
+                                      }
+                                    },
+                              child: Text(
+                                isVerifying ? 'Wait...' : 'Review',
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  children: [
+                    if (currentVerifiedCount() > 0)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F8F2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Verified supply is ready for pricing, Market Allocation, '
+                          'Wholesale matching, collection and receiving.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(sheetContext).pop();
+
+                          Future<void>.delayed(
+                            const Duration(milliseconds: 120),
+                            () {
+                              if (mounted) {
+                                widget.onOpenMatching();
+                              }
+                            },
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.account_tree_outlined,
+                          size: 17,
+                        ),
+                        label: const Text('Match to Demand'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _filterChip({
+    required String value,
+    required String label,
+    required int count,
+  }) {
+    final selected = queueFilter == value;
+
+    return ChoiceChip(
+      selected: selected,
+      showCheckmark: false,
+      label: Text('$label  $count'),
+      onSelected: (_) {
+        if (queueFilter == value) return;
+
+        setState(() {
+          queueFilter = value;
+        });
+      },
+      selectedColor: FarmColors.primary.withOpacity(.12),
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected
+            ? FarmColors.primary.withOpacity(.35)
+            : FarmColors.line,
+      ),
+      labelStyle: TextStyle(
+        color: selected
+            ? FarmColors.deepGreen
+            : FarmColors.mutedText,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 7,
+        vertical: 3,
+      ),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  Widget _farmGroupCard({
+    required String groupKey,
+    required FarmerProfile? farmer,
+    required List<FarmerSupplyForecast> supplies,
+  }) {
+    final farmName = _farmName(farmer);
+    final parish = _farmParish(farmer);
+
+    final sorted = List<FarmerSupplyForecast>.from(supplies)
+      ..sort((a, b) {
+        if (a.isHpjConfirmed != b.isHpjConfirmed) {
+          return a.isHpjConfirmed ? 1 : -1;
+        }
+
+        final dateCompare = _sortDate(a).compareTo(_sortDate(b));
+        if (dateCompare != 0) return dateCompare;
+
+        return a.cropName.toLowerCase().compareTo(
+              b.cropName.toLowerCase(),
+            );
+      });
+
+    final waiting =
+        sorted.where((supply) => !supply.isHpjConfirmed).length;
+    final verified =
+        sorted.where((supply) => supply.isHpjConfirmed).length;
+
+    final preview = sorted.take(2).toList(growable: false);
+
+    final cta = queueFilter == 'waiting'
+        ? waiting == 1
+            ? 'Review supply'
+            : 'Review $waiting supplies'
+        : queueFilter == 'verified'
+            ? verified == 1
+                ? 'View verified supply'
+                : 'View $verified verified supplies'
+            : sorted.length == 1
+                ? 'View supply'
+                : 'View ${sorted.length} supplies';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: FarmCard(
+        padding: const EdgeInsets.all(13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: FarmColors.primary.withOpacity(.10),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: const Icon(
+                    Icons.agriculture_outlined,
+                    color: FarmColors.deepGreen,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        farmName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        parish.isEmpty
+                            ? '${sorted.length} active supply reports'
+                            : '$parish • ${sorted.length} active supply reports',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 9.6,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: FarmColors.mutedText,
+                  size: 20,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (waiting > 0)
+                  HpjMvpStatusPill(
+                    label: '$waiting need review',
+                    color: FarmColors.warning,
+                  ),
+                if (verified > 0)
+                  HpjMvpStatusPill(
+                    label: '$verified verified',
+                    color: FarmColors.success,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 7),
+
+            for (var i = 0; i < preview.length; i++) ...[
+              if (i > 0) const SizedBox(height: 7),
+              Row(
+                children: [
+                  HpjProductThumb(
+                    productName: preview[i].cropName,
+                    size: 34,
+                    radius: 8,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      preview[i].cropName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${_qty(preview[i])} • '
+                    '${_date(preview[i].expectedHarvestDate)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 8.8,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            if (sorted.length > preview.length) ...[
+              const SizedBox(height: 7),
+              Text(
+                '+ ${sorted.length - preview.length} more',
+                style: const TextStyle(
+                  color: FarmColors.primary,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 11),
+            SizedBox(
+              width: double.infinity,
+              child: queueFilter == 'waiting'
+                  ? ElevatedButton.icon(
+                      onPressed: () => _openFarmSupplies(
+                        farmer: farmer,
+                        supplies: sorted,
+                      ),
+                      icon: const Icon(
+                        Icons.fact_check_outlined,
+                        size: 17,
+                      ),
+                      label: Text(cta),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: () => _openFarmSupplies(
+                        farmer: farmer,
+                        supplies: sorted,
+                      ),
+                      icon: Icon(
+                        queueFilter == 'verified'
+                            ? Icons.verified_outlined
+                            : Icons.inventory_2_outlined,
+                        size: 17,
+                      ),
+                      label: Text(cta),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -10602,153 +19457,241 @@ class _AdminFarmerSupplyQueueState extends State<_AdminFarmerSupplyQueue> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
         }
+
         if (snapshot.hasError) {
-          return Center(child: Text(friendlyAppError(snapshot.error!)));
+          return Center(
+            child: Text(
+              friendlyAppError(snapshot.error!),
+            ),
+          );
         }
 
         final data = snapshot.data ?? const <Object>[];
+
         final supplies = data.isEmpty
             ? <FarmerSupplyForecast>[]
             : data[0] as List<FarmerSupplyForecast>;
+
         final farmers = data.length < 2
             ? <FarmerProfile>[]
             : data[1] as List<FarmerProfile>;
+
         final farmerMap = <String, FarmerProfile>{
           for (final farmer in farmers) farmer.id: farmer,
         };
-        final queue = supplies.where((supply) {
-          final potential = supply.harvestedQuantity ??
-              supply.expectedQuantity ??
-              supply.quantityGrowing ??
-              0;
-          return supply.isActive && !supply.isHpjConfirmed && potential > 0;
-        }).toList()
+
+        // Only active, meaningful Farmer Supply belongs in this operational view.
+        final active = supplies.where((supply) {
+          return supply.isActive && _potentialQuantity(supply) > 0;
+        }).toList();
+
+        final waiting = active.where(
+          (supply) => !supply.isHpjConfirmed,
+        ).toList();
+
+        final verified = active.where(
+          (supply) => supply.isHpjConfirmed,
+        ).toList();
+
+        final visibleSupplies = switch (queueFilter) {
+          'verified' => verified,
+          'all' => active,
+          _ => waiting,
+        };
+
+        final waitingFarmIds = waiting
+            .map(
+              (supply) => supply.farmerId.trim().isEmpty
+                  ? 'unknown:${supply.id}'
+                  : supply.farmerId.trim(),
+            )
+            .toSet();
+
+        final groups = <String, List<FarmerSupplyForecast>>{};
+
+        for (final supply in visibleSupplies) {
+          final farmerId = supply.farmerId.trim();
+
+          final key = farmerId.isEmpty
+              ? 'unknown:${supply.id}'
+              : farmerId;
+
+          groups.putIfAbsent(
+            key,
+            () => <FarmerSupplyForecast>[],
+          );
+
+          groups[key]!.add(supply);
+        }
+
+        final groupEntries = groups.entries.toList()
           ..sort((a, b) {
-            final ad = a.expectedHarvestDate ?? DateTime(2999);
-            final bd = b.expectedHarvestDate ?? DateTime(2999);
-            return ad.compareTo(bd);
+            DateTime urgency(MapEntry<String, List<FarmerSupplyForecast>> e) {
+              final waitingDates = e.value
+                  .where((supply) => !supply.isHpjConfirmed)
+                  .map(_sortDate)
+                  .toList();
+
+              if (waitingDates.isNotEmpty) {
+                waitingDates.sort();
+                return waitingDates.first;
+              }
+
+              final dates = e.value.map(_sortDate).toList()..sort();
+              return dates.isEmpty ? DateTime(2999) : dates.first;
+            }
+
+            final urgencyCompare =
+                urgency(a).compareTo(urgency(b));
+
+            if (urgencyCompare != 0) return urgencyCompare;
+
+            final af = farmerMap[a.key];
+            final bf = farmerMap[b.key];
+
+            return _farmName(af).toLowerCase().compareTo(
+                  _farmName(bf).toLowerCase(),
+                );
           });
+
+        final emptyTitle = queueFilter == 'verified'
+            ? 'No verified supply yet'
+            : queueFilter == 'all'
+                ? 'No active farmer supply'
+                : 'All caught up';
+
+        final emptyMessage = queueFilter == 'verified'
+            ? 'Verified Farmer Supply will appear here after HPJ review.'
+            : queueFilter == 'all'
+                ? 'Active farmer supply reports will appear here automatically.'
+                : 'There is no Farmer Supply waiting for HPJ verification.';
 
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
             children: [
-              const Header(
-                title: 'Farmer Supply',
-                subtitle: 'Review reported supply before it can be reserved',
-              ),
-              const SizedBox(height: 12),
-              if (queue.isEmpty)
-                const FarmEmptyState(
-                  icon: Icons.verified_outlined,
-                  title: 'No supply waiting for review',
-                  message: 'New farmer crop reports will appear here when HPJ verification is needed.',
-                )
-              else ...[
-                FarmCard(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline_rounded, color: FarmColors.primary),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          '${queue.length} report${queue.length == 1 ? '' : 's'} need review. Verification is completed against an active requirement in Needs Supply.',
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 10.5,
-                            height: 1.35,
-                            fontWeight: FontWeight.w700,
+              FarmCard(
+                padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: FarmColors.primary.withOpacity(.10),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.agriculture_outlined,
+                            color: FarmColors.primary,
+                            size: 22,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ...queue.map((supply) {
-                  final farmer = farmerMap[supply.farmerId];
-                  final name = farmer?.farmName.trim().isNotEmpty == true
-                      ? farmer!.farmName
-                      : farmer?.farmerName ?? 'Farmer';
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 9),
-                    child: FarmCard(
-                      padding: const EdgeInsets.all(13),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              HpjProductThumb(
-                                productName: supply.cropName,
-                                size: 46,
-                                radius: 12,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      supply.cropName,
-                                      style: const TextStyle(
-                                        color: FarmColors.ink,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '$name • ${farmer?.parish ?? ''}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: FarmColors.mutedText,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
+                              Text(
+                                'Farmer Supply',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
                                 ),
                               ),
+                              SizedBox(height: 2),
                               Text(
-                                _qty(supply),
-                                style: const TextStyle(
-                                  color: FarmColors.primary,
-                                  fontWeight: FontWeight.w900,
+                                'Review supply by farm, verify once, then move it into pricing, allocation and collection.',
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 9.4,
+                                  height: 1.3,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 9),
-                          Text(
-                            '${supply.statusLabel} • ${_date(supply.expectedHarvestDate)}',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 11),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: [
+                        HpjMvpStatusPill(
+                          label: '${waiting.length} need review',
+                          color: waiting.isEmpty
+                              ? FarmColors.success
+                              : FarmColors.warning,
+                        ),
+                        HpjMvpStatusPill(
+                          label: '${verified.length} verified',
+                          color: FarmColors.success,
+                        ),
+                        HpjMvpStatusPill(
+                          label: '${waitingFarmIds.length} farms waiting',
+                          color: FarmColors.primary,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 11),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _filterChip(
+                            value: 'waiting',
+                            label: 'Waiting',
+                            count: waiting.length,
                           ),
-                          const SizedBox(height: 9),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: widget.onOpenMatching,
-                              icon: const Icon(Icons.account_tree_outlined, size: 17),
-                              label: const Text('Review Against Demand'),
-                            ),
+                          const SizedBox(width: 7),
+                          _filterChip(
+                            value: 'verified',
+                            label: 'Verified',
+                            count: verified.length,
+                          ),
+                          const SizedBox(width: 7),
+                          _filterChip(
+                            value: 'all',
+                            label: 'All',
+                            count: active.length,
                           ),
                         ],
                       ),
                     ),
-                  );
-                }),
-              ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 11),
+
+              if (groupEntries.isEmpty)
+                FarmEmptyState(
+                  icon: queueFilter == 'waiting'
+                      ? Icons.verified_outlined
+                      : Icons.inventory_2_outlined,
+                  title: emptyTitle,
+                  message: emptyMessage,
+                )
+              else
+                for (final entry in groupEntries)
+                  _farmGroupCard(
+                    groupKey: entry.key,
+                    farmer: farmerMap[entry.key],
+                    supplies: entry.value,
+                  ),
             ],
           ),
         );
@@ -10875,6 +19818,7 @@ class _AdminTodayOperationsSnapshot {
   final int collectionsToday;
   final int receivingIssues;
   final int wholesaleReadyForDispatch;
+  final List<String> unavailableSources;
 
   const _AdminTodayOperationsSnapshot({
     required this.customerPendingOrders,
@@ -10885,26 +19829,58 @@ class _AdminTodayOperationsSnapshot {
     required this.collectionsToday,
     required this.receivingIssues,
     required this.wholesaleReadyForDispatch,
+    this.unavailableSources = const <String>[],
   });
+
+  bool get hasUnavailableSources => unavailableSources.isNotEmpty;
 }
 
 Future<_AdminTodayOperationsSnapshot> _fetchAdminTodayOperations() async {
-  Future<List<T>> safe<T>(Future<List<T>> future) async {
+  final unavailableSources = <String>[];
+
+  Future<List<T>> safe<T>(
+    String source,
+    Future<List<T>> future,
+  ) async {
     try {
       return await future;
     } catch (error) {
-      farmDebugLog('Admin Today data unavailable: $error');
+      unavailableSources.add(source);
+      farmDebugLog(
+        'Admin Today $source data unavailable: $error',
+      );
       return <T>[];
     }
   }
 
   final results = await Future.wait<dynamic>([
-    safe<AdminOrder>(fetchAdminOrders()),
-    safe<WholesaleOrderRequest>(fetchAdminWholesaleRequests()),
-    safe<WholesaleDemandForecast>(fetchAdminWholesaleDemandForecasts()),
-    safe<FarmerSupplyForecast>(fetchAdminFarmerSupplyForecasts()),
-    safe<WholesaleReceivingBatch>(fetchWholesaleReceivingBatches()),
-    safe<WholesaleFulfillment>(fetchAdminWholesaleFulfillments()),
+    safe<AdminOrder>(
+      'Customer orders',
+      fetchAdminOrders(
+        limit: 200,
+        throwOnError: true,
+      ),
+    ),
+    safe<WholesaleOrderRequest>(
+      'Wholesale orders',
+      fetchAdminWholesaleRequests(),
+    ),
+    safe<WholesaleDemandForecast>(
+      'Procurement demand',
+      fetchAdminWholesaleDemandForecasts(),
+    ),
+    safe<FarmerSupplyForecast>(
+      'Farmer supply',
+      fetchAdminFarmerSupplyForecasts(),
+    ),
+    safe<WholesaleReceivingBatch>(
+      'Receiving',
+      fetchWholesaleReceivingBatches(),
+    ),
+    safe<WholesaleFulfillment>(
+      'Wholesale fulfillment',
+      fetchAdminWholesaleFulfillments(),
+    ),
   ]);
 
   final customerOrders = results[0] as List<AdminOrder>;
@@ -10954,6 +19930,8 @@ Future<_AdminTodayOperationsSnapshot> _fetchAdminTodayOperations() async {
     }).length,
     wholesaleReadyForDispatch:
         fulfillments.where((item) => item.isReadyForDispatch).length,
+    unavailableSources:
+        List<String>.unmodifiable(unavailableSources),
   );
 }
 
@@ -11076,7 +20054,9 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
 
   Future<void> _reload() async {
     final next = _fetchAdminTodayOperations();
-    setState(() => future = next);
+    setState(() {
+      future = next;
+    });
     await next;
   }
 
@@ -11170,8 +20150,60 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
                 notificationBadgeColor: FarmColors.warning,
               ),
               const SizedBox(height: 14),
+              if (data.hasUnavailableSources) ...[
+                FarmCard(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_outlined,
+                        color: FarmColors.warning,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Some operational data is unavailable',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${data.unavailableSources.join(', ')} could not be loaded. '
+                              'HPJ will not treat missing data as an all-clear result.',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10,
+                                height: 1.35,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Retry',
+                        onPressed: _reload,
+                        icon: const Icon(
+                          Icons.refresh_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               Text(
-                attention.isEmpty ? 'No urgent actions' : 'Needs attention',
+                data.hasUnavailableSources
+                    ? 'Check available work'
+                    : attention.isEmpty
+                        ? 'No urgent actions'
+                        : 'Needs attention',
                 style: const TextStyle(
                   color: FarmColors.ink,
                   fontSize: 16,
@@ -11179,12 +20211,15 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (attention.isEmpty)
+              if (attention.isEmpty && !data.hasUnavailableSources)
                 const FarmCard(
                   padding: EdgeInsets.all(14),
                   child: Row(
                     children: [
-                      Icon(Icons.check_circle_outline_rounded, color: FarmColors.success),
+                      Icon(
+                        Icons.check_circle_outline_rounded,
+                        color: FarmColors.success,
+                      ),
                       SizedBox(width: 9),
                       Expanded(
                         child: Text(
@@ -11198,7 +20233,7 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
                     ],
                   ),
                 )
-              else
+              else if (attention.isNotEmpty)
                 ...attention,
               const SizedBox(height: 18),
               const Text(
@@ -11364,7 +20399,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
   _AdminNavigationIntent? initialIntent,
 }) {
   final role = normalizeStaffRole(staffRole);
-  final ownerAccess = role.isEmpty || role == 'owner';
+  final ownerAccess = role == 'owner';
   final managerAccess = role == 'manager';
 
   _AdminTabSpec dashboard() => _AdminTabSpec(
@@ -12652,10 +21687,13 @@ class _AdminDashboardScreenState
         return;
       }
 
-      // Keep the existing Admin navigation shell alive when the app
-      // resumes from a camera/gallery/browser file-picker handoff.
-      // Replacing the access future here can briefly rebuild the whole
-      // workspace and reset the bottom navigation to Today.
+      // Keep the existing Admin navigation shell alive after a camera,
+      // gallery or browser-file-picker handoff. Replacing the staff-role
+      // future with a pending Future temporarily removes the shell and can
+      // recreate DefaultTabController at Today/Dashboard.
+      //
+      // Resolve the role first, then publish an already-completed Future so
+      // the current tab (Orders, Products, Feed, etc.) stays selected.
       final currentRole = await fetchCurrentStaffRole();
 
       if (!mounted ||
@@ -12664,6 +21702,7 @@ class _AdminDashboardScreenState
       }
 
       setState(() {
+        _adminAllowedFuture = Future<bool>.value(true);
         _staffRoleFuture = Future<String>.value(currentRole);
         refreshKey++;
       });
@@ -15531,7 +24570,7 @@ class _AdminReportsTabState extends State<AdminReportsTab> {
   @override
   void initState() {
     super.initState();
-    _ordersFuture = fetchAdminOrders();
+    _ordersFuture = fetchAllAdminOrdersForReporting();
   }
 
   @override
@@ -15543,7 +24582,7 @@ class _AdminReportsTabState extends State<AdminReportsTab> {
   }
 
   Future<void> _reload() async {
-    final future = fetchAdminOrders();
+    final future = fetchAllAdminOrdersForReporting();
     setState(() {
       _ordersFuture = future;
     });
@@ -16460,9 +25499,14 @@ Future<AdminAppHealthSnapshot> buildAdminAppHealthSnapshot() async {
       .where((ticket) =>
           !{'closed', 'resolved'}.contains(ticket.status.trim().toLowerCase()))
       .length;
+  final requiredHeroSlides = defaultHomeHeroSlides().length;
   final heroSlidesReady = heroSlides
-      .where((slide) => cleanHostedImageUrl(slide.imageUrl) != null)
-      .take(3)
+      .where(
+        (slide) =>
+            slide.position >= 1 &&
+            slide.position <= requiredHeroSlides &&
+            cleanHostedImageUrl(slide.imageUrl) != null,
+      )
       .length;
 
   AdminHealthCheck ready({
@@ -16518,15 +25562,17 @@ Future<AdminAppHealthSnapshot> buildAdminAppHealthSnapshot() async {
                 '$imageReadyProducts of $liveProducts visible products have images. Aim for 70%+.',
             icon: Icons.image_outlined,
           ),
-    heroSlidesReady >= 3
+    heroSlidesReady >= requiredHeroSlides
         ? ready(
             title: 'Hero slideshow ready',
-            detail: 'All 3 home hero slides have valid images.',
+            detail:
+                'All $requiredHeroSlides home hero slides have valid images.',
             icon: Icons.photo_library_outlined,
           )
         : review(
             title: 'Hero slideshow needs review',
-            detail: '$heroSlidesReady of 3 hero slides have valid images.',
+            detail:
+                '$heroSlidesReady of $requiredHeroSlides hero slides have valid images.',
             icon: Icons.photo_library_outlined,
           ),
   ];
@@ -18051,6 +27097,7 @@ class AdminHeroSlidesTab extends StatefulWidget {
 class _AdminHeroSlidesTabState extends State<AdminHeroSlidesTab> {
   int localRefreshKey = 0;
   final Map<int, bool> uploading = <int, bool>{};
+  bool uploadingWelcomeBackground = false;
 
   void refreshSlides() {
     setState(() => localRefreshKey++);
@@ -18089,6 +27136,144 @@ class _AdminHeroSlidesTabState extends State<AdminHeroSlidesTab> {
         setState(() => uploading[position] = false);
       }
     }
+  }
+
+  Future<void> uploadWelcomeBackground() async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final pickedImage = await pickProductImageFromDevice();
+      if (pickedImage == null) return;
+
+      setState(() => uploadingWelcomeBackground = true);
+
+      final imageUrl = await uploadHomeHeroImageToStorage(
+        position: 0,
+        image: pickedImage,
+      );
+      await saveWelcomeBackgroundUrl(imageUrl);
+
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Welcome screen background updated.'),
+        ),
+      );
+      refreshSlides();
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(friendlyAppError(error)),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => uploadingWelcomeBackground = false);
+      }
+    }
+  }
+
+  Widget welcomeBackgroundCard() {
+    return FutureBuilder<String?>(
+      future: fetchPublicWelcomeBackgroundUrl(),
+      builder: (context, snapshot) {
+        final cleanUrl = cleanHostedImageUrl(snapshot.data);
+
+        return FarmCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.wallpaper_outlined),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Welcome Screen Background',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'This image appears behind the Welcome to The Harvest Place sign-in and create-account buttons. It is separate from the customer Home Hero slideshow.',
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  height: 220,
+                  width: double.infinity,
+                  color: FarmColors.primarySoft,
+                  child: cleanUrl == null
+                      ? const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.add_photo_alternate_outlined,
+                                color: FarmColors.mutedText,
+                                size: 46,
+                              ),
+                              SizedBox(height: 8),
+                              Text('No welcome background uploaded yet'),
+                            ],
+                          ),
+                        )
+                      : Image.network(
+                          cleanUrl,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: FarmColors.mutedText,
+                              size: 46,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'A tall portrait image works best because this fills the whole welcome screen.',
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: uploadingWelcomeBackground
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.upload_file_outlined),
+                  label: Text(
+                    uploadingWelcomeBackground
+                        ? 'Uploading...'
+                        : 'Upload welcome background',
+                  ),
+                  onPressed: uploadingWelcomeBackground
+                      ? null
+                      : uploadWelcomeBackground,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget slideCard(HomeHeroSlide slide) {
@@ -18204,12 +27389,16 @@ class _AdminHeroSlidesTabState extends State<AdminHeroSlidesTab> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
             children: [
+              welcomeBackgroundCard(),
+              const SizedBox(height: 18),
+              const AdminWorkspaceImagesPanel(),
+              const SizedBox(height: 18),
               FarmCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: const [
                     Text(
-                      'Home Hero Slideshow',
+                      'Customer Home Hero Slideshow',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
@@ -18217,7 +27406,7 @@ class _AdminHeroSlidesTabState extends State<AdminHeroSlidesTab> {
                     ),
                     SizedBox(height: 8),
                     Text(
-                      'Upload 3 banner images from your computer. Customers will see them rotate automatically on the home screen.',
+                      'Upload the customer home banner images from your computer. Customers will see them rotate after signing in.',
                     ),
                   ],
                 ),
@@ -19131,12 +28320,8 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
       BuildContext context, AdminOrder order) async {
     HpjImageSource source = HpjImageSource.gallery;
 
-    // Installed Android/iOS:
-    // let staff choose Camera or Gallery.
-    //
-    // FlutLab/Web:
-    // skip ImagePicker camera completely and use the browser-safe
-    // file chooser through product_image_picker_web.dart.
+    // FlutLab/Web always uses the browser-native file chooser. On an
+    // installed mobile app, staff can choose Camera or Gallery.
     if (!kIsWeb) {
       final selected = await showModalBottomSheet<HpjImageSource>(
         context: context,
@@ -19148,7 +28333,6 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
               ListTile(
                 leading: const Icon(Icons.camera_alt_outlined),
                 title: const Text('Take box photo'),
-                subtitle: const Text('Use the device camera'),
                 onTap: () => Navigator.pop(
                   sheetContext,
                   HpjImageSource.camera,
@@ -19156,8 +28340,7 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Choose box photo'),
-                subtitle: const Text('Select an existing image'),
+                title: const Text('Choose from device'),
                 onTap: () => Navigator.pop(
                   sheetContext,
                   HpjImageSource.gallery,
@@ -19181,31 +28364,22 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
       if (picked == null) return;
 
       final bytes = picked.bytes;
-
       if (bytes.isEmpty) {
-        throw Exception(
-          'The selected box photo could not be read.',
-        );
+        throw Exception('The selected box photo is empty.');
       }
 
       const maxBytes = 6 * 1024 * 1024;
-
       if (bytes.length > maxBytes) {
-        throw Exception(
-          'Use a box photo smaller than 6 MB.',
-        );
+        throw Exception('Use a box photo smaller than 6 MB.');
       }
 
       final mime = picked.mimeType.trim().toLowerCase();
       final lowerName = picked.fileName.toLowerCase();
-
-      final extension =
-          mime == 'image/png' || lowerName.endsWith('.png')
-              ? 'png'
-              : mime == 'image/webp' || lowerName.endsWith('.webp')
-                  ? 'webp'
-                  : 'jpg';
-
+      final extension = mime == 'image/png' || lowerName.endsWith('.png')
+          ? 'png'
+          : mime == 'image/webp' || lowerName.endsWith('.webp')
+              ? 'webp'
+              : 'jpg';
       final contentType = extension == 'png'
           ? 'image/png'
           : extension == 'webp'
@@ -19216,15 +28390,11 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
         RegExp(r'[^A-Za-z0-9_-]'),
         '',
       );
-
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}.$extension';
-
       final path = '$cleanOrderId/$fileName';
 
-      await supabase.storage
-          .from('order-box-photos')
-          .uploadBinary(
+      await supabase.storage.from('order-box-photos').uploadBinary(
             path,
             bytes,
             fileOptions: FileOptions(
@@ -19233,18 +28403,15 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
             ),
           );
 
-      final publicUrl = supabase.storage
-          .from('order-box-photos')
-          .getPublicUrl(path);
+      final publicUrl =
+          supabase.storage.from('order-box-photos').getPublicUrl(path);
 
       final updatedOrder = await supabase
           .from('orders')
           .update({
             'box_photo_url': publicUrl,
-            'box_photo_uploaded_at':
-                DateTime.now().toIso8601String(),
-            'box_photo_uploaded_by':
-                supabase.auth.currentUser?.id,
+            'box_photo_uploaded_at': DateTime.now().toIso8601String(),
+            'box_photo_uploaded_by': supabase.auth.currentUser?.id,
           })
           .eq('id', order.id)
           .select('id, box_photo_url')
@@ -19252,15 +28419,20 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
 
       if (!context.mounted) return;
 
-      final savedUrl =
-          updatedOrder?['box_photo_url']?.toString();
+      final savedUrl = updatedOrder?['box_photo_url']?.toString();
+
+      if (savedUrl != null && savedUrl.isNotEmpty) {
+        // Reload only the current Admin section. This updates the order card
+        // without sending the user back to Today.
+        widget.onChanged();
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             savedUrl == null || savedUrl.isEmpty
-                ? 'Photo uploaded, but the order record was not updated.'
-                : 'Box photo saved.',
+                ? 'Photo uploaded, but order was not updated.'
+                : 'Box photo saved to order.',
           ),
         ),
       );
@@ -20383,7 +29555,7 @@ class AdminAnalyticsTab extends StatelessWidget {
     return FutureBuilder<List<dynamic>>(
       key: ValueKey('analytics-$refreshKey'),
       future: Future.wait([
-        fetchAdminOrders(),
+        fetchAllAdminOrdersForReporting(),
         fetchAllProducts(),
         fetchFarmerProfiles(),
         fetchFarmerPayouts(),
@@ -21292,6 +30464,29 @@ List<String> _cleanAdminNutritionBadges(Iterable<String> values) {
   return cleaned;
 }
 
+
+Future<void> updateAdminProductSupplier({
+  required String productId,
+  String? farmerId,
+}) async {
+  await requireAdminAccess();
+
+  final cleanProductId = productId.trim();
+  if (cleanProductId.isEmpty) {
+    throw Exception('Product ID is required.');
+  }
+
+  final cleanFarmerId = farmerId?.trim() ?? '';
+
+  await supabase.rpc(
+    'hpj_admin_set_product_farmer',
+    params: <String, dynamic>{
+      'p_product_id': cleanProductId,
+      'p_farmer_id': cleanFarmerId.isEmpty ? null : cleanFarmerId,
+    },
+  );
+}
+
 Future<void> updateAdminProductNutritionBadges({
   required String productId,
   required Iterable<String> nutrientStrong,
@@ -21446,6 +30641,52 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
 
   Future<void> openProductEditor(BuildContext context,
       {Product? product}) async {
+    var supplierFarmers = <FarmerProfile>[];
+
+    try {
+      supplierFarmers = (await fetchFarmerProfiles())
+          .where(
+            (farmer) =>
+                farmer.isApproved ||
+                farmer.id.trim() == (product?.farmerId?.trim() ?? ''),
+          )
+          .toList()
+        ..sort(
+          (a, b) => (a.farmName.trim().isEmpty
+                  ? a.farmerName
+                  : a.farmName)
+              .toLowerCase()
+              .compareTo(
+                (b.farmName.trim().isEmpty
+                        ? b.farmerName
+                        : b.farmName)
+                    .toLowerCase(),
+              ),
+        );
+    } catch (error) {
+      farmDebugLog('Admin product supplier list unavailable: $error');
+    }
+
+    var productMarketAllocations = <HpjMarketAllocationRow>[];
+    if (product != null) {
+      try {
+        productMarketAllocations = await fetchHpjAdminMarketAllocations(
+          productId: product.id,
+        );
+      } catch (error) {
+        farmDebugLog('Phase 048 product allocation lookup skipped: $error');
+      }
+    }
+
+    final productStockManagedByAllocation =
+        productMarketAllocations.any((row) => row.hasAllocation);
+
+    String selectedFarmerId = product?.farmerId?.trim() ?? '';
+    if (selectedFarmerId.isNotEmpty &&
+        !supplierFarmers.any((farmer) => farmer.id == selectedFarmerId)) {
+      selectedFarmerId = '';
+    }
+
     final nameController = TextEditingController(text: product?.name ?? '');
     final priceController = TextEditingController(
       text: product == null ? '' : product.price.toStringAsFixed(2),
@@ -21609,7 +30850,10 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
             Future<void> saveProduct() async {
               final name = nameController.text.trim();
               final price = double.tryParse(priceController.text.trim());
-              final stock = int.tryParse(stockController.text.trim()) ?? 0;
+              final stock =
+                  productStockManagedByAllocation && product != null
+                      ? product.stockQuantity
+                      : int.tryParse(stockController.text.trim()) ?? 0;
               final unit = unitController.text.trim();
               final description = descriptionController.text.trim();
               final imageUrl = imageUrlController.text.trim();
@@ -21716,6 +30960,12 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     nutrientContains: selectedContainsNutrients,
                     nutritionVerified: nutritionVerified,
                     nutritionNote: nutritionNoteController.text,
+                  );
+
+                  await updateAdminProductSupplier(
+                    productId: product.id,
+                    farmerId:
+                        selectedFarmerId.isEmpty ? null : selectedFarmerId,
                   );
                 }
 
@@ -22164,10 +31414,14 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                           Expanded(
                             child: TextField(
                               controller: stockController,
-                              enabled: !saving,
+                              enabled:
+                                  !saving && !productStockManagedByAllocation,
                               keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: 'Stock',
+                                helperText: productStockManagedByAllocation
+                                    ? 'Managed by Market Allocation'
+                                    : null,
                               ),
                             ),
                           ),
@@ -22193,6 +31447,82 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                                 setDialogState(() => selectedCategory = value);
                               },
                       ),
+                      const SizedBox(height: 10),
+                      if (product != null)
+                        DropdownButtonFormField<String>(
+                          value: selectedFarmerId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Supplier / farm',
+                            helperText:
+                                'Links this marketplace product to a farmer page.',
+                            prefixIcon: Icon(Icons.agriculture_outlined),
+                          ),
+                          items: <DropdownMenuItem<String>>[
+                            const DropdownMenuItem<String>(
+                              value: '',
+                              child: Text('HPJ / no linked farm'),
+                            ),
+                            ...supplierFarmers.map(
+                              (farmer) {
+                                final farmName = farmer.farmName.trim();
+                                final farmerName = farmer.farmerName.trim();
+                                final display = farmName.isNotEmpty
+                                    ? farmName
+                                    : farmerName.isNotEmpty
+                                        ? farmerName
+                                        : 'Farmer';
+
+                                return DropdownMenuItem<String>(
+                                  value: farmer.id,
+                                  child: Text(
+                                    '$display • ${farmer.parish}',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                          onChanged: saving
+                              ? null
+                              : (value) {
+                                  setDialogState(
+                                    () => selectedFarmerId = value ?? '',
+                                  );
+                                },
+                        )
+                      else
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(11),
+                          decoration: BoxDecoration(
+                            color: FarmColors.primarySoft.withOpacity(.50),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: FarmColors.line),
+                          ),
+                          child: const Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.agriculture_outlined,
+                                color: FarmColors.green,
+                                size: 19,
+                              ),
+                              SizedBox(width: 9),
+                              Expanded(
+                                child: Text(
+                                  'Supplier: save the new product first, then reopen it to link an approved farmer. This keeps the existing add-product flow safe.',
+                                  style: TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 10.7,
+                                    height: 1.3,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<String>(
                         value: selectedProductStatus,
@@ -23288,6 +32618,20 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
               ),
               const SizedBox(height: 16),
               _inventorySummaryCard(products),
+              const SizedBox(height: 12),
+              _AdminMarketPriceGuidePanel(
+                refreshKey: localRefreshKey,
+              ),
+              const SizedBox(height: 12),
+              _AdminFarmerShopListingRequestsPanel(
+                refreshKey: localRefreshKey,
+                onProductChanged: refreshProducts,
+              ),
+              const SizedBox(height: 12),
+              _AdminMarketAllocationPanel(
+                refreshKey: localRefreshKey,
+                onProductChanged: refreshProducts,
+              ),
               if ((_productFocusNoticeId ?? '').isNotEmpty &&
                   _productFocusFound != null) ...[
                 const SizedBox(height: 12),
@@ -25124,6 +34468,20 @@ class AdminFarmerManagementTab extends StatelessWidget {
                         ? null
                         : () => setStatus(context, farmer, 'rejected'),
               ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.storefront_outlined, size: 18),
+                label: const Text('Public Page'),
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => FarmPublicProfileAdminScreen(
+                        farmer: farmer,
+                      ),
+                    ),
+                  );
+                  onChanged();
+                },
+              ),
             ],
           ),
         ],
@@ -26151,6 +35509,8 @@ class _AdminAgricultureFeedTabState
     bool isActive = existing?.isActive ?? true;
     bool saving = false;
     bool uploading = false;
+    bool showPublishCalendar = false;
+    bool showExpiryCalendar = false;
     DateTime publishAt = existing?.publishAt ?? DateTime.now();
     DateTime? expiresAt = existing?.expiresAt;
 
@@ -26162,16 +35522,20 @@ class _AdminAgricultureFeedTabState
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            Future<void> choosePublishDate() async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: publishAt.isBefore(DateTime.now())
-                    ? DateTime.now()
-                    : publishAt,
-                firstDate: DateTime.now().subtract(const Duration(days: 1)),
-                lastDate: DateTime.now().add(const Duration(days: 730)),
-              );
-              if (picked == null) return;
+            void togglePublishCalendar() {
+              if (saving) return;
+
+              setSheetState(() {
+                showPublishCalendar = !showPublishCalendar;
+                if (showPublishCalendar) {
+                  showExpiryCalendar = false;
+                }
+              });
+            }
+
+            void selectPublishDate(DateTime picked) {
+              if (saving) return;
+
               setSheetState(() {
                 publishAt = DateTime(
                   picked.year,
@@ -26180,18 +35544,36 @@ class _AdminAgricultureFeedTabState
                   publishAt.hour,
                   publishAt.minute,
                 );
+
+                if (expiresAt != null &&
+                    !expiresAt!.isAfter(publishAt)) {
+                  expiresAt = DateTime(
+                    picked.year,
+                    picked.month,
+                    picked.day,
+                    23,
+                    59,
+                  ).add(const Duration(days: 1));
+                }
+
+                showPublishCalendar = false;
               });
             }
 
-            Future<void> chooseExpiryDate() async {
-              final initial = expiresAt ?? publishAt.add(const Duration(days: 30));
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: initial,
-                firstDate: publishAt.add(const Duration(days: 1)),
-                lastDate: publishAt.add(const Duration(days: 730)),
-              );
-              if (picked == null) return;
+            void toggleExpiryCalendar() {
+              if (saving) return;
+
+              setSheetState(() {
+                showExpiryCalendar = !showExpiryCalendar;
+                if (showExpiryCalendar) {
+                  showPublishCalendar = false;
+                }
+              });
+            }
+
+            void selectExpiryDate(DateTime picked) {
+              if (saving) return;
+
               setSheetState(() {
                 expiresAt = DateTime(
                   picked.year,
@@ -26200,6 +35582,7 @@ class _AdminAgricultureFeedTabState
                   23,
                   59,
                 );
+                showExpiryCalendar = false;
               });
             }
 
@@ -26612,15 +35995,60 @@ class _AdminAgricultureFeedTabState
                             const SizedBox(height: 16),
                             ListTile(
                               contentPadding: EdgeInsets.zero,
-                              leading: const Icon(Icons.schedule_outlined),
+                              leading: const Icon(
+                                Icons.schedule_outlined,
+                              ),
                               title: const Text('Publish date'),
-                              subtitle: Text(formatCustomerDateTime(publishAt)),
-                              trailing: const Icon(Icons.edit_calendar_outlined),
-                              onTap: saving ? null : choosePublishDate,
+                              subtitle: Text(
+                                formatCustomerDateTime(publishAt),
+                              ),
+                              trailing: Icon(
+                                showPublishCalendar
+                                    ? Icons.expand_less_rounded
+                                    : Icons.edit_calendar_outlined,
+                              ),
+                              onTap: saving
+                                  ? null
+                                  : togglePublishCalendar,
                             ),
+                            if (showPublishCalendar) ...[
+                              Container(
+                                width: double.infinity,
+                                height: 318,
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius:
+                                      BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: FarmColors.line,
+                                  ),
+                                ),
+                                child: CalendarDatePicker(
+                                  initialDate: publishAt.isBefore(
+                                    DateTime.now().subtract(
+                                      const Duration(days: 1),
+                                    ),
+                                  )
+                                      ? DateTime.now()
+                                      : publishAt,
+                                  firstDate:
+                                      DateTime.now().subtract(
+                                    const Duration(days: 1),
+                                  ),
+                                  lastDate: DateTime.now().add(
+                                    const Duration(days: 730),
+                                  ),
+                                  onDateChanged: selectPublishDate,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
                             ListTile(
                               contentPadding: EdgeInsets.zero,
-                              leading: const Icon(Icons.event_busy_outlined),
+                              leading: const Icon(
+                                Icons.event_busy_outlined,
+                              ),
                               title: const Text('Expiry'),
                               subtitle: Text(
                                 expiresAt == null
@@ -26635,16 +36063,59 @@ class _AdminAgricultureFeedTabState
                                       tooltip: 'Remove expiry',
                                       onPressed: saving
                                           ? null
-                                          : () => setSheetState(
-                                                () => expiresAt = null,
-                                              ),
-                                      icon: const Icon(Icons.clear_rounded),
+                                          : () => setSheetState(() {
+                                                expiresAt = null;
+                                                showExpiryCalendar = false;
+                                              }),
+                                      icon: const Icon(
+                                        Icons.clear_rounded,
+                                      ),
                                     ),
-                                  const Icon(Icons.edit_calendar_outlined),
+                                  Icon(
+                                    showExpiryCalendar
+                                        ? Icons.expand_less_rounded
+                                        : Icons.edit_calendar_outlined,
+                                  ),
                                 ],
                               ),
-                              onTap: saving ? null : chooseExpiryDate,
+                              onTap: saving
+                                  ? null
+                                  : toggleExpiryCalendar,
                             ),
+                            if (showExpiryCalendar) ...[
+                              Container(
+                                width: double.infinity,
+                                height: 318,
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius:
+                                      BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: FarmColors.line,
+                                  ),
+                                ),
+                                child: CalendarDatePicker(
+                                  initialDate:
+                                      expiresAt != null &&
+                                              expiresAt!.isAfter(
+                                                publishAt,
+                                              )
+                                          ? expiresAt!
+                                          : publishAt.add(
+                                              const Duration(days: 1),
+                                            ),
+                                  firstDate: publishAt.add(
+                                    const Duration(days: 1),
+                                  ),
+                                  lastDate: publishAt.add(
+                                    const Duration(days: 730),
+                                  ),
+                                  onDateChanged: selectExpiryDate,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
                             SwitchListTile.adaptive(
                               value: isActive,
                               contentPadding: EdgeInsets.zero,

@@ -126,8 +126,8 @@ class FarmerCollectionScheduleItem {
 
     return FarmerCollectionScheduleItem(
       id: (data['collection_stop_id'] ?? '').toString(),
-      collectionDate:
-          parseProductDate(data['collection_date']) ?? DateTime.now(),
+      collectionDate: parseProductDate(data['collection_date']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
       runStatus: (data['run_status'] ?? '').toString().trim().toLowerCase(),
       stopStatus: (data['stop_status'] ?? '').toString().trim().toLowerCase(),
       productName: (data['product_name'] ?? 'Produce').toString().trim(),
@@ -188,7 +188,9 @@ String _farmerPartnerNumber(double value) {
 }
 
 String _farmerPartnerDate(DateTime? date) {
-  if (date == null) return 'Not scheduled';
+  if (date == null || date.millisecondsSinceEpoch <= 0) {
+    return 'Not scheduled';
+  }
   const months = <String>[
     'Jan',
     'Feb',
@@ -236,6 +238,7 @@ Future<Map<String, String?>> _loadFarmerProductImageMap() async {
     farmDebugLog(
       'Farmer product images unavailable: $error',
     );
+    rethrow;
   }
 
   return result;
@@ -243,8 +246,21 @@ Future<Map<String, String?>> _loadFarmerProductImageMap() async {
 
 Future<Map<String, String?>>? _farmerProductImageMapFuture;
 
-Future<Map<String, String?>> _farmerProductImages() {
-  return _farmerProductImageMapFuture ??= _loadFarmerProductImageMap();
+Future<Map<String, String?>> _farmerProductImages() async {
+  final existing = _farmerProductImageMapFuture;
+  if (existing != null) return existing;
+
+  final future = _loadFarmerProductImageMap();
+  _farmerProductImageMapFuture = future;
+
+  try {
+    return await future;
+  } catch (_) {
+    if (identical(_farmerProductImageMapFuture, future)) {
+      _farmerProductImageMapFuture = null;
+    }
+    rethrow;
+  }
 }
 
 Future<String?> _farmerProductImageUrl(
@@ -285,6 +301,23 @@ class _FarmerProductThumb extends StatelessWidget {
     );
   }
 
+  Widget _loading() {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+      child: const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String?>(
@@ -292,6 +325,12 @@ class _FarmerProductThumb extends StatelessWidget {
         productName,
       ),
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData &&
+            !snapshot.hasError) {
+          return _loading();
+        }
+
         final imageUrl = snapshot.data?.trim() ?? '';
 
         if (imageUrl.isEmpty) {
@@ -609,6 +648,12 @@ class _FarmerDemandBoardScreenState extends State<FarmerDemandBoardScreen> {
     await next;
   }
 
+  void _retry() {
+    setState(() {
+      _future = fetchFarmerMarketDemandBoard(_days);
+    });
+  }
+
   void _setDays(int days) {
     if (_days == days) return;
     setState(() {
@@ -660,14 +705,24 @@ class _FarmerDemandBoardScreenState extends State<FarmerDemandBoardScreen> {
       return;
     }
 
-    await _refresh();
+    var refreshed = true;
+    try {
+      await _refresh();
+    } catch (error) {
+      refreshed = false;
+      farmDebugLog(
+        'Farmer demand refresh after saved supply skipped: $error',
+      );
+    }
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '${demand.productName} supply reported. HPJ can now review it in Matching.',
+          refreshed
+              ? '${demand.productName} supply reported. HPJ can now review it in Matching.'
+              : '${demand.productName} supply was saved. Current demand totals could not refresh yet; pull down to retry.',
         ),
       ),
     );
@@ -741,7 +796,36 @@ class _FarmerDemandBoardScreenState extends State<FarmerDemandBoardScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError && snapshot.data == null) {
-            return Center(child: Text(friendlyAppError(snapshot.error!)));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.cloud_off_outlined,
+                      color: FarmColors.mutedText,
+                      size: 34,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      friendlyAppError(snapshot.error!),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           final allRows =
@@ -1062,7 +1146,7 @@ class _FarmerDemandSupplySheetState extends State<_FarmerDemandSupplySheet> {
       quantityController.text.trim().replaceAll(',', ''),
     );
 
-    if (quantity == null || quantity <= 0) {
+    if (quantity == null || !quantity.isFinite || quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -1265,6 +1349,12 @@ class _FarmerCollectionScheduleScreenState
     await next;
   }
 
+  void _retry() {
+    setState(() {
+      _future = fetchFarmerCollectionSchedule();
+    });
+  }
+
   Color _statusColor(FarmerCollectionScheduleItem item) {
     if (item.stopStatus == 'collected' || item.receivingStatus == 'completed') {
       return FarmColors.success;
@@ -1273,7 +1363,27 @@ class _FarmerCollectionScheduleScreenState
       return FarmColors.danger;
     }
     if (item.runStatus == 'in_progress') return FarmColors.warning;
-    return FarmColors.primary;
+    if (_isScheduledCollection(item)) return FarmColors.primary;
+    return FarmColors.mutedText;
+  }
+
+  bool _isScheduledCollection(FarmerCollectionScheduleItem item) {
+    const scheduledRunStatuses = <String>{
+      'planned',
+      'scheduled',
+      'assigned',
+      'ready',
+    };
+    const scheduledStopStatuses = <String>{
+      'planned',
+      'scheduled',
+      'pending',
+      'assigned',
+      'ready',
+    };
+
+    return scheduledRunStatuses.contains(item.runStatus) ||
+        scheduledStopStatuses.contains(item.stopStatus);
   }
 
   String _statusLabel(FarmerCollectionScheduleItem item) {
@@ -1282,7 +1392,22 @@ class _FarmerCollectionScheduleScreenState
     if (item.stopStatus == 'skipped') return 'Skipped';
     if (item.stopStatus == 'cancelled') return 'Cancelled';
     if (item.runStatus == 'in_progress') return 'On Route';
-    return 'Scheduled';
+    if (_isScheduledCollection(item)) return 'Scheduled';
+    return 'Status unavailable';
+  }
+
+  String _collectionMethodLabel(FarmerCollectionScheduleItem item) {
+    switch (item.collectionMethod) {
+      case 'farmer_delivery':
+        return 'Farmer Delivery';
+      case 'hpj_collection':
+      case 'hpj_pickup':
+      case 'collection':
+      case 'pickup':
+        return 'HPJ Collection';
+      default:
+        return 'Method unavailable';
+    }
   }
 
   @override
@@ -1316,7 +1441,36 @@ class _FarmerCollectionScheduleScreenState
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError && snapshot.data == null) {
-            return Center(child: Text(friendlyAppError(snapshot.error!)));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.cloud_off_outlined,
+                      color: FarmColors.mutedText,
+                      size: 34,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      friendlyAppError(snapshot.error!),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           final allRows =
@@ -1385,9 +1539,9 @@ class _FarmerCollectionScheduleScreenState
                 else
                   ...rows.map((item) {
                     final color = _statusColor(item);
-                    final method = item.collectionMethod == 'farmer_delivery'
-                        ? 'Farmer Delivery'
-                        : 'HPJ Collection';
+                    final method = _collectionMethodLabel(item);
+                    final stopLabel =
+                        item.sequenceNo > 0 ? ' • Stop ${item.sequenceNo}' : '';
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: FarmCard(
@@ -1427,7 +1581,7 @@ class _FarmerCollectionScheduleScreenState
                             ),
                             const SizedBox(height: 7),
                             Text(
-                              '${_farmerPartnerDate(item.collectionDate)} • $method • Stop ${item.sequenceNo}',
+                              '${_farmerPartnerDate(item.collectionDate)} • $method$stopLabel',
                               style: const TextStyle(
                                 color: FarmColors.mutedText,
                                 fontWeight: FontWeight.w700,

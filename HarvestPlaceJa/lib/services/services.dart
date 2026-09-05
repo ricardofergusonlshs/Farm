@@ -1118,8 +1118,13 @@ Future<CustomerReferralSummary> fetchCustomerReferralSummary() async {
 }
 
 Future<ReferralShareSnapshot> fetchReferralShareSnapshot() async {
-  final user = supabase.auth.currentUser;
-  final userId = user?.id ?? '';
+  final operationBoundary = captureHpjPrivateOperationBoundary();
+  final userId = operationBoundary.userId?.trim() ?? '';
+
+  if (userId.isEmpty) {
+    throw Exception('Please sign in to share your HPJ referral link.');
+  }
+
   final code = referralCodeForUserId(userId);
   final link = buildCustomerReferralLink(
     referralCode: code,
@@ -1130,6 +1135,12 @@ Future<ReferralShareSnapshot> fetchReferralShareSnapshot() async {
     fetchCustomerReferralSummary(),
     fetchLoyaltySummary(),
   ]);
+
+  if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+    throw const HpjPrivateMutationInterruptedException(
+      'Your account changed while referral details were loading. Please try again.',
+    );
+  }
 
   final summary = results[0] as CustomerReferralSummary;
   final loyalty = results[1] as LoyaltySummary;
@@ -1184,12 +1195,17 @@ Future<LoyaltySummary> fetchLoyaltySummary() async {
     return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
   }
 
+  final operationBoundary = captureHpjPrivateOperationBoundary();
   final user = supabase.auth.currentUser;
-  if (user == null) {
+  if (user == null || operationBoundary.userId != user.id) {
     return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
   }
 
   await recordIncomingReferralForCurrentUser();
+
+  if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+    return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
+  }
 
   try {
     final response = await supabase
@@ -1197,6 +1213,10 @@ Future<LoyaltySummary> fetchLoyaltySummary() async {
         .select('points, lifetime_points, tier')
         .eq('user_id', user.id)
         .maybeSingle();
+
+    if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+      return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
+    }
 
     if (response != null) {
       final points = Product._toInt(response['points']);
@@ -1210,23 +1230,15 @@ Future<LoyaltySummary> fetchLoyaltySummary() async {
         tier: tier,
       );
     }
-  } catch (error) {
-    farmDebugLog(
-        'Loyalty table unavailable, using paid order estimate: $error');
-  }
 
-  try {
-    final orders = await fetchOrders();
-    final paidTotal = orders
-        .where((order) => order.paymentStatus == 'paid')
-        .fold<double>(0, (sum, order) => sum + order.total);
-    final points = (paidTotal / 100).floor();
-    return LoyaltySummary(
-      points: points,
-      lifetimePoints: points,
-      tier: loyaltyTierForPoints(points),
+    // No ledger row means this account has no recorded loyalty balance yet.
+    return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
+  } catch (error) {
+    // Loyalty is server-owned. Never invent a redeemable-looking balance from
+    // paid order totals when the real ledger is temporarily unavailable.
+    farmDebugLog(
+      'Loyalty balance unavailable; returning safe zero balance: $error',
     );
-  } catch (_) {
     return const LoyaltySummary(points: 0, lifetimePoints: 0, tier: 'Green');
   }
 }
@@ -4083,15 +4095,52 @@ Future<void> saveCurrentCustomerProfile({
   );
 }
 
+Future<String?> _resolveFarmerReadScope({
+  String? farmerId,
+  bool allowAdminAll = false,
+}) async {
+  final requestedFarmerId = farmerId?.trim() ?? '';
+
+  // An administrator may explicitly request the all-farmer view only from
+  // functions that opt in with allowAdminAll. Farmers never receive an
+  // unfiltered financial/operational query from the client.
+  if (allowAdminAll && requestedFarmerId.isEmpty) {
+    final isAdmin = await isCurrentUserAdminFromDatabase();
+    if (isAdmin) return null;
+  }
+
+  final currentFarmer = await fetchCurrentFarmerProfile();
+  final currentFarmerId = currentFarmer?.id.trim() ?? '';
+
+  if (currentFarmerId.isNotEmpty &&
+      (requestedFarmerId.isEmpty || requestedFarmerId == currentFarmerId)) {
+    return currentFarmerId;
+  }
+
+  final isAdmin = await isCurrentUserAdminFromDatabase();
+  if (isAdmin && requestedFarmerId.isNotEmpty) {
+    return requestedFarmerId;
+  }
+
+  throw Exception('You do not have permission to view this farmer data.');
+}
+
 Future<List<FarmerOrderSummary>> fetchFarmerOrderSummaries(
     String farmerId) async {
-  if (farmerId.isEmpty) return [];
+  final cleanFarmerId = farmerId.trim();
+  if (cleanFarmerId.isEmpty) return [];
+
   try {
+    final scopedFarmerId = await _resolveFarmerReadScope(
+      farmerId: cleanFarmerId,
+    );
+    if (scopedFarmerId == null || scopedFarmerId.isEmpty) return [];
+
     final response = await supabase
         .from('order_items')
         .select(
             'order_id, product_name, quantity, line_total, farmer_earning_amount, farmer_id')
-        .eq('farmer_id', farmerId)
+        .eq('farmer_id', scopedFarmerId)
         .order('is_read', ascending: true)
         .order('created_at', ascending: false)
         .limit(200);
@@ -4361,10 +4410,17 @@ Future<List<FarmerSupplyForecast>> fetchFarmerSupplyForecasts(
   }
 
   try {
+    final scopedFarmerId = await _resolveFarmerReadScope(
+      farmerId: cleanFarmerId,
+    );
+    if (scopedFarmerId == null || scopedFarmerId.isEmpty) {
+      return const <FarmerSupplyForecast>[];
+    }
+
     final response = await supabase
         .from('farmer_supply_forecasts')
         .select(_farmerSupplyForecastFields)
-        .eq('farmer_id', cleanFarmerId)
+        .eq('farmer_id', scopedFarmerId)
         .order(
           'created_at',
           ascending: false,
@@ -4935,24 +4991,88 @@ Future<void> createFarmerProduct({
       'Marketplace columns unavailable, using compatible product insert: $error',
     );
 
+    // Do not call the admin-only createProduct() compatibility helper here.
+    // A normal approved farmer must still be able to submit a pending product
+    // when optional/newer marketplace columns are not yet available.
+    final compatibleFarmerPayload = <String, dynamic>{
+      'name': cleanName,
+      'price': price,
+      'stock_quantity': stockQuantity,
+      'is_available': false,
+      'category': normalizeProductCategory(category),
+      'is_organic': isOrganic,
+      'harvest_date': todayIsoDate(),
+      'description':
+          description?.trim().isEmpty == true ? null : description?.trim(),
+      'unit': unit?.trim().isEmpty == true ? null : unit?.trim(),
+      'image_url': imageUrl?.trim().isEmpty == true ? null : imageUrl?.trim(),
+      'farmer_id': farmer.id,
+      'farmer_name': farmer.farmerName,
+      'farm_name': farmer.farmName,
+      'parish': farmer.parish,
+      'approval_status': 'pending',
+    };
+
     try {
-      await createProduct(
-        name: cleanName,
-        price: price,
-        stockQuantity: stockQuantity,
-        isAvailable: false,
-        category: normalizeProductCategory(category),
-        isOrganic: isOrganic,
-        isLocal: isLocal,
-        description:
-            description?.trim().isEmpty == true ? null : description?.trim(),
-        unit: unit?.trim().isEmpty == true ? null : unit?.trim(),
-        imageUrl: imageUrl?.trim().isEmpty == true ? null : imageUrl?.trim(),
-      );
+      final inserted = await supabase
+          .from('products')
+          .insert(compatibleFarmerPayload)
+          .select('id')
+          .maybeSingle();
+
+      submittedProductId =
+          inserted == null ? '' : (inserted['id'] ?? '').toString().trim();
     } catch (fallbackError) {
-      farmDebugLog('Compatible farmer product insert failed: $fallbackError');
-      throw Exception(
-          'Could not submit product. Please make sure your account has permission to add products.');
+      final fallbackText = fallbackError.toString().toLowerCase();
+      final missingOptionalFarmerColumns = fallbackText.contains('column') ||
+          fallbackText.contains('schema cache') ||
+          fallbackText.contains('pgrst204');
+
+      if (!missingOptionalFarmerColumns) {
+        farmDebugLog(
+          'Compatible farmer product insert failed: $fallbackError',
+        );
+        throw Exception(
+          'Could not submit product. Please make sure your farmer profile is approved and linked to this account.',
+        );
+      }
+
+      // Final compatibility shape keeps the two safety-critical fields:
+      // farmer_id for ownership and approval_status=pending so a farmer cannot
+      // accidentally publish directly to the customer marketplace.
+      final minimalFarmerPayload = <String, dynamic>{
+        'name': cleanName,
+        'price': price,
+        'stock_quantity': stockQuantity,
+        'is_available': false,
+        'category': normalizeProductCategory(category),
+        'is_organic': isOrganic,
+        'harvest_date': todayIsoDate(),
+        'description':
+            description?.trim().isEmpty == true ? null : description?.trim(),
+        'unit': unit?.trim().isEmpty == true ? null : unit?.trim(),
+        'image_url': imageUrl?.trim().isEmpty == true ? null : imageUrl?.trim(),
+        'farmer_id': farmer.id,
+        'approval_status': 'pending',
+      };
+
+      try {
+        final inserted = await supabase
+            .from('products')
+            .insert(minimalFarmerPayload)
+            .select('id')
+            .maybeSingle();
+
+        submittedProductId =
+            inserted == null ? '' : (inserted['id'] ?? '').toString().trim();
+      } catch (minimalError) {
+        farmDebugLog(
+          'Minimal farmer product insert failed: $minimalError',
+        );
+        throw Exception(
+          'Could not submit product. Please make sure your farmer profile is approved and linked to this account.',
+        );
+      }
     }
   }
 
@@ -5035,6 +5155,11 @@ Future<String> createWholesaleFarmerPayout(
 
 Future<List<FarmerPayout>> fetchFarmerPayouts({String? farmerId}) async {
   try {
+    final scopedFarmerId = await _resolveFarmerReadScope(
+      farmerId: farmerId,
+      allowAdminAll: true,
+    );
+
     dynamic query = supabase.from('farmer_payouts').select(
           'id, farmer_id, order_id, '
           'gross_amount, commission_amount, net_amount, '
@@ -5045,10 +5170,10 @@ Future<List<FarmerPayout>> fetchFarmerPayouts({String? farmerId}) async {
           'released_at, created_at',
         );
 
-    // Apply filters before transform methods such as order().
-    // This avoids calling eq() on a PostgrestTransformBuilder.
-    if (farmerId != null && farmerId.isNotEmpty) {
-      query = query.eq('farmer_id', farmerId);
+    // Admin may intentionally request the all-farmer view. Every non-admin
+    // farmer request is resolved to that signed-in farmer's own profile ID.
+    if (scopedFarmerId != null && scopedFarmerId.isNotEmpty) {
+      query = query.eq('farmer_id', scopedFarmerId);
     }
 
     query = query.order(

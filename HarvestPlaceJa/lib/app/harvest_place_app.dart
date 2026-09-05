@@ -869,6 +869,19 @@ class _AuthGateState extends State<AuthGate> {
       });
     }
 
+    // Phase 050A — one-click Google launch from FlutLab preview.
+    // The embedded preview cannot complete Google OAuth safely, so the Google
+    // button opens this same HPJ build in a normal browser tab with a short-lived
+    // launch marker. That tab comes straight to LoginScreen and starts OAuth.
+    final externalGoogleLaunch = kIsWeb &&
+        !AppConfig.hasGoogleOAuthCallback &&
+        Uri.base.queryParameters['googleExternal'] == '1' &&
+        Uri.base.queryParameters['auth'] == 'google';
+
+    if (!hasEnteredMarket && externalGoogleLaunch) {
+      return const LoginScreen();
+    }
+
     // The welcome page is only the first splash screen. Once the user enters
     // the market, stay in the market even if auth later becomes null.
     if (!hasEnteredMarket) {
@@ -946,25 +959,21 @@ class _PostLoginWorkspaceSelectorState
     extends State<PostLoginWorkspaceSelector> {
   late Future<OwnerWorkspaceAccessSnapshot> _future;
 
-  static const String _heroPhoto =
-      'https://images.unsplash.com/photo-1767452433319-12b4d7e6ec91'
-      '?auto=format&fit=crop&w=1800&q=82';
-
   static const String _customerPhoto =
       'https://images.unsplash.com/photo-1775825772432-58a1a31dcf40'
-      '?auto=format&fit=crop&w=1200&q=82';
+      '?auto=format&fit=crop&w=1200&q=84';
 
   static const String _wholesalePhoto =
       'https://images.unsplash.com/photo-1769355104335-acef3aa4c9b6'
-      '?auto=format&fit=crop&w=1200&q=82';
+      '?auto=format&fit=crop&w=1200&q=84';
 
   static const String _farmerPhoto =
       'https://images.unsplash.com/photo-1767590954924-9ff1057b9f65'
-      '?auto=format&fit=crop&w=1200&q=82';
+      '?auto=format&fit=crop&w=1200&q=84';
 
   static const String _staffPhoto =
       'https://images.unsplash.com/photo-1770992225308-154250075727'
-      '?auto=format&fit=crop&w=1200&q=82';
+      '?auto=format&fit=crop&w=1200&q=84';
 
   @override
   void initState() {
@@ -974,24 +983,36 @@ class _PostLoginWorkspaceSelectorState
 
   Future<void> _reload() async {
     final next = fetchOwnerWorkspaceAccessSnapshot();
+
     if (mounted) {
-      setState(() => _future = next);
+      setState(() {
+        _future = next;
+      });
     }
+
     await next;
   }
 
   void _open(Widget screen) {
-    // A chosen workspace becomes the navigation root. This prevents the
-    // device/app Back button from ever revealing the workspace selector.
-    // Users switch workspaces only from the explicit Switch Workspace action.
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => screen),
+      MaterialPageRoute<void>(
+        builder: (_) => screen,
+      ),
       (route) => false,
+    );
+  }
+
+  void _openUtility(Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => screen,
+      ),
     );
   }
 
   Future<void> _signOut() async {
     await signOutFromHpjSession();
+
     if (!mounted) return;
 
     Navigator.of(context).pushAndRemoveUntil(
@@ -1004,6 +1025,7 @@ class _PostLoginWorkspaceSelectorState
 
   void _openCustomerWorkspace() {
     final callback = widget.onCustomerSelected;
+
     if (callback != null) {
       callback();
       return;
@@ -1017,30 +1039,9 @@ class _PostLoginWorkspaceSelectorState
     );
   }
 
-  String get _firstName {
-    final user = supabase.auth.currentUser;
-    final metadata = user?.userMetadata ?? const <String, dynamic>{};
-
-    final fullName = (metadata['full_name'] ?? '').toString().trim();
-    if (fullName.isNotEmpty) {
-      return fullName.split(RegExp(r'\s+')).first;
-    }
-
-    final email = user?.email?.trim() ?? '';
-    if (email.contains('@')) {
-      final local = email.split('@').first.trim();
-      if (local.isNotEmpty) {
-        return local[0].toUpperCase() +
-            (local.length > 1 ? local.substring(1) : '');
-      }
-    }
-
-    return 'there';
-  }
-
   @override
   Widget build(BuildContext context) {
-    const pageBackground = Color(0xFFF7F4EE);
+    const pageBackground = Color(0xFFF8F6F1);
 
     return Scaffold(
       backgroundColor: pageBackground,
@@ -1065,8 +1066,12 @@ class _PostLoginWorkspaceSelectorState
             final business = access.businessAccount;
             final farmer = access.farmerProfile;
             final settings = access.programSettings;
-            final staffRole = normalizeStaffRole(access.staffRole);
-            final hasStaffAccess = isStaffRoleActive(staffRole);
+            final staffRole = normalizeStaffRole(
+              access.staffRole,
+            );
+            final hasStaffAccess = isStaffRoleActive(
+              staffRole,
+            );
 
             final businessStatus = business == null
                 ? settings.wholesaleApplicationsEnabled
@@ -1074,15 +1079,18 @@ class _PostLoginWorkspaceSelectorState
                     : 'Paused'
                 : business.isApproved
                     ? settings.wholesaleWorkspaceEnabled
-                        ? 'Approved'
+                        ? ''
                         : 'Paused'
-                    : businessAccountStatusLabel(business.status);
+                    : businessAccountStatusLabel(
+                        business.status,
+                      );
 
-            final businessStatusColor = business?.isApproved == true
-                ? const Color(0xFF2C754A)
-                : business == null && !settings.wholesaleApplicationsEnabled
+            final businessStatusColor =
+                business == null && !settings.wholesaleApplicationsEnabled
                     ? const Color(0xFF78817D)
-                    : businessAccountStatusColor(business?.status);
+                    : businessAccountStatusColor(
+                        business?.status,
+                      );
 
             final farmerStatus = farmer == null
                 ? settings.farmerApplicationsEnabled
@@ -1090,13 +1098,12 @@ class _PostLoginWorkspaceSelectorState
                     : 'Paused'
                 : farmer.isApproved
                     ? settings.farmerWorkspaceEnabled
-                        ? 'Approved'
+                        ? ''
                         : 'Paused'
                     : farmer.statusLabel;
 
-            final farmerStatusColor = farmer?.isApproved == true
-                ? const Color(0xFF2C754A)
-                : farmer == null && !settings.farmerApplicationsEnabled
+            final farmerStatusColor =
+                farmer == null && !settings.farmerApplicationsEnabled
                     ? const Color(0xFF78817D)
                     : FarmColors.warning;
 
@@ -1106,15 +1113,15 @@ class _PostLoginWorkspaceSelectorState
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final isTablet = constraints.maxWidth >= 760;
-                  final horizontal = isTablet ? 34.0 : 14.0;
+                  final horizontal = isTablet ? 34.0 : 18.0;
                   final maxContentWidth =
-                      constraints.maxWidth > 980 ? 920.0 : constraints.maxWidth;
+                      constraints.maxWidth > 900 ? 760.0 : constraints.maxWidth;
 
                   return ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: EdgeInsets.fromLTRB(
                       horizontal,
-                      0,
+                      14,
                       horizontal,
                       30,
                     ),
@@ -1127,83 +1134,75 @@ class _PostLoginWorkspaceSelectorState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _RealPhotoWorkspaceHero(
-                                firstName: _firstName,
-                                photoUrl: _heroPhoto,
-                                compact: !isTablet,
-                                onRefresh: _reload,
+                              _ReferenceWorkspaceTopBar(
                                 onSignOut: _signOut,
-                              ),
-                              const SizedBox(height: 16),
-                              const _ProfessionalVerifiedBanner(),
-                              const SizedBox(height: 28),
-                              const Text(
-                                'YOUR WORKSPACES',
-                                style: TextStyle(
-                                  color: Color(0xFF707B76),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 2.2,
+                                onOpenTrust: () => _openUtility(
+                                  const TrustCenterScreen(),
+                                ),
+                                onOpenAbout: () => _openUtility(
+                                  const AboutHpjScreen(),
+                                ),
+                                onOpenSupport: () => _openUtility(
+                                  const SupportScreen(
+                                    initialSubject: 'Account help',
+                                  ),
+                                ),
+                                onOpenNotifications: () => _openUtility(
+                                  const NotificationsScreen(),
                                 ),
                               ),
-                              const SizedBox(height: 7),
+                              const SizedBox(height: 28),
                               const Text(
                                 'Choose your workspace',
                                 style: TextStyle(
-                                  color: Color(0xFF103F2F),
-                                  fontSize: 28,
+                                  color: Color(0xFF073F2C),
+                                  fontSize: 31,
                                   height: 1.0,
                                   fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.75,
+                                  letterSpacing: -1.0,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               const Text(
-                                'Access the right tools for what you want to do today.',
+                                'One account. Switch anytime.',
                                 style: TextStyle(
-                                  color: Color(0xFF68716D),
-                                  fontSize: 12.4,
-                                  height: 1.4,
-                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF747C78),
+                                  fontSize: 15,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              const SizedBox(height: 18),
-                              _BalancedWorkspaceGrid(
+                              const SizedBox(height: 22),
+                              _ReferenceWorkspacePhotoGrid(
                                 children: [
-                                  _BalancedPhotoWorkspaceCard(
+                                  _ReferenceWorkspacePhotoCard(
                                     photoUrl: _customerPhoto,
                                     title: 'Customer Shopping',
-                                    subtitle: settings
-                                            .customerMarketplaceEnabled
-                                        ? 'Shop fresh produce'
-                                        : 'Fresh Jamaican produce coming soon',
                                     status: settings.customerMarketplaceEnabled
-                                        ? 'Available'
+                                        ? 'Current'
                                         : 'Coming Soon',
                                     statusColor:
                                         settings.customerMarketplaceEnabled
-                                            ? const Color(0xFF2C754A)
+                                            ? const Color(0xFF0B4C36)
                                             : const Color(0xFF78817D),
+                                    highlighted:
+                                        settings.customerMarketplaceEnabled,
+                                    showCheck:
+                                        settings.customerMarketplaceEnabled,
                                     onTap: _openCustomerWorkspace,
                                   ),
-                                  _BalancedPhotoWorkspaceCard(
+                                  _ReferenceWorkspacePhotoCard(
                                     photoUrl: _wholesalePhoto,
                                     title: 'Wholesale Business',
-                                    subtitle: business?.isApproved == true
-                                        ? 'Buy for your business'
-                                        : 'Apply for wholesale access or review your status.',
                                     status: businessStatus,
                                     statusColor: businessStatusColor,
                                     onTap: () => _open(
                                       const BusinessWholesaleHubScreen(),
                                     ),
                                   ),
-                                  _BalancedPhotoWorkspaceCard(
+                                  _ReferenceWorkspacePhotoCard(
                                     photoUrl: _farmerPhoto,
                                     title: 'Farmer Partner',
-                                    subtitle: farmer?.isApproved == true
-                                        ? 'Supply HPJ'
-                                        : 'Apply to supply HPJ or review your status.',
                                     status: farmerStatus,
                                     statusColor: farmerStatusColor,
                                     onTap: () => _open(
@@ -1211,25 +1210,21 @@ class _PostLoginWorkspaceSelectorState
                                     ),
                                   ),
                                   if (hasStaffAccess)
-                                    _BalancedPhotoWorkspaceCard(
+                                    _ReferenceWorkspacePhotoCard(
                                       photoUrl: _staffPhoto,
                                       title: 'HPJ Staff & Operations',
-                                      subtitle:
-                                          _balancedStaffSubtitle(staffRole),
-                                      status: staffRoleDisplayLabel(staffRole),
-                                      statusColor: const Color(0xFF526763),
+                                      status: '',
+                                      statusColor: const Color(0xFF0B4C36),
                                       onTap: () => _open(
                                         const AdminDashboardScreen(),
                                       ),
                                     ),
                                 ],
                               ),
-                              const SizedBox(height: 16),
-                              const _ProfessionalAccountNote(),
-                              const SizedBox(height: 14),
-                              const _ProfessionalBenefitsFooter(),
-                              const SizedBox(height: 12),
-                              const _WorkspaceLegalFooter(),
+                              const SizedBox(height: 20),
+                              const _ReferenceOneAccountCard(),
+                              const SizedBox(height: 18),
+                              const _ReferenceWorkspaceLegalFooter(),
                             ],
                           ),
                         ),
@@ -1246,354 +1241,225 @@ class _PostLoginWorkspaceSelectorState
   }
 }
 
-String _balancedStaffSubtitle(String role) {
-  switch (normalizeStaffRole(role)) {
-    case 'owner':
-      return 'Manage operations';
-    case 'manager':
-      return 'Manage operations';
-    case 'packer':
-      return 'Packing & fulfilment';
-    case 'delivery':
-      return 'Deliveries';
-    case 'inventory':
-      return 'Inventory & warehouse';
-    case 'support':
-      return 'Customer support';
-    default:
-      return 'HPJ operations';
-  }
-}
-
-class _RealPhotoWorkspaceHero extends StatelessWidget {
-  final String firstName;
-  final String photoUrl;
-  final bool compact;
-  final Future<void> Function() onRefresh;
+class _ReferenceWorkspaceTopBar extends StatelessWidget {
   final Future<void> Function() onSignOut;
+  final VoidCallback onOpenTrust;
+  final VoidCallback onOpenAbout;
+  final VoidCallback onOpenSupport;
+  final VoidCallback onOpenNotifications;
 
-  const _RealPhotoWorkspaceHero({
-    required this.firstName,
-    required this.photoUrl,
-    required this.compact,
-    required this.onRefresh,
+  const _ReferenceWorkspaceTopBar({
     required this.onSignOut,
+    required this.onOpenTrust,
+    required this.onOpenAbout,
+    required this.onOpenSupport,
+    required this.onOpenNotifications,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: compact ? 306 : 302,
-      width: double.infinity,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(compact ? 0 : 28),
-          bottomRight: Radius.circular(compact ? 0 : 28),
+    const forest = Color(0xFF073F2C);
+
+    return Row(
+      children: [
+        Container(
+          width: 54,
+          height: 54,
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(
+              color: const Color(0xFFE5E1D8),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF173B30).withOpacity(0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Image.asset(
+            'lib/assets/images/logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.eco_outlined,
+              color: forest,
+              size: 28,
+            ),
+          ),
         ),
-        color: const Color(0xFF174334),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF15392E).withOpacity(0.14),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
+        const SizedBox(width: 14),
+        const Expanded(
+          child: Text(
+            'Workspaces',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: forest,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.6,
+            ),
           ),
-        ],
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.network(
-            photoUrl,
-            fit: BoxFit.cover,
-            alignment: const Alignment(0.15, 0),
-            filterQuality: FilterQuality.medium,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const ColoredBox(
-                color: Color(0xFF214D3B),
-              );
-            },
-            errorBuilder: (_, __, ___) {
-              return const ColoredBox(
-                color: Color(0xFF214D3B),
-              );
-            },
+        ),
+        _ReferenceHeaderIcon(
+          tooltip: 'Notifications',
+          icon: Icons.notifications_none_rounded,
+          onTap: onOpenNotifications,
+        ),
+        const SizedBox(width: 4),
+        PopupMenuButton<String>(
+          tooltip: 'Menu',
+          color: const Color(0xFFFFFEFC),
+          elevation: 12,
+          constraints: const BoxConstraints(
+            minWidth: 270,
+            maxWidth: 310,
           ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  const Color(0xFF092F24).withOpacity(0.86),
-                  const Color(0xFF092F24).withOpacity(0.50),
-                  const Color(0xFF092F24).withOpacity(0.10),
-                ],
-                stops: const [0, 0.48, 0.84],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          position: PopupMenuPosition.under,
+          onSelected: (value) {
+            switch (value) {
+              case 'trust':
+                onOpenTrust();
+                break;
+              case 'about':
+                onOpenAbout();
+                break;
+              case 'support':
+                onOpenSupport();
+                break;
+              case 'sign_out':
+                onSignOut();
+                break;
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem<String>(
+              value: 'trust',
+              height: 66,
+              child: _ReferenceMenuItem(
+                icon: Icons.shield_outlined,
+                label: 'Trust & Security',
               ),
             ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withOpacity(0.06),
-                  Colors.transparent,
-                  Colors.black.withOpacity(0.15),
-                ],
+            PopupMenuDivider(height: 1),
+            PopupMenuItem<String>(
+              value: 'about',
+              height: 66,
+              child: _ReferenceMenuItem(
+                icon: Icons.info_outline_rounded,
+                label: 'About The Harvest Place Ja',
               ),
             ),
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            top: 16,
-            child: Row(
-              children: [
-                Container(
-                  width: 94,
-                  height: 56,
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.92),
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.78),
-                    ),
-                  ),
-                  child: Image.asset(
-                    'lib/assets/images/logo.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.eco_outlined,
-                      color: Color(0xFF0C4C36),
-                      size: 30,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                _PhotoHeroAction(
-                  icon: Icons.refresh_rounded,
-                  tooltip: 'Refresh',
-                  onTap: () {
-                    onRefresh();
-                  },
-                ),
-                const SizedBox(width: 8),
-                PopupMenuButton<String>(
-                  tooltip: 'Account',
-                  onSelected: (value) {
-                    if (value == 'sign_out') {
-                      onSignOut();
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem<String>(
-                      value: 'sign_out',
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.logout_rounded,
-                            size: 19,
-                          ),
-                          SizedBox(width: 8),
-                          Text('Sign out'),
-                        ],
-                      ),
-                    ),
-                  ],
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.94),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.person_rounded,
-                      color: Color(0xFF0C4C36),
-                      size: 23,
-                    ),
-                  ),
-                ),
-              ],
+            PopupMenuDivider(height: 1),
+            PopupMenuItem<String>(
+              value: 'support',
+              height: 66,
+              child: _ReferenceMenuItem(
+                icon: Icons.support_agent_rounded,
+                label: 'Help & Support',
+              ),
+            ),
+            PopupMenuDivider(height: 1),
+            PopupMenuItem<String>(
+              value: 'sign_out',
+              height: 66,
+              child: _ReferenceMenuItem(
+                icon: Icons.logout_rounded,
+                label: 'Sign Out',
+                destructive: true,
+              ),
+            ),
+          ],
+          child: const SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(
+              Icons.menu_rounded,
+              color: forest,
+              size: 30,
             ),
           ),
-          Positioned(
-            left: 20,
-            right: compact ? 34 : 260,
-            bottom: 25,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Welcome back,',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    height: 1.0,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: -0.35,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  firstName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 39,
-                    height: 0.96,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -1.1,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Together we grow a healthier Jamaica.',
-                  maxLines: 2,
-                  style: TextStyle(
-                    color: Color(0xFFF2F4EF),
-                    fontSize: 13.3,
-                    height: 1.35,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-class _PhotoHeroAction extends StatelessWidget {
-  final IconData icon;
+class _ReferenceHeaderIcon extends StatelessWidget {
   final String tooltip;
+  final IconData icon;
   final VoidCallback onTap;
 
-  const _PhotoHeroAction({
-    required this.icon,
+  const _ReferenceHeaderIcon({
     required this.tooltip,
+    required this.icon,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.white.withOpacity(0.94),
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              icon,
-              color: const Color(0xFF0C4C36),
-              size: 21,
-            ),
-          ),
-        ),
+    return IconButton(
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      onPressed: onTap,
+      icon: Icon(
+        icon,
+        color: const Color(0xFF073F2C),
+        size: 25,
       ),
     );
   }
 }
 
-class _ProfessionalVerifiedBanner extends StatelessWidget {
-  const _ProfessionalVerifiedBanner();
+class _ReferenceMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool destructive;
+
+  const _ReferenceMenuItem({
+    required this.icon,
+    required this.label,
+    this.destructive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 15,
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A553A),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF153D31).withOpacity(0.13),
-            blurRadius: 22,
-            offset: const Offset(0, 9),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 49,
-            height: 49,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.14),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.verified_user_rounded,
-              color: Colors.white,
-              size: 25,
+    final color =
+        destructive ? const Color(0xFFD92D20) : const Color(0xFF073F2C);
+
+    return Row(
+      children: [
+        Icon(
+          icon,
+          color: color,
+          size: 24,
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your account is verified and secure',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13.6,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'All approved workspaces stay connected to your HPJ account.',
-                  style: TextStyle(
-                    color: Color(0xFFD4E3DB),
-                    fontSize: 11.8,
-                    height: 1.4,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Icon(
-            Icons.lock_outline_rounded,
-            color: Color(0xFFE3E9E5),
-            size: 20,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-class _BalancedWorkspaceGrid extends StatelessWidget {
+class _ReferenceWorkspacePhotoGrid extends StatelessWidget {
   final List<Widget> children;
 
-  const _BalancedWorkspaceGrid({
+  const _ReferenceWorkspacePhotoGrid({
     required this.children,
   });
 
@@ -1601,18 +1467,14 @@ class _BalancedWorkspaceGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Two large visual tiles on normal phones and tablets.
-        // Only fall back to one column on exceptionally narrow layouts.
-        final oneColumn = constraints.maxWidth < 330;
-        final columns = oneColumn ? 1 : 2;
-        final gap = oneColumn ? 12.0 : 12.0;
-        final width = oneColumn
-            ? constraints.maxWidth
-            : (constraints.maxWidth - gap) / columns;
+        final oneColumn = constraints.maxWidth < 300;
+        final gap = oneColumn ? 12.0 : 14.0;
+        final width =
+            oneColumn ? constraints.maxWidth : (constraints.maxWidth - gap) / 2;
 
         return Wrap(
           spacing: gap,
-          runSpacing: 12,
+          runSpacing: 14,
           children: children
               .map(
                 (child) => SizedBox(
@@ -1627,41 +1489,41 @@ class _BalancedWorkspaceGrid extends StatelessWidget {
   }
 }
 
-class _BalancedPhotoWorkspaceCard extends StatelessWidget {
+class _ReferenceWorkspacePhotoCard extends StatelessWidget {
   final String photoUrl;
   final String title;
-  final String subtitle;
   final String status;
   final Color statusColor;
+  final bool highlighted;
+  final bool showCheck;
   final VoidCallback onTap;
-  final bool isCurrent;
-  final String actionLabel;
 
-  const _BalancedPhotoWorkspaceCard({
+  const _ReferenceWorkspacePhotoCard({
     required this.photoUrl,
     required this.title,
-    required this.subtitle,
     required this.status,
     required this.statusColor,
     required this.onTap,
-    this.isCurrent = false,
-    this.actionLabel = 'Open',
+    this.highlighted = false,
+    this.showCheck = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    const forest = Color(0xFF0B4C36);
-    const ink = Color(0xFF183D30);
+    const forest = Color(0xFF073F2C);
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 210;
-        final cardHeight = compact ? 214.0 : 224.0;
-        final imageHeight = compact ? 94.0 : 104.0;
+        final compact = constraints.maxWidth < 165;
+        final cardHeight = compact ? 270.0 : 292.0;
+        final photoHeight = compact ? 184.0 : 202.0;
 
         return Semantics(
           button: true,
-          label: '$title. $subtitle. $status.',
+          label: [
+            title,
+            if (status.trim().isNotEmpty) status.trim(),
+          ].join('. '),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -1671,21 +1533,19 @@ class _BalancedPhotoWorkspaceCard extends StatelessWidget {
                 height: cardHeight,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: isCurrent
-                      ? const Color(0xFFF1F8F1)
-                      : const Color(0xFFFFFEFB),
+                  color: const Color(0xFFFFFEFC),
                   borderRadius: BorderRadius.circular(23),
                   border: Border.all(
-                    color: isCurrent ? forest : const Color(0xFFE0DDD4),
-                    width: isCurrent ? 1.7 : 1,
+                    color: highlighted ? forest : const Color(0xFFE4E0D8),
+                    width: highlighted ? 2.0 : 1.0,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF183D30).withOpacity(
-                        isCurrent ? 0.12 : 0.08,
+                      color: const Color(0xFF173B30).withOpacity(
+                        highlighted ? 0.11 : 0.075,
                       ),
-                      blurRadius: isCurrent ? 24 : 20,
-                      offset: const Offset(0, 9),
+                      blurRadius: highlighted ? 22 : 17,
+                      offset: const Offset(0, 8),
                     ),
                   ],
                 ),
@@ -1693,7 +1553,7 @@ class _BalancedPhotoWorkspaceCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(
-                      height: imageHeight,
+                      height: photoHeight,
                       width: double.infinity,
                       child: Stack(
                         fit: StackFit.expand,
@@ -1703,8 +1563,15 @@ class _BalancedPhotoWorkspaceCard extends StatelessWidget {
                             fit: BoxFit.cover,
                             alignment: Alignment.center,
                             filterQuality: FilterQuality.medium,
-                            loadingBuilder: (context, child, progress) {
-                              if (progress == null) return child;
+                            loadingBuilder: (
+                              context,
+                              child,
+                              progress,
+                            ) {
+                              if (progress == null) {
+                                return child;
+                              }
+
                               return const ColoredBox(
                                 color: Color(0xFFE8EFEA),
                               );
@@ -1714,107 +1581,90 @@ class _BalancedPhotoWorkspaceCard extends StatelessWidget {
                                 color: Color(0xFFE8EFEA),
                                 child: Center(
                                   child: Icon(
-                                    Icons.grid_view_rounded,
+                                    Icons.image_outlined,
                                     color: forest,
-                                    size: 30,
+                                    size: 34,
                                   ),
                                 ),
                               );
                             },
                           ),
-                          const Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0x00000000),
-                                    Color(0x1A000000),
-                                    Color(0x66000000),
+                          if (status.trim().isNotEmpty)
+                            Positioned(
+                              top: 12,
+                              right: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.96),
+                                  borderRadius: BorderRadius.circular(999),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.09),
+                                      blurRadius: 9,
+                                      offset: const Offset(0, 3),
+                                    ),
                                   ],
-                                  stops: [0, 0.62, 1],
+                                ),
+                                child: Text(
+                                  status,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            top: 10,
-                            right: 10,
-                            child: _BalancedStatusPill(
-                              label: status,
-                              color: statusColor,
-                              onPhoto: true,
-                            ),
-                          ),
                         ],
                       ),
                     ),
                     Expanded(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
-                          compact ? 12 : 14,
-                          12,
-                          compact ? 10 : 12,
-                          11,
+                          compact ? 12 : 15,
+                          13,
+                          compact ? 10 : 13,
+                          13,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Text(
-                              title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: ink,
-                                fontSize: compact ? 14.2 : 15.2,
-                                height: 1.05,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.25,
+                            Expanded(
+                              child: Text(
+                                title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: forest,
+                                  fontSize: compact ? 14.4 : 16.0,
+                                  height: 1.06,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.3,
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 5),
-                            Text(
-                              subtitle,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: const Color(0xFF69736E),
-                                fontSize: compact ? 11.2 : 11.5,
-                                height: 1.25,
-                                fontWeight: FontWeight.w600,
+                            if (showCheck) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFE9F3E9),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check_rounded,
+                                  color: forest,
+                                  size: 24,
+                                ),
                               ),
-                            ),
-                            const Spacer(),
-                            Row(
-                              children: [
-                                Text(
-                                  actionLabel,
-                                  style: TextStyle(
-                                    color: forest,
-                                    fontSize: compact ? 11.2 : 11.5,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Container(
-                                  width: 28,
-                                  height: 28,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEAF3EC),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Icon(
-                                    isCurrent
-                                        ? Icons.check_rounded
-                                        : Icons.arrow_forward_rounded,
-                                    color: forest,
-                                    size: 16,
-                                  ),
-                                ),
-                              ],
-                            ),
+                            ],
                           ],
                         ),
                       ),
@@ -1830,133 +1680,58 @@ class _BalancedPhotoWorkspaceCard extends StatelessWidget {
   }
 }
 
-class _BalancedStatusPill extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool onPhoto;
-
-  const _BalancedStatusPill({
-    required this.label,
-    required this.color,
-    this.onPhoto = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(
-        maxWidth: 96,
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 4,
-      ),
-      decoration: BoxDecoration(
-        color:
-            onPhoto ? Colors.white.withOpacity(0.94) : color.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(999),
-        border:
-            onPhoto ? Border.all(color: Colors.white.withOpacity(0.70)) : null,
-        boxShadow: onPhoto
-            ? [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ]
-            : null,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 4,
-            height: 4,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontSize: 10.0,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProfessionalAccountNote extends StatelessWidget {
-  const _ProfessionalAccountNote();
+class _ReferenceOneAccountCard extends StatelessWidget {
+  const _ReferenceOneAccountCard();
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
-        horizontal: 15,
-        vertical: 14,
+        horizontal: 17,
+        vertical: 15,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F4EC),
-        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF0F5EE),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: const Color(0xFFD9E2D5),
+          color: const Color(0xFFD7E1D4),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF183D30).withOpacity(0.045),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
       ),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.78),
+            width: 48,
+            height: 48,
+            decoration: const BoxDecoration(
+              color: Color(0xFFDDECDD),
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.eco_outlined,
-              color: Color(0xFF0B4C36),
-              size: 23,
+              Icons.person_outline_rounded,
+              color: Color(0xFF073F2C),
+              size: 27,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 13),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'One account. Many possibilities.',
+                  'One HPJ account',
                   style: TextStyle(
-                    color: Color(0xFF104531),
-                    fontSize: 13,
+                    color: Color(0xFF073F2C),
+                    fontSize: 14.5,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 SizedBox(height: 3),
                 Text(
-                  'Switch workspaces without changing your approved permissions.',
+                  'Your access stays connected.',
                   style: TextStyle(
-                    color: Color(0xFF65706B),
-                    fontSize: 11.5,
-                    height: 1.4,
+                    color: Color(0xFF6C7671),
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1969,85 +1744,17 @@ class _ProfessionalAccountNote extends StatelessWidget {
   }
 }
 
-class _ProfessionalBenefitsFooter extends StatelessWidget {
-  const _ProfessionalBenefitsFooter();
+class _ReferenceWorkspaceLegalFooter extends StatelessWidget {
+  const _ReferenceWorkspaceLegalFooter();
 
-  void _open(BuildContext context, Widget screen) {
+  void _open(
+    BuildContext context,
+    Widget screen,
+  ) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => screen),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final benefits = [
-      _ProfessionalBenefit(
-        icon: Icons.shield_outlined,
-        title: 'Secure',
-        subtitle: 'Trust Center',
-        onTap: () => _open(context, const TrustCenterScreen()),
+      MaterialPageRoute<void>(
+        builder: (_) => screen,
       ),
-      _ProfessionalBenefit(
-        icon: Icons.eco_outlined,
-        title: 'About',
-        subtitle: 'Our story',
-        onTap: () => _open(context, const AboutHpjScreen()),
-      ),
-      _ProfessionalBenefit(
-        icon: Icons.contact_support_outlined,
-        title: 'Contact',
-        subtitle: 'Reach HPJ',
-        onTap: () => _open(context, const ContactHpjScreen()),
-      ),
-      _ProfessionalBenefit(
-        icon: Icons.chat_bubble_outline_rounded,
-        title: 'Chat',
-        subtitle: 'Customer Care',
-        onTap: () => _open(
-          context,
-          const SupportScreen(initialSubject: 'Customer care'),
-        ),
-      ),
-    ];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFBFAF6),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE7E4DE)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF183D30).withOpacity(0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          for (var index = 0; index < benefits.length; index++) ...[
-            Expanded(child: benefits[index]),
-            if (index != benefits.length - 1)
-              Container(
-                width: 1,
-                height: 48,
-                color: const Color(0xFFE7E4DE),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _WorkspaceLegalFooter extends StatelessWidget {
-  const _WorkspaceLegalFooter();
-
-  void _open(BuildContext context, Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => screen),
     );
   }
 
@@ -2056,18 +1763,28 @@ class _WorkspaceLegalFooter extends StatelessWidget {
     String label,
     Widget screen,
   ) {
-    return TextButton(
-      onPressed: () => _open(context, screen),
-      style: TextButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Color(0xFF66706B),
-          fontSize: 11.0,
-          fontWeight: FontWeight.w700,
+    return Expanded(
+      child: TextButton(
+        onPressed: () => _open(
+          context,
+          screen,
+        ),
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 2,
+            vertical: 5,
+          ),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xFF073F2C),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -2075,108 +1792,59 @@ class _WorkspaceLegalFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
-      child: Column(
-        children: [
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 2,
-            runSpacing: 0,
-            children: [
-              _link(context, 'About', const AboutHpjScreen()),
-              _link(context, 'Contact', const ContactHpjScreen()),
-              _link(context, 'Terms', const TermsOfServiceScreen()),
-              _link(context, 'Privacy', const PrivacyPolicyScreen()),
-              _link(context, 'Refunds', const RefundPolicyScreen()),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${AppConfig.appName} • v${AppConfig.appVersion}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF969C98),
-              fontSize: 10.0,
-              fontWeight: FontWeight.w600,
+    return Column(
+      children: [
+        Row(
+          children: [
+            _link(
+              context,
+              'Terms',
+              const TermsOfServiceScreen(),
             ),
+            const _ReferenceFooterDivider(),
+            _link(
+              context,
+              'Privacy',
+              const PrivacyPolicyScreen(),
+            ),
+            const _ReferenceFooterDivider(),
+            _link(
+              context,
+              'Refunds',
+              const RefundPolicyScreen(),
+            ),
+            const _ReferenceFooterDivider(),
+            _link(
+              context,
+              'FAQ',
+              const HpjFaqScreen(),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '${AppConfig.appName} • v${AppConfig.appVersion}',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xFF9A9F9B),
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-class _ProfessionalBenefit extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _ProfessionalBenefit({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+class _ReferenceFooterDivider extends StatelessWidget {
+  const _ReferenceFooterDivider();
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: '$title. $subtitle.',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
-            child: Column(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF2ED),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: const Color(0xFF0B4C36),
-                    size: 19,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF104531),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF7D8782),
-                    fontSize: 10.0,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return Container(
+      width: 1,
+      height: 23,
+      color: const Color(0xFFD8DDD8),
     );
   }
 }
@@ -2186,12 +1854,12 @@ class _WorkspaceLoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
+          children: [
             CircularProgressIndicator(),
             SizedBox(height: 14),
             Text(
@@ -2222,6 +1890,7 @@ class _WorkspaceLoadErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(22),
       children: [
         const SizedBox(height: 28),
@@ -2242,7 +1911,9 @@ class _WorkspaceLoadErrorView extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         const Text(
-          'HPJ could not verify all workspace access right now. You can retry, open Customer Shopping so it can check its own availability, or sign out safely.',
+          'HPJ could not verify all workspace access right now. '
+          'You can retry, open Customer Shopping so it can check its own '
+          'availability, or sign out safely.',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: FarmColors.mutedText,
@@ -2258,12 +1929,21 @@ class _WorkspaceLoadErrorView extends StatelessWidget {
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: onRetry,
-          icon: const Icon(Icons.refresh_rounded),
-          label: const Text('Try Again'),
+          icon: const Icon(
+            Icons.refresh_rounded,
+          ),
+          label: const Text(
+            'Try Again',
+          ),
         ),
-        TextButton(
+        TextButton.icon(
           onPressed: onSignOut,
-          child: const Text('Sign out'),
+          icon: const Icon(
+            Icons.logout_rounded,
+          ),
+          label: const Text(
+            'Sign Out',
+          ),
         ),
       ],
     );
@@ -2312,7 +1992,7 @@ class EmailConfirmationProgressScreen extends StatelessWidget {
   }
 }
 
-class PublicLandingScreen extends StatelessWidget {
+class PublicLandingScreen extends StatefulWidget {
   final VoidCallback onEnterWorkspaces;
   final VoidCallback onCreateAccount;
 
@@ -2323,236 +2003,694 @@ class PublicLandingScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+  State<PublicLandingScreen> createState() => _PublicLandingScreenState();
+}
 
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      body: SafeArea(
-        child: ListView(
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            22,
-            22,
-            22,
-            24 + bottomPadding,
-          ),
+class _PublicLandingScreenState extends State<PublicLandingScreen> {
+  late final Future<String?> _welcomeBackgroundFuture;
+  late final Future<List<HomeHeroSlide>> _legacyLandingBackgroundFuture;
+
+  static const Color _forest = Color(0xFF083D2A);
+  static const Color _lime = Color(0xFF9EDB45);
+  static const Color _gold = Color(0xFFF0AF2A);
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Keep the dedicated Admin-managed Welcome Screen Background.
+    // Home Hero slide 1 is used only as a backward-compatible fallback.
+    _welcomeBackgroundFuture = fetchPublicWelcomeBackgroundUrl();
+    _legacyLandingBackgroundFuture = fetchPublicHomeHeroSlides();
+  }
+
+  Widget _backgroundFallback() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF8AA17E),
+            Color(0xFF365C43),
+            Color(0xFF0A2E20),
+          ],
+        ),
+      ),
+      child: Align(
+        alignment: const Alignment(0.45, -0.05),
+        child: Icon(
+          Icons.eco_rounded,
+          size: 230,
+          color: Colors.white.withOpacity(0.035),
+        ),
+      ),
+    );
+  }
+
+  Widget _networkLandingBackground(String imageUrl) {
+    return Image.network(
+      imageUrl,
+      key: ValueKey<String>('hpj-welcome-background-$imageUrl'),
+      fit: BoxFit.cover,
+      alignment: const Alignment(0.08, 0),
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, __, ___) => _backgroundFallback(),
+      loadingBuilder: (
+        context,
+        child,
+        progress,
+      ) {
+        if (progress == null) return child;
+
+        return Stack(
+          fit: StackFit.expand,
           children: [
-            Center(
-              child: Container(
-                width: 98,
-                height: 98,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: FarmColors.line,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: FarmColors.shadow.withOpacity(0.07),
-                      blurRadius: 20,
-                      offset: const Offset(0, 9),
-                    ),
-                  ],
-                ),
-                child: Image.asset(
-                  'lib/assets/images/logo.png',
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.eco_outlined,
-                    size: 54,
-                    color: FarmColors.primary,
-                  ),
+            _backgroundFallback(),
+            child,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _legacyHomeHeroBackground() {
+    return FutureBuilder<List<HomeHeroSlide>>(
+      future: _legacyLandingBackgroundFuture,
+      builder: (context, snapshot) {
+        final slides = snapshot.data ?? const <HomeHeroSlide>[];
+
+        for (final slide in slides) {
+          final clean = cleanHostedImageUrl(slide.imageUrl);
+          if (clean != null && clean.isNotEmpty) {
+            return _networkLandingBackground(clean);
+          }
+        }
+
+        return _backgroundFallback();
+      },
+    );
+  }
+
+  Widget _landingBackground() {
+    return FutureBuilder<String?>(
+      future: _welcomeBackgroundFuture,
+      builder: (context, snapshot) {
+        final welcomeUrl = cleanHostedImageUrl(snapshot.data);
+
+        if (welcomeUrl != null && welcomeUrl.isNotEmpty) {
+          return _networkLandingBackground(welcomeUrl);
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _backgroundFallback();
+        }
+
+        return _legacyHomeHeroBackground();
+      },
+    );
+  }
+
+  void _openUtility(Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => screen,
+      ),
+    );
+  }
+
+  Widget _logoMedallion({
+    required bool compact,
+  }) {
+    final size = compact ? 88.0 : 102.0;
+
+    return Container(
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(compact ? 9 : 11),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.98),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withOpacity(0.95),
+          width: 1.6,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.16),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Image.asset(
+        'lib/assets/images/logo.png',
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const Icon(
+          Icons.eco_outlined,
+          size: 46,
+          color: _forest,
+        ),
+      ),
+    );
+  }
+
+  Widget _workspaceButton({
+    required bool compact,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: compact ? 58 : 64,
+      child: FilledButton(
+        onPressed: widget.onEnterWorkspaces,
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.white.withOpacity(0.98),
+          foregroundColor: _forest,
+          elevation: 0,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 18 : 22,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(compact ? 18 : 21),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.grid_view_rounded,
+              size: 23,
+            ),
+            SizedBox(width: compact ? 14 : 17),
+            Expanded(
+              child: Text(
+                'Choose Your Workspace',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: compact ? 16.0 : 17.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.35,
                 ),
               ),
             ),
-            const SizedBox(height: 18),
-            const Text(
-              'The Harvest Place Ja',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: FarmColors.ink,
-                fontSize: 29,
-                height: 1.04,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.7,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Connecting Jamaican farms, buyers and customers in one platform.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 14.1,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const _LandingHeroCard(),
-            const SizedBox(height: 16),
-            const Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _LandingTrustPill(
-                  icon: Icons.agriculture_outlined,
-                  label: 'Farmers',
-                ),
-                _LandingTrustPill(
-                  icon: Icons.storefront_outlined,
-                  label: 'Wholesale',
-                ),
-                _LandingTrustPill(
-                  icon: Icons.shopping_bag_outlined,
-                  label: 'Customers',
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            PrimaryFarmButton(
-              label: 'Enter Workspaces',
-              onPressed: onEnterWorkspaces,
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.person_add_alt_1_outlined),
-              label: const Text('Create Account'),
-              onPressed: onCreateAccount,
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ForgotPasswordScreen(),
-                  ),
-                );
-              },
-              child: const Text('Forgot password?'),
-            ),
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                Expanded(
-                  child: _LandingPolicyLink(
-                    label: 'Terms',
-                    builder: (_) => const TermsOfServiceScreen(),
-                  ),
-                ),
-                Expanded(
-                  child: _LandingPolicyLink(
-                    label: 'Privacy',
-                    builder: (_) => const PrivacyPolicyScreen(),
-                  ),
-                ),
-                Expanded(
-                  child: _LandingPolicyLink(
-                    label: 'Refunds',
-                    builder: (_) => const RefundPolicyScreen(),
-                  ),
-                ),
-                Expanded(
-                  child: _LandingPolicyLink(
-                    label: 'FAQ',
-                    builder: (_) => const HpjFaqScreen(),
-                  ),
-                ),
-              ],
+            SizedBox(width: compact ? 8 : 12),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 28,
             ),
           ],
         ),
       ),
     );
   }
-}
 
-class _LandingHeroCard extends StatelessWidget {
-  const _LandingHeroCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-        18,
-        18,
-        18,
-        17,
-      ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        color: FarmColors.primaryDark,
-        boxShadow: [
-          BoxShadow(
-            color: FarmColors.primary.withOpacity(0.16),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
+  Widget _createAccountButton({
+    required bool compact,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: compact ? 56 : 62,
+      child: OutlinedButton(
+        onPressed: widget.onCreateAccount,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor: const Color(0xFF06281C).withOpacity(0.34),
+          side: BorderSide(
+            color: Colors.white.withOpacity(0.95),
+            width: 1.7,
           ),
-        ],
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'One account. Multiple ways to participate.',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 21,
-              height: 1.08,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.35,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 18 : 22,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(compact ? 18 : 21),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.add_rounded,
+              color: _lime,
+              size: 29,
             ),
-          ),
-          SizedBox(height: 7),
-          Text(
-            'Grow, supply, buy wholesale, or shop through the HPJ network — all from one secure account.',
-            style: TextStyle(
-              color: Color(0xFFE2EEE7),
-              fontSize: 12.7,
-              height: 1.38,
-              fontWeight: FontWeight.w600,
+            const SizedBox(width: 14),
+            Text(
+              'Create an Account',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: compact ? 16.0 : 17.0,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.2,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}
 
-class _LandingTrustPill extends StatelessWidget {
-  final IconData icon;
-  final String label;
+  Widget _signInLink() {
+    return TextButton(
+      onPressed: widget.onEnterWorkspaces,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 3,
+        ),
+        minimumSize: const Size(0, 34),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: 'Already registered? ',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.94),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const TextSpan(
+              text: 'Sign in',
+              style: TextStyle(
+                color: _lime,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 13.2,
+          height: 1.15,
+        ),
+      ),
+    );
+  }
 
-  const _LandingTrustPill({
-    required this.icon,
-    required this.label,
-  });
+  Widget _utilityItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: 9,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: _lime,
+                size: 26,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.2,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _utilityDivider() {
+    return Container(
+      width: 1,
+      height: 40,
+      color: Colors.white.withOpacity(0.22),
+    );
+  }
+
+  Widget _utilityRow() {
+    return Row(
+      children: [
+        _utilityItem(
+          icon: Icons.info_outline_rounded,
+          label: 'About',
+          onTap: () => _openUtility(
+            const AboutHpjScreen(),
+          ),
+        ),
+        _utilityDivider(),
+        _utilityItem(
+          icon: Icons.shield_outlined,
+          label: 'Trust',
+          onTap: () => _openUtility(
+            const TrustCenterScreen(),
+          ),
+        ),
+        _utilityDivider(),
+        _utilityItem(
+          icon: Icons.chat_bubble_outline_rounded,
+          label: 'Support',
+          onTap: () => _openUtility(
+            const SupportScreen(
+              initialSubject: 'Account help',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _legalItem({
+    required IconData icon,
+    required String label,
+    required Widget screen,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: () => _openUtility(screen),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 2,
+            vertical: 8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: Colors.white.withOpacity(0.92),
+                size: 20,
+              ),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.92),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _legalDivider() {
+    return Container(
+      width: 1,
+      height: 35,
+      color: Colors.white.withOpacity(0.18),
+    );
+  }
+
+  Widget _legalRow() {
+    return Row(
+      children: [
+        _legalItem(
+          icon: Icons.description_outlined,
+          label: 'Terms',
+          screen: const TermsOfServiceScreen(),
+        ),
+        _legalDivider(),
+        _legalItem(
+          icon: Icons.lock_outline_rounded,
+          label: 'Privacy',
+          screen: const PrivacyPolicyScreen(),
+        ),
+        _legalDivider(),
+        _legalItem(
+          icon: Icons.currency_exchange_rounded,
+          label: 'Refunds',
+          screen: const RefundPolicyScreen(),
+        ),
+        _legalDivider(),
+        _legalItem(
+          icon: Icons.help_outline_rounded,
+          label: 'FAQ',
+          screen: const HpjFaqScreen(),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    final media = MediaQuery.of(context);
+    final compact = media.size.height < 760 || media.size.width < 355;
+    final veryCompact = media.size.height < 650;
+    final bottomInset = media.viewPadding.bottom;
+
+    final horizontalPadding = compact ? 18.0 : 24.0;
+    final contentMaxWidth = compact ? 420.0 : 455.0;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF06281C),
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          Icon(icon, size: 14, color: FarmColors.green),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: FarmColors.ink,
-              fontWeight: FontWeight.w900,
-              fontSize: 11.8,
+          Positioned.fill(
+            child: _landingBackground(),
+          ),
+
+          // Preserve the photograph at the top and gradually darken only the
+          // lower half so buttons and footer stay readable on any Admin image.
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [
+                    0.00,
+                    0.22,
+                    0.43,
+                    0.62,
+                    0.78,
+                    1.00,
+                  ],
+                  colors: [
+                    Colors.black.withOpacity(0.03),
+                    Colors.black.withOpacity(0.05),
+                    const Color(0xFF06281C).withOpacity(0.16),
+                    const Color(0xFF06281C).withOpacity(0.44),
+                    const Color(0xFF041D14).withOpacity(0.72),
+                    const Color(0xFF03160F).withOpacity(0.93),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final availableHeight = constraints.maxHeight - bottomInset;
+
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    compact ? 18 : 24,
+                    horizontalPadding,
+                    10 + bottomInset,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: availableHeight - 24,
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: contentMaxWidth,
+                        ),
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              height: veryCompact
+                                  ? 12
+                                  : compact
+                                      ? 24
+                                      : 34,
+                            ),
+                            _logoMedallion(
+                              compact: compact,
+                            ),
+                            SizedBox(
+                              height: compact ? 14 : 18,
+                            ),
+                            Text(
+                              'The Harvest Place Ja',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: compact ? 26 : 30,
+                                height: 1.02,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.9,
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0x66000000),
+                                    blurRadius: 8,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text.rich(
+                              const TextSpan(
+                                children: [
+                                  TextSpan(text: 'Fresh'),
+                                  TextSpan(
+                                    text: '  •  ',
+                                    style: TextStyle(
+                                      color: _gold,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  TextSpan(text: 'Local'),
+                                  TextSpan(
+                                    text: '  •  ',
+                                    style: TextStyle(
+                                      color: _gold,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  TextSpan(text: 'Jamaican'),
+                                ],
+                              ),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.95),
+                                fontSize: compact ? 13.5 : 14.5,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.05,
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0x55000000),
+                                    blurRadius: 5,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              height: veryCompact
+                                  ? 32
+                                  : compact
+                                      ? 46
+                                      : 70,
+                            ),
+                            Text(
+                              'Fresh Jamaican agriculture.\nOne connected marketplace.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: compact ? 24 : 28,
+                                height: 1.10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.85,
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0x77000000),
+                                    blurRadius: 10,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              height: compact ? 12 : 15,
+                            ),
+                            Text(
+                              'Buy fresh produce, sell your harvest, or\nmanage wholesale purchasing.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.94),
+                                fontSize: compact ? 13.5 : 14.8,
+                                height: 1.35,
+                                fontWeight: FontWeight.w500,
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0x77000000),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              height: veryCompact
+                                  ? 28
+                                  : compact
+                                      ? 40
+                                      : 62,
+                            ),
+                            _workspaceButton(
+                              compact: compact,
+                            ),
+                            const SizedBox(height: 12),
+                            _createAccountButton(
+                              compact: compact,
+                            ),
+                            const SizedBox(height: 8),
+                            _signInLink(),
+                            SizedBox(
+                              height: compact ? 14 : 22,
+                            ),
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.fromLTRB(
+                                compact ? 8 : 12,
+                                compact ? 4 : 7,
+                                compact ? 8 : 12,
+                                compact ? 7 : 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    const Color(0xFF06281C).withOpacity(0.48),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.08),
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  _utilityRow(),
+                                  Container(
+                                    height: 1,
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    color: Colors.white.withOpacity(0.15),
+                                  ),
+                                  _legalRow(),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              height: compact ? 2 : 6,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -2574,14 +2712,24 @@ class _LandingPolicyLink extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextButton(
       style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        minimumSize: const Size(0, 34),
+        foregroundColor: Colors.white.withOpacity(0.78),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 3,
+          vertical: 3,
+        ),
+        minimumSize: const Size(0, 30),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: const TextStyle(
+          fontSize: 10.4,
+          fontWeight: FontWeight.w700,
+        ),
       ),
       onPressed: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: builder),
+          MaterialPageRoute(
+            builder: builder,
+          ),
         );
       },
       child: Text(label),
@@ -3550,6 +3698,16 @@ class _LoginScreenState extends State<LoginScreen> {
         _finishGoogleSignInNavigation();
       });
     });
+
+    // If the embedded FlutLab preview opened this screen in a normal browser
+    // tab specifically for Google OAuth, continue automatically. This makes the
+    // user click Continue with Google only once.
+    if (_isExternalGoogleLaunch) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || googleLoading || loading) return;
+        unawaited(_continueWithGoogle());
+      });
+    }
   }
 
   @override
@@ -3706,26 +3864,32 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  bool get _needsExternalFlutLabGooglePreview {
+  bool get _isFlutLabEmbeddedPreview {
     if (!kIsWeb) return false;
 
-    final uri = Uri.base;
-    final host = uri.host.trim().toLowerCase();
-    final isFlutLabPreview =
-        host == 'preview.flutlab.io' || host.endsWith('.preview.flutlab.io');
-
-    if (!isFlutLabPreview) return false;
-
-    // googleExternal=1 is added only to the normal browser tab that HPJ opens
-    // from FlutLab's embedded phone preview. In that tab Google OAuth may run.
-    return uri.queryParameters['googleExternal'] != '1';
+    final host = Uri.base.host.trim().toLowerCase();
+    return host == 'preview.flutlab.io' || host.endsWith('.preview.flutlab.io');
   }
 
-  Future<void> _openFlutLabGoogleBrowserTab() async {
+  bool get _isExternalGoogleLaunch {
+    if (!kIsWeb) return false;
+
+    return Uri.base.queryParameters['googleExternal'] == '1' &&
+        Uri.base.queryParameters['auth'] == 'google' &&
+        !AppConfig.hasGoogleOAuthCallback;
+  }
+
+  bool get _needsExternalFlutLabGoogleLaunch {
+    return _isFlutLabEmbeddedPreview &&
+        Uri.base.queryParameters['googleExternal'] != '1';
+  }
+
+  Future<void> _openGoogleOutsideFlutLab() async {
     final current = Uri.base;
     final params = <String, String>{
       ...current.queryParameters,
       'googleExternal': '1',
+      'auth': 'google',
     };
 
     final externalUrl = current.replace(
@@ -3742,60 +3906,19 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Could not open the browser tab. Use FlutLab\'s Open in New Tab button, then tap Continue with Google again.',
+          'Google sign-in needs a normal browser tab. Use FlutLab Open in New Tab, then try again.',
         ),
       ),
     );
   }
 
-  Future<bool> _confirmExternalFlutLabGooglePreview() async {
-    final open = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) {
-            return AlertDialog(
-              title: const Text('Open Google sign-in securely'),
-              content: const Text(
-                'Google does not allow account sign-in inside FlutLab\'s embedded phone preview. '
-                'HPJ will open this preview in a normal browser tab. In that tab, tap Continue with Google again.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(
-                    dialogContext,
-                    false,
-                  ),
-                  child: const Text('Not now'),
-                ),
-                FilledButton.icon(
-                  onPressed: () => Navigator.pop(
-                    dialogContext,
-                    true,
-                  ),
-                  icon: const Icon(
-                    Icons.open_in_new_rounded,
-                  ),
-                  label: const Text('Open Browser Tab'),
-                ),
-              ],
-            );
-          },
-        ) ==
-        true;
-
-    if (!open || !mounted) return false;
-
-    await _openFlutLabGoogleBrowserTab();
-    return true;
-  }
-
   Future<void> _continueWithGoogle() async {
     if (loading || googleLoading) return;
 
-    // Google OAuth must not be started inside FlutLab's embedded web frame.
-    // The normal browser tab gets a one-use development marker and can then
-    // start the standard Supabase -> Google OAuth flow.
-    if (_needsExternalFlutLabGooglePreview) {
-      await _confirmExternalFlutLabGooglePreview();
+    // Google blocks account authentication inside many embedded preview
+    // frames. In FlutLab, move the flow to a normal browser tab first.
+    if (_needsExternalFlutLabGoogleLaunch) {
+      await _openGoogleOutsideFlutLab();
       return;
     }
 
@@ -3831,10 +3954,14 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() => googleLoading = false);
 
+      farmDebugLog('Google sign-in AuthException: ${error.message}');
+
       final lower = error.message.toLowerCase();
       final message = lower.contains('provider') && lower.contains('disabled')
           ? 'Google Sign-In is not enabled in Supabase yet.'
-          : 'Google Sign-In could not start: ${error.message}';
+          : lower.contains('redirect') || lower.contains('callback')
+              ? 'Google Sign-In redirect is not configured correctly yet.'
+              : 'Google Sign-In could not start: ${error.message}';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
@@ -3843,6 +3970,9 @@ class _LoginScreenState extends State<LoginScreen> {
       googleFlowStarted = false;
       if (!mounted) return;
       setState(() => googleLoading = false);
+
+      farmDebugLog('Google sign-in failed: $error');
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4152,7 +4282,7 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: FarmColors.background,
       appBar: widget.returnToPrevious
           ? AppBar(
-              title: Text(isRegister ? 'Create Account' : 'Sign In'),
+              title: Text(isRegister ? 'Create account' : 'Sign in'),
               backgroundColor: FarmColors.background,
             )
           : null,
@@ -4270,70 +4400,115 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 12),
                         ],
-                        SizedBox(
-                          height: 50,
-                          child: OutlinedButton(
-                            onPressed: loading || googleLoading
-                                ? null
-                                : _continueWithGoogle,
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: FarmColors.ink,
-                              side: const BorderSide(color: FarmColors.line),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 480),
+                            child: Semantics(
+                              button: true,
+                              label: 'Continue with Google',
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 54,
+                                child: OutlinedButton(
+                                  onPressed: loading || googleLoading
+                                      ? null
+                                      : _continueWithGoogle,
+                                  style: OutlinedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: FarmColors.ink,
+                                    side: const BorderSide(
+                                      color: Color(0xFFDADCE0),
+                                      width: 1.15,
+                                    ),
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  child: googleLoading
+                                      ? const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 19,
+                                              height: 19,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.2,
+                                              ),
+                                            ),
+                                            SizedBox(width: 11),
+                                            Text(
+                                              'Opening Google...',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const _GoogleLetterMark(),
+                                            const SizedBox(width: 12),
+                                            const Text(
+                                              'Continue with Google',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: -0.1,
+                                              ),
+                                            ),
+                                            if (_needsExternalFlutLabGoogleLaunch) ...[
+                                              const SizedBox(width: 8),
+                                              const Icon(
+                                                Icons.open_in_new_rounded,
+                                                size: 15,
+                                                color: FarmColors.mutedText,
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                ),
                               ),
                             ),
-                            child: googleLoading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                    ),
-                                  )
-                                : const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _GoogleLetterMark(),
-                                      SizedBox(width: 10),
-                                      Text(
-                                        'Continue with Google',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Google creates or signs into your HPJ account. You choose your workspace after sign-in.',
+                        const SizedBox(height: 7),
+                        Text(
+                          _needsExternalFlutLabGoogleLaunch
+                              ? 'Google opens securely in a browser tab.'
+                              : isRegister
+                                  ? 'Create your account, then choose a workspace.'
+                                  : 'Choose your workspace after signing in.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: FarmColors.mutedText,
-                            fontSize: 11.5,
-                            height: 1.4,
+                            fontSize: 10.5,
+                            height: 1.35,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         if (isRegister) _signupTutorialAction(),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 13),
                         const Row(
                           children: [
                             Expanded(child: Divider()),
                             Padding(
                               padding: EdgeInsets.symmetric(horizontal: 10),
                               child: Text(
-                                'OR USE EMAIL',
+                                'or',
                                 style: TextStyle(
                                   color: FarmColors.mutedText,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.7,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -4610,7 +4785,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
                         PrimaryFarmButton(
                           label: loading
                               ? 'Please wait...'
@@ -4620,7 +4795,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       : isFarmerRegistration
                                           ? 'Create Farmer Account'
                                           : 'Create Account'
-                                  : 'Login'),
+                                  : 'Sign in'),
                           onPressed: loading ||
                                   (AppConfig.turnstileConfigured &&
                                       (_captchaToken == null ||
@@ -4714,26 +4889,100 @@ class _GoogleLetterMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 24,
-      height: 24,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: const Text(
-        'G',
-        style: TextStyle(
-          color: Color(0xFF334155),
-          fontSize: 15,
-          fontWeight: FontWeight.w900,
-          height: 1,
+    return Semantics(
+      label: 'Google',
+      child: Container(
+        width: 24,
+        height: 24,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: const SizedBox(
+          width: 17,
+          height: 17,
+          child: CustomPaint(
+            painter: _GoogleGMarkPainter(),
+          ),
         ),
       ),
     );
   }
+}
+
+class _GoogleGMarkPainter extends CustomPainter {
+  const _GoogleGMarkPainter();
+
+  static const double _pi = 3.1415926535897932;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide * 0.38;
+    final stroke = size.shortestSide * 0.22;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    Paint arc(Color color) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.butt;
+
+    // Four clean segments approximate Google's familiar multicolor G
+    // without adding flutter_svg or a new image asset.
+    canvas.drawArc(
+      rect,
+      -0.20 * _pi,
+      0.70 * _pi,
+      false,
+      arc(const Color(0xFF4285F4)),
+    );
+    canvas.drawArc(
+      rect,
+      0.50 * _pi,
+      0.52 * _pi,
+      false,
+      arc(const Color(0xFF34A853)),
+    );
+    canvas.drawArc(
+      rect,
+      1.02 * _pi,
+      0.43 * _pi,
+      false,
+      arc(const Color(0xFFFBBC05)),
+    );
+    canvas.drawArc(
+      rect,
+      1.45 * _pi,
+      0.35 * _pi,
+      false,
+      arc(const Color(0xFFEA4335)),
+    );
+
+    final blue = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          size.width * 0.50,
+          size.height * 0.46,
+          size.width * 0.39,
+          size.height * 0.16,
+        ),
+        Radius.circular(size.height * 0.05),
+      ),
+      blue,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _GoogleGMarkPainter oldDelegate) => false;
 }
 
 class MainNavigation extends StatefulWidget {
@@ -5052,9 +5301,20 @@ class _MainNavigationState extends State<MainNavigation>
   Future<void> _restorePersistentCart() async {
     if (cart.isNotEmpty) return;
 
+    String? normalizedCurrentUserId() {
+      final raw = supabase.auth.currentUser?.id.trim() ?? '';
+      return raw.isEmpty ? null : raw;
+    }
+
+    final restoreUserId = normalizedCurrentUserId();
+
+    bool restoreBoundaryIsCurrent() {
+      return mounted && normalizedCurrentUserId() == restoreUserId;
+    }
+
     try {
       final savedIds = await OfflineCartStore.restorePersistentProductIds();
-      if (savedIds.isEmpty) return;
+      if (!restoreBoundaryIsCurrent() || savedIds.isEmpty) return;
 
       final counts = <String, int>{};
       for (final rawId in savedIds) {
@@ -5066,12 +5326,15 @@ class _MainNavigationState extends State<MainNavigation>
       final fetched = <String, Product>{};
       for (final id in counts.keys) {
         final product = await fetchProductById(id);
+        if (!restoreBoundaryIsCurrent()) return;
         if (product != null && isVisibleCustomerProduct(product)) {
           fetched[id] = product;
         }
       }
 
-      if (!mounted || fetched.isEmpty || cart.isNotEmpty) return;
+      if (!restoreBoundaryIsCurrent() || fetched.isEmpty || cart.isNotEmpty) {
+        return;
+      }
 
       final restored = <Product>[];
       for (final entry in counts.entries) {
@@ -5085,12 +5348,14 @@ class _MainNavigationState extends State<MainNavigation>
         }
       }
 
-      if (restored.isEmpty) return;
+      if (restored.isEmpty || !restoreBoundaryIsCurrent()) return;
       setState(() {
         cart
           ..clear()
           ..addAll(restored);
       });
+
+      if (!restoreBoundaryIsCurrent()) return;
       persistCart();
     } catch (error) {
       // Keep the saved IDs. HPJ can restore them on a later online launch.
@@ -5167,40 +5432,57 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   void saveRecentlyViewedProducts() {
-    if (!kIsWeb) return;
     try {
       final ids = recentlyViewedProducts
           .where(isVisibleCustomerProduct)
           .map((product) => product.id.trim())
           .where((id) => id.isNotEmpty)
           .take(10)
-          .join(',');
-      farmDebugLog('Recently viewed saved in memory for this session.');
+          .toList();
+
+      unawaited(
+        HpjSmartLocalStore.writeStringList(
+          recentlyViewedStorageKey,
+          ids,
+        ),
+      );
     } catch (error) {
       farmDebugLog('Recently viewed save skipped: $error');
     }
   }
 
   Future<void> loadRecentlyViewedProducts() async {
-    if (!kIsWeb) return;
+    String? normalizedCurrentUserId() {
+      final raw = supabase.auth.currentUser?.id.trim() ?? '';
+      return raw.isEmpty ? null : raw;
+    }
+
+    final loadUserId = normalizedCurrentUserId();
+
+    bool loadBoundaryIsCurrent() {
+      return mounted && normalizedCurrentUserId() == loadUserId;
+    }
+
     try {
-      final saved = '';
-      final ids = saved
-          .split(',')
+      final ids = (await HpjSmartLocalStore.readStringList(
+        recentlyViewedStorageKey,
+      ))
           .map((id) => id.trim())
           .where((id) => id.isNotEmpty)
           .take(10)
           .toList();
 
-      if (ids.isEmpty) return;
+      if (!loadBoundaryIsCurrent() || ids.isEmpty) return;
 
       final fetched = await Future.wait<Product?>(
         ids.map(fetchProductById),
       );
+      if (!loadBoundaryIsCurrent()) return;
+
       final loaded =
           fetched.whereType<Product>().where(isVisibleCustomerProduct).toList();
 
-      if (!mounted) return;
+      if (loaded.isEmpty || !loadBoundaryIsCurrent()) return;
       setState(() {
         recentlyViewedProducts
           ..clear()

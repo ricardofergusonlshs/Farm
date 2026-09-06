@@ -18,6 +18,9 @@ dependencies:
   firebase_core: ^4.12.1
   firebase_messaging: ^16.4.3
 
+  # Foreground Android notifications
+  flutter_local_notifications: 19.5.0
+
   # App features
   app_links: ^6.4.1
   image_picker: ^1.1.2

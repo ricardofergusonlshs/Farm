@@ -28,7 +28,8 @@ class PushNotificationService {
       AndroidNotificationChannel(
     'hpj_foreground_notifications',
     'HPJ Notifications',
-    description: 'Order, chat, delivery and account updates from The Harvest Place Ja.',
+    description:
+        'Order, chat, delivery and account updates from The Harvest Place Ja.',
     importance: Importance.max,
     playSound: true,
   );
@@ -164,8 +165,8 @@ class PushNotificationService {
         onDidReceiveNotificationResponse: _handleLocalNotificationResponse,
       );
 
-      final androidPlugin = _localNotifications
-          .resolvePlatformSpecificImplementation<
+      final androidPlugin =
+          _localNotifications.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
 
       await androidPlugin?.createNotificationChannel(
@@ -248,10 +249,9 @@ class PushNotificationService {
       ...message.data,
       'title': title,
       'body': body,
-      'local_message_id':
-          message.messageId?.trim().isNotEmpty == true
-              ? message.messageId!.trim()
-              : _messageKey(message),
+      'local_message_id': message.messageId?.trim().isNotEmpty == true
+          ? message.messageId!.trim()
+          : _messageKey(message),
     };
 
     const androidDetails = AndroidNotificationDetails(

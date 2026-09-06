@@ -1,6 +1,6 @@
 part of harvest_place_app;
 
-/// HPJ Notification Repair 009
+/// HPJ Notification Repair 010 — foreground Android system notifications
 ///
 /// Responsibilities:
 /// - register/refresh Android FCM tokens
@@ -21,6 +21,20 @@ class PushNotificationService {
   static StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
   static StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
 
+  static final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+
+  static const AndroidNotificationChannel _foregroundNotificationChannel =
+      AndroidNotificationChannel(
+    'hpj_foreground_notifications',
+    'HPJ Notifications',
+    description: 'Order, chat, delivery and account updates from The Harvest Place Ja.',
+    importance: Importance.max,
+    playSound: true,
+  );
+
+  static bool _localNotificationsInitialised = false;
+
   static bool get _isSupportedAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
@@ -36,6 +50,7 @@ class PushNotificationService {
     }
 
     await _ensureNotificationPermission();
+    await _initialiseLocalNotifications();
 
     _messageOpenedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
       (message) {
@@ -129,6 +144,144 @@ class PushNotificationService {
       farmDebugLog('Notification permission request failed: $error');
       farmDebugLog('$stackTrace');
       return false;
+    }
+  }
+
+  static Future<void> _initialiseLocalNotifications() async {
+    if (!_isSupportedAndroid || _localNotificationsInitialised) return;
+
+    try {
+      const androidSettings = AndroidInitializationSettings(
+        'ic_stat_hpj_notification',
+      );
+
+      const settings = InitializationSettings(
+        android: androidSettings,
+      );
+
+      await _localNotifications.initialize(
+        settings,
+        onDidReceiveNotificationResponse: _handleLocalNotificationResponse,
+      );
+
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+      await androidPlugin?.createNotificationChannel(
+        _foregroundNotificationChannel,
+      );
+
+      final launchDetails =
+          await _localNotifications.getNotificationAppLaunchDetails();
+      final launchResponse = launchDetails?.notificationResponse;
+      if (launchDetails?.didNotificationLaunchApp == true &&
+          launchResponse != null) {
+        final message = _remoteMessageFromLocalPayload(launchResponse.payload);
+        if (message != null) {
+          _pendingOpenedMessage = message;
+          _pendingNavigationAttempts = 0;
+        }
+      }
+
+      _localNotificationsInitialised = true;
+      farmDebugLog('Foreground Android notification channel initialised.');
+    } catch (error, stackTrace) {
+      farmDebugLog('Local notification setup failed: $error');
+      farmDebugLog('$stackTrace');
+    }
+  }
+
+  static RemoteMessage? _remoteMessageFromLocalPayload(String? payload) {
+    final cleanPayload = payload?.trim() ?? '';
+    if (cleanPayload.isEmpty) return null;
+
+    try {
+      final decoded = jsonDecode(cleanPayload);
+      if (decoded is! Map) return null;
+
+      final data = <String, dynamic>{};
+      decoded.forEach((key, value) {
+        data[key.toString()] = value?.toString() ?? '';
+      });
+
+      return RemoteMessage(
+        messageId: data['local_message_id']?.toString(),
+        data: data,
+        sentTime: DateTime.now(),
+      );
+    } catch (error, stackTrace) {
+      farmDebugLog('Local notification payload could not be decoded: $error');
+      farmDebugLog('$stackTrace');
+      return null;
+    }
+  }
+
+  static void _handleLocalNotificationResponse(
+    NotificationResponse response,
+  ) {
+    final message = _remoteMessageFromLocalPayload(response.payload);
+    if (message == null) return;
+
+    unawaited(_handleOpenedRemoteMessage(message));
+  }
+
+  static int _foregroundNotificationId(RemoteMessage message) {
+    final seed = _messageKey(message);
+    if (seed.isEmpty) {
+      return DateTime.now().millisecondsSinceEpoch & 0x7fffffff;
+    }
+    return seed.hashCode & 0x7fffffff;
+  }
+
+  static Future<void> _showForegroundSystemNotification(
+    RemoteMessage message,
+    String title,
+    String body,
+  ) async {
+    if (!_localNotificationsInitialised) {
+      await _initialiseLocalNotifications();
+    }
+    if (!_localNotificationsInitialised) return;
+
+    final payloadData = <String, dynamic>{
+      ...message.data,
+      'title': title,
+      'body': body,
+      'local_message_id':
+          message.messageId?.trim().isNotEmpty == true
+              ? message.messageId!.trim()
+              : _messageKey(message),
+    };
+
+    const androidDetails = AndroidNotificationDetails(
+      'hpj_foreground_notifications',
+      'HPJ Notifications',
+      channelDescription:
+          'Order, chat, delivery and account updates from The Harvest Place Ja.',
+      importance: Importance.max,
+      priority: Priority.high,
+      icon: 'ic_stat_hpj_notification',
+      playSound: true,
+      enableVibration: true,
+      visibility: NotificationVisibility.public,
+    );
+
+    const notificationDetails = NotificationDetails(
+      android: androidDetails,
+    );
+
+    try {
+      await _localNotifications.show(
+        _foregroundNotificationId(message),
+        title.isEmpty ? 'The Harvest Place Ja' : title,
+        body,
+        notificationDetails,
+        payload: jsonEncode(payloadData),
+      );
+    } catch (error, stackTrace) {
+      farmDebugLog('Foreground Android system notification failed: $error');
+      farmDebugLog('$stackTrace');
     }
   }
 
@@ -303,28 +456,10 @@ class PushNotificationService {
 
     if (title.isEmpty && body.isEmpty) return;
 
-    final context = hpjRootNavigatorKey.currentContext;
-    if (context == null) return;
-
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          <String>[title, body].where((value) => value.isNotEmpty).join('\n'),
-        ),
-        duration: const Duration(seconds: 7),
-        action: SnackBarAction(
-          label: 'Open',
-          onPressed: () {
-            _pendingOpenedMessage = message;
-            _pendingNavigationAttempts = 0;
-            unawaited(flushPendingNavigation());
-          },
-        ),
-      ),
+    await _showForegroundSystemNotification(
+      message,
+      title,
+      body,
     );
   }
 
@@ -1096,6 +1231,7 @@ class PushNotificationService {
     _lastOpenedMessageKey = null;
     _pendingNavigationAttempts = 0;
     _openingNotification = false;
+    _localNotificationsInitialised = false;
     _started = false;
   }
 }

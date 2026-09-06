@@ -11,6 +11,9 @@ android {
     ndkVersion = "28.2.13676358"
 
     compileOptions {
+        // Required by flutter_local_notifications.
+        isCoreLibraryDesugaringEnabled = true
+
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -20,13 +23,13 @@ android {
     }
 
     defaultConfig {
-        // Must match the existing app registered in Google Play.
+        // Must match the existing Google Play application.
         applicationId = "com.harvestplaceja.myapp"
 
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
 
-        // Increase for every new Google Play upload.
+        // Must increase for each Google Play upload.
         versionCode = 43
         versionName = "1.0.4"
     }
@@ -71,6 +74,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    // Required by flutter_local_notifications.
+    coreLibraryDesugaring(
+        "com.android.tools:desugar_jdk_libs:2.1.4"
+    )
 }
 
 flutter {

@@ -4457,13 +4457,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             const _GoogleLetterMark(),
-                                            const SizedBox(width: 12),
+                                            const SizedBox(width: 10),
                                             const Text(
                                               'Continue with Google',
                                               style: TextStyle(
                                                 fontSize: 14,
-                                                fontWeight: FontWeight.w800,
-                                                letterSpacing: -0.1,
+                                                fontWeight: FontWeight.w600,
+                                                letterSpacing: 0,
                                               ),
                                             ),
                                             if (_needsExternalFlutLabGoogleLaunch) ...[
@@ -4816,6 +4816,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                       selectedRole = 'customer';
                                       selectedCustomerAccountType = 'retail';
                                       pendingConfirmationEmail = null;
+
+                                      // Re-query when the user actually opens
+                                      // Create Account. A tutorial may have been
+                                      // published after this auth screen loaded.
+                                      _signupTutorialFuture =
+                                          fetchPublishedHelpTutorial(
+                                        placement: 'signup',
+                                        audience: 'all',
+                                      );
                                     }
                                   });
                                   if (AppConfig.turnstileConfigured) {
@@ -4891,23 +4900,22 @@ class _GoogleLetterMark extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       label: 'Google',
-      child: Container(
-        width: 24,
-        height: 24,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(
-            color: const Color(0xFFE2E8F0),
-          ),
-        ),
-        child: const SizedBox(
-          width: 17,
-          height: 17,
-          child: CustomPaint(
-            painter: _GoogleGMarkPainter(),
-          ),
+      child: SizedBox(
+        width: 20,
+        height: 20,
+        child: Image.asset(
+          'lib/assets/images/google_g.png',
+          width: 20,
+          height: 20,
+          fit: BoxFit.contain,
+          excludeFromSemantics: true,
+          filterQuality: FilterQuality.high,
+          errorBuilder: (_, __, ___) {
+            // Keep the current HPJ Google mark only as a defensive fallback.
+            return const CustomPaint(
+              painter: _GoogleGMarkPainter(),
+            );
+          },
         ),
       ),
     );
@@ -4922,45 +4930,58 @@ class _GoogleGMarkPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.shortestSide * 0.38;
-    final stroke = size.shortestSide * 0.22;
+    final stroke = size.shortestSide * 0.175;
+    final radius = (size.shortestSide - stroke) / 2;
     final rect = Rect.fromCircle(center: center, radius: radius);
 
-    Paint arc(Color color) => Paint()
+    Paint strokePaint(Color color) => Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.butt;
+      ..strokeCap = StrokeCap.square;
 
-    // Four clean segments approximate Google's familiar multicolor G
-    // without adding flutter_svg or a new image asset.
+    // Google-style four-colour ring.
     canvas.drawArc(
       rect,
-      -0.20 * _pi,
-      0.70 * _pi,
-      false,
-      arc(const Color(0xFF4285F4)),
-    );
-    canvas.drawArc(
-      rect,
+      -0.25 * _pi,
       0.50 * _pi,
-      0.52 * _pi,
       false,
-      arc(const Color(0xFF34A853)),
+      strokePaint(const Color(0xFF4285F4)),
     );
     canvas.drawArc(
       rect,
-      1.02 * _pi,
-      0.43 * _pi,
+      0.25 * _pi,
+      0.50 * _pi,
       false,
-      arc(const Color(0xFFFBBC05)),
+      strokePaint(const Color(0xFF34A853)),
     );
     canvas.drawArc(
       rect,
-      1.45 * _pi,
-      0.35 * _pi,
+      0.75 * _pi,
+      0.36 * _pi,
       false,
-      arc(const Color(0xFFEA4335)),
+      strokePaint(const Color(0xFFFBBC05)),
+    );
+    canvas.drawArc(
+      rect,
+      1.11 * _pi,
+      0.64 * _pi,
+      false,
+      strokePaint(const Color(0xFFEA4335)),
+    );
+
+    // Open the right side of the ring, then draw the familiar blue G crossbar.
+    final white = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(
+      Rect.fromLTWH(
+        center.dx + stroke * 0.20,
+        center.dy - stroke * 0.58,
+        size.width,
+        stroke * 1.16,
+      ),
+      white,
     );
 
     final blue = Paint()
@@ -4970,12 +4991,25 @@ class _GoogleGMarkPainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(
-          size.width * 0.50,
-          size.height * 0.46,
-          size.width * 0.39,
-          size.height * 0.16,
+          center.dx - stroke * 0.10,
+          center.dy - stroke * 0.45,
+          size.width * 0.46,
+          stroke * 0.90,
         ),
-        Radius.circular(size.height * 0.05),
+        Radius.circular(stroke * 0.20),
+      ),
+      blue,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          size.width * 0.72,
+          center.dy - stroke * 0.45,
+          stroke * 0.90,
+          size.height * 0.28,
+        ),
+        Radius.circular(stroke * 0.20),
       ),
       blue,
     );
@@ -5008,6 +5042,7 @@ class _MainNavigationState extends State<MainNavigation>
   int selectedIndex = 0;
   String selectedShopCategory = 'All';
   int shopCategorySelectionVersion = 0;
+  int myBoxRefreshVersion = 0;
   final List<Product> cart = [];
   final Set<String> favoriteProductIds = <String>{};
   final Map<String, Product> favoriteProductCache = <String, Product>{};
@@ -5043,6 +5078,8 @@ class _MainNavigationState extends State<MainNavigation>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    mealIngredientCartAddRequest
+        .addListener(_applyMealIngredientCartAddRequest);
     customerMarketplaceSettingsFuture = fetchMarketplaceProgramSettings();
     authBoundaryUserId = supabase.auth.currentUser?.id.trim();
     selectedIndex = widget.initialIndex.clamp(0, 4).toInt();
@@ -5119,10 +5156,16 @@ class _MainNavigationState extends State<MainNavigation>
         return;
       }
 
+      if (previousUserId == null && nextUserId != null && cart.isNotEmpty) {
+        await _mergeLocalCartIntoSignedInCart();
+        if (!mounted) return;
+      }
+
       subscribeToNotificationUpdates();
       if (mounted) {
         setState(() {
           authViewVersion++;
+          myBoxRefreshVersion++;
         });
       }
     });
@@ -5170,11 +5213,19 @@ class _MainNavigationState extends State<MainNavigation>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
     unawaited(_revalidateCustomerWorkspace());
+
+    if (isLoggedIn && mounted) {
+      setState(() {
+        myBoxRefreshVersion++;
+      });
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    mealIngredientCartAddRequest
+        .removeListener(_applyMealIngredientCartAddRequest);
     inventoryRefreshDebounce?.cancel();
     authStateSubscription?.cancel();
     if (inventoryRealtimeChannel != null) {
@@ -5296,6 +5347,79 @@ class _MainNavigationState extends State<MainNavigation>
     }
     seenRealtimeNotificationIds.clear();
     realtimeNotificationCooldowns.clear();
+  }
+
+  void _applySignedInCartLines(List<CartLine> lines) {
+    if (!mounted || !isLoggedIn) return;
+
+    final syncedProducts = expandCartLinesToProducts(lines);
+    setState(() {
+      cart
+        ..clear()
+        ..addAll(syncedProducts);
+      persistCart();
+    });
+  }
+
+  Future<void> _mergeLocalCartIntoSignedInCart() async {
+    final userId = supabase.auth.currentUser?.id.trim() ?? '';
+    if (userId.isEmpty || cart.isEmpty) return;
+
+    final localProducts = List<Product>.from(cart);
+    final localQuantityById = <String, int>{};
+    final localProductById = <String, Product>{};
+
+    for (final product in localProducts) {
+      final productId = product.id.trim();
+      if (productId.isEmpty || !product.canAddToCart) continue;
+      localQuantityById[productId] = (localQuantityById[productId] ?? 0) + 1;
+      localProductById[productId] = product;
+    }
+
+    if (localQuantityById.isEmpty) return;
+
+    try {
+      final serverLines = await fetchSavedCartLinesForCurrentUser(
+        throwOnError: true,
+      );
+      if ((supabase.auth.currentUser?.id.trim() ?? '') != userId) return;
+
+      final serverQuantityById = <String, int>{
+        for (final line in serverLines)
+          if (line.product.id.trim().isNotEmpty)
+            line.product.id.trim(): line.quantity,
+      };
+
+      for (final entry in localQuantityById.entries) {
+        if ((supabase.auth.currentUser?.id.trim() ?? '') != userId) return;
+
+        final product = localProductById[entry.key];
+        if (product == null) continue;
+
+        final existingQuantity = serverQuantityById[entry.key] ?? 0;
+        final requestedQuantity = existingQuantity + entry.value;
+        final maxQuantity = product.stockQuantity > 0
+            ? product.stockQuantity
+            : requestedQuantity;
+        final mergedQuantity = requestedQuantity.clamp(1, maxQuantity).toInt();
+
+        await setCartItemQuantityForCurrentUser(
+          product: product,
+          quantity: mergedQuantity,
+        );
+      }
+
+      final mergedLines = await fetchSavedCartLinesForCurrentUser(
+        throwOnError: true,
+      );
+      if ((supabase.auth.currentUser?.id.trim() ?? '') != userId) return;
+
+      _applySignedInCartLines(mergedLines);
+    } catch (error) {
+      // Never discard the guest box just because account sync is temporarily
+      // unavailable. A later My Box refresh can retry from the server.
+      farmDebugLog('Guest-to-account My Box merge deferred: $error');
+    }
   }
 
   Future<void> _restorePersistentCart() async {
@@ -5508,6 +5632,32 @@ class _MainNavigationState extends State<MainNavigation>
     saveRecentlyViewedProducts();
   }
 
+  void _applyMealIngredientCartAddRequest() {
+    final requested = mealIngredientCartAddRequest.value;
+    if (requested == null || requested.isEmpty) return;
+
+    // Consume once before mutating the cart so the ValueNotifier cannot replay
+    // the same meal selection on a later rebuild.
+    mealIngredientCartAddRequest.value = null;
+
+    final seen = <String>{};
+    for (final product in requested) {
+      final productId = product.id.trim();
+      if (productId.isEmpty || !seen.add(productId) || !product.canAddToCart) {
+        continue;
+      }
+
+      final currentQuantity = quantityForProduct(product);
+      if (product.stockQuantity > 0 &&
+          currentQuantity >= product.stockQuantity) {
+        continue;
+      }
+
+      increaseProductQuantity(product);
+      unawaited(saveCartItemForCurrentUser(product));
+    }
+  }
+
   void increaseProductQuantity(Product product) {
     if (!product.canAddToCart) return;
     setState(() {
@@ -5536,7 +5686,12 @@ class _MainNavigationState extends State<MainNavigation>
   void _selectCustomerTab(int index) {
     if (!mounted) return;
     final safeIndex = index.clamp(0, 4).toInt();
-    setState(() => selectedIndex = safeIndex);
+    setState(() {
+      selectedIndex = safeIndex;
+      if (safeIndex == myBoxTabIndex && isLoggedIn) {
+        myBoxRefreshVersion++;
+      }
+    });
     unawaited(
       saveHpjNavigationPreference(
         workspace: 'customer',
@@ -5582,6 +5737,7 @@ class _MainNavigationState extends State<MainNavigation>
 
                 setState(() {
                   cart.clear();
+                  myBoxRefreshVersion++;
                 });
 
                 persistCart();
@@ -5589,6 +5745,8 @@ class _MainNavigationState extends State<MainNavigation>
                 FarmDataCache.clearOrders();
               },
               onInventoryChanged: refreshInventoryViews,
+              onSavedCartSynced: _applySignedInCartLines,
+              refreshVersion: myBoxRefreshVersion,
             )),
       ),
     );
@@ -5671,6 +5829,7 @@ class _MainNavigationState extends State<MainNavigation>
 
               setState(() {
                 cart.clear();
+                myBoxRefreshVersion++;
               });
 
               persistCart();
@@ -5730,6 +5889,8 @@ class _MainNavigationState extends State<MainNavigation>
           FarmDataCache.clearOrders();
         },
         onInventoryChanged: refreshInventoryViews,
+        onSavedCartSynced: _applySignedInCartLines,
+        refreshVersion: myBoxRefreshVersion,
       ),
       OrdersScreen(
         key: ValueKey('orders-$authViewKey'),

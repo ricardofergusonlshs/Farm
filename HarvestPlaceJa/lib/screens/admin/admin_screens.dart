@@ -303,11 +303,72 @@ Future<void> createAdminNotification({
     );
   }
 
+  final cleanDedupe = dedupeKey == null || dedupeKey.trim().isEmpty
+      ? null
+      : dedupeKey.trim();
+
+  // PLAY-04 — resolve HPJ staff on the server. Correct RLS should not require
+  // Customer/Farmer/Wholesale clients to SELECT admin_users/staff_users just to
+  // alert HPJ staff. The RPC returns the stored notification dedupe keys; each
+  // one is then dispatched through the existing secured Edge Function.
+  try {
+    final response = await supabase.rpc(
+      'hpj_create_admin_notifications',
+      params: <String, dynamic>{
+        'p_title': title.trim(),
+        'p_message': message.trim(),
+        'p_type': cleanType,
+        'p_order_id': cleanOrderId.isEmpty ? null : cleanOrderId,
+        'p_action_type':
+            resolvedActionType.isEmpty ? null : resolvedActionType,
+        'p_action_id': resolvedActionId.isEmpty ? null : resolvedActionId,
+        'p_dedupe_key': cleanDedupe,
+      },
+    );
+
+    final dispatchKeys = <String>[];
+
+    if (response is List) {
+      for (final item in response) {
+        final key = item?.toString().trim() ?? '';
+        if (key.isNotEmpty) dispatchKeys.add(key);
+      }
+    } else if (response is Map) {
+      final raw = response['dedupe_keys'];
+      if (raw is List) {
+        for (final item in raw) {
+          final key = item?.toString().trim() ?? '';
+          if (key.isNotEmpty) dispatchKeys.add(key);
+        }
+      }
+    }
+
+    if (dispatchKeys.isNotEmpty) {
+      for (final key in dispatchKeys.toSet()) {
+        await dispatchStoredPushNotificationByDedupeKey(key);
+      }
+      return;
+    }
+
+    farmDebugLog(
+      'Server staff notification returned no recipients; '
+      'using compatibility fallback.',
+    );
+  } catch (error) {
+    farmDebugLog(
+      'Server staff notification routing unavailable; '
+      'using compatibility fallback: $error',
+    );
+  }
+
+  // Compatibility fallback for a database that has not received the Phase 2
+  // push recovery SQL yet. This keeps the existing behavior intact.
   try {
     final targets = await fetchAdminNotificationTargets();
     if (targets.isEmpty) {
       farmDebugLog(
-          'Admin notification skipped because no admin target was found.');
+        'Admin notification skipped because no server or legacy staff target was found.',
+      );
       return;
     }
 
@@ -323,19 +384,17 @@ Future<void> createAdminNotification({
         userId: target.userId,
         userEmail: target.userEmail,
         orderId: cleanOrderId.isEmpty ? null : cleanOrderId,
-        actionType:
-            resolvedActionType.isEmpty ? null : resolvedActionType,
+        actionType: resolvedActionType.isEmpty ? null : resolvedActionType,
         actionId: resolvedActionId.isEmpty ? null : resolvedActionId,
-        dedupeKey: dedupeKey == null || dedupeKey.trim().isEmpty
+        dedupeKey: cleanDedupe == null
             ? null
-            : '${dedupeKey.trim()}:${targetKey.isEmpty ? 'staff' : targetKey}',
+            : '$cleanDedupe:${targetKey.isEmpty ? 'staff' : targetKey}',
       );
     }
   } catch (error) {
     farmDebugLog('Admin notification skipped: $error');
   }
 }
-
 
 // =====================================================
 // ADMIN HELP & TUTORIALS
@@ -500,6 +559,259 @@ Future<void> deleteAdminHelpTutorial(
     throw Exception(
       'Could not delete the tutorial. Check your Owner/Manager permission.',
     );
+  }
+}
+
+
+// =====================================================
+// PHASE 5 — HELP CONTENT + FAQ MANAGEMENT
+// Owner/Manager only. Public FAQ reading is implemented in wholesale_management.
+// =====================================================
+
+Future<String?> uploadAdminHelpTutorialVideoFromDevice() async {
+  // IMPORTANT FOR FLUTLAB WEB:
+  // Browser file pickers must be opened directly from the user's tap.
+  // Do not await an auth/RPC check before pickVideo(), otherwise the browser
+  // can lose the user-activation context and silently block the picker.
+  final userBeforePicker = supabase.auth.currentUser;
+  if (userBeforePicker == null) {
+    throw Exception('Please sign in again before uploading a tutorial.');
+  }
+
+  final picked = await ImagePicker().pickVideo(
+    source: ImageSource.gallery,
+  );
+  if (picked == null) return null;
+
+  // Authorize after the browser/device picker returns, before any upload.
+  await _requireHelpTutorialAdminAccess();
+
+  final user = supabase.auth.currentUser;
+  if (user == null || user.id != userBeforePicker.id) {
+    throw Exception(
+      'Your account changed while choosing the video. Please try again.',
+    );
+  }
+
+  final byteLength = await picked.length();
+  const maxBytes = 80 * 1024 * 1024;
+
+  if (byteLength <= 0) {
+    throw Exception('Choose a valid tutorial video.');
+  }
+
+  if (byteLength > maxBytes) {
+    throw Exception(
+      'Tutorial video is too large. Please use a video under 80 MB.',
+    );
+  }
+
+  var safeName = picked.name
+      .trim()
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
+      .replaceAll(RegExp(r'-+'), '-');
+
+  if (safeName.isEmpty) {
+    safeName = 'hpj-tutorial-video.mp4';
+  }
+
+  final lowerName = safeName.toLowerCase();
+  final declaredMime = picked.mimeType?.trim().toLowerCase() ?? '';
+
+  String? contentType;
+  if (lowerName.endsWith('.mp4') || lowerName.endsWith('.m4v')) {
+    contentType = 'video/mp4';
+  } else if (lowerName.endsWith('.webm')) {
+    contentType = 'video/webm';
+  } else if (lowerName.endsWith('.mov')) {
+    contentType = 'video/quicktime';
+  } else if (declaredMime.startsWith('video/')) {
+    contentType = declaredMime;
+  }
+
+  if (contentType == null) {
+    throw Exception(
+      'Choose an MP4, M4V, WebM or MOV tutorial video.',
+    );
+  }
+
+  final bytes = await picked.readAsBytes();
+  if (bytes.isEmpty) {
+    throw Exception('The selected tutorial video could not be read.');
+  }
+
+  final timestamp = DateTime.now().millisecondsSinceEpoch;
+  final path = 'videos/${user.id}/$timestamp-$safeName';
+
+  try {
+    await supabase.storage.from('help-tutorials').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: contentType,
+            upsert: false,
+          ),
+        );
+
+    return supabase.storage.from('help-tutorials').getPublicUrl(path);
+  } catch (error) {
+    throw Exception(
+      'Could not upload the tutorial video. Run the Phase 5 SQL and try again.',
+    );
+  }
+}
+
+Future<List<HpjFaqItem>> fetchAdminHpjFaqItems() async {
+  await _requireHelpTutorialAdminAccess();
+
+  try {
+    final response = await supabase
+        .from('hpj_faq_items')
+        .select(
+          'id, question, answer, is_published, is_archived, sort_order, created_at, updated_at',
+        )
+        .order('is_archived', ascending: true)
+        .order('sort_order', ascending: true)
+        .order('updated_at', ascending: false);
+
+    return (response as List)
+        .map(
+          (item) => HpjFaqItem.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  } catch (error) {
+    throw Exception(
+      'Could not load FAQs. Run the Phase 5 SQL in Supabase, then retry.',
+    );
+  }
+}
+
+Future<void> saveAdminHpjFaqItem({
+  String? id,
+  required String question,
+  required String answer,
+  required bool isPublished,
+  required bool isArchived,
+  required int sortOrder,
+}) async {
+  await _requireHelpTutorialAdminAccess();
+
+  final cleanId = id?.trim() ?? '';
+  final cleanQuestion = question.trim();
+  final cleanAnswer = answer.trim();
+
+  if (cleanQuestion.length < 5) {
+    throw Exception('Enter a clear FAQ question.');
+  }
+  if (cleanQuestion.length > 240) {
+    throw Exception('Keep the FAQ question under 240 characters.');
+  }
+  if (cleanAnswer.length < 10) {
+    throw Exception('Add a little more detail to the FAQ answer.');
+  }
+  if (cleanAnswer.length > 3000) {
+    throw Exception('Keep the FAQ answer under 3,000 characters.');
+  }
+
+  final userId = supabase.auth.currentUser?.id;
+  final safeSortOrder = sortOrder.clamp(0, 9999).toInt();
+
+  final payload = <String, dynamic>{
+    'question': cleanQuestion,
+    'answer': cleanAnswer,
+    'is_published': isArchived ? false : isPublished,
+    'is_archived': isArchived,
+    'sort_order': safeSortOrder,
+    'updated_by': userId,
+  };
+
+  try {
+    if (cleanId.isEmpty) {
+      await supabase.from('hpj_faq_items').insert({
+        ...payload,
+        'created_by': userId,
+      });
+    } else {
+      await supabase
+          .from('hpj_faq_items')
+          .update(payload)
+          .eq('id', cleanId);
+    }
+  } catch (error) {
+    throw Exception(
+      'Could not save the FAQ. Check the Phase 5 SQL and your Owner/Manager permission.',
+    );
+  }
+}
+
+Future<void> setAdminHpjFaqPublished({
+  required HpjFaqItem item,
+  required bool isPublished,
+}) async {
+  await _requireHelpTutorialAdminAccess();
+
+  if (item.id.trim().isEmpty || item.isArchived) return;
+
+  try {
+    await supabase
+        .from('hpj_faq_items')
+        .update({
+          'is_published': isPublished,
+          'updated_by': supabase.auth.currentUser?.id,
+        })
+        .eq('id', item.id.trim());
+  } catch (error) {
+    throw Exception('Could not update FAQ visibility.');
+  }
+}
+
+Future<void> setAdminHpjFaqArchived({
+  required HpjFaqItem item,
+  required bool isArchived,
+}) async {
+  await _requireHelpTutorialAdminAccess();
+
+  if (item.id.trim().isEmpty) return;
+
+  try {
+    await supabase
+        .from('hpj_faq_items')
+        .update({
+          'is_archived': isArchived,
+          if (isArchived) 'is_published': false,
+          'updated_by': supabase.auth.currentUser?.id,
+        })
+        .eq('id', item.id.trim());
+  } catch (error) {
+    throw Exception(
+      isArchived ? 'Could not archive the FAQ.' : 'Could not restore the FAQ.',
+    );
+  }
+}
+
+Future<void> reorderAdminHpjFaqItems(
+  List<HpjFaqItem> orderedItems,
+) async {
+  await _requireHelpTutorialAdminAccess();
+
+  final active = orderedItems
+      .where((item) => !item.isArchived && item.id.trim().isNotEmpty)
+      .toList(growable: false);
+
+  try {
+    for (var index = 0; index < active.length; index++) {
+      await supabase
+          .from('hpj_faq_items')
+          .update({
+            'sort_order': (index + 1) * 10,
+            'updated_by': supabase.auth.currentUser?.id,
+          })
+          .eq('id', active[index].id.trim());
+    }
+  } catch (error) {
+    throw Exception('Could not reorder FAQs.');
   }
 }
 
@@ -3086,6 +3398,7 @@ class FarmerDashboardScreen extends StatelessWidget {
                     FarmCard(
                       padding: EdgeInsets.zero,
                       child: ExpansionTile(
+                        initiallyExpanded: true,
                         tilePadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 2),
                         childrenPadding: const EdgeInsets.fromLTRB(15, 0, 15, 15),
                         leading: const Icon(Icons.insights_outlined, color: FarmColors.primary),
@@ -11805,6 +12118,7 @@ class _FarmerSupplyEntrySheetState
 
   bool saving = false;
   bool showMoreDetails = false;
+  bool showOnFarmPageComingSoon = true;
 
   Product? selectedProduct;
   bool sellToCustomer = true;
@@ -11867,6 +12181,10 @@ class _FarmerSupplyEntrySheetState
         await HpjSmartLocalStore.readInt('farmer_supply_sell_wholesale');
     final savedShopListing =
         await HpjSmartLocalStore.readInt('farmer_supply_request_shop_listing');
+    final savedFarmPageComingSoon =
+        await HpjSmartLocalStore.readInt(
+          'farmer_supply_show_farm_page_coming_soon',
+        );
     final savedListingImage =
         await HpjSmartLocalStore.readString('farmer_supply_listing_image_url');
 
@@ -11897,6 +12215,9 @@ class _FarmerSupplyEntrySheetState
       }
       if (savedShopListing != null) {
         requestShopListing = savedShopListing == 1;
+      }
+      if (savedFarmPageComingSoon != null) {
+        showOnFarmPageComingSoon = savedFarmPageComingSoon == 1;
       }
       final cleanListingImage =
           cleanHostedImageUrl(savedListingImage);
@@ -11936,6 +12257,12 @@ class _FarmerSupplyEntrySheetState
       ),
     );
     unawaited(
+      HpjSmartLocalStore.writeInt(
+        'farmer_supply_show_farm_page_coming_soon',
+        showOnFarmPageComingSoon ? 1 : 0,
+      ),
+    );
+    unawaited(
       HpjSmartLocalStore.writeString(
         'farmer_supply_listing_image_url',
         listingImageUrl ?? '',
@@ -11955,6 +12282,7 @@ class _FarmerSupplyEntrySheetState
       'farmer_supply_sell_customer',
       'farmer_supply_sell_wholesale',
       'farmer_supply_request_shop_listing',
+      'farmer_supply_show_farm_page_coming_soon',
       'farmer_supply_listing_image_url',
     ]) {
       await HpjSmartLocalStore.remove(key);
@@ -12226,6 +12554,24 @@ class _FarmerSupplyEntrySheetState
         notes: notesController.text.trim(),
       );
 
+      String? farmPageWarning;
+      try {
+        await supabase.rpc(
+          'farmer_set_supply_farm_page_visibility',
+          params: <String, dynamic>{
+            'p_supply_id': createdSupply.id,
+            'p_show': showOnFarmPageComingSoon,
+          },
+        );
+      } catch (error) {
+        farmPageWarning =
+            'Supply was saved, but HPJ could not update its Farm Page Coming Soon visibility. '
+            'Please try again after the Phase 4 SQL is installed.';
+        farmDebugLog(
+          'Farmer supply Farm Page visibility unavailable: $error',
+        );
+      }
+
       String? channelWarning;
       try {
         await setFarmerSupplyMarketChannels(
@@ -12267,6 +12613,12 @@ class _FarmerSupplyEntrySheetState
       }
 
       if (!mounted) return;
+
+      if (farmPageWarning != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(farmPageWarning)),
+        );
+      }
 
       if (channelWarning != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -12684,6 +13036,46 @@ class _FarmerSupplyEntrySheetState
                     FontWeight.w800,
               ),
             ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        FarmCard(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 2,
+          ),
+          child: CheckboxListTile(
+            value: showOnFarmPageComingSoon,
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: const Text(
+              'Show on my Farm Page as Coming Soon',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            subtitle: const Text(
+              'Uses this real supply report and expected harvest date. '
+              'It does not create a Shop product or set a selling price.',
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 9.2,
+                height: 1.3,
+              ),
+            ),
+            onChanged: saving
+                ? null
+                : (value) {
+                    setState(() {
+                      showOnFarmPageComingSoon = value == true;
+                    });
+                    _persistSmartDraft();
+                  },
           ),
         ),
 
@@ -13682,6 +14074,247 @@ class _FarmerSupplyScreenState
     );
   }
 
+  double _planningQuantity(FarmerSupplyForecast supply) {
+    final values = <double>[
+      supply.harvestedQuantity ?? 0,
+      supply.expectedQuantity ?? 0,
+      supply.quantityGrowing ?? 0,
+    ];
+
+    var best = 0.0;
+    for (final value in values) {
+      if (value.isFinite && value > best) best = value;
+    }
+    return best;
+  }
+
+  bool _needsSupplyAttention(FarmerSupplyForecast supply) {
+    if (!supply.isActive) return false;
+
+    if (_planningQuantity(supply) <= 0) return true;
+
+    if (supply.expectedHarvestDate == null && !supply.isHarvested) {
+      return true;
+    }
+
+    final harvestDate = supply.expectedHarvestDate;
+    if (harvestDate != null && !supply.isHarvested) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final expected = DateTime(
+        harvestDate.year,
+        harvestDate.month,
+        harvestDate.day,
+      );
+
+      if (expected.isBefore(today)) return true;
+    }
+
+    return _farmerSupplyNeedsReview(supply);
+  }
+
+  int _compareSupplyForFarmer(
+    FarmerSupplyForecast a,
+    FarmerSupplyForecast b,
+  ) {
+    if (a.isActive != b.isActive) return a.isActive ? -1 : 1;
+
+    final aNeeds = _needsSupplyAttention(a);
+    final bNeeds = _needsSupplyAttention(b);
+    if (aNeeds != bNeeds) return aNeeds ? -1 : 1;
+
+    final aDate = a.expectedHarvestDate ?? DateTime(2999);
+    final bDate = b.expectedHarvestDate ?? DateTime(2999);
+    final dateCompare = aDate.compareTo(bDate);
+    if (dateCompare != 0) return dateCompare;
+
+    return a.cropName.toLowerCase().compareTo(b.cropName.toLowerCase());
+  }
+
+  Future<void> _openManageSupply(
+    List<FarmerSupplyForecast> supplies, {
+    String initialFilter = 'all',
+  }) async {
+    final searchController = TextEditingController();
+    var filter = initialFilter;
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              bool matchesFilter(FarmerSupplyForecast supply) {
+                switch (filter) {
+                  case 'current':
+                    return supply.isActive && !_needsSupplyAttention(supply);
+                  case 'needs':
+                    return supply.isActive && _needsSupplyAttention(supply);
+                  case 'past':
+                    return !supply.isActive;
+                  default:
+                    return true;
+                }
+              }
+
+              final query = searchController.text.trim().toLowerCase();
+              final visible = supplies.where((supply) {
+                if (!matchesFilter(supply)) return false;
+                if (query.isEmpty) return true;
+
+                return supply.cropName.toLowerCase().contains(query) ||
+                    (supply.category ?? '').toLowerCase().contains(query) ||
+                    supply.unit.toLowerCase().contains(query) ||
+                    supply.statusLabel.toLowerCase().contains(query);
+              }).toList()
+                ..sort(_compareSupplyForFarmer);
+
+              return FractionallySizedBox(
+                heightFactor: 0.92,
+                child: Material(
+                  color: FarmColors.background,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(26),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 12, 10, 10),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Manage Supply',
+                                    style: TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Search, update or safely cancel old crop reports.',
+                                    style: TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Close',
+                              onPressed: () => Navigator.of(sheetContext).pop(),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                        child: TextField(
+                          controller: searchController,
+                          onChanged: (_) => setSheetState(() {}),
+                          decoration: InputDecoration(
+                            hintText: 'Search crop, status or unit...',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: query.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Clear search',
+                                    onPressed: () {
+                                      searchController.clear();
+                                      setSheetState(() {});
+                                    },
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                        child: Row(
+                          children: [
+                            for (final option in const <String, String>{
+                              'all': 'All',
+                              'current': 'Current',
+                              'needs': 'Needs Update',
+                              'past': 'Past',
+                            }.entries) ...[
+                              ChoiceChip(
+                                label: Text(option.value),
+                                selected: filter == option.key,
+                                onSelected: (_) {
+                                  setSheetState(() => filter = option.key);
+                                },
+                              ),
+                              const SizedBox(width: 7),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: visible.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'No supply reports match this view.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  14,
+                                  18,
+                                  28,
+                                ),
+                                itemCount: visible.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 10),
+                                itemBuilder: (_, index) {
+                                  final supply = visible[index];
+                                  return _FarmerSupplyCard(
+                                    farmerId: widget.profile.id,
+                                    supply: supply,
+                                    onChanged: () {
+                                      refreshSupply();
+                                      if (Navigator.of(sheetContext).canPop()) {
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      searchController.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FarmPage(
@@ -13720,18 +14353,27 @@ class _FarmerSupplyScreenState
               exactSupplyFound ? focusedSupplies : supplies;
 
           final active = visibleSupplies
-              .where(
-                (item) =>
-                    item.isActive,
-              )
+              .where((item) => item.isActive)
               .toList();
 
+          final current = active
+              .where((item) => !_needsSupplyAttention(item))
+              .toList()
+            ..sort(_compareSupplyForFarmer);
+
+          final needsUpdate = active
+              .where(_needsSupplyAttention)
+              .toList()
+            ..sort(_compareSupplyForFarmer);
+
           final past = visibleSupplies
-              .where(
-                (item) =>
-                    !item.isActive,
-              )
-              .toList();
+              .where((item) => !item.isActive)
+              .toList()
+            ..sort(_compareSupplyForFarmer);
+
+          final currentPreview = current.take(5).toList();
+          final needsPreview = needsUpdate.take(3).toList();
+          final pastPreview = past.take(3).toList();
 
           if (snapshot.connectionState ==
                   ConnectionState.waiting &&
@@ -13827,122 +14469,226 @@ class _FarmerSupplyScreenState
 
               if (active.isEmpty && past.isEmpty)
                 _FarmerFirstCropCard(
-                  onTap: () =>
-                      openSupplyForm(
-                    supplies,
-                  ),
+                  onTap: () => openSupplyForm(supplies),
                 )
               else ...[
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Current supply',
+                FarmCard(
+                  padding: const EdgeInsets.all(13),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Supply overview',
                         style: TextStyle(
-                          color:
-                              FarmColors.ink,
-                          fontSize: 14,
-                          fontWeight:
-                              FontWeight.w900,
+                          color: FarmColors.ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ),
-                    Text(
-                      '${active.length} active',
-                      style: const TextStyle(
-                        color: FarmColors
-                            .mutedText,
-                        fontSize: 9.2,
-                        fontWeight:
-                            FontWeight.w700,
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: [
+                          HpjMvpStatusPill(
+                            label: '${current.length} current',
+                            color: FarmColors.success,
+                          ),
+                          HpjMvpStatusPill(
+                            label: '${needsUpdate.length} need update',
+                            color: needsUpdate.isEmpty
+                                ? FarmColors.success
+                                : FarmColors.warning,
+                          ),
+                          HpjMvpStatusPill(
+                            label: '${past.length} past',
+                            color: FarmColors.primary,
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 9),
-
-                ...active.map(
-                  (supply) =>
-                      Padding(
-                    padding:
-                        const EdgeInsets
-                            .only(
-                      bottom: 10,
-                    ),
-                    child:
-                        _FarmerSupplyCard(
-                      farmerId: widget.profile.id,
-                      supply: supply,
-                      onChanged:
-                          refreshSupply,
-                    ),
+                      const SizedBox(height: 9),
+                      const Text(
+                        'Only the most useful records are shown here. Use Manage Supply to search the full history and safely cancel old reports.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 9.6,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openManageSupply(supplies),
+                          icon: const Icon(Icons.manage_search_rounded, size: 17),
+                          label: const Text('Manage Supply'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-
-              if (past.isNotEmpty) ...[
-                const SizedBox(height: 10),
-
-                FarmCard(
-                  padding: EdgeInsets.zero,
-                  child: ExpansionTile(
-                    tilePadding:
-                        const EdgeInsets
-                            .symmetric(
-                      horizontal: 14,
-                    ),
-                    childrenPadding:
-                        const EdgeInsets
-                            .fromLTRB(
-                      12,
-                      0,
-                      12,
-                      12,
-                    ),
-                    title: const Text(
-                      'Past supply',
-                      style: TextStyle(
-                        color:
-                            FarmColors.ink,
-                        fontSize: 11.5,
-                        fontWeight:
-                            FontWeight.w900,
+                if (current.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Current supply',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        current.length > currentPreview.length
+                            ? 'Showing ${currentPreview.length} of ${current.length}'
+                            : '${current.length} current',
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 9.2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 9),
+                  ...currentPreview.map(
+                    (supply) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _FarmerSupplyCard(
+                        farmerId: widget.profile.id,
+                        supply: supply,
+                        onChanged: refreshSupply,
                       ),
                     ),
-                    subtitle: Text(
-                      '${past.length} previous report${past.length == 1 ? '' : 's'}',
-                      style:
-                          const TextStyle(
-                        color: FarmColors
-                            .mutedText,
-                        fontSize: 9,
-                        fontWeight:
-                            FontWeight.w600,
+                  ),
+                  if (current.length > currentPreview.length)
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _openManageSupply(
+                          supplies,
+                          initialFilter: 'current',
+                        ),
+                        icon: const Icon(Icons.list_alt_rounded, size: 17),
+                        label: Text('View all ${current.length} current'),
                       ),
                     ),
-                    children: past
-                        .map(
-                          (supply) =>
-                              Padding(
-                            padding:
-                                const EdgeInsets
-                                    .only(
-                              top: 8,
+                ],
+                if (needsUpdate.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Needs update',
+                              style: TextStyle(
+                                color: FarmColors.warning,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                            child:
-                                _FarmerSupplyCard(
+                            SizedBox(height: 2),
+                            Text(
+                              'Older, overdue, missing-date or zero-quantity reports.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 9.3,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      HpjMvpStatusPill(
+                        label: '${needsUpdate.length}',
+                        color: FarmColors.warning,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 9),
+                  ...needsPreview.map(
+                    (supply) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _FarmerSupplyCard(
+                        farmerId: widget.profile.id,
+                        supply: supply,
+                        onChanged: refreshSupply,
+                      ),
+                    ),
+                  ),
+                  if (needsUpdate.length > needsPreview.length)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _openManageSupply(
+                          supplies,
+                          initialFilter: 'needs',
+                        ),
+                        icon: const Icon(Icons.update_rounded, size: 17),
+                        label: Text('Review all ${needsUpdate.length}'),
+                      ),
+                    ),
+                ],
+                if (past.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  FarmCard(
+                    padding: EdgeInsets.zero,
+                    child: ExpansionTile(
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                      childrenPadding:
+                          const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      title: const Text(
+                        'Past supply',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${past.length} previous report${past.length == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      children: [
+                        ...pastPreview.map(
+                          (supply) => Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _FarmerSupplyCard(
                               farmerId: widget.profile.id,
-                              supply:
-                                  supply,
-                              onChanged:
-                                  refreshSupply,
+                              supply: supply,
+                              onChanged: refreshSupply,
                             ),
                           ),
-                        )
-                        .toList(),
+                        ),
+                        if (past.length > pastPreview.length) ...[
+                          const SizedBox(height: 9),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _openManageSupply(
+                                supplies,
+                                initialFilter: 'past',
+                              ),
+                              icon: const Icon(Icons.history_rounded, size: 17),
+                              label: Text('View all ${past.length} past'),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ],
           );
@@ -20382,6 +21128,1461 @@ class _AdminTodayMetricCard extends StatelessWidget {
   }
 }
 
+
+// =====================================================
+// PHASE 6A4 — ADMIN-MANAGED SPONSORS
+// Customer Home sponsorships are database-driven so HPJ can add, pause,
+// schedule and replace sponsors without a new Google Play release.
+// =====================================================
+
+Future<void> _requireSponsorAdminAccess() async {
+  await requireAdminAccess();
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (role.isNotEmpty && role != 'owner' && role != 'manager') {
+    throw Exception('Only Owner or Manager can manage sponsors.');
+  }
+}
+
+Future<List<HpjSponsorCampaign>> fetchAdminSponsorCampaigns() async {
+  await _requireSponsorAdminAccess();
+
+  final response = await supabase
+      .from('hpj_sponsor_campaigns')
+      .select(
+        'id, sponsor_name, headline, description, cta_label, cta_type, cta_url, target_farmer_id, placement, logo_url, image_url, is_published, is_archived, priority, starts_at, ends_at, created_at, updated_at',
+      )
+      .order('is_archived', ascending: true)
+      .order('priority', ascending: true)
+      .order('updated_at', ascending: false);
+
+  return (response as List)
+      .map(
+        (item) => HpjSponsorCampaign.fromSupabase(
+          Map<String, dynamic>.from(item as Map),
+        ),
+      )
+      .toList();
+}
+
+Future<void> saveAdminSponsorCampaign({
+  String? id,
+  required String sponsorName,
+  required String headline,
+  required String description,
+  required String ctaLabel,
+  required String ctaType,
+  required String ctaUrl,
+  String? targetFarmerId,
+  required String placement,
+  required String logoUrl,
+  required String imageUrl,
+  required bool isPublished,
+  required bool isArchived,
+  required int priority,
+  DateTime? startsAt,
+  DateTime? endsAt,
+}) async {
+  await _requireSponsorAdminAccess();
+
+  final cleanName = sponsorName.trim();
+  final cleanHeadline = headline.trim();
+  final cleanDescription = description.trim();
+  final cleanCtaLabel = ctaLabel.trim();
+  final cleanCtaType = ctaType.trim().toLowerCase();
+  final cleanCtaUrl = ctaUrl.trim();
+  final cleanTargetFarmerId = targetFarmerId?.trim() ?? '';
+  final cleanPlacement = placement.trim().toLowerCase();
+  final cleanLogoUrl = logoUrl.trim();
+  final cleanImageUrl = imageUrl.trim();
+
+  if (cleanName.length < 2) {
+    throw Exception('Enter the sponsor or business name.');
+  }
+  if (cleanHeadline.length < 3) {
+    throw Exception('Enter a sponsor headline.');
+  }
+  if (!const {'shop', 'external', 'farm'}.contains(cleanCtaType)) {
+    throw Exception('Choose a valid sponsor action.');
+  }
+  if (cleanCtaType == 'farm' && cleanTargetFarmerId.isEmpty) {
+    throw Exception('Choose the published HPJ farm page for this campaign.');
+  }
+  if (cleanCtaType == 'external' &&
+      !_isSafeSponsorExternalUrl(cleanCtaUrl)) {
+    throw Exception('Enter a valid https:// sponsor website URL.');
+  }
+  if (cleanLogoUrl.isNotEmpty && !_isSafeSponsorExternalUrl(cleanLogoUrl)) {
+    throw Exception('Enter a valid http:// or https:// sponsor logo URL.');
+  }
+  if (cleanImageUrl.isNotEmpty && !_isSafeSponsorExternalUrl(cleanImageUrl)) {
+    throw Exception('Enter a valid http:// or https:// campaign image URL.');
+  }
+  if (startsAt != null && endsAt != null && !endsAt.isAfter(startsAt)) {
+    throw Exception('The sponsor end date must be after the start date.');
+  }
+
+  final userId = supabase.auth.currentUser?.id;
+  final payload = <String, dynamic>{
+    'sponsor_name': cleanName,
+    'headline': cleanHeadline,
+    'description': cleanDescription,
+    'cta_label': cleanCtaLabel.isEmpty ? 'Learn More' : cleanCtaLabel,
+    'cta_type': cleanCtaType,
+    'cta_url': cleanCtaType == 'external' ? cleanCtaUrl : null,
+    'target_farmer_id':
+        cleanCtaType == 'farm' ? cleanTargetFarmerId : null,
+    'placement': cleanPlacement.isEmpty ? 'customer_home' : cleanPlacement,
+    'logo_url': cleanLogoUrl.isEmpty ? null : cleanLogoUrl,
+    'image_url': cleanImageUrl.isEmpty ? null : cleanImageUrl,
+    'is_published': isPublished,
+    'is_archived': isArchived,
+    'priority': priority.clamp(0, 9999).toInt(),
+    'starts_at': startsAt?.toUtc().toIso8601String(),
+    'ends_at': endsAt?.toUtc().toIso8601String(),
+    'updated_by': userId,
+    'updated_at': DateTime.now().toUtc().toIso8601String(),
+  };
+
+  final cleanId = id?.trim() ?? '';
+  if (cleanId.isEmpty) {
+    payload['created_by'] = userId;
+    await supabase.from('hpj_sponsor_campaigns').insert(payload);
+  } else {
+    await supabase
+        .from('hpj_sponsor_campaigns')
+        .update(payload)
+        .eq('id', cleanId);
+  }
+}
+
+Future<void> setAdminSponsorPublished({
+  required HpjSponsorCampaign campaign,
+  required bool isPublished,
+}) async {
+  await saveAdminSponsorCampaign(
+    id: campaign.id,
+    sponsorName: campaign.sponsorName,
+    headline: campaign.headline,
+    description: campaign.description,
+    ctaLabel: campaign.ctaLabel,
+    ctaType: campaign.ctaType,
+    ctaUrl: campaign.ctaUrl,
+    targetFarmerId: campaign.targetFarmerId,
+    placement: campaign.placement,
+    logoUrl: campaign.logoUrl,
+    imageUrl: campaign.imageUrl,
+    isPublished: isPublished,
+    isArchived: campaign.isArchived,
+    priority: campaign.priority,
+    startsAt: campaign.startsAt,
+    endsAt: campaign.endsAt,
+  );
+}
+
+Future<void> setAdminSponsorArchived({
+  required HpjSponsorCampaign campaign,
+  required bool isArchived,
+}) async {
+  await saveAdminSponsorCampaign(
+    id: campaign.id,
+    sponsorName: campaign.sponsorName,
+    headline: campaign.headline,
+    description: campaign.description,
+    ctaLabel: campaign.ctaLabel,
+    ctaType: campaign.ctaType,
+    ctaUrl: campaign.ctaUrl,
+    targetFarmerId: campaign.targetFarmerId,
+    placement: campaign.placement,
+    logoUrl: campaign.logoUrl,
+    imageUrl: campaign.imageUrl,
+    isPublished: isArchived ? false : campaign.isPublished,
+    isArchived: isArchived,
+    priority: campaign.priority,
+    startsAt: campaign.startsAt,
+    endsAt: campaign.endsAt,
+  );
+}
+
+Future<String?> uploadAdminSponsorImageFromDevice({
+  required String slot,
+}) async {
+  // Keep the browser file picker directly attached to the user's tap.
+  final userBeforePicker = supabase.auth.currentUser;
+  if (userBeforePicker == null) {
+    throw Exception('Please sign in again before uploading sponsor media.');
+  }
+
+  final picked = await ImagePicker().pickImage(
+    source: ImageSource.gallery,
+    imageQuality: 90,
+    maxWidth: 1800,
+  );
+  if (picked == null) return null;
+
+  await _requireSponsorAdminAccess();
+
+  final user = supabase.auth.currentUser;
+  if (user == null || user.id != userBeforePicker.id) {
+    throw Exception('Your account changed while choosing the image. Try again.');
+  }
+
+  final length = await picked.length();
+  const maxBytes = 8 * 1024 * 1024;
+  if (length <= 0) throw Exception('Choose a valid sponsor image.');
+  if (length > maxBytes) {
+    throw Exception('Sponsor image is too large. Please use an image under 8 MB.');
+  }
+
+  final name = picked.name.trim();
+  final lower = name.toLowerCase();
+  String? contentType;
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+    contentType = 'image/jpeg';
+  } else if (lower.endsWith('.png')) {
+    contentType = 'image/png';
+  } else if (lower.endsWith('.webp')) {
+    contentType = 'image/webp';
+  }
+  if (contentType == null) {
+    throw Exception('Choose a JPG, PNG or WebP sponsor image.');
+  }
+
+  final safeName = name.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-');
+  final cleanSlot = slot.trim().toLowerCase().replaceAll(
+        RegExp(r'[^a-z0-9_-]+'),
+        '-',
+      );
+  final path =
+      'images/${user.id}/${DateTime.now().millisecondsSinceEpoch}-$cleanSlot-$safeName';
+  final bytes = await picked.readAsBytes();
+
+  try {
+    await supabase.storage.from('sponsor-media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: contentType,
+            upsert: false,
+          ),
+        );
+    return supabase.storage.from('sponsor-media').getPublicUrl(path);
+  } catch (error) {
+    throw Exception(
+      'Could not upload sponsor media. Run the Phase 6A4 SQL and try again.',
+    );
+  }
+}
+
+class AdminSponsorsTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminSponsorsTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminSponsorsTab> createState() => _AdminSponsorsTabState();
+}
+
+class _AdminSponsorsTabState extends State<AdminSponsorsTab> {
+  late Future<List<HpjSponsorCampaign>> _future;
+  final Set<String> _busyIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchAdminSponsorCampaigns();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminSponsorsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _refresh();
+    }
+  }
+
+  Future<void> _refresh({bool notifyParent = false}) async {
+    final next = fetchAdminSponsorCampaigns();
+    if (mounted) setState(() => _future = next);
+    await next;
+    if (notifyParent) widget.onChanged();
+  }
+
+  String _dateLabel(DateTime? value) {
+    if (value == null) return 'No date';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${value.day} ${months[value.month - 1]} ${value.year}';
+  }
+
+  String _status(HpjSponsorCampaign campaign) {
+    if (campaign.isArchived) return 'Archived';
+    if (!campaign.isPublished) return 'Draft';
+    final now = DateTime.now();
+    if (campaign.startsAt != null && campaign.startsAt!.isAfter(now)) {
+      return 'Scheduled';
+    }
+    if (campaign.endsAt != null && campaign.endsAt!.isBefore(now)) {
+      return 'Ended';
+    }
+    return 'Live';
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'Live':
+        return FarmColors.success;
+      case 'Scheduled':
+        return FarmColors.primary;
+      case 'Ended':
+        return FarmColors.warning;
+      case 'Archived':
+        return FarmColors.mutedText;
+      default:
+        return FarmColors.deepGreen;
+    }
+  }
+
+  Future<void> _togglePublished(HpjSponsorCampaign campaign) async {
+    if (_busyIds.contains(campaign.id) || campaign.isArchived) return;
+    setState(() => _busyIds.add(campaign.id));
+    try {
+      await setAdminSponsorPublished(
+        campaign: campaign,
+        isPublished: !campaign.isPublished,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            campaign.isPublished ? 'Sponsor paused.' : 'Sponsor published.',
+          ),
+        ),
+      );
+      // Sponsor already owns its local Future/list state. Refresh only this
+      // screen after a normal Sponsor change. Triggering the parent Admin shell
+      // can recreate the current tab and send the user back to Today.
+      await _refresh();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyAppError(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(campaign.id));
+    }
+  }
+
+  Future<void> _toggleArchived(HpjSponsorCampaign campaign) async {
+    if (_busyIds.contains(campaign.id)) return;
+    final archive = !campaign.isArchived;
+    if (archive) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Archive sponsor?'),
+          content: Text(
+            '${campaign.sponsorName} will stop appearing in HPJ and remain in history.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Keep'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Archive'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    setState(() => _busyIds.add(campaign.id));
+    try {
+      await setAdminSponsorArchived(
+        campaign: campaign,
+        isArchived: archive,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(archive ? 'Sponsor archived.' : 'Sponsor restored.')),
+      );
+      // Sponsor already owns its local Future/list state. Refresh only this
+      // screen after a normal Sponsor change. Triggering the parent Admin shell
+      // can recreate the current tab and send the user back to Today.
+      await _refresh();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyAppError(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(campaign.id));
+    }
+  }
+
+  Future<void> _showEditor([HpjSponsorCampaign? campaign]) async {
+    final publishedFarmPages = (await fetchPublishedFarmPublicProfiles(limit: 40))
+        .where((profile) => profile.hpjVerified)
+        .toList(growable: true);
+
+    final existingTargetId = campaign?.targetFarmerId.trim() ?? '';
+    if (existingTargetId.isNotEmpty &&
+        !publishedFarmPages.any((farm) => farm.farmerId == existingTargetId)) {
+      final existingFarm = await fetchFarmPublicProfile(existingTargetId);
+      if (existingFarm != null &&
+          existingFarm.isPublished &&
+          existingFarm.hpjVerified) {
+        publishedFarmPages.add(existingFarm);
+      }
+    }
+
+    final sponsorController = TextEditingController(text: campaign?.sponsorName ?? '');
+    final headlineController = TextEditingController(text: campaign?.headline ?? '');
+    final descriptionController = TextEditingController(text: campaign?.description ?? '');
+    final ctaLabelController = TextEditingController(text: campaign?.ctaLabel ?? 'Learn More');
+    final ctaUrlController = TextEditingController(text: campaign?.ctaUrl ?? '');
+    final logoController = TextEditingController(text: campaign?.logoUrl ?? '');
+    final imageController = TextEditingController(text: campaign?.imageUrl ?? '');
+    final priorityController = TextEditingController(text: '${campaign?.priority ?? 100}');
+
+    var ctaType = campaign?.ctaType ?? 'shop';
+    var targetFarmerId = existingTargetId;
+    if (targetFarmerId.isNotEmpty &&
+        !publishedFarmPages.any((farm) => farm.farmerId == targetFarmerId)) {
+      targetFarmerId = '';
+    }
+    var placement = campaign?.placement ?? 'customer_home';
+    var published = campaign?.isPublished ?? false;
+    var startsAt = campaign?.startsAt;
+    var endsAt = campaign?.endsAt;
+    var saving = false;
+    var uploadingLogo = false;
+    var uploadingImage = false;
+
+    Future<DateTime?> pickDate(BuildContext context, DateTime? initial) async {
+      final now = DateTime.now();
+      return showDatePicker(
+        context: context,
+        initialDate: initial ?? now,
+        firstDate: DateTime(now.year - 1),
+        lastDate: DateTime(now.year + 5),
+      );
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !saving && !uploadingLogo && !uploadingImage,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> uploadMedia({required bool logo}) async {
+              if (saving || uploadingLogo || uploadingImage) return;
+              setDialogState(() {
+                if (logo) {
+                  uploadingLogo = true;
+                } else {
+                  uploadingImage = true;
+                }
+              });
+              try {
+                final url = await uploadAdminSponsorImageFromDevice(
+                  slot: logo ? 'logo' : 'campaign',
+                );
+                if (url == null || url.trim().isEmpty) return;
+                if (logo) {
+                  logoController.text = url.trim();
+                } else {
+                  imageController.text = url.trim();
+                }
+              } catch (error) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(friendlyAppError(error))),
+                  );
+                }
+              } finally {
+                if (dialogContext.mounted) {
+                  setDialogState(() {
+                    uploadingLogo = false;
+                    uploadingImage = false;
+                  });
+                }
+              }
+            }
+
+            Future<void> save() async {
+              if (saving || uploadingLogo || uploadingImage) return;
+              setDialogState(() => saving = true);
+              try {
+                await saveAdminSponsorCampaign(
+                  id: campaign?.id,
+                  sponsorName: sponsorController.text,
+                  headline: headlineController.text,
+                  description: descriptionController.text,
+                  ctaLabel: ctaLabelController.text,
+                  ctaType: ctaType,
+                  ctaUrl: ctaUrlController.text,
+                  targetFarmerId: targetFarmerId,
+                  placement: placement,
+                  logoUrl: logoController.text,
+                  imageUrl: imageController.text,
+                  isPublished: published,
+                  isArchived: campaign?.isArchived ?? false,
+                  priority: int.tryParse(priorityController.text.trim()) ?? 100,
+                  startsAt: startsAt,
+                  endsAt: endsAt,
+                );
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext, true);
+              } catch (error) {
+                if (!dialogContext.mounted) return;
+                setDialogState(() => saving = false);
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text(friendlyAppError(error))),
+                );
+              }
+            }
+
+            Widget mediaField({
+              required TextEditingController controller,
+              required String label,
+              required bool logo,
+              required bool uploading,
+            }) {
+              return Column(
+                children: [
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    decoration: InputDecoration(labelText: label),
+                  ),
+                  const SizedBox(height: 7),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: saving || uploadingLogo || uploadingImage
+                          ? null
+                          : () => uploadMedia(logo: logo),
+                      icon: uploading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(logo ? Icons.account_circle_outlined : Icons.image_outlined),
+                      label: Text(
+                        uploading
+                            ? 'Uploading...'
+                            : logo
+                                ? 'Upload Sponsor Logo'
+                                : 'Upload Campaign Image',
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              title: Text(campaign == null ? 'Add Sponsor' : 'Edit Sponsor'),
+              content: SizedBox(
+                width: 590,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: sponsorController,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Sponsor / business name *',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: headlineController,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          labelText: 'Campaign headline *',
+                          hintText: 'Supporting fresh Jamaican agriculture',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descriptionController,
+                        minLines: 2,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Short description',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: placement,
+                        decoration: const InputDecoration(labelText: 'Placement'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'customer_home',
+                            child: Text('Customer Home'),
+                          ),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value != null) {
+                                  setDialogState(() => placement = value);
+                                }
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: published ? FarmColors.primarySoft : FarmColors.cardSoft,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: SwitchListTile.adaptive(
+                          value: published,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text(
+                            'Publish Sponsor',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          subtitle: const Text(
+                            'HPJ always labels this placement SPONSORED.',
+                          ),
+                          onChanged: saving
+                              ? null
+                              : (value) => setDialogState(() => published = value),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      mediaField(
+                        controller: logoController,
+                        label: 'Sponsor logo URL (optional)',
+                        logo: true,
+                        uploading: uploadingLogo,
+                      ),
+                      const SizedBox(height: 12),
+                      mediaField(
+                        controller: imageController,
+                        label: 'Campaign image URL (optional)',
+                        logo: false,
+                        uploading: uploadingImage,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: ctaType,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Tap action',
+                          helperText:
+                              'Choose where customers go when they tap this campaign.',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'shop',
+                            child: Text(
+                              'HPJ Shop',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'farm',
+                            child: Text(
+                              'Featured Farm Page',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'external',
+                            child: Text(
+                              'Sponsor Website',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() {
+                                  ctaType = value;
+                                  if (value != 'farm') {
+                                    targetFarmerId = '';
+                                  }
+                                  if (value != 'external') {
+                                    ctaUrlController.clear();
+                                  }
+                                  if (value == 'farm' &&
+                                      (ctaLabelController.text.trim().isEmpty ||
+                                          ctaLabelController.text.trim() ==
+                                              'Learn More')) {
+                                    ctaLabelController.text = 'Visit Farm';
+                                  }
+                                });
+                              },
+                      ),
+                      if (ctaType == 'farm') ...[
+                        const SizedBox(height: 12),
+                        if (publishedFarmPages.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: FarmColors.warningSoft,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: FarmColors.line),
+                            ),
+                            child: const Text(
+                              'No published + HPJ Verified farm pages are available. '
+                              'Publish and verify the farm page before running a paid campaign.',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 11,
+                                height: 1.35,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        else
+                          DropdownButtonFormField<String>(
+                            value: targetFarmerId.isEmpty
+                                ? null
+                                : targetFarmerId,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Featured farm *',
+                              helperText:
+                                  'Only published + HPJ Verified farm pages can be promoted.',
+                              prefixIcon: Icon(Icons.agriculture_outlined),
+                            ),
+                            items: publishedFarmPages
+                                .map(
+                                  (farm) {
+                                    final location = <String>[
+                                      farm.community.trim(),
+                                      farm.parish.trim(),
+                                    ].where((item) => item.isNotEmpty).join(', ');
+                                    final name = farm.publicName.trim().isEmpty
+                                        ? 'HPJ Partner Farm'
+                                        : farm.publicName.trim();
+                                    final label = location.isEmpty
+                                        ? name
+                                        : '$name — $location';
+                                    return DropdownMenuItem<String>(
+                                      value: farm.farmerId,
+                                      child: Text(
+                                        label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  },
+                                )
+                                .toList(),
+                            onChanged: saving
+                                ? null
+                                : (value) {
+                                    setDialogState(
+                                      () => targetFarmerId = value ?? '',
+                                    );
+                                  },
+                          ),
+                      ],
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: ctaLabelController,
+                        decoration: const InputDecoration(
+                          labelText: 'CTA label',
+                          hintText: 'Learn More',
+                        ),
+                      ),
+                      if (ctaType == 'external') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: ctaUrlController,
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Sponsor website URL *',
+                            hintText: 'https://...',
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: saving
+                                  ? null
+                                  : () async {
+                                      final next = await pickDate(dialogContext, startsAt);
+                                      if (next != null && dialogContext.mounted) {
+                                        setDialogState(() {
+                                          startsAt = DateTime(
+                                            next.year,
+                                            next.month,
+                                            next.day,
+                                          );
+                                        });
+                                      }
+                                    },
+                              icon: const Icon(Icons.calendar_today_outlined),
+                              label: Text(
+                                startsAt == null
+                                    ? 'Start: Now'
+                                    : 'Start: ${_dateLabel(startsAt)}',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: saving
+                                  ? null
+                                  : () async {
+                                      final next = await pickDate(dialogContext, endsAt);
+                                      if (next != null && dialogContext.mounted) {
+                                        setDialogState(() {
+                                          endsAt = DateTime(
+                                            next.year,
+                                            next.month,
+                                            next.day,
+                                            23,
+                                            59,
+                                            59,
+                                          );
+                                        });
+                                      }
+                                    },
+                              icon: const Icon(Icons.event_outlined),
+                              label: Text(
+                                endsAt == null
+                                    ? 'End: No limit'
+                                    : 'End: ${_dateLabel(endsAt)}',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (startsAt != null || endsAt != null) ...[
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: saving
+                                ? null
+                                : () => setDialogState(() {
+                                      startsAt = null;
+                                      endsAt = null;
+                                    }),
+                            child: const Text('Clear schedule'),
+                          ),
+                        ),
+                      ],
+                      TextField(
+                        controller: priorityController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Priority',
+                          helperText: 'Lower numbers show first when campaigns overlap.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving || uploadingLogo || uploadingImage
+                      ? null
+                      : () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  onPressed: saving || uploadingLogo || uploadingImage ? null : save,
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(saving ? 'Saving...' : 'Save Sponsor'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    // Match the tutorial-editor lifecycle repair: allow the closing dialog
+    // route to leave the tree before controller disposal on Flutter Web.
+    unawaited(
+      Future<void>.delayed(
+        const Duration(milliseconds: 400),
+        () {
+          sponsorController.dispose();
+          headlineController.dispose();
+          descriptionController.dispose();
+          ctaLabelController.dispose();
+          ctaUrlController.dispose();
+          logoController.dispose();
+          imageController.dispose();
+          priorityController.dispose();
+        },
+      ),
+    );
+
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(campaign == null ? 'Sponsor added.' : 'Sponsor updated.'),
+        ),
+      );
+      // Sponsor already owns its local Future/list state. Refresh only this
+      // screen after a normal Sponsor change. Triggering the parent Admin shell
+      // can recreate the current tab and send the user back to Today.
+      await _refresh();
+    }
+  }
+
+  Widget _card(HpjSponsorCampaign campaign) {
+    final status = _status(campaign);
+    final color = _statusColor(status);
+    final media = campaign.logoUrl.trim().isNotEmpty
+        ? campaign.logoUrl.trim()
+        : campaign.imageUrl.trim();
+    final busy = _busyIds.contains(campaign.id);
+
+    return FarmCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_isSafeSponsorExternalUrl(media)) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    media,
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+                const SizedBox(width: 11),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      campaign.sponsorName,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      campaign.headline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  status,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              Chip(
+                visualDensity: VisualDensity.compact,
+                label: const Text('Customer Home'),
+              ),
+              Chip(
+                visualDensity: VisualDensity.compact,
+                avatar: Icon(
+                  campaign.ctaType == 'farm'
+                      ? Icons.agriculture_outlined
+                      : campaign.ctaType == 'external'
+                          ? Icons.open_in_new_rounded
+                          : Icons.storefront_outlined,
+                  size: 16,
+                ),
+                label: Text(
+                  campaign.ctaType == 'farm'
+                      ? 'Featured Farm'
+                      : campaign.ctaType == 'external'
+                          ? 'Sponsor Website'
+                          : 'HPJ Shop',
+                ),
+              ),
+              Chip(
+                visualDensity: VisualDensity.compact,
+                label: Text('Priority ${campaign.priority}'),
+              ),
+              if (campaign.startsAt != null)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('Starts ${_dateLabel(campaign.startsAt)}'),
+                ),
+              if (campaign.endsAt != null)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('Ends ${_dateLabel(campaign.endsAt)}'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : () => _showEditor(campaign),
+                  icon: const Icon(Icons.edit_outlined, size: 17),
+                  label: const Text('Edit'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: busy || campaign.isArchived
+                      ? null
+                      : () => _togglePublished(campaign),
+                  icon: Icon(
+                    campaign.isPublished
+                        ? Icons.pause_circle_outline
+                        : Icons.public_outlined,
+                    size: 17,
+                  ),
+                  label: Text(campaign.isPublished ? 'Pause' : 'Publish'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: campaign.isArchived ? 'Restore sponsor' : 'Archive sponsor',
+                onPressed: busy ? null : () => _toggleArchived(campaign),
+                icon: Icon(
+                  campaign.isArchived
+                      ? Icons.unarchive_outlined
+                      : Icons.archive_outlined,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmPage(
+      child: RefreshIndicator(
+        onRefresh: _refresh,
+        child: FutureBuilder<List<HpjSponsorCampaign>>(
+          future: _future,
+          builder: (context, snapshot) {
+            final campaigns = snapshot.data ?? const <HpjSponsorCampaign>[];
+            final live = campaigns.where((item) => _status(item) == 'Live').length;
+
+            if (snapshot.connectionState == ConnectionState.waiting && campaigns.isEmpty) {
+              return ListView(
+                padding: EdgeInsets.fromLTRB(18, 24, 18, 100),
+                children: [
+                  SizedBox(height: 300, child: SkeletonList(count: 3)),
+                ],
+              );
+            }
+
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                EliteGreenHeroCard(
+                  eyebrow: 'SPONSORSHIPS',
+                  title: 'Manage sponsored campaigns.',
+                  subtitle:
+                      'Publish clearly labelled sponsor placements without releasing a new app version.',
+                  icon: Icons.campaign_outlined,
+                  chips: [
+                    '$live live',
+                    '${campaigns.length} total',
+                    'Customer Home',
+                  ],
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: PrimaryFarmButton(
+                    label: '+ Add Sponsor',
+                    onPressed: () => _showEditor(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'HPJ always shows the SPONSORED label. Customers can also hide promotional content in their preferences.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 10.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                if (snapshot.hasError)
+                  FarmEmptyState(
+                    icon: Icons.error_outline_rounded,
+                    title: 'Could not load sponsors',
+                    message: friendlyAppError(snapshot.error!),
+                    actionLabel: 'Retry',
+                    onAction: _refresh,
+                  )
+                else if (campaigns.isEmpty)
+                  const FarmEmptyState(
+                    icon: Icons.campaign_outlined,
+                    title: 'No sponsors yet',
+                    message:
+                        'Add a sponsor when HPJ has a real paid or approved partnership to display.',
+                  )
+                else
+                  ...campaigns.map(
+                    (campaign) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _card(campaign),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// =====================================================
+// PHASE 6A12 — ADMIN COMPANY + LEGAL SETTINGS
+// Owner/Manager can maintain public company contact details and Terms.
+// =====================================================
+
+class AdminCompanySettingsTab extends StatefulWidget {
+  final int refreshKey;
+
+  const AdminCompanySettingsTab({
+    super.key,
+    required this.refreshKey,
+  });
+
+  @override
+  State<AdminCompanySettingsTab> createState() =>
+      _AdminCompanySettingsTabState();
+}
+
+class _AdminCompanySettingsTabState extends State<AdminCompanySettingsTab> {
+  late Future<HpjCompanySettings> _future;
+  final emailController = TextEditingController();
+  final phoneController = TextEditingController();
+  final whatsappController = TextEditingController();
+  final addressController = TextEditingController();
+  final termsController = TextEditingController();
+  bool hydrated = false;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchHpjCompanySettings(throwOnError: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminCompanySettingsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _reload();
+    }
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    phoneController.dispose();
+    whatsappController.dispose();
+    addressController.dispose();
+    termsController.dispose();
+    super.dispose();
+  }
+
+  void _hydrate(HpjCompanySettings settings) {
+    if (hydrated) return;
+    hydrated = true;
+    emailController.text = settings.supportEmail;
+    phoneController.text = settings.supportPhone;
+    whatsappController.text = settings.whatsappNumber;
+    addressController.text = settings.address;
+    termsController.text = settings.termsContent;
+  }
+
+  Future<void> _reload() async {
+    final next = fetchHpjCompanySettings(throwOnError: true);
+    if (mounted) {
+      setState(() {
+        hydrated = false;
+        _future = next;
+      });
+    }
+    await next;
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+    setState(() => saving = true);
+
+    try {
+      await saveHpjCompanySettings(
+        supportEmail: emailController.text,
+        supportPhone: phoneController.text,
+        whatsappNumber: whatsappController.text,
+        address: addressController.text,
+        termsContent: termsController.text,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Company contact details and Terms updated.'),
+        ),
+      );
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<HpjCompanySettings>(
+      future: _future,
+      builder: (context, snapshot) {
+        final settings = snapshot.data;
+        if (settings != null) _hydrate(settings);
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            settings == null) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(18, 24, 18, 120),
+            children: const [SkeletonList(count: 4, height: 94)],
+          );
+        }
+
+        if (snapshot.hasError && settings == null) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            children: [
+              FarmEmptyState(
+                icon: Icons.business_outlined,
+                title: 'Company settings are not ready',
+                message:
+                    'Run the Phase 6A12 Supabase SQL, then refresh this page.',
+                actionLabel: 'Retry',
+                onAction: _reload,
+              ),
+            ],
+          );
+        }
+
+        return ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          children: [
+            EliteGreenHeroCard(
+              eyebrow: 'COMPANY & LEGAL',
+              title: 'Keep HPJ contact details and Terms current.',
+              subtitle:
+                  'Changes appear in public contact, Terms and customer receipt screens without a new app release.',
+              icon: Icons.business_outlined,
+              chips: const ['Owner / Manager', 'Public contact', 'Terms'],
+            ),
+            const SizedBox(height: 14),
+            FarmCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Company contact details',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Guests see Call, Email and WhatsApp. Signed-in users keep private HPJ chat as well.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: emailController,
+                    enabled: !saving,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Company email',
+                      prefixIcon: Icon(Icons.email_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: phoneController,
+                    enabled: !saving,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone / Call number',
+                      prefixIcon: Icon(Icons.call_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: whatsappController,
+                    enabled: !saving,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'WhatsApp number',
+                      helperText: 'Include the country code, for example 1 876 ...',
+                      prefixIcon: Icon(Icons.chat_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: addressController,
+                    enabled: !saving,
+                    minLines: 2,
+                    maxLines: 4,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Company address',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.location_on_outlined),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            FarmCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Terms & Conditions',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Use a blank line between sections. The first line of each section becomes its heading on the Terms page.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: termsController,
+                    enabled: !saving,
+                    keyboardType: TextInputType.multiline,
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 12,
+                    maxLines: 22,
+                    maxLength: 12000,
+                    decoration: const InputDecoration(
+                      labelText: 'Terms and Conditions',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.description_outlined),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: PrimaryFarmButton(
+                label: saving ? 'Saving...' : 'Save Company Settings',
+                icon: Icons.save_outlined,
+                onPressed: saving ? null : _save,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _AdminTabSpec {
   final Tab tab;
   final Widget child;
@@ -20539,6 +22740,17 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         ),
       );
 
+  _AdminTabSpec sponsors() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.campaign_outlined),
+          text: 'Sponsors',
+        ),
+        child: AdminSponsorsTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
   _AdminTabSpec reels() => _AdminTabSpec(
         tab: const Tab(
           icon: Icon(Icons.play_circle_outline_rounded),
@@ -20558,6 +22770,16 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         child: AdminHelpTutorialsTab(
           refreshKey: refreshKey,
           onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec company() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.business_outlined),
+          text: 'Company',
+        ),
+        child: AdminCompanySettingsTab(
+          refreshKey: refreshKey,
         ),
       );
 
@@ -20669,8 +22891,10 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       reports(),
       hero(),
       feedUpdates(),
+      sponsors(),
       reels(),
       tutorials(),
+      company(),
       support(),
       reviews(),
       coupons(),
@@ -20693,8 +22917,10 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       impact(),
       reports(),
       feedUpdates(),
+      sponsors(),
       reels(),
       tutorials(),
+      company(),
       support(),
       reviews(),
     ];
@@ -21060,18 +23286,28 @@ class _AdminBottomNavigationShell
           MapEntry(index, tabs[index]),
     ];
 
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    // Let the More route return the requested tab. Changing the parent
+    // TabController only after the route has fully popped avoids a route/tab
+    // transition race that could leave the reopened More page unresponsive.
+    final selectedIndex = await Navigator.of(context).push<int>(
+      MaterialPageRoute<int>(
         builder: (_) => _AdminMoreScreen(
           roleLabel: roleLabel,
           sections: secondary,
-          onSelect: (index) {
-            Navigator.of(context).pop();
-            controller.animateTo(index);
-          },
         ),
       ),
     );
+
+    if (!context.mounted ||
+        selectedIndex == null ||
+        selectedIndex < 0 ||
+        selectedIndex >= tabs.length) {
+      return;
+    }
+
+    if (controller.index != selectedIndex) {
+      controller.animateTo(selectedIndex);
+    }
   }
 
   void _navigateByIntent(
@@ -21334,12 +23570,10 @@ class _AdminBottomNavigationShell
 class _AdminMoreScreen extends StatelessWidget {
   final String roleLabel;
   final List<MapEntry<int, _AdminTabSpec>> sections;
-  final ValueChanged<int> onSelect;
 
   const _AdminMoreScreen({
     required this.roleLabel,
     required this.sections,
-    required this.onSelect,
   });
 
   String _groupFor(String label) {
@@ -21348,6 +23582,7 @@ class _AdminMoreScreen extends StatelessWidget {
       case 'Hero':
       case 'Feed':
       case 'Reels':
+      case 'Sponsors':
       case 'Coupons':
         return 'Marketplace & Content';
       case 'Farmers':
@@ -21364,6 +23599,7 @@ class _AdminMoreScreen extends StatelessWidget {
         return 'Finance & Insights';
       case 'Inbox':
       case 'Messages':
+      case 'Company':
       case 'Staff':
         return 'Management';
       default:
@@ -21487,7 +23723,9 @@ class _AdminMoreScreen extends StatelessWidget {
                               ),
                             ),
                             trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => onSelect(grouped[group]![index].key),
+                            onTap: () => Navigator.of(context).pop(
+                              grouped[group]![index].key,
+                            ),
                           ),
                           if (index != grouped[group]!.length - 1)
                             const Divider(height: 1),
@@ -26491,6 +28729,7 @@ class _AdminHelpTutorialsTabState
     var audience = tutorial?.audience ?? 'all';
     var published = tutorial?.isPublished ?? false;
     var saving = false;
+    var uploadingVideo = false;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -26498,8 +28737,47 @@ class _AdminHelpTutorialsTabState
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            Future<void> uploadVideo() async {
+              if (saving || uploadingVideo) return;
+
+              setDialogState(() => uploadingVideo = true);
+
+              try {
+                final uploadedUrl =
+                    await uploadAdminHelpTutorialVideoFromDevice();
+
+                if (uploadedUrl == null || uploadedUrl.trim().isEmpty) {
+                  return;
+                }
+
+                videoController.text = uploadedUrl.trim();
+
+                if (!dialogContext.mounted) return;
+
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Tutorial video uploaded. Save the tutorial when ready.',
+                    ),
+                  ),
+                );
+              } catch (error) {
+                if (!dialogContext.mounted) return;
+
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(
+                    content: Text(friendlyAppError(error)),
+                  ),
+                );
+              } finally {
+                if (dialogContext.mounted) {
+                  setDialogState(() => uploadingVideo = false);
+                }
+              }
+            }
+
             Future<void> save() async {
-              if (saving) return;
+              if (saving || uploadingVideo) return;
 
               setDialogState(() => saving = true);
 
@@ -26610,6 +28888,42 @@ class _AdminHelpTutorialsTabState
                                 setDialogState(() => audience = value);
                               },
                       ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: published
+                              ? FarmColors.primarySoft
+                              : FarmColors.cardSoft,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: SwitchListTile.adaptive(
+                          value: published,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text(
+                            'Publish on HPJ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          subtitle: Text(
+                            published
+                                ? 'Visible to users at the selected placement.'
+                                : 'Draft only — users will not see this tutorial.',
+                          ),
+                          onChanged: saving
+                              ? null
+                              : (value) {
+                                  setDialogState(
+                                    () => published = value,
+                                  );
+                                },
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: videoController,
@@ -26618,9 +28932,36 @@ class _AdminHelpTutorialsTabState
                         decoration: const InputDecoration(
                           labelText: 'Video URL *',
                           hintText:
-                              'https://youtube.com/... or https://vimeo.com/...',
+                              'Paste a video URL or upload a video below.',
+                          helperText:
+                              'YouTube/Vimeo links still work. Direct uploads use HPJ Storage.',
                           prefixIcon:
                               Icon(Icons.play_circle_outline_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: saving || uploadingVideo
+                              ? null
+                              : uploadVideo,
+                          icon: uploadingVideo
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.video_call_outlined,
+                                ),
+                          label: Text(
+                            uploadingVideo
+                                ? 'Uploading Video...'
+                                : 'Upload Video from Device',
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -26656,36 +28997,13 @@ class _AdminHelpTutorialsTabState
                               'Lower numbers appear first when a section has multiple tutorials.',
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      SwitchListTile.adaptive(
-                        value: published,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text(
-                          'Published',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        subtitle: Text(
-                          published
-                              ? 'Users can see this tutorial now.'
-                              : 'Saved as a draft. Users cannot see it.',
-                        ),
-                        onChanged: saving
-                            ? null
-                            : (value) {
-                                setDialogState(
-                                  () => published = value,
-                                );
-                              },
-                      ),
                     ],
                   ),
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: saving
+                  onPressed: saving || uploadingVideo
                       ? null
                       : () => Navigator.pop(
                             dialogContext,
@@ -26694,7 +29012,7 @@ class _AdminHelpTutorialsTabState
                   child: const Text('Cancel'),
                 ),
                 FilledButton.icon(
-                  onPressed: saving ? null : save,
+                  onPressed: saving || uploadingVideo ? null : save,
                   icon: saving
                       ? const SizedBox(
                           width: 16,
@@ -26715,12 +29033,23 @@ class _AdminHelpTutorialsTabState
       },
     );
 
-    titleController.dispose();
-    buttonController.dispose();
-    descriptionController.dispose();
-    videoController.dispose();
-    thumbnailController.dispose();
-    sortController.dispose();
+    // showDialog completes as soon as Navigator.pop returns a result, while
+    // the dialog route can still be animating out for a few frames. Disposing
+    // these controllers immediately can let a fading TextField rebuild with an
+    // already-disposed controller (especially in FlutLab Web).
+    unawaited(
+      Future<void>.delayed(
+        const Duration(milliseconds: 400),
+        () {
+          titleController.dispose();
+          buttonController.dispose();
+          descriptionController.dispose();
+          videoController.dispose();
+          thumbnailController.dispose();
+          sortController.dispose();
+        },
+      ),
+    );
 
     if (saved == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -27034,6 +29363,25 @@ class _AdminHelpTutorialsTabState
                         ),
                       ],
                     ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const AdminFaqManagementScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.quiz_outlined,
+                          size: 18,
+                        ),
+                        label: const Text('Manage FAQs'),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
@@ -27079,6 +29427,686 @@ class _AdminHelpTutorialsTabState
     );
   }
 }
+
+
+class AdminFaqManagementScreen extends StatefulWidget {
+  const AdminFaqManagementScreen({super.key});
+
+  @override
+  State<AdminFaqManagementScreen> createState() =>
+      _AdminFaqManagementScreenState();
+}
+
+class _AdminFaqManagementScreenState
+    extends State<AdminFaqManagementScreen> {
+  late Future<List<HpjFaqItem>> _future;
+  bool _showArchived = false;
+  final Set<String> _busyIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchAdminHpjFaqItems();
+  }
+
+  Future<void> _refresh() async {
+    final next = fetchAdminHpjFaqItems();
+    if (mounted) {
+      setState(() => _future = next);
+    }
+    await next;
+  }
+
+  Future<void> _openEditor([HpjFaqItem? item]) async {
+    final questionController = TextEditingController(
+      text: item?.question ?? '',
+    );
+    final answerController = TextEditingController(
+      text: item?.answer ?? '',
+    );
+    final sortController = TextEditingController(
+      text: '${item?.sortOrder ?? 100}',
+    );
+
+    var published = item?.isPublished ?? false;
+    var saving = false;
+
+    final saved = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                Future<void> save() async {
+                  if (saving) return;
+                  setDialogState(() => saving = true);
+
+                  try {
+                    await saveAdminHpjFaqItem(
+                      id: item?.id,
+                      question: questionController.text,
+                      answer: answerController.text,
+                      isPublished: published,
+                      isArchived: item?.isArchived ?? false,
+                      sortOrder:
+                          int.tryParse(sortController.text.trim()) ?? 100,
+                    );
+
+                    if (!dialogContext.mounted) return;
+                    Navigator.pop(dialogContext, true);
+                  } catch (error) {
+                    if (!dialogContext.mounted) return;
+                    setDialogState(() => saving = false);
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(
+                        content: Text(friendlyAppError(error)),
+                      ),
+                    );
+                  }
+                }
+
+                return AlertDialog(
+                  title: Text(
+                    item == null ? 'Add FAQ' : 'Edit FAQ',
+                  ),
+                  content: SizedBox(
+                    width: 560,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            controller: questionController,
+                            maxLength: 240,
+                            textCapitalization:
+                                TextCapitalization.sentences,
+                            decoration: const InputDecoration(
+                              labelText: 'Question *',
+                              hintText:
+                                  'How do I switch between HPJ workspaces?',
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: answerController,
+                            minLines: 4,
+                            maxLines: 8,
+                            maxLength: 3000,
+                            textCapitalization:
+                                TextCapitalization.sentences,
+                            decoration: const InputDecoration(
+                              labelText: 'Answer *',
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: sortController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Sort order',
+                              helperText:
+                                  'Lower numbers appear first. You can also use Move Up / Move Down.',
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: published,
+                            onChanged: saving
+                                ? null
+                                : (value) {
+                                    setDialogState(
+                                      () => published = value,
+                                    );
+                                  },
+                            title: const Text(
+                              'Published',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            subtitle: Text(
+                              published
+                                  ? 'This answer is visible in Help & FAQ.'
+                                  : 'Keep this answer hidden while editing.',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: saving
+                          ? null
+                          : () => Navigator.pop(
+                                dialogContext,
+                                false,
+                              ),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: saving ? null : save,
+                      icon: saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.save_outlined),
+                      label: Text(
+                        saving ? 'Saving...' : 'Save FAQ',
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ) ==
+        true;
+
+    questionController.dispose();
+    answerController.dispose();
+    sortController.dispose();
+
+    if (saved && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            item == null ? 'FAQ added.' : 'FAQ updated.',
+          ),
+        ),
+      );
+      await _refresh();
+    }
+  }
+
+  Future<void> _togglePublished(
+    HpjFaqItem item,
+    bool nextValue,
+  ) async {
+    final id = item.id.trim();
+    if (id.isEmpty || _busyIds.contains(id)) return;
+
+    setState(() => _busyIds.add(id));
+    try {
+      await setAdminHpjFaqPublished(
+        item: item,
+        isPublished: nextValue,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            nextValue ? 'FAQ published.' : 'FAQ hidden.',
+          ),
+        ),
+      );
+      await _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(id));
+    }
+  }
+
+  Future<void> _setArchived(
+    HpjFaqItem item,
+    bool archived,
+  ) async {
+    final action = archived ? 'Archive' : 'Restore';
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('$action FAQ?'),
+            content: Text(
+              archived
+                  ? 'Archive "${item.question}"? It will be hidden from customers and kept for your records.'
+                  : 'Restore "${item.question}" to the active FAQ list? It will remain hidden until you publish it.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.pop(dialogContext, true),
+                child: Text(action),
+              ),
+            ],
+          ),
+        ) ==
+        true;
+
+    if (!confirmed || !mounted) return;
+
+    final id = item.id.trim();
+    if (id.isNotEmpty) {
+      setState(() => _busyIds.add(id));
+    }
+
+    try {
+      await setAdminHpjFaqArchived(
+        item: item,
+        isArchived: archived,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            archived ? 'FAQ archived.' : 'FAQ restored.',
+          ),
+        ),
+      );
+      await _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted && id.isNotEmpty) {
+        setState(() => _busyIds.remove(id));
+      }
+    }
+  }
+
+  Future<void> _move(
+    HpjFaqItem item,
+    int direction,
+  ) async {
+    try {
+      final all = await fetchAdminHpjFaqItems();
+      final active =
+          all.where((entry) => !entry.isArchived).toList();
+
+      final currentIndex =
+          active.indexWhere((entry) => entry.id == item.id);
+      if (currentIndex < 0) return;
+
+      final targetIndex = currentIndex + direction;
+      if (targetIndex < 0 || targetIndex >= active.length) {
+        return;
+      }
+
+      final moved = active.removeAt(currentIndex);
+      active.insert(targetIndex, moved);
+
+      await reorderAdminHpjFaqItems(active);
+      if (!mounted) return;
+      await _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Widget _statusChip(
+    String label,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 9,
+        vertical: 5,
+      ),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _faqCard(
+    HpjFaqItem item,
+    int index,
+    int activeCount,
+  ) {
+    final busy = _busyIds.contains(item.id);
+
+    return FarmCard(
+      padding: const EdgeInsets.all(15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  item.question,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 15.5,
+                    height: 1.25,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _statusChip(
+                item.isArchived
+                    ? 'Archived'
+                    : item.isPublished
+                        ? 'Published'
+                        : 'Draft',
+                item.isArchived
+                    ? FarmColors.mutedText
+                    : item.isPublished
+                        ? FarmColors.success
+                        : FarmColors.warning,
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            item.answer,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              height: 1.42,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text(
+                'Order ${item.sortOrder}',
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              if (!item.isArchived)
+                Switch.adaptive(
+                  value: item.isPublished,
+                  onChanged: busy
+                      ? null
+                      : (value) => unawaited(
+                            _togglePublished(item, value),
+                          ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (!item.isArchived)
+                OutlinedButton.icon(
+                  onPressed: busy || index <= 0
+                      ? null
+                      : () => unawaited(_move(item, -1)),
+                  icon: const Icon(
+                    Icons.arrow_upward_rounded,
+                    size: 17,
+                  ),
+                  label: const Text('Move Up'),
+                ),
+              if (!item.isArchived)
+                OutlinedButton.icon(
+                  onPressed: busy || index >= activeCount - 1
+                      ? null
+                      : () => unawaited(_move(item, 1)),
+                  icon: const Icon(
+                    Icons.arrow_downward_rounded,
+                    size: 17,
+                  ),
+                  label: const Text('Move Down'),
+                ),
+              OutlinedButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_openEditor(item)),
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  size: 17,
+                ),
+                label: const Text('Edit'),
+              ),
+              TextButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => unawaited(
+                          _setArchived(
+                            item,
+                            !item.isArchived,
+                          ),
+                        ),
+                icon: Icon(
+                  item.isArchived
+                      ? Icons.restore_rounded
+                      : Icons.archive_outlined,
+                  size: 17,
+                ),
+                label: Text(
+                  item.isArchived ? 'Restore' : 'Archive',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('FAQ Management'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: () => unawaited(_refresh()),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<HpjFaqItem>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState ==
+                  ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return FarmPage(
+              child: ListView(
+                padding:
+                    const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                children: [
+                  FarmCard(
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'FAQ Management needs setup',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          friendlyAppError(snapshot.error!),
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () => unawaited(_refresh()),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final rows =
+              snapshot.data ?? const <HpjFaqItem>[];
+          final active =
+              rows.where((item) => !item.isArchived).toList();
+          final archived =
+              rows.where((item) => item.isArchived).toList();
+          final visible = _showArchived ? archived : active;
+          final published =
+              active.where((item) => item.isPublished).length;
+
+          return FarmPage(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics:
+                    const AlwaysScrollableScrollPhysics(),
+                padding:
+                    const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                children: [
+                  FarmCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Help & FAQ content',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Keep public answers accurate, publish when ready, reorder the live list, and archive old guidance without deleting history.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            height: 1.4,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 13),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _statusChip(
+                              '$published published',
+                              FarmColors.success,
+                            ),
+                            _statusChip(
+                              '${active.length - published} drafts',
+                              FarmColors.warning,
+                            ),
+                            _statusChip(
+                              '${archived.length} archived',
+                              FarmColors.mutedText,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 13),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: () =>
+                                  unawaited(_openEditor()),
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('Add FAQ'),
+                            ),
+                            FilterChip(
+                              selected: _showArchived,
+                              onSelected: (value) {
+                                setState(
+                                  () => _showArchived = value,
+                                );
+                              },
+                              label: const Text('Show Archived'),
+                              avatar: const Icon(
+                                Icons.archive_outlined,
+                                size: 17,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  if (visible.isEmpty)
+                    FarmEmptyState(
+                      icon: _showArchived
+                          ? Icons.archive_outlined
+                          : Icons.quiz_outlined,
+                      title: _showArchived
+                          ? 'No archived FAQs'
+                          : 'No active FAQs',
+                      message: _showArchived
+                          ? 'Archived FAQ items will appear here.'
+                          : 'Add a FAQ and publish it when the answer is ready.',
+                    )
+                  else
+                    for (var index = 0;
+                        index < visible.length;
+                        index++)
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(bottom: 12),
+                        child: _faqCard(
+                          visible[index],
+                          index,
+                          _showArchived
+                              ? visible.length
+                              : active.length,
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 
 class AdminHeroSlidesTab extends StatefulWidget {
   final int refreshKey;
@@ -27496,6 +30524,13 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
   }
 
   Future<Uint8List> buildOrderSlipPdf(AdminOrder order) async {
+    final companySettings = await fetchHpjCompanySettings();
+    final slipCompanyLine = <String>[
+      companySettings.address.trim(),
+      if (companySettings.supportPhone.trim().isNotEmpty)
+        'Tel: ${companySettings.supportPhone.trim()}',
+    ].where((value) => value.isNotEmpty).join(' | ');
+
     final pdf = pw.Document();
 
     final labelFormat = PdfPageFormat(
@@ -27783,7 +30818,7 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                           ),
                           pw.SizedBox(height: 1),
                           pw.Text(
-                            'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
+                            slipCompanyLine,
                             style: const pw.TextStyle(
                               fontSize: 7,
                               color: PdfColors.grey700,
@@ -32865,7 +35900,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
   }
 }
 
-class AdminReviewsTab extends StatelessWidget {
+class AdminReviewsTab extends StatefulWidget {
   final int refreshKey;
   final String? initialProductId;
 
@@ -32876,17 +35911,154 @@ class AdminReviewsTab extends StatelessWidget {
   });
 
   @override
+  State<AdminReviewsTab> createState() => _AdminReviewsTabState();
+}
+
+class _AdminReviewsTabState extends State<AdminReviewsTab> {
+  String _filter = 'all';
+
+  bool _matchesFilter(ProductReview review) {
+    switch (_filter) {
+      case 'attention':
+        return review.rating <= 3;
+      case 'positive':
+        return review.rating >= 4;
+      default:
+        return true;
+    }
+  }
+
+  void _openProduct(ProductReview review) {
+    final productId = review.productId.trim();
+    if (productId.isEmpty) return;
+
+    final scope = _AdminNavigationScope.maybeOf(context);
+    if (scope == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Product Management is not available from this screen.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    scope.onNavigate(
+      _AdminNavigationIntent(
+        section: 'Products',
+        recordId: productId,
+      ),
+    );
+  }
+
+  Future<void> _copyReview(ProductReview review) async {
+    final customerName = safeReviewDisplayName(
+      reviewName: review.customerName,
+      email: review.email,
+    );
+
+    final text = <String>[
+      'HPJ customer review',
+      'Product: ${review.productName}',
+      'Rating: ${review.rating}/5',
+      'Customer: $customerName',
+      'Feedback: ${review.comment}',
+    ].join('\n');
+
+    await Clipboard.setData(
+      ClipboardData(text: text),
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Review details copied.'),
+      ),
+    );
+  }
+
+  Widget _filterChip(
+    String value,
+    String label,
+    int count,
+  ) {
+    return ChoiceChip(
+      selected: _filter == value,
+      onSelected: (_) {
+        setState(() => _filter = value);
+      },
+      label: Text('$label ($count)'),
+    );
+  }
+
+  Widget _reviewActionBar(ProductReview review) {
+    final needsAttention = review.rating <= 3;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 14),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (needsAttention)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 9,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: FarmColors.warningSoft,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text(
+                'Needs attention',
+                style: TextStyle(
+                  color: FarmColors.warning,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          OutlinedButton.icon(
+            onPressed: review.productId.trim().isEmpty
+                ? null
+                : () => _openProduct(review),
+            icon: const Icon(
+              Icons.inventory_2_outlined,
+              size: 17,
+            ),
+            label: const Text('Open Product'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => unawaited(_copyReview(review)),
+            icon: const Icon(
+              Icons.copy_outlined,
+              size: 17,
+            ),
+            label: const Text('Copy Feedback'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<ProductReview>>(
-      key: ValueKey('admin-reviews-$refreshKey'),
+      key: ValueKey('admin-reviews-${widget.refreshKey}'),
       future: fetchProductReviews(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const SkeletonList(count: 4, height: 112);
         }
+
         final reviews = snapshot.data ?? const <ProductReview>[];
-        final requestedProductId = initialProductId?.trim() ?? '';
+        final requestedProductId =
+            widget.initialProductId?.trim() ?? '';
 
         final focusedReviews = requestedProductId.isEmpty
             ? const <ProductReview>[]
@@ -32898,16 +36070,23 @@ class AdminReviewsTab extends StatelessWidget {
                 .toList();
 
         final exactReviewTargetFound = focusedReviews.isNotEmpty;
-        final visibleReviews =
-            exactReviewTargetFound ? focusedReviews : reviews;
 
         final count = reviews.length;
         final average = count == 0
             ? 0.0
-            : reviews.fold<double>(0, (sum, review) => sum + review.rating) /
+            : reviews.fold<double>(
+                  0,
+                  (sum, review) => sum + review.rating,
+                ) /
                 count;
         final needsAttention =
             reviews.where((review) => review.rating <= 3).length;
+        final positive =
+            reviews.where((review) => review.rating >= 4).length;
+
+        final visibleReviews = exactReviewTargetFound
+            ? focusedReviews
+            : reviews.where(_matchesFilter).toList();
 
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -32967,13 +36146,15 @@ class AdminReviewsTab extends StatelessWidget {
                       Expanded(
                         child: ReviewAdminMetric(
                           label: 'Average',
-                          value: count == 0 ? '—' : average.toStringAsFixed(1),
+                          value: count == 0
+                              ? '—'
+                              : average.toStringAsFixed(1),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: ReviewAdminMetric(
-                          label: 'Review',
+                          label: 'Needs action',
                           value: needsAttention.toString(),
                         ),
                       ),
@@ -32982,7 +36163,51 @@ class AdminReviewsTab extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
+            FarmCard(
+              padding: const EdgeInsets.all(14),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.task_alt_rounded,
+                    color: FarmColors.primary,
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Use Reviews to spot product issues and repeat praise. Low ratings are flagged for follow-up. Open the related product to review its listing, stock, pricing or quality notes, and copy feedback when you need to share it with the HPJ team.',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        height: 1.42,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (!exactReviewTargetFound)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _filterChip('all', 'All', count),
+                  _filterChip(
+                    'attention',
+                    'Needs Attention',
+                    needsAttention,
+                  ),
+                  _filterChip(
+                    'positive',
+                    'Positive',
+                    positive,
+                  ),
+                ],
+              ),
+            if (!exactReviewTargetFound)
+              const SizedBox(height: 14),
             if (requestedProductId.isNotEmpty) ...[
               _AdminRecordFocusNotice(
                 found: exactReviewTargetFound,
@@ -33000,16 +36225,25 @@ class AdminReviewsTab extends StatelessWidget {
                 message:
                     'Reviews will appear here after shoppers leave product feedback.',
               )
+            else if (visibleReviews.isEmpty)
+              const FarmEmptyState(
+                icon: Icons.filter_alt_off_outlined,
+                title: 'No reviews in this filter',
+                message:
+                    'Choose another review filter to see more customer feedback.',
+              )
             else
-              ...visibleReviews
-                  .take(50)
-                  .map((review) => ReviewCard(review: review)),
+              for (final review in visibleReviews.take(50)) ...[
+                ReviewCard(review: review),
+                _reviewActionBar(review),
+              ],
           ],
         );
       },
     );
   }
 }
+
 
 class ReviewAdminMetric extends StatelessWidget {
   final String label;
@@ -33912,11 +37146,40 @@ class _AdminCouponsTabState extends State<AdminCouponsTab> {
               final minimum =
                   minimumText.isEmpty ? null : double.tryParse(minimumText);
 
-              if (code.isEmpty || value == null) {
+              if (code.isEmpty ||
+                  value == null ||
+                  !value.isFinite ||
+                  value <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content:
-                        Text('Enter coupon code and valid discount value.'),
+                    content: Text(
+                      'Enter a coupon code and a discount greater than zero.',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              if (discountType == 'percent' && value > 100) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Percentage discounts must be between 0 and 100.',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              if (minimumText.isNotEmpty &&
+                  (minimum == null ||
+                      !minimum.isFinite ||
+                      minimum < 0)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Enter a valid minimum order amount or leave it blank.',
+                    ),
                   ),
                 );
                 return;
@@ -33982,8 +37245,8 @@ class _AdminCouponsTabState extends State<AdminCouponsTab> {
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
                         labelText: discountType == 'percent'
-                            ? 'Percent value, for example 10'
-                            : 'Fixed value, for example 500',
+                            ? 'Percentage (1–100), for example 10'
+                            : r'Fixed amount (J$), for example 500',
                       ),
                     ),
                     const SizedBox(height: 10),

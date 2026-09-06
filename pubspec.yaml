@@ -2,27 +2,67 @@ name: farm
 description: Fresh local food ordering and farm updates for The Harvest Place Ja.
 publish_to: 'none'
 
-version: 1.0.3+5
+version: 1.0.4+25
 
 environment:
-  sdk: ^3.0.0
+  sdk: '>=3.6.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
 
+  # Supabase
   supabase_flutter: ^2.5.6
+
+  # Firebase
+  firebase_core: ^4.12.1
+  firebase_messaging: ^16.4.3
+
+  # App features
   app_links: ^6.4.1
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
 
+  # Fresh Reels
+  # Pinned for FlutLab / Flutter 3.32 compatibility.
+  video_player: 2.9.5
+
+  # Smart local preferences / resume memory
+  shared_preferences: ^2.3.5
+
+  # Cloudflare Turnstile CAPTCHA
+  cloudflare_turnstile: ^3.8.1
+
+  # PDF receipt and order slip printing/sharing
+  pdf: ^3.11.0
+  printing: ^5.14.0
+
+# =====================================================
+# FLUTLAB / FLUTTER 3.32 COMPATIBILITY
+#
+# Keep this override while FlutLab requires it.
+# Remove only after testing a newer Flutter environment.
+# =====================================================
+dependency_overrides:
+  firebase_core_web: 3.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
 
   assets:
-    - lib/assets/images/logo.png
+    - lib/assets/images/
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "lib/assets/images/logo.png"
+  adaptive_icon_background: "#F4F9F2"
+  adaptive_icon_foreground: "lib/assets/images/logo.png"
+  min_sdk_android: 21

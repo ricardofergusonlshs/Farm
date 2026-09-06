@@ -209,8 +209,23 @@ Future<void> main() async {
     return true;
   };
 
-  // Firebase/push is useful, but it must not delay the first HPJ screen.
-  unawaited(_prepareHpjFirebaseMessaging());
+  // Register Firebase Messaging before the first widget is mounted so Android
+  // background notification handling is ready before HPJ can be backgrounded.
+  // This remains fail-soft: Firebase must never prevent the marketplace opening.
+  try {
+    await _prepareHpjFirebaseMessaging().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        debugPrint(
+          'Initial Firebase Messaging preparation timed out. HPJ will continue.',
+        );
+        return false;
+      },
+    );
+  } catch (error, stackTrace) {
+    debugPrint('Initial Firebase Messaging preparation skipped: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
 
   runApp(const FarmBootstrapApp());
 }

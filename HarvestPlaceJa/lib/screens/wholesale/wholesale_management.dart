@@ -7968,6 +7968,7 @@ Future<WholesaleDispatch> cancelWholesaleDispatch({
 
 Future<List<WholesaleInvoice>> fetchMyWholesaleInvoices({
   bool includePaid = true,
+  int limit = 100,
 }) async {
   final user = supabase.auth.currentUser;
 
@@ -7999,7 +8000,17 @@ Future<List<WholesaleInvoice>> fetchMyWholesaleInvoices({
     query = query.neq('payment_status', 'paid');
   }
 
-  final response = await query.order('created_at', ascending: false).limit(100);
+  dynamic orderedQuery = query.order(
+    'created_at',
+    ascending: false,
+  );
+
+  if (limit > 0) {
+    final safeLimit = limit > 1000 ? 1000 : limit;
+    orderedQuery = orderedQuery.limit(safeLimit);
+  }
+
+  final response = await orderedQuery;
 
   return (response as List)
       .map(
@@ -8053,7 +8064,39 @@ Future<_WholesaleAccountStatementSnapshot>
     );
   }
 
-  final invoices = await fetchMyWholesaleInvoices();
+  // MVP integrity:
+  // - keep recent issued invoices for statement/payment history;
+  // - load every currently unpaid issued invoice so older debt cannot
+  //   disappear just because it falls outside the recent display limit.
+  final results = await Future.wait<List<WholesaleInvoice>>([
+    fetchMyWholesaleInvoices(
+      includePaid: true,
+      limit: 300,
+    ),
+    fetchMyWholesaleInvoices(
+      includePaid: false,
+      limit: 0,
+    ),
+  ]);
+
+  final byId = <String, WholesaleInvoice>{};
+
+  for (final invoice in results[0]) {
+    byId[invoice.id] = invoice;
+  }
+
+  for (final invoice in results[1]) {
+    byId[invoice.id] = invoice;
+  }
+
+  final invoices = byId.values.toList()
+    ..sort((a, b) {
+      final ad =
+          a.issuedAt ?? a.issueDate ?? a.createdAt ?? DateTime(2000);
+      final bd =
+          b.issuedAt ?? b.issueDate ?? b.createdAt ?? DateTime(2000);
+      return bd.compareTo(ad);
+    });
 
   return _WholesaleAccountStatementSnapshot(
     account: account,
@@ -9371,16 +9414,24 @@ Future<void> saveWholesalePreferredSupplier({
   );
 }
 
-Future<List<WholesaleOrderRequest>> fetchMyWholesaleRequests() async {
+Future<List<WholesaleOrderRequest>> fetchMyWholesaleRequests({
+  int limit = 50,
+}) async {
   final user = supabase.auth.currentUser;
   if (user == null) return const <WholesaleOrderRequest>[];
+
+  final safeLimit = limit < 1
+      ? 1
+      : limit > 1000
+          ? 1000
+          : limit;
 
   final response = await supabase
       .from('wholesale_order_requests')
       .select(_wholesaleRequestSelectFields)
       .eq('user_id', user.id)
       .order('created_at', ascending: false)
-      .limit(50);
+      .limit(safeLimit);
 
   return (response as List)
       .map(
@@ -10575,6 +10626,15 @@ class _WholesaleWorkspaceShellState
         backgroundColor: FarmColors.background,
         appBar: AppBar(
           automaticallyImplyLeading: false,
+          leading: selectedIndex == 0
+              ? null
+              : IconButton(
+                  tooltip: 'Back to Business Home',
+                  onPressed: () => _select(0),
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                  ),
+                ),
           title: Text(
             titles[selectedIndex],
           ),
@@ -10672,6 +10732,7 @@ class _WholesaleTodayWorkspacePageState
                 onOpenPlan: widget.onOpenPlan,
                 onOpenOrders: widget.onOpenOrders,
                 onOpenAccount: widget.onOpenAccount,
+                onRetry: _refresh,
               ),
             ),
           ],
@@ -10681,6 +10742,291 @@ class _WholesaleTodayWorkspacePageState
   }
 }
 
+
+
+
+class _WholesaleSettingsScreen extends StatefulWidget {
+  const _WholesaleSettingsScreen();
+
+  @override
+  State<_WholesaleSettingsScreen> createState() =>
+      _WholesaleSettingsScreenState();
+}
+
+class _WholesaleSettingsScreenState
+    extends State<_WholesaleSettingsScreen> {
+  UserExperiencePreferences preferences =
+      UserExperiencePreferences.defaults;
+  bool loading = true;
+  bool saving = false;
+  String? loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    if (!mounted) return;
+
+    setState(() {
+      loading = true;
+      loadError = null;
+    });
+
+    try {
+      final next = await fetchCurrentUserExperiencePreferences(
+        throwOnError: true,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        preferences = next;
+        loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        loadError = friendlyAppError(error);
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+
+    setState(() => saving = true);
+
+    try {
+      await saveCurrentUserExperiencePreferences(preferences);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Wholesale settings saved.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Widget _preferenceSwitch({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    bool isLast = false,
+  }) {
+    return Column(
+      children: [
+        SwitchListTile.adaptive(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 15,
+            vertical: 2,
+          ),
+          secondary: Icon(
+            icon,
+            color: FarmColors.primary,
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 10.2,
+              height: 1.3,
+            ),
+          ),
+          value: value,
+          onChanged: saving ? null : onChanged,
+        ),
+        if (!isLast) const Divider(height: 1),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('Wholesale Settings'),
+      ),
+      body: FarmPage(
+        child: loading
+            ? const Center(
+                child: CircularProgressIndicator(),
+              )
+            : loadError != null
+                ? ListView(
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                    children: [
+                      FarmCard(
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.sync_problem_outlined,
+                              color: FarmColors.warning,
+                              size: 34,
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Settings could not be loaded',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              loadError!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: _load,
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text('Try again'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
+                    children: [
+                      const HpjCompactAccountHero(
+                        icon: Icons.tune_rounded,
+                        title: 'Business preferences',
+                        subtitle:
+                            'Choose the updates and market information most useful to your team.',
+                        badge: 'Wholesale',
+                        badgeColor: FarmColors.success,
+                      ),
+                      const SizedBox(height: 16),
+                      FarmCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            _preferenceSwitch(
+                              icon: Icons.local_shipping_outlined,
+                              title: 'Order & delivery alerts',
+                              subtitle:
+                                  'Updates about wholesale orders, preparation and delivery.',
+                              value: preferences.pushOrderUpdates,
+                              onChanged: (value) {
+                                setState(() {
+                                  preferences = preferences.copyWith(
+                                    pushOrderUpdates: value,
+                                  );
+                                });
+                              },
+                            ),
+                            _preferenceSwitch(
+                              icon: Icons.chat_bubble_outline_rounded,
+                              title: 'Messages',
+                              subtitle:
+                                  'Alerts when HPJ sends a business or support message.',
+                              value: preferences.pushMessages,
+                              onChanged: (value) {
+                                setState(() {
+                                  preferences = preferences.copyWith(
+                                    pushMessages: value,
+                                  );
+                                });
+                              },
+                            ),
+                            _preferenceSwitch(
+                              icon: Icons.price_change_outlined,
+                              title: 'Price & availability alerts',
+                              subtitle:
+                                  'Useful changes in product price or availability.',
+                              value: preferences.pushPriceDrops,
+                              onChanged: (value) {
+                                setState(() {
+                                  preferences = preferences.copyWith(
+                                    pushPriceDrops: value,
+                                  );
+                                });
+                              },
+                            ),
+                            _preferenceSwitch(
+                              icon: Icons.insights_outlined,
+                              title: 'Market intelligence',
+                              subtitle:
+                                  'Show agriculture and market intelligence in the Wholesale workspace.',
+                              value: preferences.showAgricultureNews,
+                              isLast: true,
+                              onChanged: (value) {
+                                setState(() {
+                                  preferences = preferences.copyWith(
+                                    showAgricultureNews: value,
+                                  );
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const FarmCard(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              color: FarmColors.primary,
+                              size: 20,
+                            ),
+                            SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                'These are convenience preferences. Critical account, payment or security information remains available in HPJ Updates.',
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10.5,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      PrimaryFarmButton(
+                        label: saving ? 'Saving...' : 'Save Settings',
+                        icon: Icons.save_outlined,
+                        onPressed: saving ? null : _save,
+                      ),
+                    ],
+                  ),
+      ),
+    );
+  }
+}
 
 
 class _WholesaleAccountWorkspacePage extends StatelessWidget {
@@ -10771,6 +11117,15 @@ class _WholesaleAccountWorkspacePage extends StatelessWidget {
                   onTap: () => _open(
                     context,
                     BusinessWholesaleInvoicesScreen(account: account),
+                  ),
+                ),
+                AccountListTile(
+                  icon: Icons.tune_rounded,
+                  title: 'Settings',
+                  subtitle: 'Order, delivery, messages and market preferences.',
+                  onTap: () => _open(
+                    context,
+                    const _WholesaleSettingsScreen(),
                   ),
                 ),
                 AccountListTile(
@@ -15635,8 +15990,10 @@ Future<List<WholesaleDemandGapLine>> fetchMyWholesaleDemandGap({
         )
         .toList();
   } catch (error) {
-    farmDebugLog('Wholesale business demand-gap insight unavailable: $error');
-    return const <WholesaleDemandGapLine>[];
+    farmDebugLog(
+      'Wholesale business demand-gap insight unavailable: $error',
+    );
+    rethrow;
   }
 }
 
@@ -15648,6 +16005,7 @@ class _WholesaleTodaySnapshot {
   final List<WholesaleProduct> catalogue;
   final List<WholesaleDemandGapLine> demandGaps;
   final WholesaleOrderingControl? orderingControl;
+  final Set<String> unavailableSections;
 
   const _WholesaleTodaySnapshot({
     required this.forecasts,
@@ -15657,18 +16015,24 @@ class _WholesaleTodaySnapshot {
     required this.catalogue,
     this.demandGaps = const <WholesaleDemandGapLine>[],
     this.orderingControl,
+    this.unavailableSections = const <String>{},
   });
+
+  bool get hasLoadIssues => unavailableSections.isNotEmpty;
 }
 
 Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
   BusinessAccount? account,
 }) async {
+  final unavailableSections = <String>{};
+
   Future<List<WholesaleDemandForecast>> loadForecasts() async {
     try {
       return await fetchMyWholesaleDemandForecasts(
         includeCancelled: false,
       );
     } catch (error) {
+      unavailableSections.add('Planning');
       farmDebugLog('Wholesale Today — planning unavailable: $error');
       return <WholesaleDemandForecast>[];
     }
@@ -15676,8 +16040,11 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
 
   Future<List<WholesaleOrderRequest>> loadRequests() async {
     try {
-      return await fetchMyWholesaleRequests();
+      return await fetchMyWholesaleRequests(
+        limit: 200,
+      );
     } catch (error) {
+      unavailableSections.add('Orders');
       farmDebugLog('Wholesale Today — orders unavailable: $error');
       return <WholesaleOrderRequest>[];
     }
@@ -15687,8 +16054,10 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     try {
       return await fetchMyWholesaleInvoices(
         includePaid: true,
+        limit: 300,
       );
     } catch (error) {
+      unavailableSections.add('Invoices');
       farmDebugLog('Wholesale Today — invoices unavailable: $error');
       return <WholesaleInvoice>[];
     }
@@ -15698,6 +16067,7 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     try {
       return await fetchMyWholesaleOrderJourneys();
     } catch (error) {
+      unavailableSections.add('Tracking');
       farmDebugLog('Wholesale Today — tracking unavailable: $error');
       return <WholesaleOrderJourney>[];
     }
@@ -15707,6 +16077,7 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     try {
       return await fetchWholesaleCatalogue();
     } catch (error) {
+      unavailableSections.add('Catalogue');
       farmDebugLog('Wholesale Today — catalogue unavailable: $error');
       return <WholesaleProduct>[];
     }
@@ -15714,8 +16085,11 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
 
   Future<List<WholesaleDemandGapLine>> loadDemandGaps() async {
     try {
-      return await fetchMyWholesaleDemandGap(horizonDays: 30);
+      return await fetchMyWholesaleDemandGap(
+        horizonDays: 30,
+      );
     } catch (error) {
+      unavailableSections.add('Demand insight');
       farmDebugLog(
         'Wholesale Today — business insight unavailable: $error',
       );
@@ -15725,8 +16099,11 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
 
   Future<WholesaleOrderingControl?> loadOrderingControl() async {
     try {
-      return await fetchWholesaleOrderingControl(account: account);
+      return await fetchWholesaleOrderingControl(
+        account: account,
+      );
     } catch (error) {
+      unavailableSections.add('Ordering status');
       farmDebugLog(
         'Wholesale Today — ordering status unavailable: $error',
       );
@@ -15752,28 +16129,37 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
 
   if (demandGaps.isEmpty && forecasts.isNotEmpty) {
     final today = DateTime.now();
-    final cutoff = today.add(const Duration(days: 30));
+    final cutoff = today.add(
+      const Duration(days: 30),
+    );
 
     demandGaps = forecasts
         .where(
           (item) =>
               !item.isCancelled &&
               !item.needByDate.isBefore(
-                DateTime(today.year, today.month, today.day),
+                DateTime(
+                  today.year,
+                  today.month,
+                  today.day,
+                ),
               ) &&
               !item.needByDate.isAfter(cutoff),
         )
         .map(
           (item) {
-            final fullySecured = item.isReserved || item.isConverted;
+            final fullySecured =
+                item.isReserved || item.isConverted;
 
             return WholesaleDemandGapLine(
               demandForecastId: item.id,
               productName: item.productName,
               unit: item.unit,
               requiredQuantity: item.quantity,
-              securedQuantity: fullySecured ? item.quantity : 0,
-              gapQuantity: fullySecured ? 0 : item.quantity,
+              securedQuantity:
+                  fullySecured ? item.quantity : 0,
+              gapQuantity:
+                  fullySecured ? 0 : item.quantity,
               needByDate: item.needByDate,
               demandStatus: item.status,
               sourceType: item.sourceType,
@@ -15791,6 +16177,8 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     catalogue: catalogue,
     demandGaps: demandGaps,
     orderingControl: orderingControl,
+    unavailableSections:
+        Set<String>.unmodifiable(unavailableSections),
   );
 }
 
@@ -15800,6 +16188,7 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
   final VoidCallback? onOpenPlan;
   final VoidCallback? onOpenOrders;
   final VoidCallback? onOpenAccount;
+  final VoidCallback? onRetry;
 
   const _ApprovedWholesaleDashboard({
     required this.account,
@@ -15807,6 +16196,7 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
     this.onOpenPlan,
     this.onOpenOrders,
     this.onOpenAccount,
+    this.onRetry,
   });
 
   void _open(BuildContext context, Widget screen) {
@@ -16109,6 +16499,7 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
         }
 
         if (attentionRows.isEmpty &&
+            !data.hasLoadIssues &&
             data.forecasts.isEmpty &&
             data.requests.isEmpty) {
           addAttention(
@@ -16137,6 +16528,53 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
               badge: 'Approved Business',
               badgeColor: FarmColors.success,
             ),
+            if (data.hasLoadIssues) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(
+                  12,
+                  10,
+                  8,
+                  10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7E8),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: FarmColors.warning.withOpacity(.28),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: FarmColors.warning,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Some business data could not load: '
+                        '${data.unavailableSections.join(', ')}. '
+                        'Figures marked unavailable should not be treated as zero.',
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 9.6,
+                          height: 1.35,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: onRetry,
+                      child: const Text('Refresh'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             _WholesaleHomeQuickActions(
               onOrderNow: () => _goShop(context),
@@ -16170,6 +16608,7 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
               spend90: spend90,
               deliveriesToday: deliveriesToday,
               gapLines: gapLinesNeedingSupply,
+              unavailableSections: data.unavailableSections,
               onOpenPlan: () => _goPlan(context),
               onOpenOrders: () => _goOrders(context),
             ),
@@ -16220,7 +16659,7 @@ class _WholesaleMarketIntelligenceCard extends StatefulWidget {
 
 class _WholesaleMarketIntelligenceCardState
     extends State<_WholesaleMarketIntelligenceCard> {
-  bool expanded = false;
+  bool expanded = true;
 
   String _qty(double value) {
     return value == value.roundToDouble()
@@ -16231,6 +16670,8 @@ class _WholesaleMarketIntelligenceCardState
   @override
   Widget build(BuildContext context) {
     final topGaps = widget.gapLines.take(2).toList(growable: false);
+    final showMarketIntelligence =
+        hpjCurrentUserExperiencePreferences.showAgricultureNews;
 
     return FarmCard(
       padding: EdgeInsets.zero,
@@ -16321,20 +16762,24 @@ class _WholesaleMarketIntelligenceCardState
                         icon: Icons.warning_amber_rounded,
                         title: gap.productName,
                         subtitle:
-                            'Gap ${_qty(gap.gapQuantity)} ${gap.unit} of ${_qty(gap.requiredQuantity)} needed',
+                            'Still Needed • ${_qty(gap.gapQuantity)} ${gap.unit} • '
+                            '${_qty(gap.securedQuantity)} secured of '
+                            '${_qty(gap.requiredQuantity)} required',
                         iconColor: FarmColors.warning,
                         onTap: widget.onOpenPlan,
                       ),
                     const SizedBox(height: 8),
                   ],
-                  if (widget.dailyPicks.isNotEmpty) ...[
+                  if (showMarketIntelligence &&
+                      widget.dailyPicks.isNotEmpty) ...[
                     _WholesaleDailyFeed(
                       products: widget.dailyPicks,
                       onOpenShop: widget.onOpenShop,
                     ),
                     const SizedBox(height: 16),
                   ],
-                  if (hpjCurrentUserExperiencePreferences.showFreshReels) ...[
+                  if (showMarketIntelligence &&
+                      hpjCurrentUserExperiencePreferences.showFreshReels) ...[
                     FreshReelFeedPreviewCard(
                       preferences: hpjCurrentUserExperiencePreferences,
                       audience: 'wholesale',
@@ -16343,21 +16788,28 @@ class _WholesaleMarketIntelligenceCardState
                     ),
                     const SizedBox(height: 14),
                   ],
-                  HpjJamaicaMarketPulseSection(
-                    audience: 'wholesale',
-                    limit: 4,
-                    socialStyle: true,
-                    preferredCropNames: widget.activeForecasts
-                        .map((item) => item.productName)
-                        .toList(growable: false),
-                    onPrimaryAction: (insight) async {
-                      insight.hasShortage
-                          ? widget.onOpenPlan()
-                          : widget.onOpenShop();
-                    },
-                  ),
-                  if (hpjCurrentUserExperiencePreferences
-                      .showAgricultureNews) ...[
+                  if (showMarketIntelligence)
+                    HpjJamaicaMarketPulseSection(
+                      audience: 'wholesale',
+                      limit: 4,
+                      socialStyle: true,
+                      preferredCropNames: widget.activeForecasts
+                          .map((item) => item.productName)
+                          .toList(growable: false),
+                      onPrimaryAction: (insight) async {
+                        insight.hasShortage
+                            ? widget.onOpenPlan()
+                            : widget.onOpenShop();
+                      },
+                    )
+                  else
+                    const HpjMvpListRow(
+                      icon: Icons.visibility_off_outlined,
+                      title: 'Market intelligence hidden',
+                      subtitle: 'Turn it on from Account → Settings.',
+                      iconColor: FarmColors.mutedText,
+                    ),
+                  if (showMarketIntelligence) ...[
                     const SizedBox(height: 14),
                     HpjAgricultureUpdatesSection(
                       audience: 'wholesale',
@@ -16390,6 +16842,7 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
   final double spend90;
   final int deliveriesToday;
   final List<WholesaleDemandGapLine> gapLines;
+  final Set<String> unavailableSections;
   final VoidCallback onOpenPlan;
   final VoidCallback onOpenOrders;
 
@@ -16403,12 +16856,40 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
     required this.spend90,
     required this.deliveriesToday,
     required this.gapLines,
+    this.unavailableSections = const <String>{},
     required this.onOpenPlan,
     required this.onOpenOrders,
   });
 
   @override
   Widget build(BuildContext context) {
+    final demandUnavailable =
+        unavailableSections.contains('Planning') ||
+        unavailableSections.contains('Demand insight');
+
+    final invoicesUnavailable =
+        unavailableSections.contains('Invoices');
+
+    final trackingUnavailable =
+        unavailableSections.contains('Tracking');
+
+    final footer = <String>[
+      if (!demandUnavailable)
+        '$securedLineCount secured',
+      if (!trackingUnavailable && deliveriesToday > 0)
+        '$deliveriesToday ${deliveriesToday == 1 ? 'delivery' : 'deliveries'} today',
+      if (!invoicesUnavailable)
+        '${purchasedOrders30} invoice${purchasedOrders30 == 1 ? '' : 's'}',
+      if (!invoicesUnavailable)
+        '90d ${formatJmd(spend90)}',
+    ];
+
+    if (footer.isEmpty) {
+      footer.add(
+        'Live status is temporarily incomplete',
+      );
+    }
+
     return FarmCard(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
       child: Column(
@@ -16449,8 +16930,12 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
                     width: itemWidth,
                     child: _WholesaleBusinessMetric(
                       label: 'Demand',
-                      value: '$demandLineCount',
-                      note: 'Next 30 days',
+                      value: demandUnavailable
+                          ? '—'
+                          : '$demandLineCount',
+                      note: demandUnavailable
+                          ? 'Unavailable'
+                          : 'Next 30 days',
                       onTap: onOpenPlan,
                     ),
                   ),
@@ -16458,11 +16943,16 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
                     width: itemWidth,
                     child: _WholesaleBusinessMetric(
                       label: 'Supply gaps',
-                      value: '$gapLineCount',
-                      note: gapLineCount == 0
-                          ? 'Covered'
-                          : 'Need attention',
-                      warning: gapLineCount > 0,
+                      value: demandUnavailable
+                          ? '—'
+                          : '$gapLineCount',
+                      note: demandUnavailable
+                          ? 'Unavailable'
+                          : gapLineCount == 0
+                              ? 'Covered'
+                              : 'Need attention',
+                      warning:
+                          !demandUnavailable && gapLineCount > 0,
                       onTap: onOpenPlan,
                     ),
                   ),
@@ -16470,8 +16960,12 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
                     width: itemWidth,
                     child: _WholesaleBusinessMetric(
                       label: 'Purchased',
-                      value: formatJmd(spend30),
-                      note: 'Last 30 days',
+                      value: invoicesUnavailable
+                          ? '—'
+                          : formatJmd(spend30),
+                      note: invoicesUnavailable
+                          ? 'Unavailable'
+                          : 'Last 30 days',
                       onTap: onOpenOrders,
                     ),
                   ),
@@ -16481,13 +16975,7 @@ class _WholesaleBusinessSnapshotCard extends StatelessWidget {
           ),
           const SizedBox(height: 9),
           Text(
-            [
-              '$securedLineCount secured',
-              if (deliveriesToday > 0)
-                '$deliveriesToday ${deliveriesToday == 1 ? 'delivery' : 'deliveries'} today',
-              '${purchasedOrders30} invoice${purchasedOrders30 == 1 ? '' : 's'}',
-              '90d ${formatJmd(spend90)}',
-            ].join(' • '),
+            footer.join(' • '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -24011,10 +24499,22 @@ class MyWholesaleRequestsScreen extends StatefulWidget {
 
 class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
   int _refreshKey = 0;
+  int _orderLoadLimit = 50;
 
   void _refreshOrders() {
     if (!mounted) return;
     setState(() => _refreshKey++);
+  }
+
+  void _loadMoreOrders() {
+    if (!mounted || _orderLoadLimit >= 1000) return;
+
+    setState(() {
+      _orderLoadLimit += 50;
+      if (_orderLoadLimit > 1000) {
+        _orderLoadLimit = 1000;
+      }
+    });
   }
 
   Future<void> _orderAgain(
@@ -25204,9 +25704,18 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
       body: FutureBuilder<List<Object>>(
         key: ValueKey(_refreshKey),
         future: Future.wait<Object>([
-          fetchMyWholesaleRequests(),
+          fetchMyWholesaleRequests(
+            limit: (widget.initialRequestId?.trim().isNotEmpty ?? false)
+                ? 500
+                : _orderLoadLimit + 1,
+          ),
           fetchMyWholesaleOrderJourneys(),
-          fetchMyWholesaleInvoices(includePaid: true),
+          fetchMyWholesaleInvoices(
+            includePaid: true,
+            limit: _orderLoadLimit < 150
+                ? 300
+                : _orderLoadLimit * 2,
+          ),
         ]),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
@@ -25228,15 +25737,29 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
 
           final data = snapshot.data;
 
-          final allRequests = data == null
+          final fetchedRequests = data == null
               ? const <WholesaleOrderRequest>[]
               : data[0] as List<WholesaleOrderRequest>;
 
-          final requestedRequestId = widget.initialRequestId?.trim() ?? '';
+          final requestedRequestId =
+              widget.initialRequestId?.trim() ?? '';
+
+          final hasMoreOrders = requestedRequestId.isEmpty &&
+              fetchedRequests.length > _orderLoadLimit;
+
+          final allRequests = requestedRequestId.isEmpty
+              ? fetchedRequests
+                  .take(_orderLoadLimit)
+                  .toList(growable: false)
+              : fetchedRequests;
+
           final focusedRequests = requestedRequestId.isEmpty
               ? const <WholesaleOrderRequest>[]
               : allRequests
-                  .where((request) => request.id.trim() == requestedRequestId)
+                  .where(
+                    (request) =>
+                        request.id.trim() == requestedRequestId,
+                  )
                   .toList();
 
           final exactRequestFound = focusedRequests.isNotEmpty;
@@ -25416,6 +25939,32 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
                         request,
                         journeyByRequest[request.id],
                         invoiceByRequest[request.id],
+                      ),
+                    ),
+                  ],
+                  if (hasMoreOrders) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _loadMoreOrders,
+                        icon: const Icon(
+                          Icons.expand_more_rounded,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'Load 50 More Orders',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'Showing the ${allRequests.length} most recent wholesale orders.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.2,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -42864,61 +43413,271 @@ class _WorkspaceFooterDivider extends StatelessWidget {
   }
 }
 
-class HpjFaqScreen extends StatelessWidget {
+class HpjFaqItem {
+  final String id;
+  final String question;
+  final String answer;
+  final bool isPublished;
+  final bool isArchived;
+  final int sortOrder;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const HpjFaqItem({
+    required this.id,
+    required this.question,
+    required this.answer,
+    required this.isPublished,
+    required this.isArchived,
+    required this.sortOrder,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory HpjFaqItem.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    return HpjFaqItem(
+      id: (data['id'] ?? '').toString().trim(),
+      question: (data['question'] ?? '').toString().trim(),
+      answer: (data['answer'] ?? '').toString().trim(),
+      isPublished: data['is_published'] == true,
+      isArchived: data['is_archived'] == true,
+      sortOrder:
+          int.tryParse((data['sort_order'] ?? '100').toString()) ?? 100,
+      createdAt:
+          DateTime.tryParse((data['created_at'] ?? '').toString()),
+      updatedAt:
+          DateTime.tryParse((data['updated_at'] ?? '').toString()),
+    );
+  }
+}
+
+Future<List<HpjFaqItem>> fetchPublishedHpjFaqItems() async {
+  final response = await supabase
+      .from('hpj_faq_items')
+      .select(
+        'id, question, answer, is_published, is_archived, sort_order, created_at, updated_at',
+      )
+      .eq('is_published', true)
+      .eq('is_archived', false)
+      .order('sort_order', ascending: true)
+      .order('updated_at', ascending: false);
+
+  return (response as List)
+      .map(
+        (item) => HpjFaqItem.fromSupabase(
+          Map<String, dynamic>.from(item as Map),
+        ),
+      )
+      .where(
+        (item) =>
+            item.question.trim().isNotEmpty &&
+            item.answer.trim().isNotEmpty,
+      )
+      .toList();
+}
+
+class HpjFaqScreen extends StatefulWidget {
   const HpjFaqScreen({super.key});
 
-  static const _items = <({String question, String answer})>[
-    (
+  @override
+  State<HpjFaqScreen> createState() => _HpjFaqScreenState();
+}
+
+class _HpjFaqScreenState extends State<HpjFaqScreen> {
+  late Future<List<HpjFaqItem>> _future;
+
+  static const _fallbackItems = <HpjFaqItem>[
+    HpjFaqItem(
+      id: 'fallback-1',
       question: 'When will Customer Shopping open?',
       answer:
           'Customer Shopping is being prepared for launch. When the marketplace is not yet live, open Customer Shopping and use Notify Me to request a launch alert.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 10,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-2',
       question: 'Why does Customer Shopping show Coming Soon?',
       answer:
           'HPJ can launch workspaces in stages. Farmer and Wholesale may be available while the customer marketplace is still being prepared.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 20,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-3',
       question: 'Will I need another account when Customer Shopping opens?',
       answer:
           'No. Your existing HPJ login remains your account. Approved workspace access stays connected to the same login.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 30,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-4',
       question: 'How do I switch between HPJ workspaces?',
       answer:
           'Open Workspaces and select any workspace available to your account. Your approved permissions and account access remain connected.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 40,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-5',
       question: 'How do I apply for Farmer or Wholesale access?',
       answer:
           'Open the Farmer Partner or Wholesale Business workspace. If applications are open and you do not already have access, HPJ will guide you through the application process.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 50,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-6',
       question: 'Why does a workspace say Apply, Paused or Approved?',
       answer:
           'Apply means you can request access, Approved means your account has access, and Paused means that programme or workspace is temporarily unavailable.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 60,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-7',
       question: 'How will I receive the Customer Shopping launch alert?',
       answer:
           'Use Notify Me on the Coming Soon page while signed in. HPJ records your launch interest and keeps your notification preference aligned with that request.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 70,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-8',
       question: 'Where can I get help with my account?',
       answer:
           'Use Support from the Workspaces page for account or access help. Policy information is also available under Terms, Privacy and Refunds.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 80,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-9',
       question: 'Where can I read the refund rules?',
       answer:
           'Open Refunds at the bottom of the Workspaces page to read the current HPJ Refund Policy.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 90,
     ),
-    (
+    HpjFaqItem(
+      id: 'fallback-10',
       question: 'How does HPJ protect my account information?',
       answer:
           'Open Trust from the Workspaces page for HPJ security and account-safety information, and review Privacy for information about data handling.',
+      isPublished: true,
+      isArchived: false,
+      sortOrder: 100,
     ),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchPublishedHpjFaqItems();
+  }
+
+  Future<void> _refresh() async {
+    final next = fetchPublishedHpjFaqItems();
+    setState(() => _future = next);
+
+    try {
+      await next;
+    } catch (_) {
+      // The UI keeps the built-in fallback answers available if the Phase 5
+      // FAQ table is temporarily unavailable.
+    }
+  }
+
+  Widget _faqList(
+    BuildContext context,
+    List<HpjFaqItem> items,
+  ) {
+    if (items.isEmpty) {
+      return const FarmEmptyState(
+        icon: Icons.quiz_outlined,
+        title: 'No published FAQs yet',
+        message:
+            'HPJ Support is still available while the FAQ list is being updated.',
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFEFB),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFE4E0D7),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var index = 0; index < items.length; index++) ...[
+            Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+              ),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 2,
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(
+                  15,
+                  0,
+                  15,
+                  14,
+                ),
+                iconColor: const Color(0xFF0B4C36),
+                collapsedIconColor: const Color(0xFF6F7973),
+                title: Text(
+                  items[index].question,
+                  style: const TextStyle(
+                    color: Color(0xFF183D30),
+                    fontSize: 11.2,
+                    height: 1.3,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      items[index].answer,
+                      style: const TextStyle(
+                        color: Color(0xFF68716D),
+                        fontSize: 10.2,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (index != items.length - 1)
+              const Divider(
+                height: 1,
+                indent: 15,
+                endIndent: 15,
+                color: Color(0xFFE9E5DE),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42966,128 +43725,108 @@ class HpjFaqScreen extends StatelessWidget {
       ),
       body: SafeArea(
         top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            12,
-            16,
-            36,
-          ),
-          children: [
-            const Text(
-              'QUICK ANSWERS',
-              style: TextStyle(
-                color: Color(0xFF758079),
-                fontSize: 9.3,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.9,
-              ),
-            ),
-            const SizedBox(height: 7),
-            const Text(
-              'How can we help?',
-              style: TextStyle(
-                color: Color(0xFF103F2F),
-                fontSize: 26,
-                height: 1.0,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.6,
-              ),
-            ),
-            const SizedBox(height: 7),
-            const Text(
-              'Answers to common questions about HPJ accounts, workspaces and the Customer Shopping launch.',
-              style: TextStyle(
-                color: Color(0xFF68716D),
-                fontSize: 11.3,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFEFB),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0xFFE4E0D7),
+        child: FutureBuilder<List<HpjFaqItem>>(
+          future: _future,
+          builder: (context, snapshot) {
+            final useFallback = snapshot.hasError;
+            final items = useFallback
+                ? _fallbackItems
+                : (snapshot.data ?? const <HpjFaqItem>[]);
+
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  12,
+                  16,
+                  36,
                 ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
                 children: [
-                  for (var index = 0; index < _items.length; index++) ...[
-                    Theme(
-                      data: Theme.of(context).copyWith(
-                        dividerColor: Colors.transparent,
-                      ),
-                      child: ExpansionTile(
-                        tilePadding: const EdgeInsets.symmetric(
-                          horizontal: 15,
-                          vertical: 2,
-                        ),
-                        childrenPadding: const EdgeInsets.fromLTRB(
-                          15,
-                          0,
-                          15,
-                          14,
-                        ),
-                        iconColor: const Color(0xFF0B4C36),
-                        collapsedIconColor: const Color(0xFF6F7973),
-                        title: Text(
-                          _items[index].question,
-                          style: const TextStyle(
-                            color: Color(0xFF183D30),
-                            fontSize: 11.2,
-                            height: 1.3,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _items[index].answer,
-                              style: const TextStyle(
-                                color: Color(0xFF68716D),
-                                fontSize: 10.2,
-                                height: 1.45,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (index != _items.length - 1)
-                      const Divider(
-                        height: 1,
-                        indent: 15,
-                        endIndent: 15,
-                        color: Color(0xFFE9E5DE),
-                      ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const SupportScreen(
-                      initialSubject: 'Customer care',
+                  const Text(
+                    'QUICK ANSWERS',
+                    style: TextStyle(
+                      color: Color(0xFF758079),
+                      fontSize: 9.3,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.9,
                     ),
                   ),
-                );
-              },
-              icon: const Icon(
-                Icons.support_agent_rounded,
-                size: 18,
+                  const SizedBox(height: 7),
+                  const Text(
+                    'How can we help?',
+                    style: TextStyle(
+                      color: Color(0xFF103F2F),
+                      fontSize: 26,
+                      height: 1.0,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  const Text(
+                    'Answers to common questions about HPJ accounts, workspaces and the marketplace.',
+                    style: TextStyle(
+                      color: Color(0xFF68716D),
+                      fontSize: 11.3,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (useFallback) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7E6),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Text(
+                        'Showing HPJ’s built-in help answers while the managed FAQ list is unavailable.',
+                        style: TextStyle(
+                          color: Color(0xFF775A16),
+                          fontSize: 10.2,
+                          height: 1.35,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (snapshot.connectionState ==
+                          ConnectionState.waiting &&
+                      snapshot.data == null &&
+                      !snapshot.hasError)
+                    const SizedBox(
+                      height: 150,
+                      child: Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else
+                    _faqList(context, items),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const SupportScreen(
+                            initialSubject: 'Customer care',
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.support_agent_rounded,
+                      size: 18,
+                    ),
+                    label: const Text('Contact Support'),
+                  ),
+                ],
               ),
-              label: const Text('Contact Support'),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

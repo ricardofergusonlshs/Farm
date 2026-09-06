@@ -414,6 +414,179 @@ Future<void> saveNotificationPreference({required bool enabled}) async {
   }
 }
 
+// =====================================================
+// PHASE 6A12 — PUBLIC COMPANY + LEGAL SETTINGS
+// Admin-managed contact details and Terms of Service.
+// Public/guest screens can read these values safely; writes are protected by
+// the server-side hpj_update_company_settings RPC.
+// =====================================================
+
+const String _hpjDefaultTermsContent = '''Using the app
+The Harvest Place Ja connects customers with available farm products, pickup options, delivery options, order tracking, and support tools. You are responsible for keeping your account information accurate and secure.
+
+Product availability and pricing
+Fresh products may change based on harvest, season, weather, and stock. Prices, quantities, descriptions, and availability may be updated at any time before checkout.
+
+Orders, pickup, and delivery
+Orders are accepted based on available stock and selected fulfillment method. Pickup or delivery windows may be adjusted for safety, weather, farm operations, or customer communication needs.
+
+Payment and acceptable use
+Customers agree to provide accurate payment and contact information. Abuse, fraud, false orders, or attempts to disrupt the app may result in account restriction or order cancellation.''';
+
+class HpjCompanySettings {
+  final String supportEmail;
+  final String supportPhone;
+  final String whatsappNumber;
+  final String address;
+  final String termsContent;
+  final DateTime? updatedAt;
+
+  const HpjCompanySettings({
+    required this.supportEmail,
+    required this.supportPhone,
+    required this.whatsappNumber,
+    required this.address,
+    required this.termsContent,
+    this.updatedAt,
+  });
+
+  static HpjCompanySettings get fallback => HpjCompanySettings(
+        supportEmail: AppConfig.supportEmail.trim(),
+        supportPhone: AppConfig.supportPhoneDisplay.trim(),
+        whatsappNumber: AppConfig.supportWhatsAppNumber.trim(),
+        address: AppConfig.businessLocation.trim(),
+        termsContent: _hpjDefaultTermsContent,
+      );
+
+  factory HpjCompanySettings.fromSupabase(Map<String, dynamic> data) {
+    final fallbackSettings = HpjCompanySettings.fallback;
+
+    String valueOrFallback(String key, String fallback) {
+      final value = data[key]?.toString().trim() ?? '';
+      return value.isEmpty ? fallback : value;
+    }
+
+    DateTime? parseUpdatedAt(Object? value) {
+      final raw = value?.toString().trim() ?? '';
+      if (raw.isEmpty) return null;
+      return DateTime.tryParse(raw)?.toLocal();
+    }
+
+    return HpjCompanySettings(
+      supportEmail: valueOrFallback(
+        'support_email',
+        fallbackSettings.supportEmail,
+      ),
+      supportPhone: valueOrFallback(
+        'support_phone',
+        fallbackSettings.supportPhone,
+      ),
+      whatsappNumber: valueOrFallback(
+        'whatsapp_number',
+        fallbackSettings.whatsappNumber,
+      ),
+      address: valueOrFallback(
+        'address',
+        fallbackSettings.address,
+      ),
+      termsContent: valueOrFallback(
+        'terms_content',
+        fallbackSettings.termsContent,
+      ),
+      updatedAt: parseUpdatedAt(data['updated_at']),
+    );
+  }
+
+  String get phoneDial {
+    final clean = supportPhone.trim();
+    if (clean.isEmpty) return AppConfig.supportPhoneDial.trim();
+    final digits = clean.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return AppConfig.supportPhoneDial.trim();
+    return clean.startsWith('+') ? '+$digits' : digits;
+  }
+
+  String get whatsappDigits {
+    final digits = whatsappNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isNotEmpty) return digits;
+    return AppConfig.supportWhatsAppNumber.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+}
+
+Future<HpjCompanySettings> fetchHpjCompanySettings({
+  bool throwOnError = false,
+}) async {
+  try {
+    final response = await supabase
+        .from('hpj_company_settings')
+        .select(
+          'id, support_email, support_phone, whatsapp_number, address, terms_content, updated_at',
+        )
+        .eq('id', 'main')
+        .maybeSingle();
+
+    if (response == null) return HpjCompanySettings.fallback;
+
+    return HpjCompanySettings.fromSupabase(
+      Map<String, dynamic>.from(response as Map),
+    );
+  } catch (error) {
+    farmDebugLog('Company settings load skipped safely: $error');
+    if (throwOnError) rethrow;
+    return HpjCompanySettings.fallback;
+  }
+}
+
+Future<void> saveHpjCompanySettings({
+  required String supportEmail,
+  required String supportPhone,
+  required String whatsappNumber,
+  required String address,
+  required String termsContent,
+}) async {
+  await requireAdminAccess();
+
+  final cleanEmail = supportEmail.trim().toLowerCase();
+  final cleanPhone = supportPhone.trim();
+  final cleanWhatsapp = whatsappNumber.trim();
+  final cleanAddress = address.trim();
+  final cleanTerms = termsContent.trim();
+
+  final emailLooksValid =
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanEmail);
+  if (!emailLooksValid) {
+    throw Exception('Enter a valid company email address.');
+  }
+
+  final phoneDigits = cleanPhone.replaceAll(RegExp(r'[^0-9]'), '');
+  if (phoneDigits.length < 7) {
+    throw Exception('Enter a valid company phone number.');
+  }
+
+  final whatsappDigits = cleanWhatsapp.replaceAll(RegExp(r'[^0-9]'), '');
+  if (whatsappDigits.length < 7) {
+    throw Exception('Enter a valid WhatsApp number.');
+  }
+
+  if (cleanAddress.length < 5) {
+    throw Exception('Enter the company address.');
+  }
+
+  if (cleanTerms.length < 80) {
+    throw Exception('Terms and Conditions are too short.');
+  }
+
+  await supabase.rpc(
+    'hpj_update_company_settings',
+    params: <String, dynamic>{
+      'p_support_email': cleanEmail,
+      'p_support_phone': cleanPhone,
+      'p_whatsapp_number': cleanWhatsapp,
+      'p_address': cleanAddress,
+      'p_terms_content': cleanTerms,
+    },
+  );
+}
+
 const String savedCartSource = 'mobile_app';
 
 const String _savedCartProductSelectFields =
@@ -743,6 +916,7 @@ Future<void> removeCartItemForCurrentUser(Product product) async {
 Future<void> setCartItemQuantityForCurrentUser({
   required Product product,
   required int quantity,
+  bool throwOnError = false,
 }) async {
   final user = supabase.auth.currentUser;
   if (user == null || product.id.trim().isEmpty) return;
@@ -774,6 +948,7 @@ Future<void> setCartItemQuantityForCurrentUser({
     );
   } catch (error) {
     farmDebugLog('Saved cart quantity update skipped safely: $error');
+    if (throwOnError) rethrow;
   }
 }
 
@@ -788,7 +963,9 @@ Future<void> clearSavedCartForCurrentUser() async {
   }
 }
 
-Future<List<CartLine>> fetchSavedCartLinesForCurrentUser() async {
+Future<List<CartLine>> fetchSavedCartLinesForCurrentUser({
+  bool throwOnError = false,
+}) async {
   final user = supabase.auth.currentUser;
   if (user == null) return const <CartLine>[];
 
@@ -855,6 +1032,7 @@ Future<List<CartLine>> fetchSavedCartLinesForCurrentUser() async {
     return lines;
   } catch (error) {
     farmDebugLog('Saved cart load skipped safely: $error');
+    if (throwOnError) rethrow;
     return const <CartLine>[];
   }
 }
@@ -3904,6 +4082,15 @@ Future<void> reduceStockForOrder(String orderId) async {
     );
   } catch (error) {
     final cleanMessage = error.toString().replaceFirst('Exception: ', '');
+    final lowerMessage = cleanMessage.toLowerCase();
+
+    // Safe idempotency guard: secure_checkout may already have reduced stock.
+    // That is a successful checkout state, not a second stock failure.
+    if (lowerMessage.contains('stock already reduced for this order')) {
+      FarmDataCache.clearProducts();
+      return;
+    }
+
     farmDebugLog('Server-side stock reduction failed: $cleanMessage');
     throw Exception(cleanMessage);
   }
@@ -5202,13 +5389,38 @@ Future<void> updateFarmerPayoutStatus({
   String? reference,
 }) async {
   await requireAdminAccess();
-  final update = {
-    'payout_status': status,
-    if (reference != null && reference.trim().isNotEmpty)
-      'payout_reference': reference.trim(),
-    if (status == 'released') 'released_at': DateTime.now().toIso8601String(),
+
+  final cleanPayoutId = payoutId.trim();
+  final cleanStatus = status.trim().toLowerCase();
+  final cleanReference = reference?.trim() ?? '';
+
+  if (cleanPayoutId.isEmpty) {
+    throw Exception('Missing farmer payout ID.');
+  }
+
+  const allowedStatuses = <String>{
+    'released',
+    'held',
+    'disputed',
   };
-  await supabase.from('farmer_payouts').update(update).eq('id', payoutId);
+  if (!allowedStatuses.contains(cleanStatus)) {
+    throw Exception('Choose a valid farmer payout status.');
+  }
+
+  // Use the existing SECURITY DEFINER admin RPC rather than a direct table
+  // update. This keeps payout mutations behind the database's admin check and
+  // avoids client-side RLS failures being mistaken for an expired session.
+  await supabase.rpc(
+    'admin_update_farmer_payout',
+    params: <String, dynamic>{
+      'p_payout_id': cleanPayoutId,
+      'p_payout_status': cleanStatus,
+      'p_payout_method': null,
+      'p_payout_reference':
+          cleanReference.isEmpty ? null : cleanReference,
+      'p_admin_note': 'Payout status updated from Flutter admin dashboard',
+    },
+  );
 }
 
 Map<String, double> marketplaceAmounts(Product product, int quantity) {
@@ -5282,6 +5494,35 @@ Future<List<Coupon>> fetchCoupons() async {
   }
 }
 
+String _normalizeAdminCouponDiscountType(dynamic value) {
+  final clean = value?.toString().trim().toLowerCase() ?? '';
+
+  switch (clean) {
+    case 'percent':
+    case 'percentage':
+    case 'percentage_off':
+    case 'percent_off':
+    case 'pct':
+    case '%':
+      return 'percent';
+
+    case 'fixed':
+    case 'amount':
+    case 'fixed_amount':
+    case 'fixed_value':
+    case 'flat':
+    case 'cash':
+    case 'jmd':
+    case '':
+      return 'fixed';
+
+    default:
+      // Legacy coupon rows were presented as fixed-dollar discounts unless
+      // they explicitly identified themselves as percentage discounts.
+      return 'fixed';
+  }
+}
+
 Future<void> createCoupon({
   required String code,
   required String discountType,
@@ -5290,14 +5531,32 @@ Future<void> createCoupon({
   required bool isActive,
 }) async {
   await requireAdminAccess();
+
+  final cleanCode = code.trim().toUpperCase();
+  final cleanType = _normalizeAdminCouponDiscountType(discountType);
+  final safeMinimum = minimumOrder ?? 0;
+
+  if (cleanCode.isEmpty) {
+    throw Exception('Coupon code is required.');
+  }
+  if (!discountValue.isFinite || discountValue <= 0) {
+    throw Exception('Discount value must be greater than zero.');
+  }
+  if (cleanType == 'percent' && discountValue > 100) {
+    throw Exception('Percentage discount cannot be greater than 100%.');
+  }
+  if (!safeMinimum.isFinite || safeMinimum < 0) {
+    throw Exception('Minimum order cannot be negative.');
+  }
+
   await supabase.rpc(
     'admin_upsert_coupon',
     params: {
       'p_coupon_id': null,
-      'p_code': code.trim().toUpperCase(),
-      'p_discount_type': discountType,
+      'p_code': cleanCode,
+      'p_discount_type': cleanType,
       'p_discount_value': discountValue,
-      'p_minimum_order': minimumOrder ?? 0,
+      'p_minimum_order': safeMinimum,
       'p_is_active': isActive,
       'p_starts_at': null,
       'p_ends_at': null,
@@ -5310,14 +5569,54 @@ Future<void> createCoupon({
 
 Future<void> updateCouponAvailability(String couponId, bool isActive) async {
   await requireAdminAccess();
+
+  final cleanCouponId = couponId.trim();
+  if (cleanCouponId.isEmpty) {
+    throw Exception('Missing coupon ID.');
+  }
+
+  // Read the existing values first and send a complete valid coupon mutation.
+  // Older coupon rows may contain legacy labels such as "amount" or
+  // "percentage"; normalizing them here prevents the admin RPC from rejecting
+  // a simple Active/Inactive toggle.
+  final existing = await supabase
+      .from('coupons')
+      .select(
+        'id, code, discount_type, discount_value, minimum_order, is_active',
+      )
+      .eq('id', cleanCouponId)
+      .maybeSingle();
+
+  if (existing == null) {
+    throw Exception('Coupon not found.');
+  }
+
+  final cleanCode = (existing['code'] ?? '').toString().trim().toUpperCase();
+  final cleanType =
+      _normalizeAdminCouponDiscountType(existing['discount_type']);
+  final discountValue =
+      double.tryParse((existing['discount_value'] ?? '').toString()) ?? 0;
+  final minimumOrder =
+      double.tryParse((existing['minimum_order'] ?? '').toString()) ?? 0;
+
+  if (cleanCode.isEmpty) {
+    throw Exception('Coupon code is missing.');
+  }
+  if (!discountValue.isFinite || discountValue < 0) {
+    throw Exception('Coupon discount value is invalid.');
+  }
+  if (cleanType == 'percent' && discountValue > 100) {
+    throw Exception('Percentage discount cannot be greater than 100%.');
+  }
+
   await supabase.rpc(
     'admin_upsert_coupon',
     params: {
-      'p_coupon_id': couponId,
-      'p_code': null,
-      'p_discount_type': null,
-      'p_discount_value': null,
-      'p_minimum_order': null,
+      'p_coupon_id': cleanCouponId,
+      'p_code': cleanCode,
+      'p_discount_type': cleanType,
+      'p_discount_value': discountValue,
+      'p_minimum_order': minimumOrder < 0 ? 0 : minimumOrder,
       'p_is_active': isActive,
       'p_starts_at': null,
       'p_ends_at': null,
@@ -6838,17 +7137,52 @@ Future<String> uploadAgricultureFeedImageToStorage(
   final timestamp = DateTime.now().millisecondsSinceEpoch;
   final safeName = _safeProductImageFileName(image.fileName);
   final path = 'agriculture-feed/$userId/$timestamp-$safeName';
+  final contentType = _contentTypeForImage(image);
 
-  await supabase.storage.from(productImageStorageBucket).uploadBinary(
-        path,
-        image.bytes,
-        fileOptions: FileOptions(
-          contentType: _contentTypeForImage(image),
-          upsert: true,
-        ),
+  try {
+    await supabase.storage.from(productImageStorageBucket).uploadBinary(
+          path,
+          image.bytes,
+          fileOptions: FileOptions(
+            contentType: contentType,
+            // The feed path includes a timestamp, so every upload is a new
+            // object. Normal INSERT permission is enough; Storage upsert would
+            // also require broader SELECT/UPDATE permissions on Android.
+            upsert: false,
+          ),
+        );
+
+    final publicUrl =
+        supabase.storage.from(productImageStorageBucket).getPublicUrl(path);
+    final cleanUrl = cleanHostedImageUrl(publicUrl);
+    if (cleanUrl == null) {
+      throw Exception('The uploaded feed image did not return a usable URL.');
+    }
+    return cleanUrl;
+  } catch (error) {
+    farmDebugLog('Agriculture feed image storage upload failed: $error');
+    final message = error.toString().toLowerCase();
+
+    if (message.contains('bucket') || message.contains('not found')) {
+      throw Exception(
+        'Feed image upload setup needs attention. Please check storage settings.',
       );
+    }
 
-  return supabase.storage.from(productImageStorageBucket).getPublicUrl(path);
+    if (message.contains('permission') ||
+        message.contains('policy') ||
+        message.contains('403') ||
+        message.contains('401') ||
+        message.contains('unauthorized')) {
+      throw Exception(
+        'Feed image upload permission needs attention. Please check admin storage settings.',
+      );
+    }
+
+    throw Exception(
+      'Could not upload feed image: ${friendlyAppError(error)}',
+    );
+  }
 }
 
 Future<AgricultureFeedUpdate> saveAgricultureFeedUpdate({

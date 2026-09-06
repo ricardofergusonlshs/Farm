@@ -166,6 +166,10 @@ List<HomeHeroSlide> _cleanHomeHeroSlides(List<HomeHeroSlide> slides) {
 final Set<String> _shownBrowserNotificationTags = <String>{};
 final ValueNotifier<String?> mealIngredientShopSearchRequest =
     ValueNotifier<String?>(null);
+final ValueNotifier<int?> mealIngredientReturnWeekday =
+    ValueNotifier<int?>(null);
+final ValueNotifier<List<Product>?> mealIngredientCartAddRequest =
+    ValueNotifier<List<Product>?>(null);
 final ValueNotifier<String?> harvestPulseShopRequest =
     ValueNotifier<String?>(null);
     final ValueNotifier<String?> harvestPulseFreshPickId =
@@ -3161,9 +3165,9 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
     return FutureBuilder<List<HomeHeroSlide>>(
       future: _slidesFuture,
       builder: (context, snapshot) {
-        // Do not flash the packaged/default hero photos while HPJ is still
-        // waiting for the uploaded/admin-selected images. Defaults remain a
-        // true fallback only after the remote lookup has completed.
+        // Keep the hero visually stable while waiting for the
+        // Admin-managed/uploaded images. Defaults are used only after the
+        // lookup finishes, never as a temporary loading photo.
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return ClipRRect(
@@ -3256,10 +3260,12 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
 
 class WeeklyMealIdeasScreen extends StatefulWidget {
   final VoidCallback? onShopTap;
+  final int? initialMealWeekday;
 
   const WeeklyMealIdeasScreen({
     super.key,
     this.onShopTap,
+    this.initialMealWeekday,
   });
 
   @override
@@ -3277,6 +3283,14 @@ class _WeeklyMealIdeasScreenState extends State<WeeklyMealIdeasScreen> {
         preferences.dietaryStyle == 'vegetarian' ||
         preferences.recommendationStyle == 'vegan') {
       _selectedFilter = 'Ital / Vegan';
+    }
+
+    final returnWeekday = widget.initialMealWeekday;
+    if (returnWeekday != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _openMeal(_mealForWeekday(returnWeekday));
+      });
     }
   }
 
@@ -3917,7 +3931,7 @@ class _DietaryBadge extends StatelessWidget {
   }
 }
 
-class _EliteMealDetailsSheet extends StatelessWidget {
+class _EliteMealDetailsSheet extends StatefulWidget {
   final _WeeklyMealIdea meal;
   final bool showShopAction;
   final VoidCallback onShopTap;
@@ -3927,6 +3941,175 @@ class _EliteMealDetailsSheet extends StatelessWidget {
     required this.showShopAction,
     required this.onShopTap,
   });
+
+  @override
+  State<_EliteMealDetailsSheet> createState() => _EliteMealDetailsSheetState();
+}
+
+class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
+  late Future<List<Product>> _productsFuture;
+  final Set<String> _selectedIngredients = <String>{};
+
+  _WeeklyMealIdea get meal => widget.meal;
+  bool get showShopAction => widget.showShopAction;
+
+  @override
+  void initState() {
+    super.initState();
+    _productsFuture = showShopAction
+        ? fetchProductsForCustomerUi(
+            forceRefresh: false,
+            timeout: const Duration(seconds: 8),
+          )
+        : Future<List<Product>>.value(const <Product>[]);
+  }
+
+  String _ingredientKey(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[_-]+'), ' ')
+        .replaceAll(RegExp(r'[^a-z0-9 ]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  Product? _matchingProduct(
+    String ingredient,
+    List<Product> products, {
+    bool requireAvailable = false,
+  }) {
+    final ingredientKey = _ingredientKey(ingredient);
+    if (ingredientKey.isEmpty) return null;
+
+    final candidates = products.where((product) {
+      final productKey = _ingredientKey(product.name);
+      if (productKey.isEmpty) return false;
+      if (requireAvailable && !product.canAddToCart) return false;
+      return productKey == ingredientKey ||
+          productKey.contains(ingredientKey) ||
+          ingredientKey.contains(productKey);
+    }).toList();
+
+    if (candidates.isEmpty) return null;
+
+    candidates.sort((a, b) {
+      final aExact = _ingredientKey(a.name) == ingredientKey;
+      final bExact = _ingredientKey(b.name) == ingredientKey;
+      if (aExact != bExact) return aExact ? -1 : 1;
+      if (a.canAddToCart != b.canAddToCart) {
+        return a.canAddToCart ? -1 : 1;
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return candidates.first;
+  }
+
+  List<Product> _availableIngredientProducts(List<Product> products) {
+    final result = <Product>[];
+    final seen = <String>{};
+
+    for (final ingredient in meal.freshIngredients) {
+      final product = _matchingProduct(
+        ingredient,
+        products,
+        requireAvailable: true,
+      );
+      if (product == null) continue;
+      final id = product.id.trim();
+      if (id.isEmpty || !seen.add(id)) continue;
+      result.add(product);
+    }
+
+    return result;
+  }
+
+  List<Product> _selectedProducts(List<Product> products) {
+    final result = <Product>[];
+    final seen = <String>{};
+
+    for (final ingredient in _selectedIngredients) {
+      final product = _matchingProduct(
+        ingredient,
+        products,
+        requireAvailable: true,
+      );
+      if (product == null) continue;
+      final id = product.id.trim();
+      if (id.isEmpty || !seen.add(id)) continue;
+      result.add(product);
+    }
+
+    return result;
+  }
+
+  void _openIngredientInShop(String ingredient) {
+    final query = ingredient.trim();
+    if (query.isEmpty) return;
+
+    mealIngredientShopSearchRequest.value = null;
+    mealIngredientShopSearchRequest.value = query;
+    mealIngredientReturnLabel.value = query;
+    mealIngredientReturnWeekday.value = meal.weekday;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Searching shop for $query...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    widget.onShopTap();
+  }
+
+  void _openAllFreshIngredientsInShop() {
+    mealIngredientShopSearchRequest.value = null;
+    mealIngredientReturnLabel.value = meal.name;
+    mealIngredientReturnWeekday.value = meal.weekday;
+    widget.onShopTap();
+  }
+
+  void _addSelectedToMyBox(List<Product> products) {
+    final selectedProducts = _selectedProducts(products);
+    if (selectedProducts.isEmpty) return;
+
+    mealIngredientCartAddRequest.value = null;
+    mealIngredientCartAddRequest.value = selectedProducts;
+
+    final count = selectedProducts.length;
+    setState(() => _selectedIngredients.clear());
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$count ${count == 1 ? 'ingredient was' : 'ingredients were'} added to My Box.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _selectAllAvailable(List<Product> products) {
+    final next = <String>{};
+
+    for (final ingredient in meal.freshIngredients) {
+      if (_matchingProduct(
+            ingredient,
+            products,
+            requireAvailable: true,
+          ) !=
+          null) {
+        next.add(ingredient);
+      }
+    }
+
+    setState(() {
+      _selectedIngredients
+        ..clear()
+        ..addAll(next);
+    });
+  }
 
   Widget _infoItem({
     required IconData icon,
@@ -3995,81 +4178,144 @@ class _EliteMealDetailsSheet extends StatelessWidget {
     );
   }
 
-  Widget _ingredientWrap(
-    List<String> ingredients, {
-    required bool pantry,
-    required BuildContext context,
-  }) {
+  Widget _pantryIngredientWrap(List<String> ingredients) {
     return Wrap(
       spacing: 7,
       runSpacing: 7,
       children: ingredients.map((ingredient) {
-        final canShopIngredient = !pantry && showShopAction;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+          decoration: BoxDecoration(
+            color: FarmColors.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: FarmColors.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.kitchen_outlined,
+                size: 13,
+                color: FarmColors.mutedText,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                ingredient,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _freshIngredientWrap(List<Product> products) {
+    return Wrap(
+      spacing: 7,
+      runSpacing: 7,
+      children: meal.freshIngredients.map((ingredient) {
+        final product = _matchingProduct(ingredient, products);
+        final available = product?.canAddToCart == true;
+        final selected = _selectedIngredients.contains(ingredient);
 
         return Material(
           color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: canShopIngredient
-                ? () {
-                    final query = ingredient.trim();
-                    if (query.isEmpty) return;
-
-                    mealIngredientShopSearchRequest.value = null;
-                    mealIngredientShopSearchRequest.value = query;
-                    mealIngredientReturnLabel.value = query;
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Searching shop for $query...'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-
-                    onShopTap();
-                  }
-                : null,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-              decoration: BoxDecoration(
-                color: pantry ? FarmColors.card : FarmColors.primarySoft,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: pantry
-                      ? FarmColors.line
-                      : FarmColors.green.withOpacity(0.16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: selected
+                  ? FarmColors.successSoft
+                  : available
+                      ? FarmColors.primarySoft
+                      : FarmColors.cardSoft,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: selected
+                    ? FarmColors.green.withOpacity(0.38)
+                    : available
+                        ? FarmColors.green.withOpacity(0.16)
+                        : FarmColors.line,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: available
+                      ? () {
+                          setState(() {
+                            if (selected) {
+                              _selectedIngredients.remove(ingredient);
+                            } else {
+                              _selectedIngredients.add(ingredient);
+                            }
+                          });
+                        }
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(9, 7, 4, 7),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          selected
+                              ? Icons.check_circle_rounded
+                              : available
+                                  ? Icons.add_circle_outline_rounded
+                                  : Icons.remove_circle_outline_rounded,
+                          size: 14,
+                          color: available
+                              ? FarmColors.green
+                              : FarmColors.mutedText,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          ingredient,
+                          style: TextStyle(
+                            color: available
+                                ? FarmColors.deepGreen
+                                : FarmColors.mutedText,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (!available) ...[
+                          const SizedBox(width: 5),
+                          const Text(
+                            'Unavailable',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    pantry
-                        ? Icons.kitchen_outlined
-                        : Icons.shopping_basket_outlined,
-                    size: 13,
-                    color: pantry ? FarmColors.mutedText : FarmColors.green,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    ingredient,
-                    style: TextStyle(
-                      color:
-                          pantry ? FarmColors.mutedText : FarmColors.deepGreen,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
+                if (showShopAction)
+                  Tooltip(
+                    message: 'Find $ingredient in Shop',
+                    child: InkResponse(
+                      radius: 20,
+                      onTap: () => _openIngredientInShop(ingredient),
+                      child: const Padding(
+                        padding: EdgeInsets.fromLTRB(4, 7, 9, 7),
+                        child: Icon(
+                          Icons.search_rounded,
+                          size: 14,
+                          color: FarmColors.green,
+                        ),
+                      ),
                     ),
                   ),
-                  if (canShopIngredient) ...[
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 12,
-                      color: FarmColors.green,
-                    ),
-                  ],
-                ],
-              ),
+              ],
             ),
           ),
         );
@@ -4248,86 +4494,134 @@ class _EliteMealDetailsSheet extends StatelessWidget {
                     }).toList(),
                   ),
                   const SizedBox(height: 20),
-                  _sectionTitle(
-                    'Fresh ingredients',
-                    'Produce and fresh items you may need for this meal.',
-                  ),
-                  const SizedBox(height: 10),
-                  _ingredientWrap(
-                    meal.freshIngredients,
-                    pantry: false,
-                    context: context,
-                  ),
-                  const SizedBox(height: 18),
-                  _sectionTitle(
-                    'Pantry check',
-                    'Optional items customers may already have at home.',
-                  ),
-                  const SizedBox(height: 10),
-                  _ingredientWrap(
-                    meal.pantryIngredients,
-                    pantry: true,
-                    context: context,
-                  ),
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: FarmColors.accentSoft,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: FarmColors.accent.withOpacity(0.24),
-                      ),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.info_outline_rounded,
-                          color: FarmColors.warning,
-                          size: 20,
-                        ),
-                        SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            'Meal and nutrition information is general guidance. Portions, ingredients, and preparation may be adjusted for your household.',
-                            style: TextStyle(
-                              color: FarmColors.warning,
-                              fontWeight: FontWeight.w800,
-                              height: 1.32,
+                  FutureBuilder<List<Product>>(
+                    future: _productsFuture,
+                    builder: (context, snapshot) {
+                      final products = snapshot.data ?? const <Product>[];
+                      final availableProducts =
+                          _availableIngredientProducts(products);
+                      final selectedProducts = _selectedProducts(products);
+                      final loading = snapshot.connectionState ==
+                              ConnectionState.waiting &&
+                          !snapshot.hasData;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _sectionTitle(
+                            'Fresh ingredients',
+                            showShopAction
+                                ? 'Select several to add to My Box, or use the search icon to find one in Shop.'
+                                : 'Produce and fresh items you may need for this meal.',
+                          ),
+                          if (showShopAction) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    loading
+                                        ? 'Checking what HPJ has available...'
+                                        : '${availableProducts.length} of ${meal.freshIngredients.length} available through HPJ',
+                                    style: const TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: loading || availableProducts.isEmpty
+                                      ? null
+                                      : () => _selectAllAvailable(products),
+                                  child: const Text('Select all available'),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 6),
+                          if (loading)
+                            const LinearProgressIndicator(minHeight: 2)
+                          else
+                            _freshIngredientWrap(products),
+                          const SizedBox(height: 18),
+                          _sectionTitle(
+                            'Pantry check',
+                            'Optional items customers may already have at home.',
+                          ),
+                          const SizedBox(height: 10),
+                          _pantryIngredientWrap(meal.pantryIngredients),
+                          const SizedBox(height: 20),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: FarmColors.accentSoft,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: FarmColors.accent.withOpacity(0.24),
+                              ),
+                            ),
+                            child: const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  Icons.info_outline_rounded,
+                                  color: FarmColors.warning,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 9),
+                                Expanded(
+                                  child: Text(
+                                    'Meal and nutrition information is general guidance. Portions, ingredients, and preparation may be adjusted for your household.',
+                                    style: TextStyle(
+                                      color: FarmColors.warning,
+                                      fontWeight: FontWeight.w800,
+                                      height: 1.32,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: showShopAction
-                          ? onShopTap
-                          : () => Navigator.of(context).pop(),
-                      icon: Icon(
-                        showShopAction
-                            ? Icons.shopping_basket_rounded
-                            : Icons.check_rounded,
-                      ),
-                      label: Text(
-                        showShopAction ? 'Shop Fresh Ingredients' : 'Done',
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: FarmColors.green,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: showShopAction
+                                  ? selectedProducts.isNotEmpty
+                                      ? () => _addSelectedToMyBox(products)
+                                      : _openAllFreshIngredientsInShop
+                                  : () => Navigator.of(context).pop(),
+                              icon: Icon(
+                                showShopAction
+                                    ? selectedProducts.isNotEmpty
+                                        ? Icons.add_shopping_cart_rounded
+                                        : Icons.shopping_basket_rounded
+                                    : Icons.check_rounded,
+                              ),
+                              label: Text(
+                                showShopAction
+                                    ? selectedProducts.isNotEmpty
+                                        ? 'Add ${selectedProducts.length} Selected to My Box'
+                                        : 'Shop Fresh Ingredients'
+                                    : 'Done',
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: FarmColors.green,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(50),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -6994,6 +7288,125 @@ class _HPJHomeCategoryCard extends StatelessWidget {
   }
 }
 
+
+class HpjSponsorCampaign {
+  final String id;
+  final String sponsorName;
+  final String headline;
+  final String description;
+  final String ctaLabel;
+  final String ctaType;
+  final String ctaUrl;
+  final String targetFarmerId;
+  final String placement;
+  final String logoUrl;
+  final String imageUrl;
+  final bool isPublished;
+  final bool isArchived;
+  final int priority;
+  final DateTime? startsAt;
+  final DateTime? endsAt;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const HpjSponsorCampaign({
+    required this.id,
+    required this.sponsorName,
+    required this.headline,
+    required this.description,
+    required this.ctaLabel,
+    required this.ctaType,
+    required this.ctaUrl,
+    this.targetFarmerId = '',
+    required this.placement,
+    required this.logoUrl,
+    required this.imageUrl,
+    required this.isPublished,
+    required this.isArchived,
+    required this.priority,
+    this.startsAt,
+    this.endsAt,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory HpjSponsorCampaign.fromSupabase(Map<String, dynamic> data) {
+    DateTime? parseDate(dynamic value) {
+      final text = value?.toString().trim() ?? '';
+      return text.isEmpty ? null : DateTime.tryParse(text);
+    }
+
+    return HpjSponsorCampaign(
+      id: (data['id'] ?? '').toString().trim(),
+      sponsorName: (data['sponsor_name'] ?? '').toString().trim(),
+      headline: (data['headline'] ?? '').toString().trim(),
+      description: (data['description'] ?? '').toString().trim(),
+      ctaLabel: (data['cta_label'] ?? 'Learn More').toString().trim(),
+      ctaType: (data['cta_type'] ?? 'shop').toString().trim().toLowerCase(),
+      ctaUrl: (data['cta_url'] ?? '').toString().trim(),
+      targetFarmerId: (data['target_farmer_id'] ?? '').toString().trim(),
+      placement:
+          (data['placement'] ?? 'customer_home').toString().trim().toLowerCase(),
+      logoUrl: (data['logo_url'] ?? '').toString().trim(),
+      imageUrl: (data['image_url'] ?? '').toString().trim(),
+      isPublished: data['is_published'] == true,
+      isArchived: data['is_archived'] == true,
+      priority: int.tryParse((data['priority'] ?? 100).toString()) ?? 100,
+      startsAt: parseDate(data['starts_at']),
+      endsAt: parseDate(data['ends_at']),
+      createdAt: parseDate(data['created_at']),
+      updatedAt: parseDate(data['updated_at']),
+    );
+  }
+
+  bool get isActiveNow {
+    if (!isPublished || isArchived) return false;
+    final now = DateTime.now();
+    if (startsAt != null && startsAt!.isAfter(now)) return false;
+    if (endsAt != null && endsAt!.isBefore(now)) return false;
+    return true;
+  }
+}
+
+bool _isSafeSponsorExternalUrl(String value) {
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null || uri.host.trim().isEmpty) return false;
+  return uri.scheme.toLowerCase() == 'https' ||
+      uri.scheme.toLowerCase() == 'http';
+}
+
+Future<HpjSponsorCampaign?> fetchActiveCustomerHomeSponsor() async {
+  try {
+    final response = await supabase
+        .from('hpj_sponsor_campaigns')
+        .select(
+          'id, sponsor_name, headline, description, cta_label, cta_type, cta_url, target_farmer_id, placement, logo_url, image_url, is_published, is_archived, priority, starts_at, ends_at, created_at, updated_at',
+        )
+        .eq('placement', 'customer_home')
+        .eq('is_published', true)
+        .eq('is_archived', false)
+        .order('priority', ascending: true)
+        .order('updated_at', ascending: false)
+        .limit(10);
+
+    final campaigns = (response as List)
+        .map(
+          (item) => HpjSponsorCampaign.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .where((campaign) => campaign.isActiveNow)
+        .toList();
+
+    return campaigns.isEmpty ? null : campaigns.first;
+  } catch (error) {
+    // Sponsor content is optional. HPJ Home must remain usable if the
+    // sponsor table has not been installed or is temporarily unavailable.
+    farmDebugLog('Customer sponsor lookup skipped: $error');
+    return null;
+  }
+}
+
 class HomeScreen extends StatefulWidget {
   final VoidCallback onShopTap;
   final ValueChanged<String> onCategoryTap;
@@ -7047,6 +7460,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<LoyaltySummary> loyaltySummaryFuture;
   late Future<List<HomeHeroSlide>> homeHeroSlidesFuture;
   late Future<List<FarmOrder>> homeOrdersFuture;
+  late Future<HpjSponsorCampaign?> sponsoredCampaignFuture;
   List<Product> cachedHomeProducts = const <Product>[];
   List<Product> homeRecentlyViewedProducts = const <Product>[];
   final TextEditingController homeSearchController = TextEditingController();
@@ -7063,6 +7477,7 @@ class _HomeScreenState extends State<HomeScreen> {
     homeProductsFuture = loadHomeProducts();
     buyAgainProductsFuture = fetchBuyAgainProductsForCustomerUi();
     homeOrdersFuture = fetchOrders();
+    sponsoredCampaignFuture = fetchActiveCustomerHomeSponsor();
     unawaited(_loadHomeRecentlyViewed());
     unawaited(_loadUserPreferences());
     customerProfileFuture = fetchCurrentCustomerProfile();
@@ -7166,6 +7581,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final nextLoyaltySummary = fetchLoyaltySummary();
 
+    final nextSponsor = fetchActiveCustomerHomeSponsor();
+
     setState(() {
       agricultureFeedRefreshKey++;
       homeOrdersFuture = nextHomeOrders;
@@ -7173,6 +7590,7 @@ class _HomeScreenState extends State<HomeScreen> {
       buyAgainProductsFuture = nextBuyAgainProducts;
       customerProfileFuture = nextCustomerProfile;
       loyaltySummaryFuture = nextLoyaltySummary;
+      sponsoredCampaignFuture = nextSponsor;
     });
 
     await Future.wait<dynamic>([
@@ -7181,6 +7599,7 @@ class _HomeScreenState extends State<HomeScreen> {
       nextBuyAgainProducts,
       nextCustomerProfile,
       nextLoyaltySummary,
+      nextSponsor,
     ]);
 
     await Future.wait<void>([
@@ -7366,31 +7785,68 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Map<String, String>? get _activeSponsoredCampaign {
-    return {
-      'eyebrow': 'SPONSORED',
-      'title': 'Featured Harvest • St. Elizabeth',
-      'subtitle': 'Fresh local picks selected for this week.',
-      'cta': 'Explore',
-    };
+  Future<void> _openSponsorCampaign(
+    HpjSponsorCampaign campaign,
+  ) async {
+    if (campaign.ctaType == 'farm') {
+      final farmerId = campaign.targetFarmerId.trim();
+      if (farmerId.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This featured farm is not available right now.'),
+          ),
+        );
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PublicFarmProfileScreen(
+            farmerId: farmerId,
+            sourceWorkspace: 'customer',
+            onAddProduct: widget.onAddToCart,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (campaign.ctaType == 'external' &&
+        _isSafeSponsorExternalUrl(campaign.ctaUrl)) {
+      final opened = await openExternalShareUrl(campaign.ctaUrl);
+      if (opened || !mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the sponsor link.'),
+        ),
+      );
+      return;
+    }
+
+    widget.onShopTap();
   }
 
   Widget _sponsoredHomeCard(
-    Map<String, String> campaign,
+    HpjSponsorCampaign campaign,
   ) {
+    final mediaUrl = campaign.imageUrl.trim().isNotEmpty
+        ? campaign.imageUrl.trim()
+        : campaign.logoUrl.trim();
+    final hasMedia = _isSafeSponsorExternalUrl(mediaUrl);
+    final sponsorLine = campaign.description.isEmpty
+        ? campaign.sponsorName
+        : '${campaign.sponsorName} • ${campaign.description}';
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: widget.onShopTap,
+        onTap: () => unawaited(_openSponsorCampaign(campaign)),
         borderRadius: BorderRadius.circular(18),
         child: Ink(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            14,
-            14,
-            14,
-          ),
+          padding: const EdgeInsets.fromLTRB(14, 13, 13, 13),
           decoration: BoxDecoration(
             color: const Color(0xFFFFFCF5),
             borderRadius: BorderRadius.circular(18),
@@ -7409,67 +7865,76 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // ============================================
-              // GOLD ACCENT
-              // ============================================
               Container(
                 width: 3,
-                height: 66,
+                height: 68,
                 decoration: BoxDecoration(
                   color: const Color(0xFFC58A2B),
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
-
-              const SizedBox(width: 13),
-
-              // ============================================
-              // CONTENT
-              // ============================================
+              if (hasMedia) ...[
+                const SizedBox(width: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(13),
+                  child: Image.network(
+                    mediaUrl,
+                    width: 58,
+                    height: 58,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5EAD4),
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: Text(
-                        campaign['eyebrow'] ?? 'SPONSORED',
-                        style: const TextStyle(
-                          color: Color(0xFF9A681C),
-                          fontSize: 8.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.65,
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5EAD4),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: const Text(
+                            'SPONSORED',
+                            style: TextStyle(
+                              color: Color(0xFF9A681C),
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.65,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 6),
                     Text(
-                      campaign['title'] ?? '',
+                      campaign.headline,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: FarmColors.ink,
-                        fontSize: 15.5,
+                        fontSize: 15.2,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: -0.25,
+                        letterSpacing: -0.2,
                       ),
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      campaign['subtitle'] ?? '',
+                      sponsorLine,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: FarmColors.mutedText,
-                        fontSize: 11.2,
+                        fontSize: 10.7,
                         fontWeight: FontWeight.w600,
                         height: 1.25,
                       ),
@@ -7477,20 +7942,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-
-              const SizedBox(width: 12),
-
-              // ============================================
-              // CTA
-              // ============================================
+              const SizedBox(width: 9),
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    campaign['cta'] ?? 'Explore',
+                    campaign.ctaLabel.isEmpty ? 'Learn More' : campaign.ctaLabel,
                     style: const TextStyle(
                       color: FarmColors.green,
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -8463,12 +8923,11 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.onShopTap();
         return;
       case 'customer_care':
+        final destination = isLoggedIn
+            ? SupportScreen(initialSubject: update.title)
+            : const ContactHpjScreen();
         await Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => SupportScreen(
-              initialSubject: update.title,
-            ),
-          ),
+          MaterialPageRoute<void>(builder: (_) => destination),
         );
         return;
       case 'external':
@@ -8689,7 +9148,6 @@ class _HomeScreenState extends State<HomeScreen> {
 // Null = no campaign, so section stays hidden.
 // =====================================================
 
-              final sponsoredCampaign = _activeSponsoredCampaign;
               final hasActiveHomeSearch =
                   homeSearchQuery.trim().isNotEmpty || _hasActiveHomeFilters;
               final homeSearchResults = hasActiveHomeSearch
@@ -8724,10 +9182,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         FutureBuilder<List<HomeHeroSlide>>(
                           future: homeHeroSlidesFuture,
                           builder: (context, heroSnapshot) {
-                            // Keep the customer home visually stable while
-                            // uploaded hero images are loading. Showing the
-                            // packaged defaults here caused a visible photo
-                            // swap just before the uploaded image appeared.
+                            // Do not show packaged/default photos while the
+                            // Admin-managed hero images are still loading.
+                            // That caused a visible photo swap on Customer Home:
+                            // fallback photo -> uploaded/admin photo.
                             if (heroSnapshot.connectionState ==
                                     ConnectionState.waiting &&
                                 !heroSnapshot.hasData) {
@@ -8749,6 +9207,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               );
                             }
 
+                            // Packaged images remain a true fallback only after
+                            // the remote lookup has completed and returned no
+                            // usable Admin hero images.
                             final heroSlides = _cleanHomeHeroSlides(
                               heroSnapshot.data ?? const <HomeHeroSlide>[],
                             );
@@ -8877,17 +9338,24 @@ class _HomeScreenState extends State<HomeScreen> {
                           // =====================================================
 // SPONSORED
 // =====================================================
-                          if (userPreferences.showPromotions &&
-                              sponsoredCampaign != null) ...[
-                            const SizedBox(height: 22),
+                          if (userPreferences.showPromotions)
+                            FutureBuilder<HpjSponsorCampaign?>(
+                              future: sponsoredCampaignFuture,
+                              builder: (context, sponsorSnapshot) {
+                                final campaign = sponsorSnapshot.data;
+                                if (campaign == null) {
+                                  return const SizedBox.shrink();
+                                }
 
-                            _sponsoredHomeCard(
-                              sponsoredCampaign,
+                                return Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 22,
+                                    bottom: 18,
+                                  ),
+                                  child: _sponsoredHomeCard(campaign),
+                                );
+                              },
                             ),
-
-                            // Space before Fresh Products
-                            const SizedBox(height: 18),
-                          ],
                           SectionHeader(
                             title: 'Fresh Products',
                             subtitle: 'Fresh items available now',
@@ -10002,15 +10470,19 @@ Widget _harvestPulseShopBanner(int itemCount) {
                   icon: const Icon(Icons.arrow_back_rounded, size: 17),
                   label: const Text('Back to meal'),
                   onPressed: () {
+                    final returnWeekday = mealIngredientReturnWeekday.value;
                     mealIngredientReturnLabel.value = null;
                     mealIngredientShopSearchRequest.value = null;
+                    mealIngredientReturnWeekday.value = null;
 
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => WeeklyMealIdeasScreen(
-                          onShopTap: () {
-                            Navigator.of(context).pop();
-                          },
+                          initialMealWeekday: returnWeekday,
+                          // The restored meal route sits directly above Shop.
+                          // _openMeal() already pops this route before returning
+                          // to Shop, so no second Navigator.pop is needed here.
+                          onShopTap: () {},
                         ),
                       ),
                     );
@@ -11624,6 +12096,8 @@ class FarmBoxScreen extends StatefulWidget {
   final VoidCallback onOrderPlaced;
   final VoidCallback onShopTap;
   final VoidCallback? onInventoryChanged;
+  final ValueChanged<List<CartLine>>? onSavedCartSynced;
+  final int refreshVersion;
 
   const FarmBoxScreen({
     super.key,
@@ -11633,6 +12107,8 @@ class FarmBoxScreen extends StatefulWidget {
     required this.onOrderPlaced,
     required this.onShopTap,
     this.onInventoryChanged,
+    this.onSavedCartSynced,
+    this.refreshVersion = 0,
   });
 
   @override
@@ -11655,23 +12131,39 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
   @override
   void didUpdateWidget(covariant FarmBoxScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.cart.isNotEmpty) {
+
+    if (!isLoggedIn) {
       savedCartLines = null;
       return;
     }
-    if (oldWidget.cart.length != widget.cart.length && widget.cart.isEmpty) {
+
+    if (widget.refreshVersion != oldWidget.refreshVersion) {
+      _loadSavedCartIfNeeded(force: true);
+      return;
+    }
+
+    if (savedCartLines == null) {
       _loadSavedCartIfNeeded();
     }
   }
 
-  Future<void> _loadSavedCartIfNeeded() async {
-    if (!isLoggedIn || widget.cart.isNotEmpty || loadingSavedCart) return;
+  Future<void> _loadSavedCartIfNeeded({bool force = false}) async {
+    if (!isLoggedIn || loadingSavedCart) return;
+    if (!force && savedCartLines != null) return;
+
+    final loadUserId = supabase.auth.currentUser?.id.trim() ?? '';
+    if (loadUserId.isEmpty) return;
 
     setState(() => loadingSavedCart = true);
     try {
-      final lines = await fetchSavedCartLinesForCurrentUser();
-      if (!mounted || widget.cart.isNotEmpty) return;
+      final lines = await fetchSavedCartLinesForCurrentUser(
+        throwOnError: true,
+      );
+      final currentUserId = supabase.auth.currentUser?.id.trim() ?? '';
+      if (!mounted || currentUserId != loadUserId) return;
+
       setState(() => savedCartLines = lines);
+      widget.onSavedCartSynced?.call(lines);
     } catch (error) {
       farmDebugLog('Saved farm box restore skipped: $error');
     } finally {
@@ -11681,7 +12173,7 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
 
   void onAddToCart(Product product) {
     widget.onAddToCart(product);
-    if (savedCartLines != null || widget.cart.isEmpty) {
+    if (isLoggedIn && savedCartLines != null) {
       _adjustSavedLine(product, 1);
     }
     Future.microtask(() => saveCartItemForCurrentUser(product));
@@ -11689,7 +12181,7 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
 
   void onRemoveFromCart(Product product) {
     widget.onRemoveFromCart(product);
-    if (savedCartLines != null || widget.cart.isEmpty) {
+    if (isLoggedIn && savedCartLines != null) {
       _adjustSavedLine(product, -1);
     }
     Future.microtask(() => removeCartItemForCurrentUser(product));
@@ -11725,7 +12217,7 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
 
   Map<String, CartLine> get groupedCart {
     final restoredLines = savedCartLines;
-    if (widget.cart.isEmpty && restoredLines != null) {
+    if (isLoggedIn && restoredLines != null) {
       return <String, CartLine>{
         for (final line in restoredLines)
           if (line.product.id.trim().isNotEmpty && line.quantity > 0)
@@ -12803,7 +13295,7 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
     final lines = groupedCart.values.toList();
     final hasItems = lines.isNotEmpty;
 
-    if (loadingSavedCart && widget.cart.isEmpty && savedCartLines == null) {
+    if (isLoggedIn && loadingSavedCart && savedCartLines == null) {
       return const FarmPage(
         child: Center(child: CircularProgressIndicator()),
       );
@@ -12812,8 +13304,10 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
     return FarmPage(
       child: Stack(
         children: [
-          ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
+          RefreshIndicator(
+            onRefresh: () => _loadSavedCartIfNeeded(force: true),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
               18,
               18,
@@ -12834,6 +13328,7 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
                 const SizedBox(height: 18),
               ],
             ],
+          ),
           ),
           if (hasItems)
             Positioned(
@@ -13860,6 +14355,13 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
 
     try {
+      final companySettings = await fetchHpjCompanySettings();
+      final receiptCompanyLine = <String>[
+        companySettings.address.trim(),
+        if (companySettings.supportPhone.trim().isNotEmpty)
+          'Tel: ${companySettings.supportPhone.trim()}',
+      ].where((value) => value.isNotEmpty).join(' | ');
+
       final pdf = pw.Document();
       String formatReceiptDate(String rawValue) {
         final cleanValue = rawValue.trim();
@@ -14055,7 +14557,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                             ),
                             pw.SizedBox(height: 5),
                             pw.Text(
-                              'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
+                              receiptCompanyLine,
                               style: pw.TextStyle(
                                 fontSize: 10.5,
                                 color: PdfColor.fromInt(0xFF4B5450),
@@ -15838,7 +16340,7 @@ class _SupportScreenState extends State<SupportScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.initialSubject.trim().isNotEmpty) {
+    if (isLoggedIn && widget.initialSubject.trim().isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || autoOpenedComposer) return;
         autoOpenedComposer = true;
@@ -16045,6 +16547,12 @@ class _SupportScreenState extends State<SupportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Private HPJ chat belongs to an authenticated account. Guests use the
+    // public Call / Email / WhatsApp contact screen instead.
+    if (!isLoggedIn) {
+      return const ContactHpjScreen();
+    }
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
@@ -19483,12 +19991,7 @@ class OrderSuccessScreen extends StatelessWidget {
             PrimaryFarmButton(
               label: 'View My Orders',
               onPressed: () {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const MainNavigation(initialIndex: 3),
-                  ),
-                  (route) => false,
-                );
+                Navigator.of(context).popUntil((route) => route.isFirst);
               },
             ),
             const SizedBox(height: 12),
@@ -19905,8 +20408,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     HpjPrivateMutationLease? mutationLease;
-    String? placedOrderId;
-    double? placedOrderTotal;
 
     try {
       mutationLease = acquireHpjPrivateMutation(
@@ -20042,12 +20543,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         total = (secureSubtotal + deliveryFee).toDouble();
       }
 
-      // From this point forward the server has returned a valid order ID.
-      // Keep that success boundary so later follow-up failures can never be
-      // reported to the customer as though the order itself failed.
-      placedOrderId = orderId;
-      placedOrderTotal = total;
-
       final orderMetadata = <String, dynamic>{
         'fulfillment_type': fulfillmentType,
         'delivery_address': fulfillmentType == 'delivery' ? address : null,
@@ -20075,101 +20570,68 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       mutationLease.ensureCurrent();
 
-      // The secure checkout RPC has already created the order at this point.
-      // Everything below is post-checkout follow-up and must not make an
-      // already-created order appear to have failed to the customer.
-      try {
-        await ensureStockReducedAfterCheckout(
-          orderId: orderId,
-          checkoutLines: secureQuote.lines,
-        );
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout stock sync skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+      await ensureStockReducedAfterCheckout(
+        orderId: orderId,
+        checkoutLines: secureQuote.lines,
+      );
 
       mutationLease.ensureCurrent();
 
-      try {
-        await createOrderConfirmationSupport(
-          orderId: orderId,
-          customerName: name,
-          customerPhone: phone,
-          customerEmail: signedInUser.email,
-          total: total,
-        );
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout support confirmation skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+      await createOrderConfirmationSupport(
+        orderId: orderId,
+        customerName: name,
+        customerPhone: phone,
+        customerEmail: signedInUser.email,
+        total: total,
+      );
 
       mutationLease.ensureCurrent();
 
-      try {
-        await createFarmNotification(
-          title: 'Order placed',
-          message: selectedPaymentMethod == 'bank_transfer'
-              ? 'Order #${shortIdLabel(orderId)} was received. Please complete your bank transfer of ${formatJmd(total)} and keep your reference number.'
-              : 'Order #${shortIdLabel(orderId)} was received by The Harvest Place Ja.',
-          type: 'order',
-          userId: signedInUser.id,
-          userEmail: signedInUser.email,
-          orderId: orderId,
-          actionType: 'order',
-          actionId: orderId,
-          dedupeKey: 'customer-order-created:$orderId',
-        );
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout customer notification skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+      await createFarmNotification(
+        title: 'Order placed',
+        message: selectedPaymentMethod == 'bank_transfer'
+            ? 'Order #${shortIdLabel(orderId)} was received. Please complete your bank transfer of ${formatJmd(total)} and keep your reference number.'
+            : 'Order #${shortIdLabel(orderId)} was received by The Harvest Place Ja.',
+        type: 'order',
+        userId: signedInUser.id,
+        userEmail: signedInUser.email,
+        orderId: orderId,
+        actionType: 'order',
+        actionId: orderId,
+        dedupeKey: 'customer-order-created:$orderId',
+      );
 
       mutationLease.ensureCurrent();
 
-      try {
-        await createAdminNotification(
-          title: 'New order received',
-          message:
-              '$name placed order #${shortIdLabel(orderId)} for ${formatJmd(total)}.',
-          type: 'admin',
-          orderId: orderId,
-          actionType: 'admin_customer_order',
-          actionId: orderId,
-          dedupeKey: 'admin-order-created:$orderId',
-        );
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout admin notification skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+      await createAdminNotification(
+        title: 'New order received',
+        message:
+            '$name placed order #${shortIdLabel(orderId)} for ${formatJmd(total)}.',
+        type: 'admin',
+        orderId: orderId,
+        actionType: 'admin_customer_order',
+        actionId: orderId,
+        dedupeKey: 'admin-order-created:$orderId',
+      );
 
       mutationLease.ensureCurrent();
 
       if (selectedPaymentMethod == 'bank_transfer') {
-        try {
-          await createAdminNotification(
-            title: 'Bank transfer to verify',
-            message:
-                'Order #${shortIdLabel(orderId)} is awaiting bank transfer verification. Reference: ${bankReference ?? 'not provided'}.',
-            type: 'payment',
-            orderId: orderId,
-            actionType: 'admin_customer_order',
-            actionId: orderId,
-            dedupeKey: 'admin-bank-transfer:$orderId',
-          );
-        } catch (error, stackTrace) {
-          farmDebugLog('Post-checkout bank-transfer notification skipped: $error');
-          farmDebugLog('$stackTrace');
-        }
+        await createAdminNotification(
+          title: 'Bank transfer to verify',
+          message:
+              'Order #${shortIdLabel(orderId)} is awaiting bank transfer verification. Reference: ${bankReference ?? 'not provided'}.',
+          type: 'payment',
+          orderId: orderId,
+          actionType: 'admin_customer_order',
+          actionId: orderId,
+          dedupeKey: 'admin-bank-transfer:$orderId',
+        );
 
         mutationLease.ensureCurrent();
       }
 
-      try {
-        await notifyAdminsAboutLowStockAfterCheckout(secureQuote.lines);
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout low-stock notification skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+      await notifyAdminsAboutLowStockAfterCheckout(secureQuote.lines);
 
       mutationLease.ensureCurrent();
 
@@ -20177,18 +20639,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ? orderId.substring(0, 6).toUpperCase()
           : orderId.toUpperCase();
 
-      try {
-        showBrowserNotification(
-          title: 'Order placed',
-          body:
-              'Your order #$orderShortId from The Harvest Place Ja was sent to the farm.',
-          orderId: orderId,
-          type: 'order',
-        );
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout browser notification skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+      showBrowserNotification(
+        title: 'Order placed',
+        body:
+            'Your order #$orderShortId from The Harvest Place Ja was sent to the farm.',
+        orderId: orderId,
+        type: 'order',
+      );
 
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
@@ -20197,26 +20654,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       mutationLease.ensureCurrent();
 
-      try {
-        await _saveSmartCheckoutDefaults();
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout preference save skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+      await _saveSmartCheckoutDefaults();
 
       mutationLease.ensureCurrent();
 
-      // Clear the visible My Box immediately.
+// Clear the visible My Box immediately.
       widget.onOrderPlaced();
 
-      // Clear the saved Supabase cart. A cart-cleanup failure must not make an
-      // already-created order appear to have failed.
-      try {
-        await clearSavedCartForCurrentUser();
-      } catch (error, stackTrace) {
-        farmDebugLog('Post-checkout saved-cart cleanup skipped: $error');
-        farmDebugLog('$stackTrace');
-      }
+// Clear the saved Supabase cart.
+      await clearSavedCartForCurrentUser();
 
       mutationLease.ensureCurrent();
 
@@ -20231,47 +20677,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
       );
-    } catch (error, stackTrace) {
+    } catch (error) {
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
       widget.onInventoryChanged?.call();
-
-      final confirmedOrderId = placedOrderId?.trim() ?? '';
-      if (confirmedOrderId.isNotEmpty) {
-        farmDebugLog(
-          'Post-checkout follow-up interrupted after order creation: $error',
-        );
-        farmDebugLog('$stackTrace');
-
-        if (!mounted) return;
-
-        final currentUser = supabase.auth.currentUser;
-        final sameCheckoutUser = currentUser != null &&
-            currentUser.id.trim() == checkoutBoundary.userId;
-
-        if (sameCheckoutUser) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OrderSuccessScreen(
-                orderId: confirmedOrderId,
-                total: placedOrderTotal ?? widget.subtotal,
-              ),
-            ),
-          );
-          return;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Your order was submitted before your session changed. Sign in again to view it in My Orders.',
-            ),
-          ),
-        );
-        return;
-      }
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Checkout failed: ${friendlyAppError(error)}')),
@@ -21701,12 +22110,19 @@ class AboutHpjScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          AppConfig.businessLocation,
-                          style: const TextStyle(
-                            color: FarmColors.ink,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        child: FutureBuilder<HpjCompanySettings>(
+                          future: fetchHpjCompanySettings(),
+                          builder: (context, snapshot) {
+                            final settings =
+                                snapshot.data ?? HpjCompanySettings.fallback;
+                            return Text(
+                              settings.address,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -21818,28 +22234,65 @@ class ContactHpjScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _openWhatsApp(BuildContext context) async {
+  Future<void> _openWhatsApp(
+    BuildContext context,
+    HpjCompanySettings settings,
+  ) async {
+    final number = settings.whatsappDigits;
+    if (number.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('HPJ WhatsApp is not available right now.'),
+        ),
+      );
+      return;
+    }
+
     final message = Uri.encodeComponent(
-      'Hello The Harvest Place Ja, I need help with my HPJ account.',
+      'Hello The Harvest Place Ja, I need help with HPJ.',
     );
     await _launch(
       context,
-      'https://wa.me/${AppConfig.supportWhatsAppNumber}?text=$message',
+      'https://wa.me/$number?text=$message',
       'WhatsApp could not be opened on this device.',
     );
   }
 
-  Future<void> _callHpj(BuildContext context) async {
+  Future<void> _callHpj(
+    BuildContext context,
+    HpjCompanySettings settings,
+  ) async {
+    final phone = settings.phoneDial.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('HPJ phone support is not available right now.'),
+        ),
+      );
+      return;
+    }
+
     await _launch(
       context,
-      'tel:${AppConfig.supportPhoneDial}',
+      'tel:$phone',
       'Calling is not available on this device.',
     );
   }
 
-  Future<void> _emailHpj(BuildContext context) async {
-    final email = AppConfig.supportEmail.trim();
-    if (email.isEmpty) return;
+  Future<void> _emailHpj(
+    BuildContext context,
+    HpjCompanySettings settings,
+  ) async {
+    final email = settings.supportEmail.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('HPJ email support is not available right now.'),
+        ),
+      );
+      return;
+    }
+
     final subject = Uri.encodeComponent('HPJ support request');
     await _launch(
       context,
@@ -21850,7 +22303,7 @@ class ContactHpjScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasEmail = AppConfig.supportEmail.trim().isNotEmpty;
+    final signedIn = isLoggedIn;
 
     return Scaffold(
       backgroundColor: FarmColors.background,
@@ -21860,149 +22313,170 @@ class ContactHpjScreen extends StatelessWidget {
         backgroundColor: FarmColors.background,
       ),
       body: FarmPage(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: FarmColors.primary,
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: FarmColors.primary.withOpacity(0.16),
-                    blurRadius: 22,
-                    offset: const Offset(0, 9),
-                  ),
-                ],
-              ),
-              child: const Row(
-                children: [
-                  CircleAvatar(
-                    radius: 27,
-                    backgroundColor: Color(0x33FFFFFF),
-                    child: Icon(
-                      Icons.support_agent_rounded,
-                      color: Colors.white,
-                      size: 29,
-                    ),
-                  ),
-                  SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Need help?',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Chat with HPJ Customer Care or choose another contact option.',
-                          style: TextStyle(
-                            color: Color(0xFFE4F0E8),
-                            fontSize: 12.4,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            PrimaryFarmButton(
-              label: 'Chat with Customer Care',
-              icon: Icons.chat_bubble_outline_rounded,
-              onPressed: () => _open(
-                context,
-                const SupportScreen(initialSubject: 'Customer care'),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Your in-app messages and HPJ replies stay saved to your account.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 11.2,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 18),
-            const SectionHeader(
-              title: 'Other ways to reach us',
-              subtitle: 'Choose the contact method that works best for you.',
-            ),
-            const SizedBox(height: 10),
-            _HpjContactMethodCard(
-              icon: Icons.chat_rounded,
-              title: 'WhatsApp HPJ',
-              subtitle: AppConfig.supportPhoneDisplay,
-              onTap: () => _openWhatsApp(context),
-            ),
-            const SizedBox(height: 10),
-            _HpjContactMethodCard(
-              icon: Icons.call_outlined,
-              title: 'Call HPJ',
-              subtitle: AppConfig.supportPhoneDisplay,
-              onTap: () => _callHpj(context),
-            ),
-            if (hasEmail) ...[
-              const SizedBox(height: 10),
-              _HpjContactMethodCard(
-                icon: Icons.email_outlined,
-                title: 'Email HPJ',
-                subtitle: AppConfig.supportEmail,
-                onTap: () => _emailHpj(context),
-              ),
-            ],
-            const SizedBox(height: 14),
-            FarmCard(
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.location_on_outlined,
+        child: FutureBuilder<HpjCompanySettings>(
+          future: fetchHpjCompanySettings(),
+          builder: (context, snapshot) {
+            final settings = snapshot.data ?? HpjCompanySettings.fallback;
+            final hasEmail = settings.supportEmail.trim().isNotEmpty;
+            final hasPhone = settings.supportPhone.trim().isNotEmpty;
+            final hasWhatsApp = settings.whatsappDigits.isNotEmpty;
+            final hasAddress = settings.address.trim().isNotEmpty;
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
                     color: FarmColors.primary,
-                    size: 22,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: FarmColors.primary.withOpacity(0.16),
+                        blurRadius: 22,
+                        offset: const Offset(0, 9),
+                      ),
+                    ],
                   ),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
+                  child: Row(
+                    children: [
+                      const CircleAvatar(
+                        radius: 27,
+                        backgroundColor: Color(0x33FFFFFF),
+                        child: Icon(
+                          Icons.support_agent_rounded,
+                          color: Colors.white,
+                          size: 29,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Need help?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              signedIn
+                                  ? 'Chat with HPJ Customer Care or choose another contact option.'
+                                  : 'Call, email or WhatsApp HPJ. No sign-in is required for these contact options.',
+                              style: const TextStyle(
+                                color: Color(0xFFE4F0E8),
+                                fontSize: 12.4,
+                                height: 1.35,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (signedIn) ...[
+                  const SizedBox(height: 14),
+                  PrimaryFarmButton(
+                    label: 'Chat with Customer Care',
+                    icon: Icons.chat_bubble_outline_rounded,
+                    onPressed: () => _open(
+                      context,
+                      const SupportScreen(initialSubject: 'Customer care'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Your in-app messages and HPJ replies stay saved to your account.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 11.2,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                SectionHeader(
+                  title: signedIn ? 'Other ways to reach us' : 'Contact HPJ',
+                  subtitle: 'Choose the contact method that works best for you.',
+                ),
+                if (hasWhatsApp) ...[
+                  const SizedBox(height: 10),
+                  _HpjContactMethodCard(
+                    icon: Icons.chat_rounded,
+                    title: 'WhatsApp HPJ',
+                    subtitle: settings.whatsappNumber,
+                    onTap: () => _openWhatsApp(context, settings),
+                  ),
+                ],
+                if (hasPhone) ...[
+                  const SizedBox(height: 10),
+                  _HpjContactMethodCard(
+                    icon: Icons.call_outlined,
+                    title: 'Call HPJ',
+                    subtitle: settings.supportPhone,
+                    onTap: () => _callHpj(context, settings),
+                  ),
+                ],
+                if (hasEmail) ...[
+                  const SizedBox(height: 10),
+                  _HpjContactMethodCard(
+                    icon: Icons.email_outlined,
+                    title: 'Email HPJ',
+                    subtitle: settings.supportEmail,
+                    onTap: () => _emailHpj(context, settings),
+                  ),
+                ],
+                if (hasAddress) ...[
+                  const SizedBox(height: 14),
+                  FarmCard(
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'The Harvest Place Ja',
-                          style: TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        const Icon(
+                          Icons.location_on_outlined,
+                          color: FarmColors.primary,
+                          size: 22,
                         ),
-                        SizedBox(height: 4),
-                        Text(
-                          AppConfig.businessLocation,
-                          style: TextStyle(
-                            color: FarmColors.mutedText,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'The Harvest Place Ja',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                settings.address,
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
                 ],
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -22085,36 +22559,74 @@ class _HpjContactMethodCard extends StatelessWidget {
   }
 }
 
+List<Widget> _buildHpjTermsPolicySections(String content) {
+  final clean = content.trim();
+  if (clean.isEmpty) {
+    return const <Widget>[
+      PolicySection(
+        title: 'Terms & Conditions',
+        body: _hpjDefaultTermsContent,
+      ),
+    ];
+  }
+
+  final blocks = clean
+      .split(RegExp(r'\n\s*\n'))
+      .map((block) => block.trim())
+      .where((block) => block.isNotEmpty)
+      .toList();
+
+  if (blocks.isEmpty) {
+    return <Widget>[
+      PolicySection(title: 'Terms & Conditions', body: clean),
+    ];
+  }
+
+  final output = <Widget>[];
+  for (final block in blocks) {
+    final lines = block
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) continue;
+
+    if (lines.length == 1) {
+      output.add(
+        PolicySection(
+          title: output.isEmpty ? 'Terms & Conditions' : 'Additional terms',
+          body: lines.first,
+        ),
+      );
+      continue;
+    }
+
+    output.add(
+      PolicySection(
+        title: lines.first,
+        body: lines.skip(1).join('\n'),
+      ),
+    );
+  }
+
+  return output;
+}
+
 class TermsOfServiceScreen extends StatelessWidget {
   const TermsOfServiceScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const PolicyScreenShell(
-      title: 'Terms of Service',
-      subtitle: 'How The Harvest Place Ja works',
-      children: [
-        PolicySection(
-          title: 'Using the app',
-          body:
-              'The Harvest Place Ja connects customers with available farm products, pickup options, delivery options, order tracking, and support tools. You are responsible for keeping your account information accurate and secure.',
-        ),
-        PolicySection(
-          title: 'Product availability and pricing',
-          body:
-              'Fresh products may change based on harvest, season, weather, and stock. Prices, quantities, descriptions, and availability may be updated at any time before checkout.',
-        ),
-        PolicySection(
-          title: 'Orders, pickup, and delivery',
-          body:
-              'Orders are accepted based on available stock and selected fulfillment method. Pickup or delivery windows may be adjusted for safety, weather, farm operations, or customer communication needs.',
-        ),
-        PolicySection(
-          title: 'Payment and acceptable use',
-          body:
-              'Customers agree to provide accurate payment and contact information. Abuse, fraud, false orders, or attempts to disrupt the app may result in account restriction or order cancellation.',
-        ),
-      ],
+    return FutureBuilder<HpjCompanySettings>(
+      future: fetchHpjCompanySettings(),
+      builder: (context, snapshot) {
+        final settings = snapshot.data ?? HpjCompanySettings.fallback;
+        return PolicyScreenShell(
+          title: 'Terms of Service',
+          subtitle: 'How The Harvest Place Ja works',
+          children: _buildHpjTermsPolicySections(settings.termsContent),
+        );
+      },
     );
   }
 }

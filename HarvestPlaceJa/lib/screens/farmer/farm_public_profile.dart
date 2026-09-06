@@ -166,10 +166,10 @@ class PublicFarmSupplyItem {
     }
   }
 
-  bool get isReadyNow =>
-      stage == 'harvest_ready' ||
-      stage == 'harvested' ||
-      stage == 'hpj_confirmed';
+  // HPJ confirmation verifies the farmer's reported supply; it does not mean
+  // the crop is physically ready today. Future confirmed harvests still belong
+  // in the public Coming Soon section until the supply is harvest-ready/harvested.
+  bool get isReadyNow => stage == 'harvest_ready' || stage == 'harvested';
 
   bool get hasLinkedProduct =>
       linkedProductId != null && linkedProductId!.trim().isNotEmpty;
@@ -557,6 +557,7 @@ Future<void> adminDeleteFarmPublicPhoto(String photoId) async {
 
 Future<void> farmerSaveOwnPublicFarmProfile({
   required String publicName,
+  required String parish,
   required String community,
   required String publicBio,
   required List<String> tags,
@@ -579,6 +580,13 @@ Future<void> farmerSaveOwnPublicFarmProfile({
       'p_farming_practices': _farmPublicCleanList(farmingPractices),
       'p_cover_image_url': cleanHostedImageUrl(coverImageUrl),
       'p_logo_image_url': cleanHostedImageUrl(logoImageUrl),
+    },
+  );
+
+  await supabase.rpc(
+    'farmer_update_own_public_farm_parish',
+    params: <String, dynamic>{
+      'p_parish': parish.trim(),
     },
   );
 }
@@ -1234,20 +1242,246 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
     );
   }
 
-  void _shareFarm(FarmPublicProfileRecord profile) {
-    final text = <String>[
-      profile.publicName,
-      if (profile.locationLine.trim().isNotEmpty) profile.locationLine.trim(),
-      'Supplied through The Harvest Place Ja',
-    ].join(' • ');
+  String _farmShareText(FarmPublicProfileRecord profile) {
+    final buffer = StringBuffer();
 
-    Clipboard.setData(ClipboardData(text: text));
+    buffer.writeln(
+      '${profile.publicName.trim().isEmpty ? 'HPJ Partner Farm' : profile.publicName.trim()} on The Harvest Place Ja',
+    );
+
+    final location = profile.locationLine.trim();
+    if (location.isNotEmpty) {
+      buffer.writeln(location);
+    }
+
+    buffer.writeln(
+      'Fresh Jamaican produce supplied through HPJ.',
+    );
+
+    final appLink = AppConfig.shareableAppLink.trim();
+    if (appLink.isNotEmpty) {
+      buffer.writeln('');
+      buffer.writeln('Open HPJ: $appLink');
+    }
+
+    return buffer.toString().trim();
+  }
+
+  Future<bool> _openFarmWhatsAppShare(String text) async {
+    final cleanText = text.trim();
+    if (cleanText.isEmpty) return false;
+
+    final encoded = Uri.encodeComponent(cleanText);
+
+    try {
+      final openedApp = await openExternalShareUrl(
+        'whatsapp://send?text=$encoded',
+      );
+      if (openedApp) return true;
+    } catch (error) {
+      farmDebugLog('Farm WhatsApp app share unavailable: $error');
+    }
+
+    try {
+      return await openExternalShareUrl(
+        'https://wa.me/?text=$encoded',
+      );
+    } catch (error) {
+      farmDebugLog('Farm WhatsApp web share unavailable: $error');
+      return false;
+    }
+  }
+
+  Future<void> _copyFarmShareText(String text) async {
+    await Clipboard.setData(
+      ClipboardData(text: text),
+    );
+
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Farm profile details copied for sharing.'),
+        content: Text('Farm profile details copied.'),
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+
+  Future<void> _openFarmShareUrl({
+    required String url,
+    required String successMessage,
+    required String fallbackText,
+  }) async {
+    var opened = false;
+
+    try {
+      opened = await openExternalShareUrl(url);
+    } catch (error) {
+      farmDebugLog('Farm share destination unavailable: $error');
+    }
+
+    if (!mounted) return;
+
+    if (opened) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(successMessage),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    await _copyFarmShareText(fallbackText);
+  }
+
+  Future<void> _shareFarm(
+    FarmPublicProfileRecord profile,
+  ) async {
+    final text = _farmShareText(profile);
+    final encodedText = Uri.encodeComponent(text);
+    final subject = Uri.encodeComponent(
+      '${profile.publicName.trim().isEmpty ? 'HPJ Partner Farm' : profile.publicName.trim()} • The Harvest Place Ja',
+    );
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) {
+        Future<void> closeThen(
+          Future<void> Function() action,
+        ) async {
+          Navigator.of(sheetContext).pop();
+          await action();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            18,
+            4,
+            18,
+            24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Share this farm',
+                style: TextStyle(
+                  color: FarmColors.deepGreen,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Send the public farm profile without exposing private farmer contact details.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: FarmColors.primarySoft,
+                  child: Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    color: FarmColors.green,
+                  ),
+                ),
+                title: const Text(
+                  'WhatsApp',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: const Text('Send the farm profile in a chat'),
+                onTap: () => unawaited(
+                  closeThen(() async {
+                    final opened = await _openFarmWhatsAppShare(text);
+                    if (!mounted) return;
+                    if (!opened) {
+                      await _copyFarmShareText(text);
+                    }
+                  }),
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: FarmColors.primarySoft,
+                  child: Icon(
+                    Icons.sms_outlined,
+                    color: FarmColors.green,
+                  ),
+                ),
+                title: const Text(
+                  'Text message',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: const Text('Open your phone’s messaging app'),
+                onTap: () => unawaited(
+                  closeThen(
+                    () => _openFarmShareUrl(
+                      url: 'sms:?body=$encodedText',
+                      successMessage: 'Opening Messages...',
+                      fallbackText: text,
+                    ),
+                  ),
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: FarmColors.primarySoft,
+                  child: Icon(
+                    Icons.email_outlined,
+                    color: FarmColors.green,
+                  ),
+                ),
+                title: const Text(
+                  'Email',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: const Text('Share through your email app'),
+                onTap: () => unawaited(
+                  closeThen(
+                    () => _openFarmShareUrl(
+                      url: 'mailto:?subject=$subject&body=$encodedText',
+                      successMessage: 'Opening Email...',
+                      fallbackText: text,
+                    ),
+                  ),
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: FarmColors.primarySoft,
+                  child: Icon(
+                    Icons.copy_outlined,
+                    color: FarmColors.green,
+                  ),
+                ),
+                title: const Text(
+                  'Copy',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: const Text('Copy the farm details to paste anywhere'),
+                onTap: () => unawaited(
+                  closeThen(
+                    () => _copyFarmShareText(text),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -2789,8 +3023,6 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
           return linked == null || !usedProductIds.contains(linked.id.trim());
         }).length;
 
-    if (rows.isEmpty) return const SizedBox.shrink();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2806,11 +3038,44 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
               : null,
         ),
         const SizedBox(height: 2),
-        for (var i = 0; i < rows.length; i++) ...[
-          rows[i],
-          if (i < rows.length - 1)
-            const Divider(height: 1, color: FarmColors.line),
-        ],
+        if (rows.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: FarmColors.cardSoft,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.schedule_outlined,
+                  size: 18,
+                  color: FarmColors.mutedText,
+                ),
+                SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'No upcoming harvest has been announced yet.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 10.5,
+                      height: 1.35,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          for (var i = 0; i < rows.length; i++) ...[
+            rows[i],
+            if (i < rows.length - 1)
+              const Divider(height: 1, color: FarmColors.line),
+          ],
       ],
     );
   }
@@ -3540,6 +3805,7 @@ class _FarmerPublicProfileEditorScreenState
     extends State<FarmerPublicProfileEditorScreen> {
   final _formKey = GlobalKey<FormState>();
   final _publicNameController = TextEditingController();
+  final _parishController = TextEditingController();
   final _communityController = TextEditingController();
   final _bioController = TextEditingController();
   final _tagsController = TextEditingController();
@@ -3565,6 +3831,7 @@ class _FarmerPublicProfileEditorScreenState
   @override
   void dispose() {
     _publicNameController.dispose();
+    _parishController.dispose();
     _communityController.dispose();
     _bioController.dispose();
     _tagsController.dispose();
@@ -3595,6 +3862,10 @@ class _FarmerPublicProfileEditorScreenState
           : widget.farmer.farmName;
 
       _publicNameController.text = record?.publicName ?? fallbackName;
+      _parishController.text = normalizeJamaicaParish(
+            record?.parish ?? widget.farmer.parish,
+          ) ??
+          '';
       _communityController.text = record?.community ?? '';
       _bioController.text = record?.publicBio ?? '';
       _tagsController.text = (record?.tags ?? const <String>[]).join(', ');
@@ -3730,11 +4001,25 @@ class _FarmerPublicProfileEditorScreenState
   Future<bool> _save({bool showMessage = true}) async {
     if (!_formKey.currentState!.validate() || saving) return false;
 
+    String parish;
+    try {
+      parish = requireJamaicaParish(
+        _parishController.text,
+        fieldLabel: 'Parish',
+      );
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+      return false;
+    }
+
     setState(() => saving = true);
 
     try {
       await farmerSaveOwnPublicFarmProfile(
         publicName: _publicNameController.text,
+        parish: parish,
         community: _communityController.text,
         publicBio: _bioController.text,
         tags: _csv(_tagsController),
@@ -4073,13 +4358,20 @@ class _FarmerPublicProfileEditorScreenState
                               : null,
                     ),
                     const SizedBox(height: 11),
+                    JamaicaParishDropdown(
+                      controller: _parishController,
+                      label: 'Parish',
+                      enabled: !saving,
+                      prefixIcon: Icons.map_outlined,
+                    ),
+                    const SizedBox(height: 11),
                     TextFormField(
                       controller: _communityController,
-                      decoration: InputDecoration(
+                      enabled: !saving,
+                      decoration: const InputDecoration(
                         labelText: 'Community',
                         hintText: 'Example: Mountainside',
-                        helperText: 'Parish: ${widget.farmer.parish}',
-                        prefixIcon: const Icon(Icons.location_on_outlined),
+                        prefixIcon: Icon(Icons.location_on_outlined),
                       ),
                     ),
                     const SizedBox(height: 11),
@@ -4133,7 +4425,7 @@ class _FarmerPublicProfileEditorScreenState
                           ),
                           const SizedBox(height: 3),
                           const Text(
-                            'Your public page uses My Supply automatically. Update what you are growing once — HPJ reuses it here.',
+                            'Your public page uses real My Supply records. Turn on “Show on my Farm Page as Coming Soon” when reporting a crop to show its expected harvest here. This never creates a Shop product.',
                             style: TextStyle(
                               color: FarmColors.mutedText,
                               fontSize: 10.4,

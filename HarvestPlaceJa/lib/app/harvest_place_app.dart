@@ -709,8 +709,11 @@ class _AuthGateState extends State<AuthGate> {
         case 'farmer':
           if (access.isApprovedFarmer &&
               access.programSettings.farmerWorkspaceEnabled) {
-            return FarmerAccessGate(
-              initialTab: preference.farmerTab,
+            return HpjManagedWelcomeGate(
+              audience: 'farmer',
+              child: FarmerAccessGate(
+                initialTab: preference.farmerTab,
+              ),
             );
           }
           break;
@@ -718,16 +721,22 @@ class _AuthGateState extends State<AuthGate> {
         case 'wholesale':
           if (access.isApprovedWholesale &&
               access.programSettings.wholesaleWorkspaceEnabled) {
-            return BusinessWholesaleHubScreen(
-              initialTab: preference.wholesaleTab,
+            return HpjManagedWelcomeGate(
+              audience: 'business',
+              child: BusinessWholesaleHubScreen(
+                initialTab: preference.wholesaleTab,
+              ),
             );
           }
           break;
 
         case 'customer':
           if (access.programSettings.customerMarketplaceEnabled) {
-            return MainNavigation(
-              initialIndex: preference.customerTab,
+            return HpjManagedWelcomeGate(
+              audience: 'customer',
+              child: MainNavigation(
+                initialIndex: preference.customerTab,
+              ),
             );
           }
           break;
@@ -1033,7 +1042,10 @@ class _PostLoginWorkspaceSelectorState
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => const MainNavigation(),
+        builder: (_) => const HpjManagedWelcomeGate(
+          audience: 'customer',
+          child: MainNavigation(),
+        ),
       ),
       (route) => false,
     );
@@ -1197,7 +1209,10 @@ class _PostLoginWorkspaceSelectorState
                                     status: businessStatus,
                                     statusColor: businessStatusColor,
                                     onTap: () => _open(
-                                      const BusinessWholesaleHubScreen(),
+                                      const HpjManagedWelcomeGate(
+                                        audience: 'business',
+                                        child: BusinessWholesaleHubScreen(),
+                                      ),
                                     ),
                                   ),
                                   _ReferenceWorkspacePhotoCard(
@@ -1206,7 +1221,10 @@ class _PostLoginWorkspaceSelectorState
                                     status: farmerStatus,
                                     statusColor: farmerStatusColor,
                                     onTap: () => _open(
-                                      const FarmerAccessGate(),
+                                      const HpjManagedWelcomeGate(
+                                        audience: 'farmer',
+                                        child: FarmerAccessGate(),
+                                      ),
                                     ),
                                   ),
                                   if (hasStaffAccess)
@@ -3624,6 +3642,590 @@ class _JamaicaParishDropdownState extends State<JamaicaParishDropdown> {
   }
 }
 
+// =====================================================
+// TEMPORARY FARMER EARLY ACCESS WELCOME
+//
+// Launch-phase onboarding screen shown immediately after a NEW farmer account
+// is created. It is intentionally non-dismissible: the farmer must reach the
+// end of the message and acknowledge it before continuing.
+//
+// Remove the signup call to this screen once full customer/business ordering
+// is live. The screen itself can then be deleted safely.
+// =====================================================
+class FarmerEarlyAccessWelcomeScreen extends StatefulWidget {
+  final String farmerName;
+
+  const FarmerEarlyAccessWelcomeScreen({
+    super.key,
+    this.farmerName = '',
+  });
+
+  @override
+  State<FarmerEarlyAccessWelcomeScreen> createState() =>
+      _FarmerEarlyAccessWelcomeScreenState();
+}
+
+class _FarmerEarlyAccessWelcomeScreenState
+    extends State<FarmerEarlyAccessWelcomeScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  bool _reachedBottom = false;
+  bool _understood = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_checkScrollPosition);
+
+    // On a large phone/tablet the whole message may fit without scrolling.
+    // In that case, treat the end as reached after layout completes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkScrollPosition();
+    });
+  }
+
+  void _checkScrollPosition() {
+    if (!mounted || !_scrollController.hasClients || _reachedBottom) return;
+
+    final position = _scrollController.position;
+    final isAtBottom = position.maxScrollExtent <= 12 ||
+        position.pixels >= position.maxScrollExtent - 24;
+
+    if (isAtBottom) {
+      setState(() {
+        _reachedBottom = true;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_checkScrollPosition)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanName = widget.farmerName.trim();
+
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: FarmColors.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 78,
+                              height: 78,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(color: FarmColors.line),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.06),
+                                    blurRadius: 18,
+                                    offset: const Offset(0, 7),
+                                  ),
+                                ],
+                              ),
+                              child: Image.asset(
+                                'lib/assets/images/logo.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.agriculture_rounded,
+                                  color: FarmColors.primary,
+                                  size: 40,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          const Text(
+                            'THE HARVEST PLACE JA',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: FarmColors.primary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 9),
+                          Container(
+                            alignment: Alignment.center,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 13,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: FarmColors.primarySoft,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'FARMER EARLY ACCESS',
+                                style: TextStyle(
+                                  color: FarmColors.primary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.7,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 17),
+                          Text(
+                            cleanName.isEmpty
+                                ? 'Welcome to HPJ'
+                                : 'Welcome to HPJ, $cleanName',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 28,
+                              height: 1.08,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.7,
+                            ),
+                          ),
+                          const SizedBox(height: 13),
+                          const Text(
+                            'Thank you for joining The Harvest Place Ja. '
+                            'You are joining during our farmer onboarding phase, '
+                            'ahead of full customer and business ordering.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: FarmColors.muted,
+                              fontSize: 14,
+                              height: 1.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          const _FarmerEarlyAccessNoticeCard(
+                            icon: Icons.agriculture_rounded,
+                            title: 'What to do now',
+                            items: [
+                              'Complete your farmer profile.',
+                              'Add the produce you grow or can supply.',
+                              'Upload clear farm and produce photos.',
+                              'Add expected quantities and availability.',
+                              'Check that your phone number and location are correct.',
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          const _FarmerEarlyAccessNoticeCard(
+                            icon: Icons.storefront_rounded,
+                            title: 'Customer ordering begins soon',
+                            body:
+                                'HPJ is building the farmer supply side first. '
+                                'Full customer and business ordering will open soon. '
+                                'We will notify farmers before marketplace operations '
+                                'begin so you have time to update your produce, '
+                                'quantities and availability.',
+                          ),
+                          const SizedBox(height: 14),
+                          const _FarmerEarlyAccessNoticeCard(
+                            icon: Icons.handshake_rounded,
+                            title: 'Why you are joining early',
+                            body:
+                                'This early-access period gives you time to become '
+                                'familiar with HPJ and prepare your farm information '
+                                'before marketplace demand begins. Thank you for '
+                                'helping us build a stronger connection between '
+                                'Jamaican farms, homes and businesses.',
+                          ),
+                          const SizedBox(height: 18),
+                          Container(
+                            padding: const EdgeInsets.all(15),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF8E8),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: const Color(0xFFE8D8A7),
+                              ),
+                            ),
+                            child: const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  Icons.info_outline_rounded,
+                                  color: Color(0xFF7A5A08),
+                                  size: 21,
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'You do not need to rush. Use this period to get '
+                                    'your farmer account ready. HPJ will let you know '
+                                    'before full ordering starts.',
+                                    style: TextStyle(
+                                      color: Color(0xFF654B0B),
+                                      fontSize: 12.5,
+                                      height: 1.4,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          if (!_reachedBottom)
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 16),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: FarmColors.primary,
+                                  ),
+                                  SizedBox(width: 5),
+                                  Text(
+                                    'Scroll to the end to continue',
+                                    style: TextStyle(
+                                      color: FarmColors.primary,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: FarmColors.card,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: FarmColors.line),
+                            ),
+                            child: CheckboxListTile(
+                              value: _understood,
+                              enabled: _reachedBottom,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              activeColor: FarmColors.primary,
+                              contentPadding: const EdgeInsets.fromLTRB(
+                                10,
+                                8,
+                                14,
+                                8,
+                              ),
+                              title: const Text(
+                                'I have read and understand that HPJ is currently '
+                                'onboarding farmers and that full customer and '
+                                'business ordering will begin soon.',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              onChanged: _reachedBottom
+                                  ? (value) {
+                                      setState(() {
+                                        _understood = value ?? false;
+                                      });
+                                    }
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+                decoration: BoxDecoration(
+                  color: FarmColors.card,
+                  border: const Border(
+                    top: BorderSide(color: FarmColors.line),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _reachedBottom && _understood
+                              ? () => Navigator.of(context).pop()
+                              : null,
+                          icon: const Icon(Icons.arrow_forward_rounded),
+                          label: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 3),
+                            child: Text('Continue to HPJ'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FarmerEarlyAccessNoticeCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? body;
+  final List<String> items;
+
+  const _FarmerEarlyAccessNoticeCard({
+    required this.icon,
+    required this.title,
+    this.body,
+    this.items = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: FarmColors.card,
+        borderRadius: BorderRadius.circular(21),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  icon,
+                  color: FarmColors.primary,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (body != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              body!,
+              style: const TextStyle(
+                color: FarmColors.muted,
+                fontSize: 13,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (items.isNotEmpty) ...[
+            const SizedBox(height: 13),
+            for (final item in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 1),
+                      child: Icon(
+                        Icons.check_circle_rounded,
+                        color: FarmColors.primary,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        item,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 13,
+                          height: 1.35,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// =====================================================
+// ADMIN PREVIEW — FARMER EARLY ACCESS WELCOME
+//
+// This card can be placed inside the Admin > Farmers screen so HPJ staff can
+// preview the exact temporary onboarding screen shown to a newly registered
+// farmer. Previewing does not create, approve, update, or acknowledge a farmer
+// account; it only opens the existing welcome UI.
+// =====================================================
+class AdminFarmerWelcomePreviewCard extends StatelessWidget {
+  const AdminFarmerWelcomePreviewCard({super.key});
+
+  void _openPreview(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const FarmerEarlyAccessWelcomeScreen(
+          farmerName: 'Preview Farmer',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: FarmColors.card,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.campaign_outlined,
+                  color: FarmColors.primary,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Farmer Early Access Welcome',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Temporary new-farmer onboarding screen',
+                      style: TextStyle(
+                        color: FarmColors.muted,
+                        fontSize: 11.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'ACTIVE',
+                  style: TextStyle(
+                    color: FarmColors.primary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Preview the exact information screen shown to new farmers after '
+            'successful registration. Preview mode does not create or change '
+            'any farmer account or application data.',
+            style: TextStyle(
+              color: FarmColors.muted,
+              fontSize: 12.5,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 15),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _openPreview(context),
+              icon: const Icon(Icons.visibility_outlined),
+              label: const Text('Preview Farmer Welcome'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class LoginScreen extends StatefulWidget {
   final bool returnToPrevious;
   final bool startInRegister;
@@ -4067,6 +4669,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (!mounted) return;
 
+        // Managed MVP welcome onboarding. Customer, Farmer and Business each
+        // use the Admin-controlled Welcome Screen configuration. The existing
+        // Farmer Early Access screen remains the fallback if the new SQL has
+        // not been installed yet.
+        final welcomeAudience = isBusinessRegistration
+            ? 'business'
+            : selectedRole == 'farmer'
+                ? 'farmer'
+                : 'customer';
+
+        await showHpjManagedWelcomeAfterRegistration(
+          context: context,
+          audience: welcomeAudience,
+          hasSession: response.session != null,
+          displayName: fullName,
+        );
+
+        if (!mounted) return;
+
         if (response.session == null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -4074,7 +4695,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 isBusinessRegistration
                     ? 'Business account created. Confirm your email, then sign in and choose Wholesale Business.'
                     : selectedRole == 'farmer'
-                        ? 'Farmer account created. Confirm your email, then sign in and choose Farmer Partner.'
+                        ? 'Farmer account created. Confirm your email, then sign in to continue your Farmer Partner setup.'
                         : 'Account created. Confirm your email, then sign in to choose your HPJ workspace.',
               ),
             ),
@@ -4094,7 +4715,7 @@ class _LoginScreenState extends State<LoginScreen> {
               isBusinessRegistration
                   ? 'Business account created. Choose Wholesale Business to continue your setup.'
                   : selectedRole == 'farmer'
-                      ? 'Account created. Choose Farmer Partner to continue your setup.'
+                      ? 'Farmer account created. Continue to Farmer Partner to prepare your farm.'
                       : 'Account created. Choose the HPJ workspace you want to open.',
             ),
           ),

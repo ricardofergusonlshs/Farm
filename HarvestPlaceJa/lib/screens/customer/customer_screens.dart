@@ -2517,6 +2517,75 @@ class PersonalizedHomeHeroCard extends StatelessWidget {
 // Replace from: class _WeeklyMealIdea {
 // through the final closing brace of the current WeeklyMealIdeasScreen.
 
+class HpjMealProductIngredient {
+  final String productId;
+  final String productName;
+  final String amount;
+  final String recipeUnit;
+
+  const HpjMealProductIngredient({
+    required this.productId,
+    required this.productName,
+    this.amount = '',
+    this.recipeUnit = '',
+  });
+
+  factory HpjMealProductIngredient.fromSupabase(dynamic value) {
+    if (value is! Map) {
+      return const HpjMealProductIngredient(
+        productId: '',
+        productName: '',
+      );
+    }
+
+    final data = Map<String, dynamic>.from(value);
+    return HpjMealProductIngredient(
+      productId: (data['product_id'] ?? '').toString().trim(),
+      productName: (data['product_name'] ?? '').toString().trim(),
+      amount: (data['amount'] ?? '').toString().trim(),
+      recipeUnit: (data['recipe_unit'] ?? '').toString().trim(),
+    );
+  }
+
+  static List<HpjMealProductIngredient> listFromSupabase(dynamic value) {
+    if (value is! List) return const <HpjMealProductIngredient>[];
+
+    return value
+        .map(HpjMealProductIngredient.fromSupabase)
+        .where((item) => item.productName.trim().isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic> toSupabase() => <String, dynamic>{
+        'product_id': productId.trim(),
+        'product_name': productName.trim(),
+        'amount': amount.trim(),
+        'recipe_unit': recipeUnit.trim(),
+      };
+
+  HpjMealProductIngredient copyWith({
+    String? productId,
+    String? productName,
+    String? amount,
+    String? recipeUnit,
+  }) {
+    return HpjMealProductIngredient(
+      productId: productId ?? this.productId,
+      productName: productName ?? this.productName,
+      amount: amount ?? this.amount,
+      recipeUnit: recipeUnit ?? this.recipeUnit,
+    );
+  }
+
+  String get amountLabel {
+    final parts = <String>[
+      if (amount.trim().isNotEmpty) amount.trim(),
+      if (recipeUnit.trim().isNotEmpty) recipeUnit.trim(),
+    ];
+    return parts.join(' ');
+  }
+}
+
 class _WeeklyMealIdea {
   final int weekday;
   final String day;
@@ -2529,6 +2598,7 @@ class _WeeklyMealIdea {
   final int preparationMinutes;
   final int servings;
   final String difficulty;
+  final List<HpjMealProductIngredient> productIngredients;
   final List<String> freshIngredients;
   final List<String> pantryIngredients;
   final List<String> nutritionHighlights;
@@ -2545,18 +2615,88 @@ class _WeeklyMealIdea {
     required this.preparationMinutes,
     required this.servings,
     required this.difficulty,
+    this.productIngredients = const <HpjMealProductIngredient>[],
     required this.freshIngredients,
     required this.pantryIngredients,
     required this.nutritionHighlights,
   });
 
+  factory _WeeklyMealIdea.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    List<String> stringList(dynamic value) {
+      if (value is List) {
+        return value
+            .map((item) => item?.toString().trim() ?? '')
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false);
+      }
+
+      final text = value?.toString().trim() ?? '';
+      if (text.isEmpty) return const <String>[];
+
+      return text
+          .split(RegExp(r'[\n,;]+'))
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    final weekday =
+        int.tryParse((data['weekday'] ?? '').toString()) ?? DateTime.monday;
+
+    return _WeeklyMealIdea(
+      weekday: weekday.clamp(DateTime.monday, DateTime.sunday).toInt(),
+      day: (data['day_name'] ?? '').toString().trim(),
+      shortDay: (data['short_day'] ?? '').toString().trim(),
+      name: (data['name'] ?? '').toString().trim(),
+      dietaryLabel:
+          (data['dietary_label'] ?? 'Classic').toString().trim(),
+      imageUrl: (data['image_url'] ?? '').toString().trim(),
+      description: (data['description'] ?? '').toString().trim(),
+      preparationMinutes:
+          int.tryParse((data['preparation_minutes'] ?? '').toString()) ?? 30,
+      servings: int.tryParse((data['servings'] ?? '').toString()) ?? 4,
+      difficulty: (data['difficulty'] ?? 'Easy').toString().trim(),
+      productIngredients:
+          HpjMealProductIngredient.listFromSupabase(data['recipe_products']),
+      freshIngredients: stringList(data['fresh_ingredients']),
+      pantryIngredients: stringList(data['pantry_ingredients']),
+      nutritionHighlights: stringList(data['nutrition_highlights']),
+    );
+  }
+
+  List<HpjMealProductIngredient> get resolvedProductIngredients {
+    if (productIngredients.isNotEmpty) {
+      return productIngredients;
+    }
+
+    return freshIngredients
+        .map(
+          (name) => HpjMealProductIngredient(
+            productId: '',
+            productName: name,
+          ),
+        )
+        .toList(growable: false);
+  }
+
   bool get isPlantBased {
     final normalized = dietaryLabel.toLowerCase();
     return normalized.contains('vegan') || normalized.contains('ital');
   }
+
+  bool get isVegetarian {
+    final normalized = dietaryLabel.toLowerCase();
+    return normalized.contains('vegetarian');
+  }
+
+  bool get isClassic {
+    return dietaryLabel.trim().toLowerCase() == 'classic';
+  }
 }
 
-const List<_WeeklyMealIdea> _weeklyMealIdeas = <_WeeklyMealIdea>[
+const List<_WeeklyMealIdea> _defaultWeeklyMealIdeas = <_WeeklyMealIdea>[
   _WeeklyMealIdea(
     weekday: DateTime.monday,
     day: 'Monday',
@@ -2739,10 +2879,71 @@ const List<_WeeklyMealIdea> _weeklyMealIdeas = <_WeeklyMealIdea>[
   ),
 ];
 
+final ValueNotifier<List<_WeeklyMealIdea>> hpjWeeklyMealIdeasNotifier =
+    ValueNotifier<List<_WeeklyMealIdea>>(
+  List<_WeeklyMealIdea>.unmodifiable(_defaultWeeklyMealIdeas),
+);
+
+List<_WeeklyMealIdea> get _weeklyMealIdeas =>
+    hpjWeeklyMealIdeasNotifier.value;
+
+Future<List<_WeeklyMealIdea>> fetchPublicWeeklyMealIdeas() async {
+  try {
+    final response = await supabase
+        .from('hpj_weekly_meals')
+        .select(
+          'weekday, day_name, short_day, name, dietary_label, image_url, description, preparation_minutes, servings, difficulty, recipe_products, fresh_ingredients, pantry_ingredients, nutrition_highlights, is_published, updated_at',
+        )
+        .eq('is_published', true)
+        .order('weekday', ascending: true);
+
+    final meals = (response as List)
+        .map(
+          (item) => _WeeklyMealIdea.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .where((meal) => meal.name.trim().isNotEmpty)
+        .toList(growable: false);
+
+    // A successful query is authoritative, so Admin can hide individual days.
+    // Keep one bundled meal available only if every meal is hidden.
+    final resolved = meals.isEmpty
+        ? <_WeeklyMealIdea>[_defaultWeeklyMealIdeas.first]
+        : meals;
+
+    hpjWeeklyMealIdeasNotifier.value =
+        List<_WeeklyMealIdea>.unmodifiable(resolved);
+
+    return hpjWeeklyMealIdeasNotifier.value;
+  } catch (error) {
+    // Release-safe fallback: the current seven bundled meals remain available
+    // if the database migration has not run or the network is unavailable.
+    farmDebugLog('Weekly meals fallback used: $error');
+
+    final current = hpjWeeklyMealIdeasNotifier.value;
+    if (current.isNotEmpty) return current;
+
+    hpjWeeklyMealIdeasNotifier.value =
+        List<_WeeklyMealIdea>.unmodifiable(_defaultWeeklyMealIdeas);
+
+    return hpjWeeklyMealIdeasNotifier.value;
+  }
+}
+
 _WeeklyMealIdea _mealForWeekday(int weekday) {
-  return _weeklyMealIdeas.firstWhere(
+  final meals = _weeklyMealIdeas;
+
+  if (meals.isEmpty) {
+    return _defaultWeeklyMealIdeas.firstWhere(
+      (meal) => meal.weekday == weekday,
+      orElse: () => _defaultWeeklyMealIdeas.first,
+    );
+  }
+
+  return meals.firstWhere(
     (meal) => meal.weekday == weekday,
-    orElse: () => _weeklyMealIdeas.first,
+    orElse: () => meals.first,
   );
 }
 
@@ -2837,6 +3038,12 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
   void initState() {
     super.initState();
     _slidesFuture = fetchHomeHeroSlides();
+
+    unawaited(
+      fetchPublicWeeklyMealIdeas().then((_) {
+        if (mounted) setState(() {});
+      }),
+    );
 
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || !_controller.hasClients || _lastSlideCount <= 1) return;
@@ -3275,14 +3482,22 @@ class WeeklyMealIdeasScreen extends StatefulWidget {
 class _WeeklyMealIdeasScreenState extends State<WeeklyMealIdeasScreen> {
   String _selectedFilter = 'All';
 
+  Future<void> _refreshMealsFromAdmin() async {
+    await fetchPublicWeeklyMealIdeas();
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    unawaited(_refreshMealsFromAdmin());
     final preferences = hpjCurrentUserExperiencePreferences;
     if (preferences.dietaryStyle == 'vegan' ||
-        preferences.dietaryStyle == 'vegetarian' ||
         preferences.recommendationStyle == 'vegan') {
       _selectedFilter = 'Ital / Vegan';
+    } else if (preferences.dietaryStyle == 'vegetarian' ||
+        preferences.recommendationStyle == 'vegetarian') {
+      _selectedFilter = 'Vegetarian';
     }
 
     final returnWeekday = widget.initialMealWeekday;
@@ -3297,7 +3512,9 @@ class _WeeklyMealIdeasScreenState extends State<WeeklyMealIdeasScreen> {
   List<_WeeklyMealIdea> get _filteredMeals {
     switch (_selectedFilter) {
       case 'Classic':
-        return _weeklyMealIdeas.where((meal) => !meal.isPlantBased).toList();
+        return _weeklyMealIdeas.where((meal) => meal.isClassic).toList();
+      case 'Vegetarian':
+        return _weeklyMealIdeas.where((meal) => meal.isVegetarian).toList();
       case 'Ital / Vegan':
         return _weeklyMealIdeas.where((meal) => meal.isPlantBased).toList();
       default:
@@ -3516,7 +3733,7 @@ class _WeeklyMealIdeasScreenState extends State<WeeklyMealIdeasScreen> {
             onTap: () => _openMeal(meal),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
-              width: 64,
+              width: 58,
               padding: const EdgeInsets.symmetric(vertical: 7),
               decoration: BoxDecoration(
                 color: isToday ? FarmColors.green : FarmColors.card,
@@ -3688,18 +3905,32 @@ class _WeeklyMealIdeasScreenState extends State<WeeklyMealIdeasScreen> {
   @override
   Widget build(BuildContext context) {
     final preferences = hpjCurrentUserExperiencePreferences;
-    final preferPlantBased = preferences.dietaryStyle == 'vegan' ||
-        preferences.dietaryStyle == 'vegetarian' ||
+    final preferVegan = preferences.dietaryStyle == 'vegan' ||
         preferences.recommendationStyle == 'vegan';
-    final todayMeal = preferPlantBased
-        ? _weeklyMealIdeas.firstWhere((meal) => meal.isPlantBased)
-        : _mealForWeekday(DateTime.now().weekday);
+    final preferVegetarian = preferences.dietaryStyle == 'vegetarian' ||
+        preferences.recommendationStyle == 'vegetarian';
+    final plantBasedMeals =
+        _weeklyMealIdeas.where((meal) => meal.isPlantBased).toList();
+    final vegetarianMeals =
+        _weeklyMealIdeas.where((meal) => meal.isVegetarian).toList();
+    final scheduledMeal = _mealForWeekday(DateTime.now().weekday);
+    final todayMeal = preferVegan && plantBasedMeals.isNotEmpty
+        ? plantBasedMeals.first
+        : preferVegetarian && vegetarianMeals.isNotEmpty
+            ? vegetarianMeals.first
+            : preferVegetarian && plantBasedMeals.isNotEmpty
+                ? plantBasedMeals.first
+                : scheduledMeal;
     final filteredMeals = _filteredMeals;
 
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
-        title: const Text("What's Cooking This Week?"),
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text("What's Cooking This Week?"),
+        ),
         actions: [
           IconButton(
             tooltip: 'About meal ideas',
@@ -3800,7 +4031,7 @@ class _WeeklyMealIdeasScreenState extends State<WeeklyMealIdeasScreen> {
             ),
             const SizedBox(height: 3),
             const Text(
-              'Classic Jamaican favourites and a fresh Ital option.',
+              'Classic, Vegetarian and Ital / Vegan meal ideas.',
               style: TextStyle(
                 color: FarmColors.mutedText,
                 fontSize: 11.5,
@@ -3814,6 +4045,7 @@ class _WeeklyMealIdeasScreenState extends State<WeeklyMealIdeasScreen> {
                 children: [
                   _filterChip('All'),
                   _filterChip('Classic'),
+                  _filterChip('Vegetarian'),
                   _filterChip('Ital / Vegan'),
                 ],
               ),
@@ -4006,12 +4238,40 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
     return candidates.first;
   }
 
+  String _recipeIngredientKey(HpjMealProductIngredient ingredient) {
+    final id = ingredient.productId.trim();
+    if (id.isNotEmpty) return 'id:$id';
+    return 'name:${_ingredientKey(ingredient.productName)}';
+  }
+
+  Product? _matchingRecipeProduct(
+    HpjMealProductIngredient ingredient,
+    List<Product> products, {
+    bool requireAvailable = false,
+  }) {
+    final productId = ingredient.productId.trim();
+
+    if (productId.isNotEmpty) {
+      for (final product in products) {
+        if (product.id.trim() != productId) continue;
+        if (requireAvailable && !product.canAddToCart) return null;
+        return product;
+      }
+    }
+
+    return _matchingProduct(
+      ingredient.productName,
+      products,
+      requireAvailable: requireAvailable,
+    );
+  }
+
   List<Product> _availableIngredientProducts(List<Product> products) {
     final result = <Product>[];
     final seen = <String>{};
 
-    for (final ingredient in meal.freshIngredients) {
-      final product = _matchingProduct(
+    for (final ingredient in meal.resolvedProductIngredients) {
+      final product = _matchingRecipeProduct(
         ingredient,
         products,
         requireAvailable: true,
@@ -4029,8 +4289,12 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
     final result = <Product>[];
     final seen = <String>{};
 
-    for (final ingredient in _selectedIngredients) {
-      final product = _matchingProduct(
+    for (final ingredient in meal.resolvedProductIngredients) {
+      if (!_selectedIngredients.contains(_recipeIngredientKey(ingredient))) {
+        continue;
+      }
+
+      final product = _matchingRecipeProduct(
         ingredient,
         products,
         requireAvailable: true,
@@ -4070,6 +4334,41 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
     widget.onShopTap();
   }
 
+  void _addOneIngredientToMyBox(
+    HpjMealProductIngredient ingredient,
+    List<Product> products,
+  ) {
+    final product = _matchingRecipeProduct(
+      ingredient,
+      products,
+      requireAvailable: true,
+    );
+
+    if (product == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${ingredient.productName} is not available right now.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    mealIngredientCartAddRequest.value = null;
+    mealIngredientCartAddRequest.value = <Product>[product];
+
+    setState(() {
+      _selectedIngredients.remove(_recipeIngredientKey(ingredient));
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${product.name} added to My Box.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _addSelectedToMyBox(List<Product> products) {
     final selectedProducts = _selectedProducts(products);
     if (selectedProducts.isEmpty) return;
@@ -4093,14 +4392,14 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
   void _selectAllAvailable(List<Product> products) {
     final next = <String>{};
 
-    for (final ingredient in meal.freshIngredients) {
-      if (_matchingProduct(
+    for (final ingredient in meal.resolvedProductIngredients) {
+      if (_matchingRecipeProduct(
             ingredient,
             products,
             requireAvailable: true,
           ) !=
           null) {
-        next.add(ingredient);
+        next.add(_recipeIngredientKey(ingredient));
       }
     }
 
@@ -4215,111 +4514,144 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
   }
 
   Widget _freshIngredientWrap(List<Product> products) {
-    return Wrap(
-      spacing: 7,
-      runSpacing: 7,
-      children: meal.freshIngredients.map((ingredient) {
-        final product = _matchingProduct(ingredient, products);
-        final available = product?.canAddToCart == true;
-        final selected = _selectedIngredients.contains(ingredient);
+    final ingredients = meal.resolvedProductIngredients;
 
-        return Material(
-          color: Colors.transparent,
-          child: Container(
-            decoration: BoxDecoration(
-              color: selected
-                  ? FarmColors.successSoft
-                  : available
-                      ? FarmColors.primarySoft
-                      : FarmColors.cardSoft,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: selected
-                    ? FarmColors.green.withOpacity(0.38)
-                    : available
-                        ? FarmColors.green.withOpacity(0.16)
+    if (ingredients.isEmpty) {
+      return const Text(
+        'No fresh ingredients have been added to this recipe yet.',
+        style: TextStyle(
+          color: FarmColors.mutedText,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (var index = 0; index < ingredients.length; index++) ...[
+          Builder(
+            builder: (context) {
+              final ingredient = ingredients[index];
+              final product = _matchingRecipeProduct(ingredient, products);
+              final available = product?.canAddToCart == true;
+              final key = _recipeIngredientKey(ingredient);
+              final selected = _selectedIngredients.contains(key);
+              final displayName = product?.name.trim().isNotEmpty == true
+                  ? product!.name.trim()
+                  : ingredient.productName.trim();
+              final amountLabel = ingredient.amountLabel;
+              final sellingUnit = product?.unit?.trim() ?? '';
+
+              return Container(
+                padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? FarmColors.successSoft
+                      : FarmColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: selected
+                        ? FarmColors.green.withOpacity(0.28)
                         : FarmColors.line,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(999),
-                  onTap: available
-                      ? () {
-                          setState(() {
-                            if (selected) {
-                              _selectedIngredients.remove(ingredient);
-                            } else {
-                              _selectedIngredients.add(ingredient);
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: selected,
+                      activeColor: FarmColors.green,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: available
+                          ? (value) {
+                              setState(() {
+                                if (value == true) {
+                                  _selectedIngredients.add(key);
+                                } else {
+                                  _selectedIngredients.remove(key);
+                                }
+                              });
                             }
-                          });
-                        }
-                      : null,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(9, 7, 4, 7),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          selected
-                              ? Icons.check_circle_rounded
-                              : available
-                                  ? Icons.add_circle_outline_rounded
-                                  : Icons.remove_circle_outline_rounded,
-                          size: 14,
-                          color: available
-                              ? FarmColors.green
-                              : FarmColors.mutedText,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          ingredient,
-                          style: TextStyle(
-                            color: available
-                                ? FarmColors.deepGreen
-                                : FarmColors.mutedText,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        if (!available) ...[
-                          const SizedBox(width: 5),
-                          const Text(
-                            'Unavailable',
+                          : null,
+                    ),
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
                             style: TextStyle(
+                              color: available
+                                  ? FarmColors.ink
+                                  : FarmColors.mutedText,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            [
+                              if (amountLabel.isNotEmpty)
+                                'Recipe: $amountLabel',
+                              if (available && sellingUnit.isNotEmpty)
+                                'HPJ unit: $sellingUnit',
+                              if (!available) 'Currently unavailable',
+                            ].join(' • '),
+                            style: const TextStyle(
                               color: FarmColors.mutedText,
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w800,
+                              fontSize: 9.5,
+                              height: 1.25,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-                if (showShopAction)
-                  Tooltip(
-                    message: 'Find $ingredient in Shop',
-                    child: InkResponse(
-                      radius: 20,
-                      onTap: () => _openIngredientInShop(ingredient),
-                      child: const Padding(
-                        padding: EdgeInsets.fromLTRB(4, 7, 9, 7),
-                        child: Icon(
+                    if (showShopAction) ...[
+                      IconButton(
+                        tooltip: 'Find $displayName in Shop',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _openIngredientInShop(displayName),
+                        icon: const Icon(
                           Icons.search_rounded,
-                          size: 14,
+                          size: 18,
                           color: FarmColors.green,
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
+                      const SizedBox(width: 2),
+                      FilledButton(
+                        onPressed: available
+                            ? () => _addOneIngredientToMyBox(
+                                  ingredient,
+                                  products,
+                                )
+                            : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(66, 36),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          '+ Add',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
-        );
-      }).toList(),
+          if (index != ingredients.length - 1)
+            const SizedBox(height: 8),
+        ],
+      ],
     );
   }
 
@@ -4511,7 +4843,7 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
                           _sectionTitle(
                             'Fresh ingredients',
                             showShopAction
-                                ? 'Select several to add to My Box, or use the search icon to find one in Shop.'
+                                ? 'Add one item immediately, select several, or add all available ingredients together.'
                                 : 'Produce and fresh items you may need for this meal.',
                           ),
                           if (showShopAction) ...[
@@ -4522,7 +4854,7 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
                                   child: Text(
                                     loading
                                         ? 'Checking what HPJ has available...'
-                                        : '${availableProducts.length} of ${meal.freshIngredients.length} available through HPJ',
+                                        : '${availableProducts.length} of ${meal.resolvedProductIngredients.length} available through HPJ',
                                     style: const TextStyle(
                                       color: FarmColors.mutedText,
                                       fontSize: 10.5,
@@ -6618,7 +6950,7 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
           accent: Color(0xFF25613D),
         ),
         _HPJHomeNavItem(
-          label: widget.showMealIdeas ? 'This Week' : 'Seasonal',
+          label: widget.showMealIdeas ? 'Meals' : 'Seasonal',
           accent: const Color(0xFF9A6A18),
         ),
         const _HPJHomeNavItem(
@@ -6634,6 +6966,12 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
   @override
   void initState() {
     super.initState();
+
+    unawaited(
+      fetchPublicWeeklyMealIdeas().then((_) {
+        if (mounted) setState(() {});
+      }),
+    );
 
     _pageController = PageController(
       viewportFraction: 0.94,
@@ -6955,7 +7293,9 @@ final hasFreshPick =
                     ],
                     ctaLabel: 'See This Week',
                     // CARD 2 — WHAT'S COOKING
-                    imageUrl: mealsImage ?? meal.imageUrl,
+                    imageUrl: meal.imageUrl.trim().isNotEmpty
+                        ? meal.imageUrl
+                        : mealsImage,
                     fallbackIcon: Icons.restaurant_menu_rounded,
                     onTap: _openWeeklyMeals,
                   );

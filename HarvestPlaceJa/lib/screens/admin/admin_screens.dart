@@ -198,6 +198,856 @@ Future<void> saveWelcomeBackgroundUrl(String imageUrl) async {
   }
 }
 
+// =====================================================
+// HPJ MVP — MANAGED WORKSPACE WELCOME SCREENS
+// Customer / Farmer / Business
+// =====================================================
+
+const List<String> hpjWelcomeAudiences = <String>[
+  'customer',
+  'farmer',
+  'business',
+];
+
+String hpjWelcomeAudienceLabel(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'farmer':
+      return 'Farmer';
+    case 'business':
+      return 'Business';
+    default:
+      return 'Customer';
+  }
+}
+
+class HpjWelcomeScreenConfig {
+  final String audience;
+  final bool isEnabled;
+  final String showMode;
+  final String title;
+  final String subtitle;
+  final String message;
+  final String buttonLabel;
+  final String? imageUrl;
+  final bool requireAcknowledgement;
+  final int version;
+  final DateTime? updatedAt;
+
+  const HpjWelcomeScreenConfig({
+    required this.audience,
+    required this.isEnabled,
+    required this.showMode,
+    required this.title,
+    required this.subtitle,
+    required this.message,
+    required this.buttonLabel,
+    this.imageUrl,
+    required this.requireAcknowledgement,
+    required this.version,
+    this.updatedAt,
+  });
+
+  factory HpjWelcomeScreenConfig.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    final parsedVersion =
+        int.tryParse((data['version'] ?? '1').toString()) ?? 1;
+
+    return HpjWelcomeScreenConfig(
+      audience: (data['audience'] ?? 'customer')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      isEnabled: data['is_enabled'] == true,
+      showMode: (data['show_mode'] ?? 'new_users')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      title: (data['title'] ?? '').toString().trim(),
+      subtitle: (data['subtitle'] ?? '').toString().trim(),
+      message: (data['message'] ?? '').toString().trim(),
+      buttonLabel:
+          (data['button_label'] ?? 'Continue').toString().trim(),
+      imageUrl: cleanHostedImageUrl(data['image_url']?.toString()),
+      requireAcknowledgement:
+          data['require_acknowledgement'] == true,
+      version: parsedVersion < 1 ? 1 : parsedVersion,
+      updatedAt: parseProductDate(data['updated_at']),
+    );
+  }
+
+  HpjWelcomeScreenConfig copyWith({
+    bool? isEnabled,
+    String? showMode,
+    String? title,
+    String? subtitle,
+    String? message,
+    String? buttonLabel,
+    String? imageUrl,
+    bool clearImage = false,
+    bool? requireAcknowledgement,
+    int? version,
+  }) {
+    return HpjWelcomeScreenConfig(
+      audience: audience,
+      isEnabled: isEnabled ?? this.isEnabled,
+      showMode: showMode ?? this.showMode,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      message: message ?? this.message,
+      buttonLabel: buttonLabel ?? this.buttonLabel,
+      imageUrl: clearImage ? null : (imageUrl ?? this.imageUrl),
+      requireAcknowledgement:
+          requireAcknowledgement ?? this.requireAcknowledgement,
+      version: version ?? this.version,
+      updatedAt: updatedAt,
+    );
+  }
+}
+
+HpjWelcomeScreenConfig hpjDefaultWelcomeConfig(String audience) {
+  switch (audience.trim().toLowerCase()) {
+    case 'farmer':
+      return const HpjWelcomeScreenConfig(
+        audience: 'farmer',
+        isEnabled: true,
+        showMode: 'new_users',
+        title: 'Welcome to HPJ Farmer Early Access',
+        subtitle: 'Prepare your farm before full marketplace demand begins.',
+        message:
+            'Complete your farmer profile, add the produce you grow or can supply, upload clear farm and produce photos, and keep quantities and availability up to date. HPJ will notify farmers before full customer and business ordering begins.',
+        buttonLabel: 'Continue to Farmer Workspace',
+        requireAcknowledgement: true,
+        version: 1,
+      );
+    case 'business':
+      return const HpjWelcomeScreenConfig(
+        audience: 'business',
+        isEnabled: true,
+        showMode: 'new_users',
+        title: 'Welcome to HPJ Business',
+        subtitle: 'Source Jamaican produce with a clearer procurement workflow.',
+        message:
+            'Use your Business workspace to manage sourcing needs, recurring demand, orders, invoices and fulfillment. Complete your business details so HPJ can support your account and prepare the right supply.',
+        buttonLabel: 'Continue to Business',
+        requireAcknowledgement: false,
+        version: 1,
+      );
+    default:
+      return const HpjWelcomeScreenConfig(
+        audience: 'customer',
+        isEnabled: true,
+        showMode: 'new_users',
+        title: 'Welcome to The Harvest Place Ja',
+        subtitle: 'Fresh Jamaican food, made easier.',
+        message:
+            'Shop fresh Jamaican produce, build your box, discover weekly meal ideas, save favourites and track your orders from one place.',
+        buttonLabel: 'Start Shopping',
+        requireAcknowledgement: false,
+        version: 1,
+      );
+  }
+}
+
+Future<HpjWelcomeScreenConfig?> fetchHpjWelcomeScreenConfig(
+  String audience,
+) async {
+  final cleanAudience = audience.trim().toLowerCase();
+  if (!hpjWelcomeAudiences.contains(cleanAudience)) return null;
+
+  try {
+    final response = await supabase
+        .from('hpj_welcome_screens')
+        .select(
+          'audience, is_enabled, show_mode, title, subtitle, message, button_label, image_url, require_acknowledgement, version, updated_at',
+        )
+        .eq('audience', cleanAudience)
+        .maybeSingle();
+
+    if (response == null) return null;
+
+    return HpjWelcomeScreenConfig.fromSupabase(
+      Map<String, dynamic>.from(response as Map),
+    );
+  } catch (error) {
+    farmDebugLog(
+      'Welcome Screen config unavailable for $cleanAudience: $error',
+    );
+    return null;
+  }
+}
+
+Future<List<HpjWelcomeScreenConfig>>
+    fetchAdminHpjWelcomeScreenConfigs() async {
+  await requireAdminAccess();
+
+  try {
+    final response = await supabase
+        .from('hpj_welcome_screens')
+        .select(
+          'audience, is_enabled, show_mode, title, subtitle, message, button_label, image_url, require_acknowledgement, version, updated_at',
+        )
+        .order('audience', ascending: true);
+
+    final byAudience = <String, HpjWelcomeScreenConfig>{};
+    for (final item in response as List) {
+      final config = HpjWelcomeScreenConfig.fromSupabase(
+        Map<String, dynamic>.from(item as Map),
+      );
+      byAudience[config.audience] = config;
+    }
+
+    return hpjWelcomeAudiences
+        .map(
+          (audience) =>
+              byAudience[audience] ?? hpjDefaultWelcomeConfig(audience),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    throw Exception(
+      'Could not load Welcome Screens. Run the HPJ Managed Welcome SQL and retry.',
+    );
+  }
+}
+
+Future<void> saveAdminHpjWelcomeScreenConfig(
+  HpjWelcomeScreenConfig config,
+) async {
+  await requireAdminAccess();
+
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (role.isNotEmpty && role != 'owner' && role != 'manager') {
+    throw Exception('Only Owner or Manager can edit Welcome Screens.');
+  }
+
+  final audience = config.audience.trim().toLowerCase();
+  if (!hpjWelcomeAudiences.contains(audience)) {
+    throw Exception('Choose a valid welcome audience.');
+  }
+
+  final mode = config.showMode.trim().toLowerCase();
+  if (mode != 'new_users' && mode != 'everyone') {
+    throw Exception('Choose a valid welcome display rule.');
+  }
+
+  if (config.title.trim().isEmpty) {
+    throw Exception('Enter a welcome title.');
+  }
+  if (config.message.trim().isEmpty) {
+    throw Exception('Enter a welcome message.');
+  }
+  if (config.buttonLabel.trim().isEmpty) {
+    throw Exception('Enter a continue button label.');
+  }
+
+  final rawImage = config.imageUrl?.trim() ?? '';
+  final cleanImage =
+      rawImage.isEmpty ? null : cleanHostedImageUrl(rawImage);
+  if (rawImage.isNotEmpty && cleanImage == null) {
+    throw Exception('Enter a valid hosted welcome image URL.');
+  }
+
+  await supabase.from('hpj_welcome_screens').upsert(
+    <String, dynamic>{
+      'audience': audience,
+      'is_enabled': config.isEnabled,
+      'show_mode': mode,
+      'title': config.title.trim(),
+      'subtitle': config.subtitle.trim(),
+      'message': config.message.trim(),
+      'button_label': config.buttonLabel.trim(),
+      'image_url': cleanImage,
+      'require_acknowledgement': config.requireAcknowledgement,
+      'version': config.version < 1 ? 1 : config.version,
+      'updated_at': DateTime.now().toIso8601String(),
+      'updated_by': supabase.auth.currentUser?.id,
+    },
+    onConflict: 'audience',
+  );
+}
+
+Future<String?> uploadAdminHpjWelcomeImage({
+  required String audience,
+}) async {
+  final userBeforePicker = supabase.auth.currentUser;
+  if (userBeforePicker == null) {
+    throw Exception('Please sign in again before uploading an image.');
+  }
+
+  final picked = await pickProductImageFromDevice();
+  if (picked == null) return null;
+
+  await requireAdminAccess();
+
+  final user = supabase.auth.currentUser;
+  if (user == null || user.id != userBeforePicker.id) {
+    throw Exception(
+      'Your account changed while choosing the image. Please try again.',
+    );
+  }
+
+  final bytes = picked.bytes;
+  if (bytes.isEmpty) {
+    throw Exception('The selected image is empty.');
+  }
+  if (bytes.length > 8 * 1024 * 1024) {
+    throw Exception('Use a welcome image smaller than 8 MB.');
+  }
+
+  final mime = picked.mimeType.trim().toLowerCase();
+  final name = picked.fileName.trim().toLowerCase();
+
+  String extension;
+  String contentType;
+  if (mime == 'image/png' || name.endsWith('.png')) {
+    extension = 'png';
+    contentType = 'image/png';
+  } else if (mime == 'image/webp' || name.endsWith('.webp')) {
+    extension = 'webp';
+    contentType = 'image/webp';
+  } else {
+    extension = 'jpg';
+    contentType = 'image/jpeg';
+  }
+
+  final cleanAudience = audience
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9_-]+'), '-');
+  final path =
+      '$cleanAudience/${user.id}/${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+  await supabase.storage.from('hpj-welcome-media').uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: contentType,
+          upsert: false,
+        ),
+      );
+
+  return supabase.storage.from('hpj-welcome-media').getPublicUrl(path);
+}
+
+Future<bool> hasCurrentUserSeenWelcome(
+  HpjWelcomeScreenConfig config,
+) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return false;
+
+  try {
+    final response = await supabase
+        .from('hpj_welcome_seen')
+        .select('audience')
+        .eq('user_id', user.id)
+        .eq('audience', config.audience)
+        .eq('version', config.version)
+        .maybeSingle();
+
+    return response != null;
+  } catch (error) {
+    farmDebugLog('Welcome seen check skipped: $error');
+    return false;
+  }
+}
+
+Future<void> markCurrentUserWelcomeSeen(
+  HpjWelcomeScreenConfig config,
+) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return;
+
+  try {
+    await supabase.from('hpj_welcome_seen').upsert(
+      <String, dynamic>{
+        'user_id': user.id,
+        'audience': config.audience,
+        'version': config.version,
+        'seen_at': DateTime.now().toIso8601String(),
+      },
+      onConflict: 'user_id,audience,version',
+    );
+  } catch (error) {
+    farmDebugLog('Welcome seen save skipped: $error');
+  }
+}
+
+String _hpjWelcomePersonalize(String value, String name) {
+  return value.replaceAll('{name}', name.trim());
+}
+
+class _HpjWelcomeGateDecision {
+  final HpjWelcomeScreenConfig? config;
+  final bool show;
+
+  const _HpjWelcomeGateDecision({
+    required this.config,
+    required this.show,
+  });
+}
+
+class HpjManagedWelcomeGate extends StatefulWidget {
+  final String audience;
+  final String displayName;
+  final Widget child;
+
+  const HpjManagedWelcomeGate({
+    super.key,
+    required this.audience,
+    this.displayName = '',
+    required this.child,
+  });
+
+  @override
+  State<HpjManagedWelcomeGate> createState() =>
+      _HpjManagedWelcomeGateState();
+}
+
+class _HpjManagedWelcomeGateState extends State<HpjManagedWelcomeGate> {
+  late Future<_HpjWelcomeGateDecision> _future;
+  bool continued = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<_HpjWelcomeGateDecision> _load() async {
+    final config = await fetchHpjWelcomeScreenConfig(widget.audience);
+
+    if (config == null ||
+        !config.isEnabled ||
+        config.showMode != 'everyone' ||
+        supabase.auth.currentUser == null) {
+      return _HpjWelcomeGateDecision(config: config, show: false);
+    }
+
+    final seen = await hasCurrentUserSeenWelcome(config);
+    return _HpjWelcomeGateDecision(config: config, show: !seen);
+  }
+
+  Future<void> _continue(HpjWelcomeScreenConfig config) async {
+    await markCurrentUserWelcomeSeen(config);
+    if (mounted) setState(() => continued = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (continued) return widget.child;
+
+    return FutureBuilder<_HpjWelcomeGateDecision>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const Scaffold(
+            backgroundColor: FarmColors.background,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final decision = snapshot.data;
+        final config = decision?.config;
+        if (decision?.show != true || config == null) {
+          return widget.child;
+        }
+
+        return HpjManagedWelcomeScreen(
+          config: config,
+          displayName: widget.displayName,
+          onContinue: () => _continue(config),
+        );
+      },
+    );
+  }
+}
+
+class HpjManagedWelcomeScreen extends StatefulWidget {
+  final HpjWelcomeScreenConfig config;
+  final String displayName;
+  final Future<void> Function() onContinue;
+  final bool previewMode;
+
+  const HpjManagedWelcomeScreen({
+    super.key,
+    required this.config,
+    this.displayName = '',
+    required this.onContinue,
+    this.previewMode = false,
+  });
+
+  @override
+  State<HpjManagedWelcomeScreen> createState() =>
+      _HpjManagedWelcomeScreenState();
+}
+
+class _HpjManagedWelcomeScreenState extends State<HpjManagedWelcomeScreen> {
+  final ScrollController controller = ScrollController();
+  bool reachedBottom = false;
+  bool acknowledged = false;
+  bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(_checkBottom);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkBottom());
+  }
+
+  void _checkBottom() {
+    if (!mounted || !controller.hasClients || reachedBottom) return;
+    final p = controller.position;
+    if (p.maxScrollExtent <= 12 ||
+        p.pixels >= p.maxScrollExtent - 24) {
+      setState(() => reachedBottom = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    controller
+      ..removeListener(_checkBottom)
+      ..dispose();
+    super.dispose();
+  }
+
+  Future<void> _finish() async {
+    if (busy) return;
+    if (widget.config.requireAcknowledgement &&
+        (!reachedBottom || !acknowledged)) {
+      return;
+    }
+
+    setState(() => busy = true);
+    try {
+      await widget.onContinue();
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Widget _image() {
+    final imageUrl = cleanHostedImageUrl(widget.config.imageUrl);
+    if (imageUrl != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: SizedBox(
+          height: 220,
+          width: double.infinity,
+          child: Image.network(
+            imageUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: FarmColors.primarySoft,
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.image_not_supported_outlined,
+                color: FarmColors.mutedText,
+                size: 44,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 185,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: FarmColors.primarySoft,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Container(
+        width: 86,
+        height: 86,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Image.asset(
+          'lib/assets/images/logo.png',
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Icon(
+            Icons.storefront_rounded,
+            color: FarmColors.primary,
+            size: 42,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final config = widget.config;
+    final title = _hpjWelcomePersonalize(
+      config.title,
+      widget.displayName,
+    );
+    final subtitle = _hpjWelcomePersonalize(
+      config.subtitle,
+      widget.displayName,
+    );
+    final message = _hpjWelcomePersonalize(
+      config.message,
+      widget.displayName,
+    );
+    final canContinue = !config.requireAcknowledgement ||
+        (reachedBottom && acknowledged);
+
+    return PopScope(
+      canPop: widget.previewMode || !config.requireAcknowledgement,
+      child: Scaffold(
+        backgroundColor: FarmColors.background,
+        appBar: widget.previewMode
+            ? AppBar(
+                title: Text(
+                  '${hpjWelcomeAudienceLabel(config.audience)} Welcome Preview',
+                ),
+              )
+            : null,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: controller,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _image(),
+                          const SizedBox(height: 18),
+                          Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: FarmColors.primarySoft,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${hpjWelcomeAudienceLabel(config.audience).toUpperCase()} WELCOME',
+                                style: const TextStyle(
+                                  color: FarmColors.primary,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 28,
+                              height: 1.08,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          if (subtitle.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              subtitle,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: FarmColors.primary,
+                                fontSize: 14,
+                                height: 1.35,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          FarmCard(
+                            padding: const EdgeInsets.all(18),
+                            child: Text(
+                              message,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 14,
+                                height: 1.55,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          if (config.requireAcknowledgement) ...[
+                            if (!reachedBottom)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: FarmColors.primary,
+                                    ),
+                                    SizedBox(width: 5),
+                                    Text(
+                                      'Scroll to the end to continue',
+                                      style: TextStyle(
+                                        color: FarmColors.primary,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            FarmCard(
+                              padding: EdgeInsets.zero,
+                              child: CheckboxListTile(
+                                value: acknowledged,
+                                enabled: reachedBottom,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                activeColor: FarmColors.primary,
+                                title: const Text(
+                                  'I have read and understand this welcome information.',
+                                  style: TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                onChanged: reachedBottom
+                                    ? (value) {
+                                        setState(() {
+                                          acknowledged = value ?? false;
+                                        });
+                                      }
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+                decoration: const BoxDecoration(
+                  color: FarmColors.card,
+                  border: Border(
+                    top: BorderSide(color: FarmColors.line),
+                  ),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed:
+                                  !busy && canContinue ? _finish : null,
+                              icon: busy
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.arrow_forward_rounded,
+                                    ),
+                              label: Text(
+                                widget.previewMode
+                                    ? 'Close Preview'
+                                    : config.buttonLabel,
+                              ),
+                            ),
+                          ),
+                          if (!config.requireAcknowledgement &&
+                              !widget.previewMode)
+                            TextButton(
+                              onPressed: busy ? null : _finish,
+                              child: const Text('Skip for now'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> showHpjManagedWelcomeAfterRegistration({
+  required BuildContext context,
+  required String audience,
+  required bool hasSession,
+  String displayName = '',
+}) async {
+  final cleanAudience = audience.trim().toLowerCase();
+  final config = await fetchHpjWelcomeScreenConfig(cleanAudience);
+
+  if (config == null) {
+    // Preserve the existing Farmer Early Access screen until the new SQL
+    // has been installed. Customer and Business previously had no equivalent.
+    if (cleanAudience == 'farmer' && context.mounted) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => FarmerEarlyAccessWelcomeScreen(
+            farmerName: displayName,
+          ),
+        ),
+      );
+    }
+    return;
+  }
+
+  if (!config.isEnabled || !context.mounted) return;
+
+  // If email confirmation means there is no session yet, "Everyone" is shown
+  // after sign-in so HPJ can record the viewed version reliably.
+  if (config.showMode == 'everyone' && !hasSession) return;
+
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (screenContext) => HpjManagedWelcomeScreen(
+        config: config,
+        displayName: displayName,
+        onContinue: () async {
+          if (hasSession) {
+            await markCurrentUserWelcomeSeen(config);
+          }
+          if (screenContext.mounted &&
+              Navigator.of(screenContext).canPop()) {
+            Navigator.of(screenContext).pop();
+          }
+        },
+      ),
+    ),
+  );
+}
+
 Future<List<NotificationTarget>> fetchAdminNotificationTargets() async {
   final seen = <String>{};
   final targets = <NotificationTarget>[];
@@ -3316,10 +4166,149 @@ class FarmerDashboardScreen extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
                   children: [
                     _FarmerPublicIdentityCard(
-                      profile: profile,
-                      refreshKey: refreshKey,
-                      onOpenAccount: onOpenAccount,
+  profile: profile,
+  refreshKey: refreshKey,
+  onOpenAccount: onOpenAccount,
+
+  onOpenBusiness: () {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight:
+                MediaQuery.of(sheetContext).size.height * 0.72,
+          ),
+          decoration: const BoxDecoration(
+            color: FarmColors.background,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              18,
+              10,
+              18,
+              28,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: FarmColors.line,
+                      borderRadius: BorderRadius.circular(99),
                     ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.account_balance_wallet_outlined,
+                        color: FarmColors.primary,
+                        size: 25,
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Farm business',
+                            style: TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Your business at a glance',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () =>
+                          Navigator.of(sheetContext).pop(),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                _FarmerBusinessSnapshotCard(
+                  farmName: profile.farmName,
+                  sales30: sales30,
+                  sales90: sales90,
+                  supplyTransactions30:
+                      supplyTransactions30,
+                  confirmedCropCount:
+                      confirmedCropCount,
+                  opportunityCount:
+                      demandForMyCrops.length,
+                  upcomingCollections:
+                      upcomingCollections.length,
+                  topOpportunity:
+                      demandForMyCrops.isEmpty
+                          ? null
+                          : demandForMyCrops.first,
+
+                  onOpenDemand: () {
+                    Navigator.of(sheetContext).pop();
+                    onOpenDemand();
+                  },
+
+                  onOpenSupply: () {
+                    Navigator.of(sheetContext).pop();
+                    onOpenSupply();
+                  },
+
+                  onOpenPayments: () {
+                    Navigator.of(sheetContext).pop();
+                    onOpenPayments();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  },
+),
                     const SizedBox(height: 18),
                     _FarmerCoreActionsCard(
                       onOpenSupply: onOpenSupply,
@@ -3328,47 +4317,90 @@ class FarmerDashboardScreen extends StatelessWidget {
                       onOpenPayments: onOpenPayments,
                     ),
                     if (farmerNotifications.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      const SectionHeader(
-                        title: 'Action needed',
-                        subtitle: 'The most important update right now.',
-                      ),
-                      const SizedBox(height: 9),
-                      FarmCard(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-                        child: Column(
-                          children: [
-                            HpjMvpListRow(
-                              icon: farmerNotifications.first.icon,
-                              title: farmerNotifications.first.title,
-                              subtitle: farmerNotifications.first.message,
-                              onTap: farmerNotifications.first.onTap,
-                              trailing: farmerNotifications.length > 1
-                                  ? HpjMvpStatusPill(
-                                      label: '+${farmerNotifications.length - 1}',
-                                      color: FarmColors.warning,
-                                    )
-                                  : null,
-                            ),
-                            if (farmerNotifications.length > 1) ...[
-                              const Divider(height: 1),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: () => _showFarmerNotifications(
-                                    context,
-                                    farmerNotifications,
-                                  ),
-                                  child: Text(
-                                    'View all ${farmerNotifications.length} updates',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
+  const SizedBox(height: 14),
+
+  FarmCard(
+    padding: EdgeInsets.zero,
+    child: ExpansionTile(
+      initiallyExpanded: false,
+      maintainState: true,
+      tilePadding: const EdgeInsets.symmetric(
+        horizontal: 15,
+        vertical: 2,
+      ),
+      childrenPadding: const EdgeInsets.fromLTRB(
+        12,
+        0,
+        12,
+        10,
+      ),
+      leading: const Icon(
+        Icons.notification_important_outlined,
+        color: FarmColors.warning,
+      ),
+      title: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Action needed',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          HpjMvpStatusPill(
+            label: '${farmerNotifications.length}',
+            color: FarmColors.warning,
+          ),
+        ],
+      ),
+      subtitle: Text(
+        farmerNotifications.length == 1
+            ? '1 item may need your attention'
+            : '${farmerNotifications.length} items may need your attention',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: FarmColors.mutedText,
+          fontSize: 9.8,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      children: [
+        HpjMvpListRow(
+          icon: farmerNotifications.first.icon,
+          title: farmerNotifications.first.title,
+          subtitle: farmerNotifications.first.message,
+          onTap: farmerNotifications.first.onTap,
+          trailing: farmerNotifications.length > 1
+              ? HpjMvpStatusPill(
+                  label: '+${farmerNotifications.length - 1}',
+                  color: FarmColors.warning,
+                )
+              : null,
+        ),
+
+        if (farmerNotifications.length > 1) ...[
+          const Divider(height: 1),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => _showFarmerNotifications(
+                context,
+                farmerNotifications,
+              ),
+              child: Text(
+                'View all ${farmerNotifications.length} updates',
+              ),
+            ),
+          ),
+        ],
+      ],
+    ),
+  ),
+],
                     if (!activationComplete) ...[
                       const SizedBox(height: 12),
                       _FarmerSetupNudge(
@@ -3379,31 +4411,15 @@ class FarmerDashboardScreen extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 20),
-                    _FarmerBusinessSnapshotCard(
-                      farmName: profile.farmName,
-                      sales30: sales30,
-                      sales90: sales90,
-                      supplyTransactions30: supplyTransactions30,
-                      confirmedCropCount: confirmedCropCount,
-                      opportunityCount: demandForMyCrops.length,
-                      upcomingCollections: upcomingCollections.length,
-                      topOpportunity: demandForMyCrops.isEmpty
-                          ? null
-                          : demandForMyCrops.first,
-                      onOpenDemand: onOpenDemand,
-                      onOpenSupply: onOpenSupply,
-                      onOpenPayments: onOpenPayments,
-                    ),
-                    const SizedBox(height: 14),
                     FarmCard(
                       padding: EdgeInsets.zero,
                       child: ExpansionTile(
-                        initiallyExpanded: true,
+                        initiallyExpanded: false,
                         tilePadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 2),
                         childrenPadding: const EdgeInsets.fromLTRB(15, 0, 15, 15),
                         leading: const Icon(Icons.insights_outlined, color: FarmColors.primary),
                         title: const Text(
-                          'Updates & intelligence',
+                          'News & insights',
                           style: TextStyle(
                             color: FarmColors.ink,
                             fontSize: 13.5,
@@ -3411,7 +4427,7 @@ class FarmerDashboardScreen extends StatelessWidget {
                           ),
                         ),
                         subtitle: const Text(
-                          'Demand, market pulse, reels and agriculture updates',
+                          'Market updates, demand and HPJ news',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -16414,11 +17430,13 @@ class _FarmerPublicIdentityCard extends StatefulWidget {
   final FarmerProfile profile;
   final int refreshKey;
   final VoidCallback onOpenAccount;
+  final VoidCallback onOpenBusiness;
 
   const _FarmerPublicIdentityCard({
     required this.profile,
     required this.refreshKey,
     required this.onOpenAccount,
+    required this.onOpenBusiness,
   });
 
   @override
@@ -16581,24 +17599,69 @@ class _FarmerPublicIdentityCardState extends State<_FarmerPublicIdentityCard> {
               const Divider(height: 1),
               const SizedBox(height: 7),
               Row(
-                children: [
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: farm == null ? null : () => _preview(farm),
-                      icon: const Icon(Icons.visibility_outlined, size: 16),
-                      label: const Text('Preview'),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: _editPublicPage,
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Edit page'),
-                    ),
-                  ),
-                ],
-              ),
+  children: [
+    Expanded(
+  child: TextButton.icon(
+    style: TextButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      minimumSize: const Size(0, 40),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+    onPressed: farm == null ? null : () => _preview(farm),
+    icon: const Icon(
+      Icons.visibility_outlined,
+      size: 16,
+    ),
+    label: const Text(
+      'Preview',
+      maxLines: 1,
+    ),
+  ),
+),
+
+    const SizedBox(width: 3),
+
+    Expanded(
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          minimumSize: const Size(0, 40),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: widget.onOpenBusiness,
+        icon: const Icon(
+          Icons.account_balance_wallet_outlined,
+          size: 17,
+        ),
+        label: const Text(
+          'Business',
+          maxLines: 1,
+        ),
+      ),
+    ),
+
+    const SizedBox(width: 3),
+
+    Expanded(
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          minimumSize: const Size(0, 40),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: _editPublicPage,
+        icon: const Icon(
+          Icons.edit_outlined,
+          size: 16,
+        ),
+        label: const Text(
+          'Edit',
+          maxLines: 1,
+        ),
+      ),
+    ),
+  ],
+),
               if (snapshot.connectionState == ConnectionState.waiting &&
                   farm == null) ...[
                 const SizedBox(height: 5),
@@ -16628,63 +17691,95 @@ class _FarmerCoreActionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionHeader(
-          title: 'Farm tools',
-          subtitle: 'The four jobs you use most.',
+    return FarmCard(
+      padding: EdgeInsets.zero,
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        maintainState: true,
+        tilePadding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 2,
         ),
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final width = (constraints.maxWidth - 10) / 2;
-            return Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.grass_rounded,
-                    title: 'Supply',
-                    subtitle: 'Update crops',
-                    onTap: onOpenSupply,
-                    emphasized: true,
-                  ),
-                ),
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.trending_up_rounded,
-                    title: 'Demand',
-                    subtitle: 'Buyer needs',
-                    onTap: onOpenDemand,
-                  ),
-                ),
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'Collections',
-                    subtitle: 'Pickup schedule',
-                    onTap: onOpenCollections,
-                  ),
-                ),
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.payments_outlined,
-                    title: 'Payments',
-                    subtitle: 'Earnings',
-                    onTap: onOpenPayments,
-                  ),
-                ),
-              ],
-            );
-          },
+        childrenPadding: const EdgeInsets.fromLTRB(
+          15,
+          0,
+          15,
+          15,
         ),
-      ],
+        leading: const Icon(
+          Icons.handyman_outlined,
+          color: FarmColors.primary,
+        ),
+        title: const Text(
+          'Farm tools',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: const Text(
+          'Supply, demand, collections and payments',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 9.8,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = (constraints.maxWidth - 10) / 2;
+
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SizedBox(
+                    width: width,
+                    child: HpjMvpActionTile(
+                      icon: Icons.grass_rounded,
+                      title: 'Supply',
+                      subtitle: 'Update crops',
+                      onTap: onOpenSupply,
+                      emphasized: true,
+                    ),
+                  ),
+                  SizedBox(
+                    width: width,
+                    child: HpjMvpActionTile(
+                      icon: Icons.trending_up_rounded,
+                      title: 'Demand',
+                      subtitle: 'Buyer needs',
+                      onTap: onOpenDemand,
+                    ),
+                  ),
+                  SizedBox(
+                    width: width,
+                    child: HpjMvpActionTile(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'Collections',
+                      subtitle: 'Pickup schedule',
+                      onTap: onOpenCollections,
+                    ),
+                  ),
+                  SizedBox(
+                    width: width,
+                    child: HpjMvpActionTile(
+                      icon: Icons.payments_outlined,
+                      title: 'Payments',
+                      subtitle: 'Earnings',
+                      onTap: onOpenPayments,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -21373,6 +22468,1849 @@ Future<String?> uploadAdminSponsorImageFromDevice({
   }
 }
 
+
+// =====================================================
+// HPJ MVP — ADMIN-MANAGED WEEKLY MEALS
+// Owner / Manager content management for What's Cooking.
+// Keeps the existing customer meal experience and only
+// moves meal content + photos into Supabase.
+// =====================================================
+
+class HpjWeeklyMealAdminRecord {
+  final String id;
+  final int weekday;
+  final String dayName;
+  final String shortDay;
+  final String name;
+  final String dietaryLabel;
+  final String imageUrl;
+  final String description;
+  final int preparationMinutes;
+  final int servings;
+  final String difficulty;
+  final List<HpjMealProductIngredient> productIngredients;
+  final List<String> freshIngredients;
+  final List<String> pantryIngredients;
+  final List<String> nutritionHighlights;
+  final bool isPublished;
+  final DateTime? updatedAt;
+
+  const HpjWeeklyMealAdminRecord({
+    required this.id,
+    required this.weekday,
+    required this.dayName,
+    required this.shortDay,
+    required this.name,
+    required this.dietaryLabel,
+    required this.imageUrl,
+    required this.description,
+    required this.preparationMinutes,
+    required this.servings,
+    required this.difficulty,
+    required this.productIngredients,
+    required this.freshIngredients,
+    required this.pantryIngredients,
+    required this.nutritionHighlights,
+    required this.isPublished,
+    this.updatedAt,
+  });
+
+  static List<String> _stringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) return const <String>[];
+
+    return text
+        .split(RegExp(r'[\n,;]+'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  factory HpjWeeklyMealAdminRecord.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    return HpjWeeklyMealAdminRecord(
+      id: (data['id'] ?? '').toString().trim(),
+      weekday: int.tryParse((data['weekday'] ?? '').toString()) ?? 1,
+      dayName: (data['day_name'] ?? '').toString().trim(),
+      shortDay: (data['short_day'] ?? '').toString().trim(),
+      name: (data['name'] ?? '').toString().trim(),
+      dietaryLabel:
+          (data['dietary_label'] ?? 'Classic').toString().trim(),
+      imageUrl: (data['image_url'] ?? '').toString().trim(),
+      description: (data['description'] ?? '').toString().trim(),
+      preparationMinutes:
+          int.tryParse((data['preparation_minutes'] ?? '').toString()) ?? 30,
+      servings: int.tryParse((data['servings'] ?? '').toString()) ?? 4,
+      difficulty: (data['difficulty'] ?? 'Easy').toString().trim(),
+      productIngredients:
+          HpjMealProductIngredient.listFromSupabase(data['recipe_products']),
+      freshIngredients: _stringList(data['fresh_ingredients']),
+      pantryIngredients: _stringList(data['pantry_ingredients']),
+      nutritionHighlights: _stringList(data['nutrition_highlights']),
+      isPublished: data['is_published'] == true,
+      updatedAt: parseProductDate(data['updated_at']),
+    );
+  }
+
+  HpjWeeklyMealAdminRecord copyWith({
+    String? imageUrl,
+    String? name,
+    String? dietaryLabel,
+    String? description,
+    int? preparationMinutes,
+    int? servings,
+    String? difficulty,
+    List<HpjMealProductIngredient>? productIngredients,
+    List<String>? freshIngredients,
+    List<String>? pantryIngredients,
+    List<String>? nutritionHighlights,
+    bool? isPublished,
+  }) {
+    return HpjWeeklyMealAdminRecord(
+      id: id,
+      weekday: weekday,
+      dayName: dayName,
+      shortDay: shortDay,
+      name: name ?? this.name,
+      dietaryLabel: dietaryLabel ?? this.dietaryLabel,
+      imageUrl: imageUrl ?? this.imageUrl,
+      description: description ?? this.description,
+      preparationMinutes: preparationMinutes ?? this.preparationMinutes,
+      servings: servings ?? this.servings,
+      difficulty: difficulty ?? this.difficulty,
+      productIngredients: productIngredients ?? this.productIngredients,
+      freshIngredients: freshIngredients ?? this.freshIngredients,
+      pantryIngredients: pantryIngredients ?? this.pantryIngredients,
+      nutritionHighlights:
+          nutritionHighlights ?? this.nutritionHighlights,
+      isPublished: isPublished ?? this.isPublished,
+      updatedAt: updatedAt,
+    );
+  }
+}
+
+Future<void> _requireWeeklyMealAdminAccess() async {
+  await requireAdminAccess();
+
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+
+  // Keep the existing legacy-admin compatibility path when no staff role
+  // is returned. Current staff accounts must be Owner or Manager.
+  if (role.isNotEmpty && role != 'owner' && role != 'manager') {
+    throw Exception('Only Owner or Manager can manage weekly meals.');
+  }
+}
+
+Future<List<HpjWeeklyMealAdminRecord>> fetchAdminWeeklyMeals() async {
+  await _requireWeeklyMealAdminAccess();
+
+  try {
+    final response = await supabase
+        .from('hpj_weekly_meals')
+        .select(
+          'id, weekday, day_name, short_day, name, dietary_label, image_url, description, preparation_minutes, servings, difficulty, recipe_products, fresh_ingredients, pantry_ingredients, nutrition_highlights, is_published, updated_at',
+        )
+        .order('weekday', ascending: true);
+
+    return (response as List)
+        .map(
+          (item) => HpjWeeklyMealAdminRecord.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    throw Exception(
+      'Could not load What\'s Cooking meals. Run the HPJ Weekly Meals MVP SQL, then retry.',
+    );
+  }
+}
+
+Future<void> saveAdminWeeklyMeal(
+  HpjWeeklyMealAdminRecord meal,
+) async {
+  await _requireWeeklyMealAdminAccess();
+
+  final cleanName = meal.name.trim();
+  final cleanDescription = meal.description.trim();
+  final cleanImageUrl = meal.imageUrl.trim();
+
+  if (meal.weekday < DateTime.monday ||
+      meal.weekday > DateTime.sunday) {
+    throw Exception('Choose a valid day of the week.');
+  }
+
+  if (cleanName.isEmpty) {
+    throw Exception('Enter the meal name.');
+  }
+
+  if (cleanDescription.isEmpty) {
+    throw Exception('Add a short meal description.');
+  }
+
+  if (meal.preparationMinutes < 1 ||
+      meal.preparationMinutes > 300) {
+    throw Exception('Preparation time must be between 1 and 300 minutes.');
+  }
+
+  if (meal.servings < 1 || meal.servings > 30) {
+    throw Exception('Servings must be between 1 and 30.');
+  }
+
+  if (cleanImageUrl.isNotEmpty &&
+      cleanHostedImageUrl(cleanImageUrl) == null) {
+    throw Exception('Use a valid https:// meal image URL.');
+  }
+
+  final payload = <String, dynamic>{
+    'weekday': meal.weekday,
+    'day_name': meal.dayName.trim(),
+    'short_day': meal.shortDay.trim(),
+    'name': cleanName,
+    'dietary_label': meal.dietaryLabel.trim().isEmpty
+        ? 'Classic'
+        : meal.dietaryLabel.trim(),
+    'image_url': cleanImageUrl.isEmpty ? null : cleanImageUrl,
+    'description': cleanDescription,
+    'preparation_minutes': meal.preparationMinutes,
+    'servings': meal.servings,
+    'difficulty': meal.difficulty.trim().isEmpty
+        ? 'Easy'
+        : meal.difficulty.trim(),
+    'recipe_products': meal.productIngredients
+        .where((item) => item.productName.trim().isNotEmpty)
+        .map((item) => item.toSupabase())
+        .toList(growable: false),
+    'fresh_ingredients': (meal.productIngredients.isNotEmpty
+            ? meal.productIngredients.map((item) => item.productName)
+            : meal.freshIngredients)
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false),
+    'pantry_ingredients': meal.pantryIngredients
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(),
+    'nutrition_highlights': meal.nutritionHighlights
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(),
+    'is_published': meal.isPublished,
+    'updated_at': DateTime.now().toIso8601String(),
+    'updated_by': supabase.auth.currentUser?.id,
+  };
+
+  try {
+    await supabase
+        .from('hpj_weekly_meals')
+        .upsert(payload, onConflict: 'weekday');
+  } catch (error) {
+    throw Exception(
+      'Could not save the weekly meal. Check the Weekly Meals SQL and your Owner/Manager permission.',
+    );
+  }
+}
+
+Future<String?> uploadAdminWeeklyMealImageFromDevice({
+  required int weekday,
+}) async {
+  // IMPORTANT FOR FLUTLAB WEB:
+  // Keep the browser picker attached directly to the user's tap.
+  final userBeforePicker = supabase.auth.currentUser;
+  if (userBeforePicker == null) {
+    throw Exception('Please sign in again before uploading a meal photo.');
+  }
+
+  final picked = await pickProductImageFromDevice();
+  if (picked == null) return null;
+
+  await _requireWeeklyMealAdminAccess();
+
+  final user = supabase.auth.currentUser;
+  if (user == null || user.id != userBeforePicker.id) {
+    throw Exception(
+      'Your account changed while choosing the meal photo. Try again.',
+    );
+  }
+
+  final bytes = picked.bytes;
+  if (bytes.isEmpty) {
+    throw Exception('The selected meal photo is empty.');
+  }
+
+  const maxBytes = 8 * 1024 * 1024;
+  if (bytes.length > maxBytes) {
+    throw Exception('Use a meal photo smaller than 8 MB.');
+  }
+
+  final lowerName = picked.fileName.trim().toLowerCase();
+  final declaredMime = picked.mimeType.trim().toLowerCase();
+
+  String extension;
+  String contentType;
+
+  if (declaredMime == 'image/png' || lowerName.endsWith('.png')) {
+    extension = 'png';
+    contentType = 'image/png';
+  } else if (declaredMime == 'image/webp' ||
+      lowerName.endsWith('.webp')) {
+    extension = 'webp';
+    contentType = 'image/webp';
+  } else if (declaredMime == 'image/jpeg' ||
+      lowerName.endsWith('.jpg') ||
+      lowerName.endsWith('.jpeg')) {
+    extension = 'jpg';
+    contentType = 'image/jpeg';
+  } else {
+    throw Exception('Choose a JPG, PNG or WebP meal photo.');
+  }
+
+  final safeWeekday = weekday.clamp(1, 7).toInt();
+  final fileName =
+      '${DateTime.now().millisecondsSinceEpoch}.$extension';
+  final path = 'meals/$safeWeekday/${user.id}/$fileName';
+
+  try {
+    await supabase.storage
+        .from('weekly-meal-media')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: contentType,
+            upsert: false,
+          ),
+        );
+
+    return supabase.storage
+        .from('weekly-meal-media')
+        .getPublicUrl(path);
+  } catch (error) {
+    throw Exception(
+      'Could not upload the meal photo. Run the HPJ Weekly Meals MVP SQL and try again.',
+    );
+  }
+}
+
+class AdminWeeklyMealsTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminWeeklyMealsTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminWeeklyMealsTab> createState() =>
+      _AdminWeeklyMealsTabState();
+}
+
+class _AdminWeeklyMealsTabState
+    extends State<AdminWeeklyMealsTab> {
+  late Future<List<HpjWeeklyMealAdminRecord>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchAdminWeeklyMeals();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminWeeklyMealsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _reload();
+    }
+  }
+
+  Future<void> _reload({bool notifyParent = false}) async {
+    final next = fetchAdminWeeklyMeals();
+
+    if (mounted) {
+      setState(() => _future = next);
+    } else {
+      _future = next;
+    }
+
+    try {
+      await next;
+    } finally {
+      if (notifyParent) widget.onChanged();
+    }
+  }
+
+  List<String> _parseList(String raw) {
+    return raw
+        .split(RegExp(r'[\n,;]+'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  String _joinList(List<String> values) => values.join(', ');
+
+  Widget _mealImage(
+    String imageUrl, {
+    double width = 88,
+    double height = 72,
+  }) {
+    final clean = cleanHostedImageUrl(imageUrl);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: width,
+        height: height,
+        color: FarmColors.primarySoft,
+        child: clean == null
+            ? const Icon(
+                Icons.restaurant_menu_rounded,
+                color: FarmColors.green,
+              )
+            : Image.network(
+                clean,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) {
+                  return const Center(
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: FarmColors.mutedText,
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
+  Future<void> _openPreview() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const WeeklyMealIdeasScreen(),
+      ),
+    );
+  }
+
+  String _mealProductNameKey(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[_-]+'), ' ')
+        .replaceAll(RegExp(r'[^a-z0-9 ]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  Future<List<HpjMealProductIngredient>?> _selectRecipeProducts(
+    BuildContext context,
+    List<HpjMealProductIngredient> current,
+  ) async {
+    List<Product> products;
+
+    try {
+      products = await fetchProducts(forceRefresh: true);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyAppError(error))),
+        );
+      }
+      return null;
+    }
+
+    final candidates = products
+        .where((product) => product.id.trim().isNotEmpty)
+        .toList(growable: false)
+      ..sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+
+    if (candidates.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No HPJ products are available to select.'),
+          ),
+        );
+      }
+      return null;
+    }
+
+    final currentById = <String, HpjMealProductIngredient>{};
+    final selectedIds = <String>{};
+
+    for (final ingredient in current) {
+      final id = ingredient.productId.trim();
+      if (id.isNotEmpty) {
+        currentById[id] = ingredient;
+        selectedIds.add(id);
+        continue;
+      }
+
+      final legacyKey = _mealProductNameKey(ingredient.productName);
+      if (legacyKey.isEmpty) continue;
+
+      for (final product in candidates) {
+        final productKey = _mealProductNameKey(product.name);
+        final sameName = productKey == legacyKey ||
+            productKey.contains(legacyKey) ||
+            legacyKey.contains(productKey);
+        if (!sameName) continue;
+        final productId = product.id.trim();
+        if (productId.isEmpty) break;
+        currentById[productId] = ingredient.copyWith(
+          productId: productId,
+          productName: product.name,
+        );
+        selectedIds.add(productId);
+        break;
+      }
+    }
+
+    var query = '';
+
+    return showModalBottomSheet<List<HpjMealProductIngredient>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (pickerContext) {
+        return StatefulBuilder(
+          builder: (pickerContext, setPickerState) {
+            final queryKey = _mealProductNameKey(query);
+            final visible = queryKey.isEmpty
+                ? candidates
+                : candidates
+                    .where(
+                      (product) => _mealProductNameKey(product.name)
+                          .contains(queryKey),
+                    )
+                    .toList(growable: false);
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(pickerContext).height * 0.88,
+              ),
+              decoration: const BoxDecoration(
+                color: FarmColors.background,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: FarmColors.line,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Select HPJ ingredients',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Names come directly from your Products list.',
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: () => Navigator.of(pickerContext).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                    child: TextField(
+                      autofocus: true,
+                      onChanged: (value) {
+                        setPickerState(() => query = value);
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Search HPJ products...',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 4),
+                      itemBuilder: (context, index) {
+                        final product = visible[index];
+                        final id = product.id.trim();
+                        final selected = selectedIds.contains(id);
+                        final unit = product.unit?.trim() ?? '';
+                        final imageUrl = cleanHostedImageUrl(product.imageUrl);
+
+                        return Material(
+                          color: selected
+                              ? FarmColors.primarySoft
+                              : FarmColors.card,
+                          borderRadius: BorderRadius.circular(16),
+                          child: CheckboxListTile(
+                            value: selected,
+                            activeColor: FarmColors.green,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            secondary: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                width: 42,
+                                height: 42,
+                                color: FarmColors.cardSoft,
+                                child: imageUrl == null
+                                    ? const Icon(
+                                        Icons.eco_outlined,
+                                        color: FarmColors.green,
+                                      )
+                                    : Image.network(
+                                        imageUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(
+                                          Icons.eco_outlined,
+                                          color: FarmColors.green,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            title: Text(
+                              product.name,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            subtitle: Text(
+                              unit.isEmpty
+                                  ? 'HPJ product'
+                                  : 'HPJ selling unit: $unit',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            onChanged: (value) {
+                              setPickerState(() {
+                                if (value == true) {
+                                  selectedIds.add(id);
+                                } else {
+                                  selectedIds.remove(id);
+                                }
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            final result = <HpjMealProductIngredient>[];
+
+                            for (final product in candidates) {
+                              final id = product.id.trim();
+                              if (!selectedIds.contains(id)) continue;
+
+                              final existing = currentById[id];
+                              result.add(
+                                HpjMealProductIngredient(
+                                  productId: id,
+                                  productName: product.name,
+                                  amount: existing?.amount ?? '',
+                                  recipeUnit: existing?.recipeUnit ?? '',
+                                ),
+                              );
+                            }
+
+                            Navigator.of(pickerContext).pop(result);
+                          },
+                          icon: const Icon(Icons.check_rounded),
+                          label: Text(
+                            selectedIds.isEmpty
+                                ? 'Use No HPJ Ingredients'
+                                : 'Add ${selectedIds.length} Selected Products',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _editMeal(
+    HpjWeeklyMealAdminRecord meal,
+  ) async {
+    final nameController =
+        TextEditingController(text: meal.name);
+    final imageController =
+        TextEditingController(text: meal.imageUrl);
+    final descriptionController =
+        TextEditingController(text: meal.description);
+    final prepController = TextEditingController(
+      text: meal.preparationMinutes.toString(),
+    );
+    final servingsController = TextEditingController(
+      text: meal.servings.toString(),
+    );
+    var selectedProductIngredients = meal.productIngredients.isNotEmpty
+        ? List<HpjMealProductIngredient>.from(meal.productIngredients)
+        : meal.freshIngredients
+            .map(
+              (name) => HpjMealProductIngredient(
+                productId: '',
+                productName: name,
+              ),
+            )
+            .toList(growable: true);
+    final pantryController = TextEditingController(
+      text: _joinList(meal.pantryIngredients),
+    );
+    final nutritionController = TextEditingController(
+      text: _joinList(meal.nutritionHighlights),
+    );
+
+    var dietaryLabel = meal.dietaryLabel.trim().isEmpty
+        ? 'Classic'
+        : meal.dietaryLabel.trim();
+    var difficulty = meal.difficulty.trim().isEmpty
+        ? 'Easy'
+        : meal.difficulty.trim();
+    var published = meal.isPublished;
+    var uploading = false;
+    var saving = false;
+    var previewImage = meal.imageUrl.trim();
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Future<void> uploadPhoto() async {
+              if (uploading || saving) return;
+
+              setSheetState(() => uploading = true);
+
+              try {
+                final url =
+                    await uploadAdminWeeklyMealImageFromDevice(
+                  weekday: meal.weekday,
+                );
+
+                if (!sheetContext.mounted || url == null) return;
+
+                imageController.text = url;
+                setSheetState(() => previewImage = url);
+              } catch (error) {
+                if (!sheetContext.mounted) return;
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  SnackBar(
+                    content: Text(friendlyAppError(error)),
+                  ),
+                );
+              } finally {
+                if (sheetContext.mounted) {
+                  setSheetState(() => uploading = false);
+                }
+              }
+            }
+
+            Future<void> saveMeal() async {
+              if (saving || uploading) return;
+
+              final prep =
+                  int.tryParse(prepController.text.trim());
+              final servings =
+                  int.tryParse(servingsController.text.trim());
+
+              if (prep == null || prep < 1 || prep > 300) {
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Enter preparation time between 1 and 300 minutes.',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              if (servings == null ||
+                  servings < 1 ||
+                  servings > 30) {
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Enter servings between 1 and 30.',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              setSheetState(() => saving = true);
+
+              try {
+                await saveAdminWeeklyMeal(
+                  meal.copyWith(
+                    name: nameController.text.trim(),
+                    imageUrl: imageController.text.trim(),
+                    dietaryLabel: dietaryLabel,
+                    description:
+                        descriptionController.text.trim(),
+                    preparationMinutes: prep,
+                    servings: servings,
+                    difficulty: difficulty,
+                    productIngredients: List<HpjMealProductIngredient>.from(
+                      selectedProductIngredients,
+                    ),
+                    freshIngredients: selectedProductIngredients
+                        .map((item) => item.productName.trim())
+                        .where((item) => item.isNotEmpty)
+                        .toList(growable: false),
+                    pantryIngredients:
+                        _parseList(pantryController.text),
+                    nutritionHighlights:
+                        _parseList(nutritionController.text),
+                    isPublished: published,
+                  ),
+                );
+
+                if (!sheetContext.mounted) return;
+                Navigator.of(sheetContext).pop(true);
+              } catch (error) {
+                if (!sheetContext.mounted) return;
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  SnackBar(
+                    content: Text(friendlyAppError(error)),
+                  ),
+                );
+                setSheetState(() => saving = false);
+              }
+            }
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight:
+                    MediaQuery.sizeOf(sheetContext).height * 0.94,
+              ),
+              decoration: const BoxDecoration(
+                color: FarmColors.background,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: FarmColors.line,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      14,
+                      10,
+                      8,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: FarmColors.primarySoft,
+                            borderRadius:
+                                BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.restaurant_menu_rounded,
+                            color: FarmColors.green,
+                          ),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${meal.dayName} meal',
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              const Text(
+                                'Update what customers see in What\'s Cooking.',
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: saving || uploading
+                              ? null
+                              : () => Navigator.of(sheetContext).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(
+                        18,
+                        16,
+                        18,
+                        120,
+                      ),
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              _mealImage(
+                                previewImage,
+                                width: 112,
+                                height: 92,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    OutlinedButton.icon(
+                                      onPressed:
+                                          uploading || saving
+                                              ? null
+                                              : uploadPhoto,
+                                      icon: uploading
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child:
+                                                  CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons
+                                                  .add_photo_alternate_outlined,
+                                            ),
+                                      label: Text(
+                                        uploading
+                                            ? 'Uploading...'
+                                            : 'Change Photo',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    const Text(
+                                      'JPG, PNG or WebP • max 8 MB',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color:
+                                            FarmColors.mutedText,
+                                        fontSize: 9.5,
+                                        fontWeight:
+                                            FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: nameController,
+                            textCapitalization:
+                                TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              labelText: 'Meal name *',
+                              prefixIcon:
+                                  Icon(Icons.restaurant_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: imageController,
+                            keyboardType: TextInputType.url,
+                            autocorrect: false,
+                            onChanged: (value) {
+                              setSheetState(
+                                () => previewImage = value.trim(),
+                              );
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Meal image URL',
+                              hintText:
+                                  'Upload above or paste an https:// image URL.',
+                              prefixIcon:
+                                  Icon(Icons.image_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: descriptionController,
+                            minLines: 3,
+                            maxLines: 5,
+                            textCapitalization:
+                                TextCapitalization.sentences,
+                            decoration: const InputDecoration(
+                              labelText: 'Short description *',
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child:
+                                    DropdownButtonFormField<String>(
+                                  value: dietaryLabel,
+                                  isExpanded: true,
+                                  decoration:
+                                      const InputDecoration(
+                                    labelText: 'Category',
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'Classic',
+                                      child: Text('Classic'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Ital / Vegan',
+                                      child: Text('Ital / Vegan'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Vegetarian',
+                                      child: Text('Vegetarian'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Healthy',
+                                      child: Text('Healthy'),
+                                    ),
+                                  ],
+                                  onChanged: saving
+                                      ? null
+                                      : (value) {
+                                          if (value == null) return;
+                                          setSheetState(
+                                            () =>
+                                                dietaryLabel = value,
+                                          );
+                                        },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child:
+                                    DropdownButtonFormField<String>(
+                                  value: <String>[
+                                    'Easy',
+                                    'Medium',
+                                    'Advanced',
+                                  ].contains(difficulty)
+                                      ? difficulty
+                                      : 'Easy',
+                                  isExpanded: true,
+                                  decoration:
+                                      const InputDecoration(
+                                    labelText: 'Difficulty',
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'Easy',
+                                      child: Text('Easy'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Medium',
+                                      child: Text('Medium'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Advanced',
+                                      child: Text('Advanced'),
+                                    ),
+                                  ],
+                                  onChanged: saving
+                                      ? null
+                                      : (value) {
+                                          if (value == null) return;
+                                          setSheetState(
+                                            () =>
+                                                difficulty = value,
+                                          );
+                                        },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: prepController,
+                                  keyboardType:
+                                      TextInputType.number,
+                                  decoration:
+                                      const InputDecoration(
+                                    labelText: 'Prep minutes',
+                                    prefixIcon:
+                                        Icon(Icons.schedule_rounded),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller: servingsController,
+                                  keyboardType:
+                                      TextInputType.number,
+                                  decoration:
+                                      const InputDecoration(
+                                    labelText: 'Servings',
+                                    prefixIcon:
+                                        Icon(Icons.groups_outlined),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: FarmColors.card,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: FarmColors.line),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Fresh / HPJ ingredients',
+                                            style: TextStyle(
+                                              color: FarmColors.ink,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Select from Products so recipe and Shop names stay connected.',
+                                            style: TextStyle(
+                                              color: FarmColors.mutedText,
+                                              fontSize: 10,
+                                              height: 1.3,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    OutlinedButton.icon(
+                                      onPressed: saving || uploading
+                                          ? null
+                                          : () async {
+                                              final selected =
+                                                  await _selectRecipeProducts(
+                                                sheetContext,
+                                                selectedProductIngredients,
+                                              );
+                                              if (selected == null ||
+                                                  !sheetContext.mounted) {
+                                                return;
+                                              }
+                                              setSheetState(() {
+                                                selectedProductIngredients =
+                                                    List<HpjMealProductIngredient>.from(
+                                                  selected,
+                                                );
+                                              });
+                                            },
+                                      icon: const Icon(Icons.add_rounded),
+                                      label: const Text('Select Products'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                if (selectedProductIngredients.isEmpty)
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: FarmColors.cardSoft,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: const Text(
+                                      'No HPJ products selected yet.',
+                                      style: TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Column(
+                                    children: [
+                                      for (var ingredientIndex = 0;
+                                          ingredientIndex <
+                                              selectedProductIngredients.length;
+                                          ingredientIndex++) ...[
+                                        Builder(
+                                          builder: (context) {
+                                            final ingredient =
+                                                selectedProductIngredients[
+                                                    ingredientIndex];
+                                            final linked = ingredient.productId
+                                                .trim()
+                                                .isNotEmpty;
+
+                                            return Container(
+                                              padding: const EdgeInsets.all(10),
+                                              decoration: BoxDecoration(
+                                                color: FarmColors.background,
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                                border: Border.all(
+                                                  color: FarmColors.line,
+                                                ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              ingredient
+                                                                  .productName,
+                                                              style:
+                                                                  const TextStyle(
+                                                                color:
+                                                                    FarmColors.ink,
+                                                                fontSize: 12.5,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w900,
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                                height: 2),
+                                                            Text(
+                                                              linked
+                                                                  ? 'Linked to HPJ Product ID'
+                                                                  : 'Legacy ingredient — use Select Products to link it',
+                                                              style: TextStyle(
+                                                                color: linked
+                                                                    ? FarmColors
+                                                                        .green
+                                                                    : FarmColors
+                                                                        .warning,
+                                                                fontSize: 9.5,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      IconButton(
+                                                        tooltip:
+                                                            'Remove ingredient',
+                                                        visualDensity:
+                                                            VisualDensity
+                                                                .compact,
+                                                        onPressed: saving
+                                                            ? null
+                                                            : () {
+                                                                setSheetState(
+                                                                  () {
+                                                                    selectedProductIngredients
+                                                                        .removeAt(
+                                                                      ingredientIndex,
+                                                                    );
+                                                                  },
+                                                                );
+                                                              },
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .delete_outline_rounded,
+                                                          size: 19,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: TextFormField(
+                                                          key: ValueKey(
+                                                            'meal-amount-${ingredient.productId}-${ingredient.productName}-$ingredientIndex',
+                                                          ),
+                                                          initialValue:
+                                                              ingredient.amount,
+                                                          enabled: !saving,
+                                                          decoration:
+                                                              const InputDecoration(
+                                                            labelText:
+                                                                'Recipe amount',
+                                                            hintText: '2',
+                                                            isDense: true,
+                                                          ),
+                                                          onChanged: (value) {
+                                                            selectedProductIngredients[
+                                                                    ingredientIndex] =
+                                                                selectedProductIngredients[
+                                                                        ingredientIndex]
+                                                                    .copyWith(
+                                                              amount: value,
+                                                            );
+                                                          },
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: TextFormField(
+                                                          key: ValueKey(
+                                                            'meal-unit-${ingredient.productId}-${ingredient.productName}-$ingredientIndex',
+                                                          ),
+                                                          initialValue:
+                                                              ingredient
+                                                                  .recipeUnit,
+                                                          enabled: !saving,
+                                                          decoration:
+                                                              const InputDecoration(
+                                                            labelText:
+                                                                'Recipe unit',
+                                                            hintText:
+                                                                'medium / lb / stalks',
+                                                            isDense: true,
+                                                          ),
+                                                          onChanged: (value) {
+                                                            selectedProductIngredients[
+                                                                    ingredientIndex] =
+                                                                selectedProductIngredients[
+                                                                        ingredientIndex]
+                                                                    .copyWith(
+                                                              recipeUnit: value,
+                                                            );
+                                                          },
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        if (ingredientIndex !=
+                                            selectedProductIngredients.length -
+                                                1)
+                                          const SizedBox(height: 8),
+                                      ],
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: pantryController,
+                            minLines: 2,
+                            maxLines: 4,
+                            decoration: const InputDecoration(
+                              labelText: 'Pantry ingredients',
+                              hintText:
+                                  'Rice, cooking oil, seasoning',
+                              helperText:
+                                  'Separate ingredients with commas or new lines.',
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: nutritionController,
+                            minLines: 2,
+                            maxLines: 4,
+                            decoration: const InputDecoration(
+                              labelText: 'Nutrition highlights',
+                              hintText:
+                                  'Protein, Fiber, Vitamin C',
+                              helperText:
+                                  'General guidance only. Separate with commas.',
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: published
+                                  ? FarmColors.primarySoft
+                                  : FarmColors.cardSoft,
+                              borderRadius:
+                                  BorderRadius.circular(16),
+                              border:
+                                  Border.all(color: FarmColors.line),
+                            ),
+                            child: SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              value: published,
+                              title: const Text(
+                                'Published',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              subtitle: Text(
+                                published
+                                    ? 'Customers can see this meal.'
+                                    : 'Hidden from the public weekly meal list.',
+                              ),
+                              onChanged: saving
+                                  ? null
+                                  : (value) {
+                                      setSheetState(
+                                        () => published = value,
+                                      );
+                                    },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(
+                        18,
+                        10,
+                        18,
+                        12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: FarmColors.background,
+                        border: Border(
+                          top: BorderSide(color: FarmColors.line),
+                        ),
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed:
+                              saving || uploading ? null : saveMeal,
+                          icon: saving
+                              ? const SizedBox(
+                                  width: 17,
+                                  height: 17,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save_outlined),
+                          label: Text(
+                            saving ? 'Saving...' : 'Save Meal',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    // Let the sheet route finish its exit animation before disposing
+    // TextEditingControllers used by fading TextFields.
+    await Future<void>.delayed(
+      const Duration(milliseconds: 350),
+    );
+
+    nameController.dispose();
+    imageController.dispose();
+    descriptionController.dispose();
+    prepController.dispose();
+    servingsController.dispose();
+    pantryController.dispose();
+    nutritionController.dispose();
+
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${meal.dayName} meal updated.'),
+        ),
+      );
+
+      await _reload(notifyParent: true);
+    }
+  }
+
+  Widget _mealCard(HpjWeeklyMealAdminRecord meal) {
+    return FarmCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _mealImage(meal.imageUrl),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        meal.dayName,
+                        style: const TextStyle(
+                          color: FarmColors.green,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.35,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: meal.isPublished
+                            ? FarmColors.successSoft
+                            : FarmColors.cardSoft,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        meal.isPublished ? 'LIVE' : 'HIDDEN',
+                        style: TextStyle(
+                          color: meal.isPublished
+                              ? FarmColors.green
+                              : FarmColors.mutedText,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  meal.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 14,
+                    height: 1.08,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${meal.dietaryLabel} • ${meal.preparationMinutes} min • Serves ${meal.servings}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.8,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize:
+                        MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _editMeal(meal),
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    size: 15,
+                  ),
+                  label: const Text('Edit meal & photo'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmPage(
+      child: FutureBuilder<List<HpjWeeklyMealAdminRecord>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState ==
+                  ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(
+                18,
+                18,
+                18,
+                120,
+              ),
+              children: [
+                const Header(
+                  title: 'What\'s Cooking',
+                  subtitle: 'Weekly meal management',
+                ),
+                const SizedBox(height: 16),
+                FarmCard(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: FarmColors.warning,
+                        size: 34,
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Weekly meals are not ready yet',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        friendlyAppError(snapshot.error!),
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: _reload,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Try Again'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          final meals =
+              snapshot.data ?? const <HpjWeeklyMealAdminRecord>[];
+
+          return RefreshIndicator(
+            onRefresh: _reload,
+            child: ListView(
+              physics:
+                  const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                18,
+                18,
+                18,
+                120,
+              ),
+              children: [
+                Row(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Header(
+                        title: 'What\'s Cooking',
+                        subtitle:
+                            'Edit the seven meals customers see each week',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _openPreview,
+                      icon: const Icon(
+                        Icons.visibility_outlined,
+                        size: 16,
+                      ),
+                      label: const Text('Preview'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: FarmColors.primarySoft,
+                    borderRadius:
+                        BorderRadius.circular(20),
+                    border: Border.all(
+                      color: FarmColors.green
+                          .withOpacity(0.12),
+                    ),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.auto_awesome_outlined,
+                        color: FarmColors.green,
+                        size: 20,
+                      ),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'MVP content control: change a meal or photo here and customers can receive the update without another Google Play release.',
+                          style: TextStyle(
+                            color: FarmColors.deepGreen,
+                            fontSize: 11,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                if (meals.isEmpty)
+                  const FarmCard(
+                    child: Text(
+                      'No weekly meals were found. Run the HPJ Weekly Meals MVP SQL to seed Monday through Sunday.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.35,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  )
+                else
+                  ...meals.map(
+                    (meal) => Padding(
+                      padding:
+                          const EdgeInsets.only(bottom: 10),
+                      child: _mealCard(meal),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+
 class AdminSponsorsTab extends StatefulWidget {
   final int refreshKey;
   final VoidCallback onChanged;
@@ -22729,6 +25667,28 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         ),
       );
 
+  _AdminTabSpec welcome() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.login_rounded),
+          text: 'Welcome',
+        ),
+        child: AdminWelcomeScreensTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
+  _AdminTabSpec meals() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.restaurant_menu_outlined),
+          text: 'Meals',
+        ),
+        child: AdminWeeklyMealsTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
   _AdminTabSpec feedUpdates() => _AdminTabSpec(
         tab: const Tab(
           icon: Icon(Icons.dynamic_feed_outlined),
@@ -22890,6 +25850,8 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       impact(),
       reports(),
       hero(),
+      welcome(),
+      meals(),
       feedUpdates(),
       sponsors(),
       reels(),
@@ -22916,6 +25878,8 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       analytics(),
       impact(),
       reports(),
+      welcome(),
+      meals(),
       feedUpdates(),
       sponsors(),
       reels(),
@@ -23580,6 +26544,8 @@ class _AdminMoreScreen extends StatelessWidget {
     switch (label) {
       case 'Products':
       case 'Hero':
+      case 'Welcome':
+      case 'Meals':
       case 'Feed':
       case 'Reels':
       case 'Sponsors':
@@ -37800,17 +40766,23 @@ class AdminFarmerManagementTab extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
             children: [
               const Header(
-                title: 'Farmer partners',
-                subtitle: 'Approve farms and protect marketplace quality',
-              ),
-              const SizedBox(height: 16),
-              _summaryCard(
-                total: farmers.length,
-                approved: approved,
-                pending: pending,
-                rejected: rejected,
-              ),
-              const SizedBox(height: 16),
+  title: 'Farmer partners',
+  subtitle: 'Approve farms and protect marketplace quality',
+),
+const SizedBox(height: 16),
+
+// NEW — lets Admin preview the Farmer Early Access welcome screen.
+const _AdminManagedFarmerWelcomePreviewCard(),
+
+const SizedBox(height: 16),
+
+_summaryCard(
+  total: farmers.length,
+  approved: approved,
+  pending: pending,
+  rejected: rejected,
+),
+const SizedBox(height: 16),
               if (requestedFarmerId.isNotEmpty) ...[
                 _AdminRecordFocusNotice(
                   found: exactFarmerFound,
@@ -39738,6 +42710,850 @@ class _AdminAgricultureFeedTabState
           ),
         );
       },
+    );
+  }
+}
+
+// =====================================================
+// ADMIN — WELCOME SCREENS
+// =====================================================
+
+class _AdminManagedFarmerWelcomePreviewCard extends StatelessWidget {
+  const _AdminManagedFarmerWelcomePreviewCard();
+
+  Future<void> _openPreview(BuildContext context) async {
+    HpjWelcomeScreenConfig? config;
+
+    try {
+      config = await fetchHpjWelcomeScreenConfig('farmer');
+    } catch (_) {
+      config = null;
+    }
+
+    if (!context.mounted) return;
+
+    final previewConfig =
+        (config ?? hpjDefaultWelcomeConfig('farmer'))
+            .copyWith(isEnabled: true);
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (previewContext) => HpjManagedWelcomeScreen(
+          config: previewConfig,
+          displayName: 'Preview Farmer',
+          previewMode: true,
+          onContinue: () async {
+            if (previewContext.mounted &&
+                Navigator.of(previewContext).canPop()) {
+              Navigator.of(previewContext).pop();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const Icon(
+              Icons.visibility_outlined,
+              color: FarmColors.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Preview Farmer Welcome',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Preview the current Admin-managed Farmer welcome screen.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.5,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          OutlinedButton(
+            onPressed: () => _openPreview(context),
+            child: const Text('Preview'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AdminWelcomeScreensTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminWelcomeScreensTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminWelcomeScreensTab> createState() =>
+      _AdminWelcomeScreensTabState();
+}
+
+class _AdminWelcomeScreensTabState
+    extends State<AdminWelcomeScreensTab> {
+  late Future<List<HpjWelcomeScreenConfig>> future;
+
+  @override
+  void initState() {
+    super.initState();
+    future = fetchAdminHpjWelcomeScreenConfigs();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminWelcomeScreensTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) _reload();
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    setState(() {
+      future = fetchAdminHpjWelcomeScreenConfigs();
+    });
+  }
+
+  Future<void> _toggle(
+    HpjWelcomeScreenConfig config,
+    bool value,
+  ) async {
+    try {
+      await saveAdminHpjWelcomeScreenConfig(
+        config.copyWith(isEnabled: value),
+      );
+      if (!mounted) return;
+      _reload();
+      widget.onChanged();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${hpjWelcomeAudienceLabel(config.audience)} welcome ${value ? 'turned on' : 'turned off'}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Future<void> _edit(HpjWelcomeScreenConfig config) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => AdminWelcomeScreenEditorPage(config: config),
+      ),
+    );
+    if (changed == true && mounted) {
+      _reload();
+      widget.onChanged();
+    }
+  }
+
+  Future<void> _preview(HpjWelcomeScreenConfig config) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (previewContext) => HpjManagedWelcomeScreen(
+          config: config.copyWith(isEnabled: true),
+          previewMode: true,
+          onContinue: () async {
+            if (previewContext.mounted &&
+                Navigator.of(previewContext).canPop()) {
+              Navigator.of(previewContext).pop();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _configCard(HpjWelcomeScreenConfig config) {
+    final imageUrl = cleanHostedImageUrl(config.imageUrl);
+
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: imageUrl == null
+                    ? Icon(
+                        config.audience == 'farmer'
+                            ? Icons.agriculture_outlined
+                            : config.audience == 'business'
+                                ? Icons.storefront_outlined
+                                : Icons.shopping_bag_outlined,
+                        color: FarmColors.primary,
+                      )
+                    : Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.image_outlined,
+                          color: FarmColors.primary,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${hpjWelcomeAudienceLabel(config.audience)} Welcome',
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      config.showMode == 'everyone'
+                          ? 'Everyone once per version'
+                          : 'New users only',
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: config.isEnabled,
+                onChanged: (value) {
+                  unawaited(_toggle(config, value));
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            config.title,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          if (config.subtitle.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              config.subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 12,
+                height: 1.3,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              _WelcomeAdminChip(
+                label: config.isEnabled ? 'ON' : 'OFF',
+                color: config.isEnabled
+                    ? FarmColors.primary
+                    : FarmColors.mutedText,
+              ),
+              _WelcomeAdminChip(
+                label: 'Version ${config.version}',
+                color: FarmColors.primary,
+              ),
+              if (config.requireAcknowledgement)
+                const _WelcomeAdminChip(
+                  label: 'Acknowledgement',
+                  color: FarmColors.warning,
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _preview(config),
+                  icon: const Icon(Icons.visibility_outlined),
+                  label: const Text('Preview'),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _edit(config),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<HpjWelcomeScreenConfig>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SkeletonList();
+        }
+
+        if (snapshot.hasError) {
+          return FarmPage(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                const Header(
+                  title: 'Welcome Screens',
+                  subtitle: 'Customer, Farmer and Business onboarding',
+                ),
+                const SizedBox(height: 16),
+                FarmCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Welcome Screens are not ready',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Run 001_HPJ_MANAGED_WELCOME_SCREENS.sql in Supabase, then refresh.',
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _reload,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Try Again'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final configs = snapshot.data ?? const <HpjWelcomeScreenConfig>[];
+
+        return FarmPage(
+          child: RefreshIndicator(
+            onRefresh: () async => _reload(),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                const Header(
+                  title: 'Welcome Screens',
+                  subtitle:
+                      'Turn onboarding on/off and edit it without publishing a new app version',
+                ),
+                const SizedBox(height: 12),
+                FarmCard(
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        color: FarmColors.primary,
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Use New users only for normal onboarding. Use Everyone for an important update, then increase Version so each signed-in user sees it once.',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 12.5,
+                            height: 1.4,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (var i = 0; i < configs.length; i++) ...[
+                  _configCard(configs[i]),
+                  if (i != configs.length - 1)
+                    const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _WelcomeAdminChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _WelcomeAdminChip({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class AdminWelcomeScreenEditorPage extends StatefulWidget {
+  final HpjWelcomeScreenConfig config;
+
+  const AdminWelcomeScreenEditorPage({
+    super.key,
+    required this.config,
+  });
+
+  @override
+  State<AdminWelcomeScreenEditorPage> createState() =>
+      _AdminWelcomeScreenEditorPageState();
+}
+
+class _AdminWelcomeScreenEditorPageState
+    extends State<AdminWelcomeScreenEditorPage> {
+  late final TextEditingController titleController;
+  late final TextEditingController subtitleController;
+  late final TextEditingController messageController;
+  late final TextEditingController buttonController;
+  late final TextEditingController imageController;
+  late final TextEditingController versionController;
+
+  late bool enabled;
+  late bool acknowledgement;
+  late String showMode;
+  bool saving = false;
+  bool uploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = widget.config;
+    titleController = TextEditingController(text: c.title);
+    subtitleController = TextEditingController(text: c.subtitle);
+    messageController = TextEditingController(text: c.message);
+    buttonController = TextEditingController(text: c.buttonLabel);
+    imageController = TextEditingController(text: c.imageUrl ?? '');
+    versionController = TextEditingController(text: '${c.version}');
+    enabled = c.isEnabled;
+    acknowledgement = c.requireAcknowledgement;
+    showMode = c.showMode == 'everyone' ? 'everyone' : 'new_users';
+  }
+
+  @override
+  void dispose() {
+    titleController.dispose();
+    subtitleController.dispose();
+    messageController.dispose();
+    buttonController.dispose();
+    imageController.dispose();
+    versionController.dispose();
+    super.dispose();
+  }
+
+  HpjWelcomeScreenConfig _draft() {
+    final version = int.tryParse(versionController.text.trim()) ?? 1;
+    return HpjWelcomeScreenConfig(
+      audience: widget.config.audience,
+      isEnabled: enabled,
+      showMode: showMode,
+      title: titleController.text.trim(),
+      subtitle: subtitleController.text.trim(),
+      message: messageController.text.trim(),
+      buttonLabel: buttonController.text.trim(),
+      imageUrl: imageController.text.trim().isEmpty
+          ? null
+          : imageController.text.trim(),
+      requireAcknowledgement: acknowledgement,
+      version: version < 1 ? 1 : version,
+      updatedAt: widget.config.updatedAt,
+    );
+  }
+
+  Future<void> _upload() async {
+    if (saving || uploading) return;
+    setState(() => uploading = true);
+
+    try {
+      final url = await uploadAdminHpjWelcomeImage(
+        audience: widget.config.audience,
+      );
+      if (url == null || !mounted) return;
+      setState(() => imageController.text = url);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => uploading = false);
+    }
+  }
+
+  Future<void> _preview() async {
+    final config = _draft().copyWith(isEnabled: true);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (previewContext) => HpjManagedWelcomeScreen(
+          config: config,
+          previewMode: true,
+          onContinue: () async {
+            if (previewContext.mounted &&
+                Navigator.of(previewContext).canPop()) {
+              Navigator.of(previewContext).pop();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+    setState(() => saving = true);
+
+    try {
+      await saveAdminHpjWelcomeScreenConfig(_draft());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${hpjWelcomeAudienceLabel(widget.config.audience)} welcome saved.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previewUrl = cleanHostedImageUrl(imageController.text);
+
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: Text(
+          '${hpjWelcomeAudienceLabel(widget.config.audience)} Welcome',
+        ),
+        actions: [
+          TextButton(
+            onPressed: saving ? null : _preview,
+            child: const Text('Preview'),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          children: [
+            FarmCard(
+              child: Column(
+                children: [
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: enabled,
+                    title: const Text(
+                      'Welcome screen enabled',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    onChanged: saving
+                        ? null
+                        : (value) => setState(() => enabled = value),
+                  ),
+                  DropdownButtonFormField<String>(
+                    value: showMode,
+                    decoration: const InputDecoration(
+                      labelText: 'Show to',
+                      prefixIcon: Icon(Icons.groups_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'new_users',
+                        child: Text('New users only'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'everyone',
+                        child: Text('Everyone once per version'),
+                      ),
+                    ],
+                    onChanged: saving
+                        ? null
+                        : (value) {
+                            if (value != null) {
+                              setState(() => showMode = value);
+                            }
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: versionController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Version',
+                      helperText:
+                          'Increase only when Everyone should receive a new important message.',
+                      prefixIcon: Icon(Icons.tag_outlined),
+                    ),
+                  ),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: acknowledgement,
+                    title: const Text(
+                      'Require acknowledgement',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    subtitle: const Text(
+                      'Useful for Farmer or important Business onboarding.',
+                    ),
+                    onChanged: saving
+                        ? null
+                        : (value) =>
+                            setState(() => acknowledgement = value),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            FarmCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Content',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: titleController,
+                    decoration: const InputDecoration(
+                      labelText: 'Title',
+                      helperText:
+                          'You may use {name} to personalize the title.',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: subtitleController,
+                    decoration: const InputDecoration(
+                      labelText: 'Subtitle',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: messageController,
+                    minLines: 5,
+                    maxLines: 10,
+                    decoration: const InputDecoration(
+                      labelText: 'Message',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: buttonController,
+                    decoration: const InputDecoration(
+                      labelText: 'Continue button',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            FarmCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Image',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      height: 190,
+                      width: double.infinity,
+                      color: FarmColors.primarySoft,
+                      child: previewUrl == null
+                          ? const Center(
+                              child: Icon(
+                                Icons.add_photo_alternate_outlined,
+                                color: FarmColors.mutedText,
+                                size: 44,
+                              ),
+                            )
+                          : Image.network(
+                              previewUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const Center(
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  color: FarmColors.mutedText,
+                                  size: 42,
+                                ),
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: saving || uploading ? null : _upload,
+                      icon: uploading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.upload_outlined),
+                      label: Text(
+                        uploading
+                            ? 'Uploading...'
+                            : 'Upload / Change Image',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: imageController,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'Image URL (optional)',
+                    ),
+                  ),
+                  if (imageController.text.trim().isNotEmpty)
+                    TextButton.icon(
+                      onPressed: saving
+                          ? null
+                          : () {
+                              setState(() => imageController.clear());
+                            },
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Remove image'),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: saving ? null : _save,
+                icon: saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(
+                  saving ? 'Saving...' : 'Save Welcome Screen',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

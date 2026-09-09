@@ -1814,6 +1814,7 @@ const Set<String> _staffAdminRoles = <String>{
   'delivery',
   'inventory',
   'support',
+  'onboarding',
 };
 
 String normalizeStaffRole(String? value) {
@@ -1839,6 +1840,8 @@ String staffRoleDisplayLabel(String? value) {
       return 'Inventory';
     case 'support':
       return 'Support';
+    case 'onboarding':
+      return 'Onboarding Agent';
     default:
       return 'Admin';
   }
@@ -1863,6 +1866,7 @@ const List<String> staffAssignableRoles = <String>[
   'delivery',
   'inventory',
   'support',
+  'onboarding',
 ];
 
 String staffRoleWorkflowSummary(String? value) {
@@ -1879,6 +1883,8 @@ String staffRoleWorkflowSummary(String? value) {
       return 'Can manage product stock and review inventory reports.';
     case 'support':
       return 'Can view and respond to customer support messages.';
+    case 'onboarding':
+      return 'Can recruit and follow up farmers and businesses. Orders, payouts, finance, staff, and business settings stay private.';
     default:
       return 'No staff access assigned.';
   }
@@ -2292,6 +2298,7 @@ Future<bool> isCurrentUserAdminFromDatabase() async {
           'delivery',
           'inventory',
           'support',
+          'onboarding',
         ],
       },
     );
@@ -25754,6 +25761,17 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         ),
       );
 
+  _AdminTabSpec onboarding() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.person_add_alt_1_outlined),
+          text: 'Onboarding',
+        ),
+        child: AdminPartnerOnboardingTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
   _AdminTabSpec farmers() => _AdminTabSpec(
         tab: const Tab(
           icon: Icon(Icons.agriculture_outlined),
@@ -25845,6 +25863,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       warehouse(),
       drivers(),
       farmers(),
+      onboarding(),
       payouts(),
       analytics(),
       impact(),
@@ -25875,6 +25894,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       warehouse(),
       drivers(),
       farmers(),
+      onboarding(),
       analytics(),
       impact(),
       reports(),
@@ -25908,6 +25928,10 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
     case 'support':
       return [
         support(),
+      ];
+    case 'onboarding':
+      return [
+        onboarding(),
       ];
     default:
       return [
@@ -26200,6 +26224,10 @@ class _AdminBottomNavigationShell
         return selected
             ? Icons.bar_chart_rounded
             : Icons.bar_chart_outlined;
+      case 'Onboarding':
+        return selected
+            ? Icons.person_add_alt_1_rounded
+            : Icons.person_add_alt_1_outlined;
       case 'Inbox':
       case 'Messages':
         return selected
@@ -26552,6 +26580,7 @@ class _AdminMoreScreen extends StatelessWidget {
       case 'Coupons':
         return 'Marketplace & Content';
       case 'Farmers':
+      case 'Onboarding':
       case 'Business Setup':
       case 'Reviews':
         return 'Partners';
@@ -27152,6 +27181,7 @@ class _AdminStaffTabState extends State<AdminStaffTab> {
   final emailController = TextEditingController();
   final nameController = TextEditingController();
   final notesController = TextEditingController();
+  final ScrollController staffScrollController = ScrollController();
   String selectedRole = 'packer';
   bool isActive = true;
   String? editingId;
@@ -27172,13 +27202,13 @@ class _AdminStaffTabState extends State<AdminStaffTab> {
   }
 
   @override
-  void dispose() {
-    emailController.dispose();
-    nameController.dispose();
-    notesController.dispose();
-    super.dispose();
-  }
-
+ void dispose() {
+  emailController.dispose();
+  nameController.dispose();
+  notesController.dispose();
+  staffScrollController.dispose();
+  super.dispose();
+}
   Future<void> _reload() async {
     final future = fetchStaffUsersForAdmin();
     setState(() {
@@ -27198,27 +27228,36 @@ class _AdminStaffTabState extends State<AdminStaffTab> {
     });
   }
 
-  void _editStaff(StaffUserAccount staff) {
-    if (normalizeStaffRole(staff.role) == 'owner') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Owner access is managed manually for safety.'),
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      editingId = staff.id;
-      emailController.text = staff.email;
-      nameController.text = staff.fullName;
-      notesController.text = staff.notes ?? '';
-      selectedRole =
-          staffAssignableRoles.contains(staff.role) ? staff.role : 'packer';
-      isActive = staff.isActive;
-    });
+ void _editStaff(StaffUserAccount staff) {
+  if (normalizeStaffRole(staff.role) == 'owner') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Owner access is managed manually for safety.'),
+      ),
+    );
+    return;
   }
 
+  setState(() {
+    editingId = staff.id;
+    emailController.text = staff.email;
+    nameController.text = staff.fullName;
+    notesController.text = staff.notes ?? '';
+    selectedRole =
+        staffAssignableRoles.contains(staff.role) ? staff.role : 'packer';
+    isActive = staff.isActive;
+  });
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (staffScrollController.hasClients) {
+      staffScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+      );
+    }
+  });
+}
   Future<void> _saveStaff() async {
     if (saving) return;
 
@@ -27439,8 +27478,9 @@ class _AdminStaffTabState extends State<AdminStaffTab> {
           final loading = snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData;
 
-          return ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
+         return ListView(
+  controller: staffScrollController,
+  physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
             children: [
               const Header(
@@ -43557,3 +43597,1317 @@ class _AdminWelcomeScreenEditorPageState
     );
   }
 }
+
+// =====================================================
+// HPJ MVP — PARTNER ONBOARDING
+// Farmer + Business assisted signup / recruitment tracker
+//
+// Launch-safe design:
+// - Existing Farmer and Business signup flows are unchanged.
+// - Owner/Manager can assign the limited `onboarding` staff role.
+// - Onboarding Agent sees only this recruitment workspace.
+// - Leads can be contacted by WhatsApp or copied as a message.
+// - The current public Play Store app is not changed until a future AAB is
+//   uploaded/published; this screen can be tested in FlutLab first.
+// =====================================================
+
+const String _hpjPublicPlayStoreUrl =
+    'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp';
+
+const List<String> _hpjOnboardingStatuses = <String>[
+  'contacted',
+  'invited',
+  'signup_started',
+  'follow_up',
+  'active',
+  'not_interested',
+];
+
+String _hpjOnboardingStatusLabel(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'invited':
+      return 'Invited';
+    case 'signup_started':
+      return 'Sign-up started';
+    case 'follow_up':
+      return 'Follow-up';
+    case 'active':
+      return 'Active';
+    case 'not_interested':
+      return 'Not interested';
+    case 'contacted':
+    default:
+      return 'Contacted';
+  }
+}
+
+Color _hpjOnboardingStatusColor(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'active':
+      return FarmColors.success;
+    case 'follow_up':
+      return FarmColors.warning;
+    case 'signup_started':
+      return FarmColors.primary;
+    case 'not_interested':
+      return FarmColors.mutedText;
+    case 'invited':
+      return FarmColors.green;
+    default:
+      return FarmColors.mutedText;
+  }
+}
+
+class HpjPartnerOnboardingLead {
+  final String id;
+  final String partnerType;
+  final String contactName;
+  final String partnerName;
+  final String phone;
+  final String email;
+  final String parish;
+  final String community;
+  final String mainNeedOrProduce;
+  final String status;
+  final String notes;
+  final DateTime? followUpDate;
+  final String createdByEmail;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const HpjPartnerOnboardingLead({
+    required this.id,
+    required this.partnerType,
+    required this.contactName,
+    required this.partnerName,
+    required this.phone,
+    required this.email,
+    required this.parish,
+    required this.community,
+    required this.mainNeedOrProduce,
+    required this.status,
+    required this.notes,
+    this.followUpDate,
+    required this.createdByEmail,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory HpjPartnerOnboardingLead.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    return HpjPartnerOnboardingLead(
+      id: (data['id'] ?? '').toString(),
+      partnerType: (data['partner_type'] ?? 'farmer')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      contactName: (data['contact_name'] ?? '').toString().trim(),
+      partnerName: (data['partner_name'] ?? '').toString().trim(),
+      phone: (data['phone'] ?? '').toString().trim(),
+      email: (data['email'] ?? '').toString().trim().toLowerCase(),
+      parish: (data['parish'] ?? '').toString().trim(),
+      community: (data['community'] ?? '').toString().trim(),
+      mainNeedOrProduce:
+          (data['main_need_or_produce'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'contacted')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      notes: (data['notes'] ?? '').toString().trim(),
+      followUpDate: parseProductDate(data['follow_up_date']),
+      createdByEmail:
+          (data['created_by_email'] ?? '').toString().trim().toLowerCase(),
+      createdAt: parseProductDate(data['created_at']),
+      updatedAt: parseProductDate(data['updated_at']),
+    );
+  }
+
+  HpjPartnerOnboardingLead copyWith({
+    String? partnerType,
+    String? contactName,
+    String? partnerName,
+    String? phone,
+    String? email,
+    String? parish,
+    String? community,
+    String? mainNeedOrProduce,
+    String? status,
+    String? notes,
+    DateTime? followUpDate,
+    bool clearFollowUpDate = false,
+  }) {
+    return HpjPartnerOnboardingLead(
+      id: id,
+      partnerType: partnerType ?? this.partnerType,
+      contactName: contactName ?? this.contactName,
+      partnerName: partnerName ?? this.partnerName,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      parish: parish ?? this.parish,
+      community: community ?? this.community,
+      mainNeedOrProduce: mainNeedOrProduce ?? this.mainNeedOrProduce,
+      status: status ?? this.status,
+      notes: notes ?? this.notes,
+      followUpDate:
+          clearFollowUpDate ? null : (followUpDate ?? this.followUpDate),
+      createdByEmail: createdByEmail,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
+
+  String get partnerTypeLabel =>
+      partnerType == 'business' ? 'Business' : 'Farmer';
+
+  String get displayName {
+    if (partnerName.trim().isNotEmpty) return partnerName.trim();
+    if (contactName.trim().isNotEmpty) return contactName.trim();
+    return partnerTypeLabel;
+  }
+}
+
+Future<void> _requirePartnerOnboardingAccess() async {
+  await requireAdminAccess();
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+
+  if (role != 'owner' && role != 'manager' && role != 'onboarding') {
+    throw Exception(
+      'This account does not have Partner Onboarding access.',
+    );
+  }
+}
+
+Future<List<HpjPartnerOnboardingLead>> fetchHpjPartnerOnboardingLeads() async {
+  await _requirePartnerOnboardingAccess();
+
+  try {
+    final response = await supabase
+        .from('hpj_partner_onboarding_leads')
+        .select(
+          'id, partner_type, contact_name, partner_name, phone, email, parish, community, main_need_or_produce, status, notes, follow_up_date, created_by_email, created_at, updated_at',
+        )
+        .order('updated_at', ascending: false)
+        .limit(500);
+
+    return (response as List)
+        .map(
+          (item) => HpjPartnerOnboardingLead.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    throw Exception(
+      'Could not load Partner Onboarding. Run the HPJ Partner Onboarding SQL, then retry.',
+    );
+  }
+}
+
+Future<void> saveHpjPartnerOnboardingLead({
+  String? id,
+  required String partnerType,
+  required String contactName,
+  required String partnerName,
+  required String phone,
+  required String email,
+  required String parish,
+  required String community,
+  required String mainNeedOrProduce,
+  required String status,
+  required String notes,
+  DateTime? followUpDate,
+}) async {
+  await _requirePartnerOnboardingAccess();
+
+  final cleanType = partnerType.trim().toLowerCase();
+  final cleanStatus = status.trim().toLowerCase();
+  final cleanContact = contactName.trim();
+  final cleanPartner = partnerName.trim();
+  final cleanPhone = phone.trim();
+  final cleanEmail = email.trim().toLowerCase();
+
+  if (cleanType != 'farmer' && cleanType != 'business') {
+    throw Exception('Choose Farmer or Business.');
+  }
+
+  if (cleanContact.isEmpty && cleanPartner.isEmpty) {
+    throw Exception('Enter the person name or farm/business name.');
+  }
+
+  if (cleanPhone.isEmpty && cleanEmail.isEmpty) {
+    throw Exception('Enter a phone number or email for follow-up.');
+  }
+
+  if (!_hpjOnboardingStatuses.contains(cleanStatus)) {
+    throw Exception('Choose a valid onboarding status.');
+  }
+
+  final payload = <String, dynamic>{
+    'partner_type': cleanType,
+    'contact_name': cleanContact,
+    'partner_name': cleanPartner,
+    'phone': cleanPhone,
+    'email': cleanEmail,
+    'parish': parish.trim(),
+    'community': community.trim(),
+    'main_need_or_produce': mainNeedOrProduce.trim(),
+    'status': cleanStatus,
+    'notes': notes.trim(),
+    'follow_up_date': followUpDate == null
+        ? null
+        : '${followUpDate.year.toString().padLeft(4, '0')}-${followUpDate.month.toString().padLeft(2, '0')}-${followUpDate.day.toString().padLeft(2, '0')}',
+    'updated_at': DateTime.now().toIso8601String(),
+  };
+
+  final cleanId = id?.trim() ?? '';
+
+  try {
+    if (cleanId.isEmpty) {
+      await supabase.from('hpj_partner_onboarding_leads').insert(payload);
+    } else {
+      await supabase
+          .from('hpj_partner_onboarding_leads')
+          .update(payload)
+          .eq('id', cleanId);
+    }
+  } catch (error) {
+    throw Exception('Could not save this onboarding lead.');
+  }
+}
+
+String hpjPartnerSignupMessage({
+  required String partnerType,
+  String contactName = '',
+}) {
+  final type = partnerType.trim().toLowerCase();
+  final cleanName = contactName.trim();
+  final greeting = cleanName.isEmpty ? 'Hi' : 'Hi $cleanName';
+
+  if (type == 'business') {
+    return '$greeting, The Harvest Place Ja (HPJ) is onboarding Jamaican businesses that source fresh produce. '
+        'Install HPJ, create your account, and choose Business to set up your sourcing workspace. '
+        'Download: $_hpjPublicPlayStoreUrl';
+  }
+
+  return '$greeting, The Harvest Place Ja (HPJ) is onboarding Jamaican farmers. '
+      'Install HPJ, create your account, and choose Farmer to set up your farm profile and supply. '
+      'Download: $_hpjPublicPlayStoreUrl';
+}
+
+String _hpjWhatsAppDigits(String value) {
+  var digits = value.replaceAll(RegExp(r'[^0-9]+'), '');
+
+  // Jamaica numbers are commonly entered as 876/658 + 7 digits. WhatsApp
+  // expects the international 1 + area code format.
+  if (digits.length == 10 &&
+      (digits.startsWith('876') || digits.startsWith('658'))) {
+    digits = '1$digits';
+  }
+
+  return digits;
+}
+
+Future<bool> openHpjPartnerWhatsAppInvite({
+  required String partnerType,
+  required String phone,
+  String contactName = '',
+}) async {
+  final message = hpjPartnerSignupMessage(
+    partnerType: partnerType,
+    contactName: contactName,
+  );
+  final digits = _hpjWhatsAppDigits(phone);
+  final encoded = Uri.encodeComponent(message);
+  final url = digits.isEmpty
+      ? 'https://wa.me/?text=$encoded'
+      : 'https://wa.me/$digits?text=$encoded';
+
+  return openExternalShareUrl(url);
+}
+
+class AdminPartnerOnboardingTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminPartnerOnboardingTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminPartnerOnboardingTab> createState() =>
+      _AdminPartnerOnboardingTabState();
+}
+
+class _AdminPartnerOnboardingTabState
+    extends State<AdminPartnerOnboardingTab> {
+  late Future<List<HpjPartnerOnboardingLead>> _future;
+  final TextEditingController _searchController = TextEditingController();
+  String _filter = 'all';
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchHpjPartnerOnboardingLeads();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminPartnerOnboardingTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) _reload();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _reload({bool notifyParent = false}) async {
+    final next = fetchHpjPartnerOnboardingLeads();
+    if (mounted) {
+      setState(() => _future = next);
+    } else {
+      _future = next;
+    }
+
+    try {
+      await next;
+    } finally {
+      if (notifyParent) widget.onChanged();
+    }
+  }
+
+  Future<void> _copyText(String text, String label) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label copied.')),
+    );
+  }
+
+  Future<void> _copyInvite(String partnerType) async {
+    await _copyText(
+      hpjPartnerSignupMessage(partnerType: partnerType),
+      partnerType == 'business' ? 'Business invite' : 'Farmer invite',
+    );
+  }
+
+  Future<void> _openWhatsApp(HpjPartnerOnboardingLead lead) async {
+    final opened = await openHpjPartnerWhatsAppInvite(
+      partnerType: lead.partnerType,
+      phone: lead.phone,
+      contactName: lead.contactName,
+    );
+
+    if (!mounted) return;
+    if (!opened) {
+      await _copyText(
+        hpjPartnerSignupMessage(
+          partnerType: lead.partnerType,
+          contactName: lead.contactName,
+        ),
+        'Invite message',
+      );
+    }
+  }
+
+  Future<void> _markActive(HpjPartnerOnboardingLead lead) async {
+  try {
+    await saveHpjPartnerOnboardingLead(
+      id: lead.id,
+      partnerType: lead.partnerType,
+      contactName: lead.contactName,
+      partnerName: lead.partnerName,
+      phone: lead.phone,
+      email: lead.email,
+      parish: lead.parish,
+      community: lead.community,
+      mainNeedOrProduce: lead.mainNeedOrProduce,
+      status: 'active',
+      notes: lead.notes,
+
+      // Active partners no longer need a follow-up date.
+      followUpDate: null,
+    );
+
+    if (!mounted) return;
+
+    // Refresh only this onboarding screen.
+    // Do not treat a parent refresh problem as a failed save.
+    try {
+      await _reload();
+    } catch (refreshError) {
+      farmDebugLog(
+        'Partner marked active successfully; onboarding refresh skipped: '
+        '$refreshError',
+      );
+    }
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Partner marked active.'),
+      ),
+    );
+  } catch (error) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(friendlyAppError(error)),
+      ),
+    );
+  }
+}
+  Future<void> _editLead([HpjPartnerOnboardingLead? lead]) async {
+    final contactController = TextEditingController(
+      text: lead?.contactName ?? '',
+    );
+    final partnerController = TextEditingController(
+      text: lead?.partnerName ?? '',
+    );
+    final phoneController = TextEditingController(text: lead?.phone ?? '');
+    final emailController = TextEditingController(text: lead?.email ?? '');
+    final parishController = TextEditingController(text: lead?.parish ?? '');
+    final communityController =
+        TextEditingController(text: lead?.community ?? '');
+    final needController =
+        TextEditingController(text: lead?.mainNeedOrProduce ?? '');
+    final notesController = TextEditingController(text: lead?.notes ?? '');
+
+    var partnerType = lead?.partnerType == 'business' ? 'business' : 'farmer';
+    var status = _hpjOnboardingStatuses.contains(lead?.status)
+        ? lead!.status
+        : 'contacted';
+    var followUpDate = lead?.followUpDate;
+    var saving = false;
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Future<void> pickFollowUp() async {
+              final now = DateTime.now();
+              final picked = await showDatePicker(
+                context: sheetContext,
+                firstDate: DateTime(now.year, now.month, now.day),
+                lastDate: DateTime(now.year + 2, 12, 31),
+                initialDate: followUpDate ?? now,
+              );
+              if (picked != null && sheetContext.mounted) {
+                setSheetState(() => followUpDate = picked);
+              }
+            }
+
+            Future<void> save() async {
+              if (saving) return;
+              setSheetState(() => saving = true);
+              try {
+                await saveHpjPartnerOnboardingLead(
+                  id: lead?.id,
+                  partnerType: partnerType,
+                  contactName: contactController.text,
+                  partnerName: partnerController.text,
+                  phone: phoneController.text,
+                  email: emailController.text,
+                  parish: parishController.text,
+                  community: communityController.text,
+                  mainNeedOrProduce: needController.text,
+                  status: status,
+                  notes: notesController.text,
+                  followUpDate: followUpDate,
+                );
+
+                if (!sheetContext.mounted) return;
+                Navigator.of(sheetContext).pop(true);
+              } catch (error) {
+                if (!sheetContext.mounted) return;
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  SnackBar(content: Text(friendlyAppError(error))),
+                );
+                setSheetState(() => saving = false);
+              }
+            }
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.94,
+              ),
+              decoration: const BoxDecoration(
+                color: FarmColors.background,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: FarmColors.line,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 10, 8),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.person_add_alt_1_outlined,
+                          color: FarmColors.primary,
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            lead == null ? 'Add onboarding lead' : 'Edit onboarding lead',
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: saving
+                              ? null
+                              : () => Navigator.of(sheetContext).pop(false),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+                      children: [
+                        DropdownButtonFormField<String>(
+                          value: partnerType,
+                          decoration: const InputDecoration(
+                            labelText: 'Partner type',
+                            prefixIcon: Icon(Icons.handshake_outlined),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'farmer',
+                              child: Text('Farmer'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'business',
+                              child: Text('Business'),
+                            ),
+                          ],
+                          onChanged: saving
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setSheetState(() => partnerType = value);
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: contactController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            labelText: 'Contact person',
+                            prefixIcon: Icon(Icons.person_outline_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: partnerController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: InputDecoration(
+                            labelText: partnerType == 'business'
+                                ? 'Business name'
+                                : 'Farm name',
+                            prefixIcon: Icon(
+                              partnerType == 'business'
+                                  ? Icons.storefront_outlined
+                                  : Icons.agriculture_outlined,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'WhatsApp / phone',
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Email (optional)',
+                            prefixIcon: Icon(Icons.email_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: parishController,
+                                textCapitalization: TextCapitalization.words,
+                                decoration: const InputDecoration(
+                                  labelText: 'Parish',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: communityController,
+                                textCapitalization: TextCapitalization.words,
+                                decoration: const InputDecoration(
+                                  labelText: 'Community',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: needController,
+                          minLines: 2,
+                          maxLines: 4,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            labelText: partnerType == 'business'
+                                ? 'Main produce needed'
+                                : 'Main produce grown / supplied',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: status,
+                          decoration: const InputDecoration(
+                            labelText: 'Status',
+                            prefixIcon: Icon(Icons.flag_outlined),
+                          ),
+                          items: _hpjOnboardingStatuses
+                              .map(
+                                (value) => DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(_hpjOnboardingStatusLabel(value)),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: saving
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setSheetState(() => status = value);
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: saving ? null : pickFollowUp,
+                          icon: const Icon(Icons.event_outlined),
+                          label: Text(
+                            followUpDate == null
+                                ? 'Set follow-up date'
+                                : 'Follow up: ${shortProductDate(followUpDate)}',
+                          ),
+                        ),
+                        if (followUpDate != null)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: saving
+                                  ? null
+                                  : () => setSheetState(() => followUpDate = null),
+                              icon: const Icon(Icons.close_rounded, size: 17),
+                              label: const Text('Clear follow-up'),
+                            ),
+                          ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: notesController,
+                          minLines: 3,
+                          maxLines: 6,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: const InputDecoration(
+                            labelText: 'Onboarding notes',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: saving ? null : save,
+                            icon: saving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.save_outlined),
+                            label: Text(saving ? 'Saving...' : 'Save Lead'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    // Let the bottom sheet finish before disposing controllers used by fields.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    contactController.dispose();
+    partnerController.dispose();
+    phoneController.dispose();
+    emailController.dispose();
+    parishController.dispose();
+    communityController.dispose();
+    needController.dispose();
+    notesController.dispose();
+
+    if (saved == true && mounted) {
+      await _reload(notifyParent: true);
+    }
+  }
+
+  Widget _statCard(String label, int value, IconData icon) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: FarmColors.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: FarmColors.line),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: FarmColors.primary, size: 20),
+            const SizedBox(height: 6),
+            Text(
+              '$value',
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _quickInviteCard() {
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.send_outlined, color: FarmColors.primary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Quick signup invites',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Copy a ready-made invite, or add the person below so follow-up is tracked.',
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 11.5,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _copyInvite('farmer'),
+                  icon: const Icon(Icons.agriculture_outlined),
+                  label: const Text('Farmer Invite'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _copyInvite('business'),
+                  icon: const Icon(Icons.storefront_outlined),
+                  label: const Text('Business Invite'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: () => _copyText(_hpjPublicPlayStoreUrl, 'Play Store link'),
+              icon: const Icon(Icons.link_rounded),
+              label: const Text('Copy Play Store signup link'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _leadCard(HpjPartnerOnboardingLead lead) {
+  final statusColor = _hpjOnboardingStatusColor(lead.status);
+  final typeIcon = lead.partnerType == 'business'
+      ? Icons.storefront_outlined
+      : Icons.agriculture_outlined;
+
+  return FarmCard(
+    padding: const EdgeInsets.all(14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                typeIcon,
+                color: FarmColors.primary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    lead.displayName,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (lead.contactName.trim().isNotEmpty &&
+                      lead.contactName.trim() != lead.displayName) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      lead.contactName,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 3),
+                  Text(
+                    [
+                      lead.partnerTypeLabel,
+                      if (lead.parish.trim().isNotEmpty)
+                        lead.parish.trim(),
+                      if (lead.community.trim().isNotEmpty)
+                        lead.community.trim(),
+                    ].join(' • '),
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: statusColor.withOpacity(0.20),
+                ),
+              ),
+              child: Text(
+                _hpjOnboardingStatusLabel(lead.status),
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        if (lead.mainNeedOrProduce.trim().isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            lead.mainNeedOrProduce,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 11.5,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+
+        if (lead.followUpDate != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(
+                Icons.event_outlined,
+                size: 15,
+                color: FarmColors.warning,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'Follow up ${shortProductDate(lead.followUpDate)}',
+                style: const TextStyle(
+                  color: FarmColors.warning,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ],
+
+        // Shows which HPJ agent originally recruited this partner.
+        if (lead.createdByEmail.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(
+                Icons.person_add_alt_1_outlined,
+                size: 15,
+                color: FarmColors.mutedText,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  'Onboarded by ${lead.createdByEmail}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+
+        const SizedBox(height: 12),
+
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => _openWhatsApp(lead),
+              icon: const Icon(
+                Icons.chat_outlined,
+                size: 17,
+              ),
+              label: const Text('WhatsApp'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _copyText(
+                hpjPartnerSignupMessage(
+                  partnerType: lead.partnerType,
+                  contactName: lead.contactName,
+                ),
+                'Invite message',
+              ),
+              icon: const Icon(
+                Icons.copy_rounded,
+                size: 17,
+              ),
+              label: const Text('Copy'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _editLead(lead),
+              icon: const Icon(
+                Icons.edit_outlined,
+                size: 17,
+              ),
+              label: const Text('Edit'),
+            ),
+            if (lead.status != 'active')
+              FilledButton.icon(
+                onPressed: () => _markActive(lead),
+                icon: const Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 17,
+                ),
+                label: const Text('Mark Active'),
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<HpjPartnerOnboardingLead>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SkeletonList();
+        }
+
+        if (snapshot.hasError) {
+          return FarmPage(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                const Header(
+                  title: 'Partner Onboarding',
+                  subtitle: 'Farmers and businesses',
+                ),
+                const SizedBox(height: 16),
+                FarmEmptyState(
+                  icon: Icons.person_add_alt_1_outlined,
+                  title: 'Onboarding setup needed',
+                  message:
+                      'Run the HPJ Partner Onboarding SQL in Supabase, then refresh this page.',
+                  actionLabel: 'Try Again',
+                  onAction: _reload,
+                ),
+              ],
+            ),
+          );
+        }
+
+        final leads = snapshot.data ?? const <HpjPartnerOnboardingLead>[];
+        final query = _searchController.text.trim().toLowerCase();
+
+        final filtered = leads.where((lead) {
+          if (_filter == 'farmer' && lead.partnerType != 'farmer') return false;
+          if (_filter == 'business' && lead.partnerType != 'business') return false;
+          if (_filter == 'follow_up' && lead.status != 'follow_up') return false;
+          if (_filter == 'active' && lead.status != 'active') return false;
+
+          if (query.isEmpty) return true;
+          final haystack = <String>[
+            lead.contactName,
+            lead.partnerName,
+            lead.phone,
+            lead.email,
+            lead.parish,
+            lead.community,
+            lead.mainNeedOrProduce,
+            lead.status,
+          ].join(' ').toLowerCase();
+          return haystack.contains(query);
+        }).toList(growable: false);
+
+        final contacted = leads.where((lead) => lead.status == 'contacted').length;
+        final started = leads
+            .where((lead) => lead.status == 'signup_started' || lead.status == 'invited')
+            .length;
+        final active = leads.where((lead) => lead.status == 'active').length;
+        final followUp = leads.where((lead) => lead.status == 'follow_up').length;
+
+        return FarmPage(
+          child: RefreshIndicator(
+            onRefresh: _reload,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Header(
+                        title: 'Partner Onboarding',
+                        subtitle: '${leads.length} farmer/business lead(s)',
+                        showNotifications: false,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      onPressed: () => _editLead(),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Add Lead'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _statCard('Contacted', contacted, Icons.call_outlined),
+                    const SizedBox(width: 8),
+                    _statCard('Invited / Started', started, Icons.send_outlined),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _statCard('Active', active, Icons.verified_outlined),
+                    const SizedBox(width: 8),
+                    _statCard('Follow-up', followUp, Icons.event_repeat_outlined),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _quickInviteCard(),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: FarmColors.card,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: FarmColors.line),
+                  ),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _searchController,
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'Search farmer, business, phone or parish...',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: _searchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {});
+                                  },
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final item in const <MapEntry<String, String>>[
+                              MapEntry('all', 'All'),
+                              MapEntry('farmer', 'Farmers'),
+                              MapEntry('business', 'Businesses'),
+                              MapEntry('follow_up', 'Follow-up'),
+                              MapEntry('active', 'Active'),
+                            ])
+                              Padding(
+                                padding: const EdgeInsets.only(right: 7),
+                                child: ChoiceChip(
+                                  label: Text(item.value),
+                                  selected: _filter == item.key,
+                                  onSelected: (_) => setState(() => _filter = item.key),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: FarmColors.primarySoft,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: FarmColors.primary.withOpacity(0.14)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.flag_outlined, color: FarmColors.primary),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Recruitment target: measure active farmers and businesses, not just sign-ups. A good starting weekly target is 10 contacts, 5 sign-ups started, and 3 active partners.',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 11.5,
+                            height: 1.4,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                if (filtered.isEmpty)
+                  FarmEmptyState(
+                    icon: Icons.group_add_outlined,
+                    title: leads.isEmpty ? 'No onboarding leads yet' : 'No matching leads',
+                    message: leads.isEmpty
+                        ? 'Add your first farmer or business lead and send them the HPJ signup link.'
+                        : 'Change the search or filter to see more leads.',
+                    actionLabel: leads.isEmpty ? 'Add Lead' : null,
+                    onAction: leads.isEmpty ? () => _editLead() : null,
+                  )
+                else
+                  for (var index = 0; index < filtered.length; index++) ...[
+                    _leadCard(filtered[index]),
+                    if (index != filtered.length - 1) const SizedBox(height: 10),
+                  ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+

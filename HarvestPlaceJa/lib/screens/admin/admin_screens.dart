@@ -20197,29 +20197,27 @@ class _AdminSegmentSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final desktopWeb = HpjWebUi.isDesktop(context);
 
+    Widget optionChip((String, String, IconData) option) {
+      return ChoiceChip(
+        selected: value == option.$1,
+        avatar: Icon(option.$3, size: 17),
+        label: Text(option.$2),
+        onSelected: (_) => onChanged(option.$1),
+      );
+    }
+
     if (desktopWeb) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
-        decoration: const BoxDecoration(
-          color: HpjWebUi.chrome,
-          border: Border(
-            bottom: BorderSide(color: HpjWebUi.border),
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        child: FarmCard(
+          padding: const EdgeInsets.all(8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final option in options) optionChip(option),
+            ],
           ),
-        ),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final option in options)
-              ChoiceChip(
-                selected: value == option.$1,
-                avatar: Icon(option.$3, size: 17),
-                label: Text(option.$2),
-                showCheckmark: false,
-                onSelected: (_) => onChanged(option.$1),
-              ),
-          ],
         ),
       );
     }
@@ -20230,12 +20228,7 @@ class _AdminSegmentSelector extends StatelessWidget {
       child: Row(
         children: [
           for (final option in options) ...[
-            ChoiceChip(
-              selected: value == option.$1,
-              avatar: Icon(option.$3, size: 17),
-              label: Text(option.$2),
-              onSelected: (_) => onChanged(option.$1),
-            ),
+            optionChip(option),
             const SizedBox(width: 7),
           ],
         ],
@@ -21552,7 +21545,12 @@ class _AdminFarmerSupplyQueueState extends State<_AdminFarmerSupplyQueue> {
           onRefresh: _refresh,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
+            padding: EdgeInsets.fromLTRB(
+              12,
+              12,
+              12,
+              desktopWeb ? 24 : 100,
+            ),
             children: [
               FarmCard(
                 padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
@@ -21668,15 +21666,14 @@ class _AdminFarmerSupplyQueueState extends State<_AdminFarmerSupplyQueue> {
                   minItemWidth: 500,
                   spacing: 16,
                   runSpacing: 16,
-                  children: groupEntries
-                      .map(
-                        (entry) => _farmGroupCard(
-                          groupKey: entry.key,
-                          farmer: farmerMap[entry.key],
-                          supplies: entry.value,
-                        ),
-                      )
-                      .toList(growable: false),
+                  children: [
+                    for (final entry in groupEntries)
+                      _farmGroupCard(
+                        groupKey: entry.key,
+                        farmer: farmerMap[entry.key],
+                        supplies: entry.value,
+                      ),
+                  ],
                 )
               else
                 for (final entry in groupEntries)
@@ -21954,7 +21951,7 @@ class _AdminTodayActionCard extends StatelessWidget {
           ? EdgeInsets.zero
           : const EdgeInsets.only(bottom: 9),
       child: InkWell(
-        borderRadius: BorderRadius.circular(desktopWeb ? 18 : 22),
+        borderRadius: BorderRadius.circular(22),
         hoverColor: desktopWeb ? HpjWebUi.hover : Colors.transparent,
         mouseCursor: kIsWeb
             ? SystemMouseCursors.click
@@ -22143,7 +22140,12 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
 
           return ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              desktopWeb ? 28 : 120,
+            ),
             children: [
               const Header(
                 title: 'Today',
@@ -22235,15 +22237,16 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
                     ],
                   ),
                 )
-              else if (attention.isNotEmpty && desktopWeb)
-                HpjWebResponsiveGrid(
-                  minItemWidth: 500,
-                  spacing: 14,
-                  runSpacing: 14,
-                  children: attention,
-                )
               else if (attention.isNotEmpty)
-                ...attention,
+                if (desktopWeb)
+                  HpjWebResponsiveGrid(
+                    minItemWidth: 470,
+                    spacing: 14,
+                    runSpacing: 14,
+                    children: attention,
+                  )
+                else
+                  ...attention,
               const SizedBox(height: 18),
               const Text(
                 'Today’s operations',
@@ -22300,44 +22303,129 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
                 ),
               ),
               const SizedBox(height: 8),
-              FarmCard(
-                padding: EdgeInsets.zero,
-                child: Column(
+              if (desktopWeb)
+                HpjWebResponsiveGrid(
+                  minItemWidth: 470,
+                  spacing: 14,
+                  runSpacing: 14,
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.add_box_outlined, color: FarmColors.primary),
-                      title: const Text('Products'),
-                      subtitle: const Text('Add, edit or restock a product'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => _open('Products'),
+                    FarmCard(
+                      padding: EdgeInsets.zero,
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.add_box_outlined,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Products'),
+                        subtitle: const Text('Add, edit or restock a product'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Products'),
+                      ),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.play_circle_outline_rounded, color: FarmColors.primary),
-                      title: const Text('Fresh Reels'),
-                      subtitle: const Text('Review submissions or publish HPJ content'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => _open('Reels'),
+                    FarmCard(
+                      padding: EdgeInsets.zero,
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.play_circle_outline_rounded,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Fresh Reels'),
+                        subtitle: const Text(
+                          'Review submissions or publish HPJ content',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Reels'),
+                      ),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.agriculture_outlined, color: FarmColors.primary),
-                      title: const Text('Farmer partners'),
-                      subtitle: const Text('Review farmer profiles and approvals'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => _open('Farmers'),
+                    FarmCard(
+                      padding: EdgeInsets.zero,
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.agriculture_outlined,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Farmer partners'),
+                        subtitle: const Text(
+                          'Review farmer profiles and approvals',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Farmers'),
+                      ),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.business_outlined, color: FarmColors.primary),
-                      title: const Text('Business setup'),
-                      subtitle: const Text('Applications, access, pricing and account controls'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => _open('Business Setup'),
+                    FarmCard(
+                      padding: EdgeInsets.zero,
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.business_outlined,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Business setup'),
+                        subtitle: const Text(
+                          'Applications, access, pricing and account controls',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Business Setup'),
+                      ),
                     ),
                   ],
+                )
+              else
+                FarmCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(
+                          Icons.add_box_outlined,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Products'),
+                        subtitle: const Text('Add, edit or restock a product'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Products'),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.play_circle_outline_rounded,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Fresh Reels'),
+                        subtitle: const Text(
+                          'Review submissions or publish HPJ content',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Reels'),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.agriculture_outlined,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Farmer partners'),
+                        subtitle: const Text(
+                          'Review farmer profiles and approvals',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Farmers'),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.business_outlined,
+                          color: FarmColors.primary,
+                        ),
+                        title: const Text('Business setup'),
+                        subtitle: const Text(
+                          'Applications, access, pricing and account controls',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open('Business Setup'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           );
         },
@@ -29559,11 +29647,8 @@ class AdminSummaryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final desktopWeb = HpjWebUi.isDesktop(context);
-        final columns = desktopWeb
-            ? 4
-            : (constraints.maxWidth >= 560 ? 4 : 2);
-        final spacing = desktopWeb ? 14.0 : 10.0;
+        final columns = constraints.maxWidth >= 560 ? 4 : 2;
+        final spacing = 10.0;
         final itemWidth =
             (constraints.maxWidth - (spacing * (columns - 1))) / columns;
 
@@ -34423,39 +34508,44 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
     }
   }
 
-  Widget summaryTile(String label, String value, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: FarmColors.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: FarmColors.green),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
+  Widget summaryTile(
+    String label,
+    String value,
+    IconData icon, {
+    bool expanded = true,
+  }) {
+    final tile = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: FarmColors.green),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
             ),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: FarmColors.mutedText,
-                fontWeight: FontWeight.w700,
-              ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: FarmColors.mutedText,
+              fontWeight: FontWeight.w700,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+
+    return expanded ? Expanded(child: tile) : tile;
   }
 
   Widget statusBadge(String label, String value, {IconData? icon}) {
@@ -35080,7 +35170,12 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
         }
 
         return ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          padding: EdgeInsets.fromLTRB(
+            18,
+            18,
+            18,
+            desktopWeb ? 28 : 120,
+          ),
           children: [
             FarmCard(
               child: Column(
@@ -35095,30 +35190,34 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                   ),
                   const SizedBox(height: 12),
                   if (desktopWeb)
-                    Row(
+                    HpjWebResponsiveGrid(
+                      minItemWidth: 220,
+                      spacing: 10,
+                      runSpacing: 10,
                       children: [
                         summaryTile(
                           'Orders',
                           '${orders.length}',
                           Icons.receipt_long,
+                          expanded: false,
                         ),
-                        const SizedBox(width: 10),
                         summaryTile(
                           'Unpaid',
                           '$unpaidCount',
                           Icons.pending_actions,
+                          expanded: false,
                         ),
-                        const SizedBox(width: 10),
                         summaryTile(
                           'Paid',
                           '$paidCount',
                           Icons.verified,
+                          expanded: false,
                         ),
-                        const SizedBox(width: 10),
                         summaryTile(
                           'Paid Sales',
                           money(totalSales),
                           Icons.payments,
+                          expanded: false,
                         ),
                       ],
                     )
@@ -35216,7 +35315,7 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
               )
             else if (desktopWeb)
               HpjWebResponsiveGrid(
-                minItemWidth: 500,
+                minItemWidth: 520,
                 spacing: 16,
                 runSpacing: 16,
                 children: filteredOrders
@@ -36151,7 +36250,12 @@ class AdminDeliveryTab extends StatelessWidget {
           onRefresh: () async => onChanged(),
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+            padding: EdgeInsets.fromLTRB(
+              18,
+              18,
+              18,
+              desktopWeb ? 28 : 120,
+            ),
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -36333,9 +36437,22 @@ class AdminDeliveryTab extends StatelessWidget {
                   subtitle: 'Latest fulfilled orders for quick reference',
                 ),
                 const SizedBox(height: 10),
-                ...completedOrders.map(
-                  (order) => _CompletedFulfillmentTile(order: order),
-                ),
+                if (desktopWeb)
+                  HpjWebResponsiveGrid(
+                    minItemWidth: 360,
+                    spacing: 14,
+                    runSpacing: 14,
+                    children: completedOrders
+                        .map(
+                          (order) =>
+                              _CompletedFulfillmentTile(order: order),
+                        )
+                        .toList(growable: false),
+                  )
+                else
+                  ...completedOrders.map(
+                    (order) => _CompletedFulfillmentTile(order: order),
+                  ),
               ],
             ],
           ),

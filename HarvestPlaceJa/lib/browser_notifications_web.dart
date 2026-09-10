@@ -5,6 +5,7 @@
 // ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter
 
 import 'dart:html' as html;
+import 'dart:js_util' as js_util;
 
 final Map<String, DateTime> _recentBrowserNotifications =
     <String, DateTime>{};
@@ -113,7 +114,20 @@ void showBrowserNotification({
     );
 
     notification.onClick.listen((_) {
-      html.window.focus();
+      // Window.focus() is a valid browser API, but newer Dart web
+      // libraries no longer expose it directly on dart:html Window.
+      // Calling it through JS interop keeps the original click-to-focus
+      // behaviour while remaining compatible with the web compiler.
+      try {
+        js_util.callMethod<void>(
+          html.window,
+          'focus',
+          const <Object?>[],
+        );
+      } catch (_) {
+        // The notification should still close even when the browser
+        // blocks programmatic tab focusing.
+      }
       notification.close();
     });
 

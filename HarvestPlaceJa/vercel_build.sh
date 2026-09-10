@@ -3,12 +3,19 @@ set -euo pipefail
 
 echo "=== HPJ Vercel Flutter Web Build ==="
 
+FLUTTER_VERSION="3.32.8"
 FLUTTER_DIR="$HOME/flutter"
 
-if [ ! -x "$FLUTTER_DIR/bin/flutter" ]; then
-  echo "Installing Flutter stable..."
-  git clone https://github.com/flutter/flutter.git     --depth 1     --branch stable     "$FLUTTER_DIR"
+if [ -d "$FLUTTER_DIR" ]; then
+  rm -rf "$FLUTTER_DIR"
 fi
+
+echo "Installing Flutter $FLUTTER_VERSION..."
+git clone \
+  --depth 1 \
+  --branch "$FLUTTER_VERSION" \
+  https://github.com/flutter/flutter.git \
+  "$FLUTTER_DIR"
 
 export PATH="$FLUTTER_DIR/bin:$PATH"
 

@@ -10622,7 +10622,9 @@ class _WholesaleWorkspaceShellState
         // Wholesale Home is the workspace root. Back never opens the
         // workspace selector; use Switch Workspace for that action.
       },
-      child: Scaffold(
+      child: HpjResponsiveWorkspaceScaffold(
+        workspaceLabel: 'Business',
+        desktopMaxContentWidth: 1320,
         backgroundColor: FarmColors.background,
         appBar: AppBar(
           automaticallyImplyLeading: false,
@@ -10665,11 +10667,9 @@ class _WholesaleWorkspaceShellState
           index: selectedIndex,
           children: pages,
         ),
-        bottomNavigationBar: FarmBottomOptionsBar(
-          selectedIndex: selectedIndex,
-          destinations: destinations,
-          onSelected: _select,
-        ),
+        selectedIndex: selectedIndex,
+        destinations: destinations,
+        onSelected: _select,
       ),
     );
   }
@@ -16585,32 +16585,82 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
               ),
               onTrackOrders: () => _goOrders(context),
             ),
-            if (attentionRows.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              const SectionHeader(
-                title: 'Action needed',
-                subtitle: 'The highest-priority item for your business.',
-              ),
-              const SizedBox(height: 9),
-              FarmCard(
-                padding: const EdgeInsets.all(14),
-                child: attentionRows.first,
-              ),
-            ],
             const SizedBox(height: 20),
-            _WholesaleBusinessSnapshotCard(
-              businessName: account.displayName,
-              demandLineCount: gapLines.length,
-              securedLineCount: securedDemandLines,
-              gapLineCount: gapLinesNeedingSupply.length,
-              purchasedOrders30: purchased30.length,
-              spend30: spend30,
-              spend90: spend90,
-              deliveriesToday: deliveriesToday,
-              gapLines: gapLinesNeedingSupply,
-              unavailableSections: data.unavailableSections,
-              onOpenPlan: () => _goPlan(context),
-              onOpenOrders: () => _goOrders(context),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final desktopWeb =
+                    kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
+                final useDesktopRow =
+                    desktopWeb &&
+                    constraints.maxWidth >= 980 &&
+                    attentionRows.isNotEmpty;
+
+                final businessStatus = _WholesaleBusinessSnapshotCard(
+                  businessName: account.displayName,
+                  demandLineCount: gapLines.length,
+                  securedLineCount: securedDemandLines,
+                  gapLineCount: gapLinesNeedingSupply.length,
+                  purchasedOrders30: purchased30.length,
+                  spend30: spend30,
+                  spend90: spend90,
+                  deliveriesToday: deliveriesToday,
+                  gapLines: gapLinesNeedingSupply,
+                  unavailableSections: data.unavailableSections,
+                  onOpenPlan: () => _goPlan(context),
+                  onOpenOrders: () => _goOrders(context),
+                );
+
+                if (!useDesktopRow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (attentionRows.isNotEmpty) ...[
+                        const SectionHeader(
+                          title: 'Action needed',
+                          subtitle:
+                              'The highest-priority item for your business.',
+                        ),
+                        const SizedBox(height: 9),
+                        FarmCard(
+                          padding: const EdgeInsets.all(14),
+                          child: attentionRows.first,
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      businessStatus,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SectionHeader(
+                            title: 'Action needed',
+                            subtitle:
+                                'The highest-priority item for your business.',
+                          ),
+                          const SizedBox(height: 9),
+                          FarmCard(
+                            padding: const EdgeInsets.all(14),
+                            child: attentionRows.first,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 6,
+                      child: businessStatus,
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 14),
             _WholesaleMarketIntelligenceCard(
@@ -17079,6 +17129,9 @@ class _WholesaleHomeQuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -17086,13 +17139,19 @@ class _WholesaleHomeQuickActions extends StatelessWidget {
           title: 'What do you need?',
           subtitle: 'The main jobs for your business.',
         ),
-        const SizedBox(height: 10),
+        SizedBox(height: desktopWeb ? 12 : 10),
         LayoutBuilder(
           builder: (context, constraints) {
-            final width = (constraints.maxWidth - 10) / 2;
+            final useFourColumns =
+                desktopWeb && constraints.maxWidth >= 980;
+            final columns = useFourColumns ? 4 : 2;
+            const spacing = 10.0;
+            final width =
+                (constraints.maxWidth - spacing * (columns - 1)) / columns;
+
             return Wrap(
-              spacing: 10,
-              runSpacing: 10,
+              spacing: spacing,
+              runSpacing: spacing,
               children: [
                 SizedBox(
                   width: width,
@@ -19925,6 +19984,8 @@ class _WholesalePlanningAheadScreenState
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: widget.embedded
@@ -20211,6 +20272,20 @@ class _WholesalePlanningAheadScreenState
                           ),
                         ],
                       ),
+                    )
+                  else if (desktopWeb)
+                    HpjWebResponsiveGrid(
+                      minItemWidth: 470,
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: active
+                          .map(
+                            (forecast) => _WholesalePlanningSimpleCard(
+                              forecast: forecast,
+                              onChanged: _refresh,
+                            ),
+                          )
+                          .toList(growable: false),
                     )
                   else
                     ...active.map(
@@ -22046,6 +22121,8 @@ class _WholesaleSupplierDiscoveryScreenState
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
@@ -22162,16 +22239,32 @@ class _WholesaleSupplierDiscoveryScreenState
                       ],
                     ),
                     const SizedBox(height: 10),
-                    ...farms.map(
-                      (farm) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _WholesaleSupplierCard(
-                          farm: farm,
-                          onViewFarm: () => _viewFarm(farm),
-                          onRequestSupply: () => _requestSupply(farm),
+                    if (desktopWeb)
+                      HpjWebResponsiveGrid(
+                        minItemWidth: 330,
+                        spacing: 16,
+                        runSpacing: 16,
+                        children: farms
+                            .map(
+                              (farm) => _WholesaleSupplierCard(
+                                farm: farm,
+                                onViewFarm: () => _viewFarm(farm),
+                                onRequestSupply: () => _requestSupply(farm),
+                              ),
+                            )
+                            .toList(growable: false),
+                      )
+                    else
+                      ...farms.map(
+                        (farm) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _WholesaleSupplierCard(
+                            farm: farm,
+                            onViewFarm: () => _viewFarm(farm),
+                            onRequestSupply: () => _requestSupply(farm),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ],
               ),
@@ -22196,6 +22289,7 @@ class _WholesaleSupplierCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
     final image = cleanHostedImageUrl(farm.coverImageUrl) ??
         cleanHostedImageUrl(farm.logoImageUrl);
 
@@ -22206,12 +22300,12 @@ class _WholesaleSupplierCard extends StatelessWidget {
         children: [
           if (image != null)
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(desktopWeb ? 18 : 24),
               ),
               child: Image.network(
                 image,
-                height: 128,
+                height: desktopWeb ? 160 : 128,
                 width: double.infinity,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),
@@ -22981,6 +23075,8 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
       body: FutureBuilder<List<WholesaleProduct>>(
         future: _future,
         builder: (context, snapshot) {
+          final desktopWeb = HpjWebUi.isDesktop(context);
+
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -23029,6 +23125,153 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                 );
           });
 
+          Widget buildWholesaleProductTile(WholesaleProduct item) {
+            final selected =
+                selectedProducts.containsKey(item.product.id);
+            final quantity =
+                quantities[item.product.id] ?? item.minimumQuantity;
+
+            return Padding(
+              padding: desktopWeb
+                  ? EdgeInsets.zero
+                  : const EdgeInsets.only(bottom: 12),
+              child: FarmCard(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        width: 82,
+                        height: 82,
+                        child: item.product.imageUrl == null
+                            ? Container(
+                                color: FarmColors.cardSoft,
+                                child: const Icon(
+                                  Icons.eco_outlined,
+                                  color: FarmColors.green,
+                                ),
+                              )
+                            : Image.network(
+                                item.product.imageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: FarmColors.cardSoft,
+                                  child: const Icon(
+                                    Icons.eco_outlined,
+                                    color: FarmColors.green,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.product.name,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${item.formattedWholesalePrice} / ${item.wholesaleUnit}',
+                            style: const TextStyle(
+                              color: FarmColors.green,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Minimum ${item.minimumQuantity} ${item.wholesaleUnit}',
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (item.marketAllocationManaged) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              item.marketAvailabilityLabel,
+                              style: const TextStyle(
+                                color: FarmColors.deepGreen,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: HpjWatchButton(
+                              workspace: 'wholesale',
+                              watchType: 'product',
+                              entityKey: item.product.id,
+                              entityName: item.product.name,
+                              compact: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (!selected)
+                            OutlinedButton.icon(
+                              icon: const Icon(
+                                Icons.add_shopping_cart_outlined,
+                                size: 17,
+                              ),
+                              label: const Text('Add to Bulk Request'),
+                              onPressed: () => _toggle(item),
+                            )
+                          else
+                            Row(
+                              children: [
+                                IconButton.filledTonal(
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () =>
+                                      _changeQuantity(item, -1),
+                                  icon: const Icon(Icons.remove),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    '$quantity ${item.wholesaleUnit}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                IconButton.filled(
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () =>
+                                      _changeQuantity(item, 1),
+                                  icon: const Icon(Icons.add),
+                                ),
+                                IconButton(
+                                  tooltip: 'Remove',
+                                  onPressed: () => _toggle(item),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: FarmColors.danger,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           return FarmPage(
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -23066,150 +23309,18 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                         'Wholesale pricing will appear here after products are enabled by the owner or manager.',
                   )
                 else
-                  ...items.map((item) {
-                    final selected =
-                        selectedProducts.containsKey(item.product.id);
-                    final quantity =
-                        quantities[item.product.id] ?? item.minimumQuantity;
+                  if (desktopWeb)
+                    HpjWebResponsiveGrid(
+                      minItemWidth: 390,
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: items
+                          .map(buildWholesaleProductTile)
+                          .toList(growable: false),
+                    )
+                  else
+                    ...items.map(buildWholesaleProductTile),
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: FarmCard(
-                        padding: const EdgeInsets.all(14),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: SizedBox(
-                                width: 82,
-                                height: 82,
-                                child: item.product.imageUrl == null
-                                    ? Container(
-                                        color: FarmColors.cardSoft,
-                                        child: const Icon(
-                                          Icons.eco_outlined,
-                                          color: FarmColors.green,
-                                        ),
-                                      )
-                                    : Image.network(
-                                        item.product.imageUrl!,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Container(
-                                          color: FarmColors.cardSoft,
-                                          child: const Icon(
-                                            Icons.eco_outlined,
-                                            color: FarmColors.green,
-                                          ),
-                                        ),
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.product.name,
-                                    style: const TextStyle(
-                                      color: FarmColors.ink,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${item.formattedWholesalePrice} / ${item.wholesaleUnit}',
-                                    style: const TextStyle(
-                                      color: FarmColors.green,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    'Minimum ${item.minimumQuantity} ${item.wholesaleUnit}',
-                                    style: const TextStyle(
-                                      color: FarmColors.mutedText,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  if (item.marketAllocationManaged) ...[
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      item.marketAvailabilityLabel,
-                                      style: const TextStyle(
-                                        color: FarmColors.deepGreen,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 10.5,
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: HpjWatchButton(
-                                      workspace: 'wholesale',
-                                      watchType: 'product',
-                                      entityKey: item.product.id,
-                                      entityName: item.product.name,
-                                      compact: true,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (!selected)
-                                    OutlinedButton.icon(
-                                      icon: const Icon(
-                                        Icons.add_shopping_cart_outlined,
-                                        size: 17,
-                                      ),
-                                      label: const Text('Add to Bulk Request'),
-                                      onPressed: () => _toggle(item),
-                                    )
-                                  else
-                                    Row(
-                                      children: [
-                                        IconButton.filledTonal(
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: () =>
-                                              _changeQuantity(item, -1),
-                                          icon: const Icon(Icons.remove),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            '$quantity ${item.wholesaleUnit}',
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                              color: FarmColors.ink,
-                                              fontWeight: FontWeight.w900,
-                                            ),
-                                          ),
-                                        ),
-                                        IconButton.filled(
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: () =>
-                                              _changeQuantity(item, 1),
-                                          icon: const Icon(Icons.add),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Remove',
-                                          onPressed: () => _toggle(item),
-                                          icon: const Icon(
-                                            Icons.delete_outline,
-                                            color: FarmColors.danger,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
               ],
             ),
           );
@@ -25426,6 +25537,7 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
     WholesaleOrderJourney? journey,
     WholesaleInvoice? invoice,
   ) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
     final status = _orderStatus(request, journey);
     final dateLabel = _fulfilmentDateLabel(request, journey);
     final hasAmountDue = (invoice?.amountDue ?? journey?.amountDue ?? 0) > 0;
@@ -25433,7 +25545,9 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
     final needsReceipt = journey?.canConfirmReceipt == true;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: desktopWeb
+          ? EdgeInsets.zero
+          : const EdgeInsets.only(bottom: 12),
       child: FarmCard(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -25698,6 +25812,8 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: widget.embedded ? null : AppBar(title: const Text('Orders')),
@@ -25900,14 +26016,31 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
                       ],
                     ),
                     const SizedBox(height: 9),
-                    ...current.map(
-                      (request) => _orderCard(
-                        context,
-                        request,
-                        journeyByRequest[request.id],
-                        invoiceByRequest[request.id],
+                    if (desktopWeb)
+                      HpjWebResponsiveGrid(
+                        minItemWidth: 500,
+                        spacing: 16,
+                        runSpacing: 16,
+                        children: current
+                            .map(
+                              (request) => _orderCard(
+                                context,
+                                request,
+                                journeyByRequest[request.id],
+                                invoiceByRequest[request.id],
+                              ),
+                            )
+                            .toList(growable: false),
+                      )
+                    else
+                      ...current.map(
+                        (request) => _orderCard(
+                          context,
+                          request,
+                          journeyByRequest[request.id],
+                          invoiceByRequest[request.id],
+                        ),
                       ),
-                    ),
                   ],
                   if (past.isNotEmpty) ...[
                     if (current.isNotEmpty) const SizedBox(height: 7),
@@ -25933,14 +26066,31 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
                       ],
                     ),
                     const SizedBox(height: 9),
-                    ...past.map(
-                      (request) => _orderCard(
-                        context,
-                        request,
-                        journeyByRequest[request.id],
-                        invoiceByRequest[request.id],
+                    if (desktopWeb)
+                      HpjWebResponsiveGrid(
+                        minItemWidth: 500,
+                        spacing: 16,
+                        runSpacing: 16,
+                        children: past
+                            .map(
+                              (request) => _orderCard(
+                                context,
+                                request,
+                                journeyByRequest[request.id],
+                                invoiceByRequest[request.id],
+                              ),
+                            )
+                            .toList(growable: false),
+                      )
+                    else
+                      ...past.map(
+                        (request) => _orderCard(
+                          context,
+                          request,
+                          journeyByRequest[request.id],
+                          invoiceByRequest[request.id],
+                        ),
                       ),
-                    ),
                   ],
                   if (hasMoreOrders) ...[
                     const SizedBox(height: 8),

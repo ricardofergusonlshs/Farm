@@ -103,14 +103,25 @@ void showBrowserNotification({
 
     _recentBrowserNotifications[cleanTag] = now;
 
-    final notification = html.Notification(
-      cleanTitle,
-      <String, dynamic>{
-        'body': cleanBody,
-        'tag': cleanTag,
-        'icon': 'icons/Icon-192.png',
-        'badge': 'icons/Icon-192.png',
-      },
+    // dart:html's typed Notification constructor now accepts only
+    // the title positionally. Use the browser constructor through JS
+    // interop so HPJ can keep all notification options, including badge.
+    final notification = js_util.callConstructor<html.Notification>(
+      js_util.getProperty<Object>(
+        js_util.globalThis,
+        'Notification',
+      ),
+      <Object?>[
+        cleanTitle,
+        js_util.jsify(
+          <String, Object?>{
+            'body': cleanBody,
+            'tag': cleanTag,
+            'icon': 'icons/Icon-192.png',
+            'badge': 'icons/Icon-192.png',
+          },
+        ),
+      ],
     );
 
     notification.onClick.listen((_) {

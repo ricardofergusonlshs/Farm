@@ -20195,6 +20195,35 @@ class _AdminSegmentSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
+    if (desktopWeb) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+        decoration: const BoxDecoration(
+          color: HpjWebUi.chrome,
+          border: Border(
+            bottom: BorderSide(color: HpjWebUi.border),
+          ),
+        ),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in options)
+              ChoiceChip(
+                selected: value == option.$1,
+                avatar: Icon(option.$3, size: 17),
+                label: Text(option.$2),
+                showCheckmark: false,
+                onSelected: (_) => onChanged(option.$1),
+              ),
+          ],
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
@@ -21402,6 +21431,8 @@ class _AdminFarmerSupplyQueueState extends State<_AdminFarmerSupplyQueue> {
     return FutureBuilder<List<Object>>(
       future: future,
       builder: (context, snapshot) {
+        final desktopWeb = HpjWebUi.isDesktop(context);
+
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const Center(
@@ -21631,6 +21662,21 @@ class _AdminFarmerSupplyQueueState extends State<_AdminFarmerSupplyQueue> {
                       : Icons.inventory_2_outlined,
                   title: emptyTitle,
                   message: emptyMessage,
+                )
+              else if (desktopWeb)
+                HpjWebResponsiveGrid(
+                  minItemWidth: 500,
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: groupEntries
+                      .map(
+                        (entry) => _farmGroupCard(
+                          groupKey: entry.key,
+                          farmer: farmerMap[entry.key],
+                          supplies: entry.value,
+                        ),
+                      )
+                      .toList(growable: false),
                 )
               else
                 for (final entry in groupEntries)
@@ -21901,10 +21947,18 @@ class _AdminTodayActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
+      padding: desktopWeb
+          ? EdgeInsets.zero
+          : const EdgeInsets.only(bottom: 9),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(desktopWeb ? 18 : 22),
+        hoverColor: desktopWeb ? HpjWebUi.hover : Colors.transparent,
+        mouseCursor: kIsWeb
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
         onTap: onTap,
         child: FarmCard(
           padding: const EdgeInsets.all(14),
@@ -22026,6 +22080,7 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
       child: FutureBuilder<_AdminTodayOperationsSnapshot>(
         future: future,
         builder: (context, snapshot) {
+          final desktopWeb = HpjWebUi.isDesktop(context);
           final data = snapshot.data ??
               const _AdminTodayOperationsSnapshot(
                 customerPendingOrders: 0,
@@ -22179,6 +22234,13 @@ class _AdminOperationsTodayTabState extends State<_AdminOperationsTodayTab> {
                       ),
                     ],
                   ),
+                )
+              else if (attention.isNotEmpty && desktopWeb)
+                HpjWebResponsiveGrid(
+                  minItemWidth: 500,
+                  spacing: 14,
+                  runSpacing: 14,
+                  children: attention,
                 )
               else if (attention.isNotEmpty)
                 ...attention,
@@ -29497,8 +29559,11 @@ class AdminSummaryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 560 ? 4 : 2;
-        final spacing = 10.0;
+        final desktopWeb = HpjWebUi.isDesktop(context);
+        final columns = desktopWeb
+            ? 4
+            : (constraints.maxWidth >= 560 ? 4 : 2);
+        final spacing = desktopWeb ? 14.0 : 10.0;
         final itemWidth =
             (constraints.maxWidth - (spacing * (columns - 1))) / columns;
 
@@ -34958,6 +35023,8 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
       key: ValueKey(widget.refreshKey),
       future: fetchAdminOrders(),
       builder: (context, snapshot) {
+        final desktopWeb = HpjWebUi.isDesktop(context);
+
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const SkeletonList();
@@ -35027,37 +35094,67 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      summaryTile(
-                        'Orders',
-                        '${orders.length}',
-                        Icons.receipt_long,
-                      ),
-                      const SizedBox(width: 8),
-                      summaryTile(
-                        'Unpaid',
-                        '$unpaidCount',
-                        Icons.pending_actions,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      summaryTile(
-                        'Paid',
-                        '$paidCount',
-                        Icons.verified,
-                      ),
-                      const SizedBox(width: 8),
-                      summaryTile(
-                        'Paid Sales',
-                        money(totalSales),
-                        Icons.payments,
-                      ),
-                    ],
-                  ),
+                  if (desktopWeb)
+                    Row(
+                      children: [
+                        summaryTile(
+                          'Orders',
+                          '${orders.length}',
+                          Icons.receipt_long,
+                        ),
+                        const SizedBox(width: 10),
+                        summaryTile(
+                          'Unpaid',
+                          '$unpaidCount',
+                          Icons.pending_actions,
+                        ),
+                        const SizedBox(width: 10),
+                        summaryTile(
+                          'Paid',
+                          '$paidCount',
+                          Icons.verified,
+                        ),
+                        const SizedBox(width: 10),
+                        summaryTile(
+                          'Paid Sales',
+                          money(totalSales),
+                          Icons.payments,
+                        ),
+                      ],
+                    )
+                  else ...[
+                    Row(
+                      children: [
+                        summaryTile(
+                          'Orders',
+                          '${orders.length}',
+                          Icons.receipt_long,
+                        ),
+                        const SizedBox(width: 8),
+                        summaryTile(
+                          'Unpaid',
+                          '$unpaidCount',
+                          Icons.pending_actions,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        summaryTile(
+                          'Paid',
+                          '$paidCount',
+                          Icons.verified,
+                        ),
+                        const SizedBox(width: 8),
+                        summaryTile(
+                          'Paid Sales',
+                          money(totalSales),
+                          Icons.payments,
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -35116,6 +35213,15 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
                 child: Text(
                   'No orders match this search/filter. Try another name, phone number, order ID, zone, item, or status.',
                 ),
+              )
+            else if (desktopWeb)
+              HpjWebResponsiveGrid(
+                minItemWidth: 500,
+                spacing: 16,
+                runSpacing: 16,
+                children: filteredOrders
+                    .map(orderCard)
+                    .toList(growable: false),
               )
             else
               ...filteredOrders.map(
@@ -36006,6 +36112,8 @@ class AdminDeliveryTab extends StatelessWidget {
       key: ValueKey('delivery-$refreshKey'),
       future: fetchAdminOrders(),
       builder: (context, snapshot) {
+        final desktopWeb = HpjWebUi.isDesktop(context);
+
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const SkeletonList();
@@ -36175,6 +36283,31 @@ class AdminDeliveryTab extends StatelessWidget {
                   title: 'No active fulfillment tasks',
                   message:
                       'When a customer places an order, pickup and delivery steps will show here.',
+                )
+              else if (desktopWeb)
+                HpjWebResponsiveGrid(
+                  minItemWidth: 500,
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: activeOrders
+                      .map(
+                        (order) => _FulfillmentOrderCard(
+                          order: order,
+                          status: _currentStatus(order),
+                          statusColor: _statusColor(_currentStatus(order)),
+                          onPreparing: () => _setStatus(order, 'preparing'),
+                          onReady: () => _setStatus(
+                            order,
+                            order.fulfillmentType == 'delivery'
+                                ? 'out_for_delivery'
+                                : 'ready_for_pickup',
+                          ),
+                          onComplete: () => _setStatus(order, 'delivered'),
+                          onStatusChanged: (status) =>
+                              _setStatus(order, status),
+                        ),
+                      )
+                      .toList(growable: false),
                 )
               else
                 ...activeOrders.map(

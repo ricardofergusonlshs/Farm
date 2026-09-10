@@ -6584,7 +6584,7 @@ class _MainNavigationState extends State<MainNavigation>
 
         return HpjResponsiveWorkspaceScaffold(
           workspaceLabel: 'Customer',
-          desktopMaxContentWidth: 1180,
+          desktopMaxContentWidth: 1240,
           body: IndexedStack(index: safeSelectedIndex, children: pages),
           selectedIndex: safeSelectedIndex,
           destinations: destinations,

@@ -3705,8 +3705,9 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
         // Farmer Home is the workspace root. Switching workspaces remains
         // available through the Switch Workspace button in the app bar.
       },
-      child: Scaffold(
-        backgroundColor: FarmColors.background,
+       child: HpjResponsiveWorkspaceScaffold(
+        workspaceLabel: 'Farmer',
+        desktopMaxContentWidth: 1180,        backgroundColor: FarmColors.background,
         appBar: AppBar(
           automaticallyImplyLeading: false,
           leading: selectedIndex == 0
@@ -3729,13 +3730,11 @@ class _FarmerMarketplaceShellState extends State<FarmerMarketplaceShell>
           ],
         ),
         body: pages[selectedIndex],
-        bottomNavigationBar: FarmBottomOptionsBar(
-          selectedIndex: _farmerBottomIndex,
-          destinations: destinations,
-          onSelected: _selectFarmerBottomOption,
-        ),
-      ),
-    );
+        selectedIndex: _farmerBottomIndex,
+        destinations: destinations,
+            onSelected: _selectFarmerBottomOption,
+  ),
+);
   }
 }
 
@@ -6488,12 +6487,15 @@ class _FarmerProgressCard extends StatelessWidget {
 
           LayoutBuilder(
             builder: (context, constraints) {
+              final desktopWeb = HpjWebUi.isDesktop(context);
+              final columns = desktopWeb ? 4 : 2;
+              final spacing = desktopWeb ? 12.0 : 9.0;
               final width =
-                  (constraints.maxWidth - 9) / 2;
+                  (constraints.maxWidth - spacing * (columns - 1)) / columns;
 
               return Wrap(
-                spacing: 9,
-                runSpacing: 9,
+                spacing: spacing,
+                runSpacing: spacing,
                 children: [
                   SizedBox(
                     width: width,
@@ -15340,6 +15342,8 @@ class _FarmerSupplyScreenState
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return FarmPage(
       child:
           FutureBuilder<List<FarmerSupplyForecast>>(
@@ -15430,45 +15434,79 @@ class _FarmerSupplyScreenState
               100,
             ),
             children: [
-              const Text(
-                'What are you growing?',
-                style: TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 21,
-                  height: 1.05,
-                  fontWeight:
-                      FontWeight.w900,
-                ),
-              ),
-
-              const SizedBox(height: 5),
-
-              const Text(
-                'Keep your expected harvest current. HPJ uses it to look for buyer demand and plan collections.',
-                style: TextStyle(
-                  color:
-                      FarmColors.mutedText,
-                  fontSize: 10.3,
-                  height: 1.38,
-                  fontWeight:
-                      FontWeight.w600,
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              SizedBox(
-                width: double.infinity,
-                child: PrimaryFarmButton(
-                  label: active.isEmpty
-                      ? 'Add My First Crop'
-                      : '+ Add Another Crop',
-                  onPressed: () =>
-                      openSupplyForm(
-                    supplies,
+              if (desktopWeb)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'What are you growing?',
+                            style: TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 26,
+                              height: 1.05,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'Keep your expected harvest current. HPJ uses it to look for buyer demand and plan collections.',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 12.5,
+                              height: 1.4,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    SizedBox(
+                      width: 220,
+                      child: PrimaryFarmButton(
+                        label: active.isEmpty
+                            ? 'Add My First Crop'
+                            : '+ Add Another Crop',
+                        onPressed: () => openSupplyForm(supplies),
+                      ),
+                    ),
+                  ],
+                )
+              else ...[
+                const Text(
+                  'What are you growing?',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 21,
+                    height: 1.05,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-              ),
+                const SizedBox(height: 5),
+                const Text(
+                  'Keep your expected harvest current. HPJ uses it to look for buyer demand and plan collections.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 10.3,
+                    height: 1.38,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: PrimaryFarmButton(
+                    label: active.isEmpty
+                        ? 'Add My First Crop'
+                        : '+ Add Another Crop',
+                    onPressed: () => openSupplyForm(supplies),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 14),
 
@@ -15578,16 +15616,32 @@ class _FarmerSupplyScreenState
                     ],
                   ),
                   const SizedBox(height: 9),
-                  ...currentPreview.map(
-                    (supply) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _FarmerSupplyCard(
-                        farmerId: widget.profile.id,
-                        supply: supply,
-                        onChanged: refreshSupply,
+                  if (desktopWeb)
+                    HpjWebResponsiveGrid(
+                      minItemWidth: 470,
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: currentPreview
+                          .map(
+                            (supply) => _FarmerSupplyCard(
+                              farmerId: widget.profile.id,
+                              supply: supply,
+                              onChanged: refreshSupply,
+                            ),
+                          )
+                          .toList(growable: false),
+                    )
+                  else
+                    ...currentPreview.map(
+                      (supply) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _FarmerSupplyCard(
+                          farmerId: widget.profile.id,
+                          supply: supply,
+                          onChanged: refreshSupply,
+                        ),
                       ),
                     ),
-                  ),
                   if (current.length > currentPreview.length)
                     SizedBox(
                       width: double.infinity,
@@ -15636,16 +15690,32 @@ class _FarmerSupplyScreenState
                     ],
                   ),
                   const SizedBox(height: 9),
-                  ...needsPreview.map(
-                    (supply) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _FarmerSupplyCard(
-                        farmerId: widget.profile.id,
-                        supply: supply,
-                        onChanged: refreshSupply,
+                  if (desktopWeb)
+                    HpjWebResponsiveGrid(
+                      minItemWidth: 470,
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: needsPreview
+                          .map(
+                            (supply) => _FarmerSupplyCard(
+                              farmerId: widget.profile.id,
+                              supply: supply,
+                              onChanged: refreshSupply,
+                            ),
+                          )
+                          .toList(growable: false),
+                    )
+                  else
+                    ...needsPreview.map(
+                      (supply) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _FarmerSupplyCard(
+                          farmerId: widget.profile.id,
+                          supply: supply,
+                          onChanged: refreshSupply,
+                        ),
                       ),
                     ),
-                  ),
                   if (needsUpdate.length > needsPreview.length)
                     SizedBox(
                       width: double.infinity,
@@ -15684,16 +15754,35 @@ class _FarmerSupplyScreenState
                         ),
                       ),
                       children: [
-                        ...pastPreview.map(
-                          (supply) => Padding(
+                        if (desktopWeb)
+                          Padding(
                             padding: const EdgeInsets.only(top: 8),
-                            child: _FarmerSupplyCard(
-                              farmerId: widget.profile.id,
-                              supply: supply,
-                              onChanged: refreshSupply,
+                            child: HpjWebResponsiveGrid(
+                              minItemWidth: 470,
+                              spacing: 16,
+                              runSpacing: 16,
+                              children: pastPreview
+                                  .map(
+                                    (supply) => _FarmerSupplyCard(
+                                      farmerId: widget.profile.id,
+                                      supply: supply,
+                                      onChanged: refreshSupply,
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                            ),
+                          )
+                        else
+                          ...pastPreview.map(
+                            (supply) => Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: _FarmerSupplyCard(
+                                farmerId: widget.profile.id,
+                                supply: supply,
+                                onChanged: refreshSupply,
+                              ),
                             ),
                           ),
-                        ),
                         if (past.length > pastPreview.length) ...[
                           const SizedBox(height: 9),
                           SizedBox(
@@ -17698,51 +17787,61 @@ class _FarmerCoreActionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
+
     return FarmCard(
       padding: EdgeInsets.zero,
       child: ExpansionTile(
-        initiallyExpanded: false,
+        // Desktop has room to show the farmer's primary tools immediately.
+        // Android/mobile keeps the current collapsed presentation.
+        initiallyExpanded: desktopWeb,
         maintainState: true,
-        tilePadding: const EdgeInsets.symmetric(
-          horizontal: 15,
-          vertical: 2,
+        tilePadding: EdgeInsets.symmetric(
+          horizontal: desktopWeb ? 18 : 15,
+          vertical: desktopWeb ? 5 : 2,
         ),
-        childrenPadding: const EdgeInsets.fromLTRB(
-          15,
+        childrenPadding: EdgeInsets.fromLTRB(
+          desktopWeb ? 18 : 15,
           0,
-          15,
-          15,
+          desktopWeb ? 18 : 15,
+          desktopWeb ? 18 : 15,
         ),
         leading: const Icon(
           Icons.handyman_outlined,
           color: FarmColors.primary,
         ),
-        title: const Text(
+        title: Text(
           'Farm tools',
           style: TextStyle(
             color: FarmColors.ink,
-            fontSize: 13.5,
+            fontSize: desktopWeb ? 15 : 13.5,
             fontWeight: FontWeight.w800,
           ),
         ),
-        subtitle: const Text(
+        subtitle: Text(
           'Supply, demand, collections and payments',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: FarmColors.mutedText,
-            fontSize: 9.8,
+            fontSize: desktopWeb ? 11 : 9.8,
             fontWeight: FontWeight.w500,
           ),
         ),
         children: [
           LayoutBuilder(
             builder: (context, constraints) {
-              final width = (constraints.maxWidth - 10) / 2;
+              final useFourColumns =
+                  desktopWeb && constraints.maxWidth >= 860;
+              final columns = useFourColumns ? 4 : 2;
+              const spacing = 10.0;
+              final width =
+                  (constraints.maxWidth - spacing * (columns - 1)) / columns;
 
               return Wrap(
-                spacing: 10,
-                runSpacing: 10,
+                spacing: spacing,
+                runSpacing: spacing,
                 children: [
                   SizedBox(
                     width: width,
@@ -26453,84 +26552,75 @@ class _AdminBottomNavigationShell
                     // The staff workspace is a root workspace. Switching to
                     // Customer/Farmer/Wholesale is explicit via Switch Workspace.
                   },
-                  child: Scaffold(
-                  backgroundColor:
-                      FarmColors.background,
-                  appBar: AppBar(
-                    automaticallyImplyLeading: false,
-                    leading: actualIndex == workspaceRootIndex
-                        ? null
-                        : IconButton(
-                            tooltip: 'Back to $roleLabel',
-                            onPressed: () => controller.animateTo(
-                              workspaceRootIndex,
-                            ),
-                            icon: const Icon(
-                              Icons.arrow_back_rounded,
-                            ),
-                          ),
-                    title: Text(
-                      '$roleLabel • $currentTitle',
-                    ),
-                    actions: [
-                      IconButton(
-                        tooltip:
-                            'Switch Workspace',
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  const OwnerWorkspaceSwitcherScreen(
-                                currentWorkspace:
-                                    'staff',
+                  child: HpjResponsiveWorkspaceScaffold(
+                    workspaceLabel: roleLabel,
+                    desktopMaxContentWidth: 1180,
+                    backgroundColor: FarmColors.background,
+                    appBar: AppBar(
+                      automaticallyImplyLeading: false,
+                      leading: actualIndex == workspaceRootIndex
+                          ? null
+                          : IconButton(
+                              tooltip: 'Back to $roleLabel',
+                              onPressed: () => controller.animateTo(
+                                workspaceRootIndex,
+                              ),
+                              icon: const Icon(
+                                Icons.arrow_back_rounded,
                               ),
                             ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.apps_rounded,
-                        ),
+                      title: Text(
+                        '$roleLabel • $currentTitle',
                       ),
-                      IconButton(
-                        tooltip: 'Refresh',
-                        onPressed: onRefresh,
-                        icon: const Icon(
-                          Icons.refresh_rounded,
+                      actions: [
+                        IconButton(
+                          tooltip: 'Switch Workspace',
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    const OwnerWorkspaceSwitcherScreen(
+                                  currentWorkspace: 'staff',
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.apps_rounded,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  body: IndexedStack(
-                    index: actualIndex,
-                    children: [
-                      for (final tab in tabs)
-                        tab.child,
-                    ],
-                  ),
-                  floatingActionButton:
-                      showMessagesButton
-                          ? _AdminFloatingMessagesButton(
-                              refreshKey: refreshKey,
-                              onTap: () {
-                                controller.animateTo(
-                                  messagesIndex,
-                                );
-                              },
-                            )
-                          : null,
-                  floatingActionButtonLocation:
-                      FloatingActionButtonLocation.endFloat,
-                  bottomNavigationBar:
-                      FarmBottomOptionsBar(
-                    selectedIndex:
-                        safeBottomIndex,
-                    destinations:
-                        destinations,
-                    onSelected:
-                        (bottomIndex) {
+                        IconButton(
+                          tooltip: 'Refresh',
+                          onPressed: onRefresh,
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+                    body: IndexedStack(
+                      index: actualIndex,
+                      children: [
+                        for (final tab in tabs) tab.child,
+                      ],
+                    ),
+                    floatingActionButton: showMessagesButton
+                        ? _AdminFloatingMessagesButton(
+                            refreshKey: refreshKey,
+                            onTap: () {
+                              controller.animateTo(
+                                messagesIndex,
+                              );
+                            },
+                          )
+                        : null,
+                    floatingActionButtonLocation:
+                        FloatingActionButtonLocation.endFloat,
+                    selectedIndex: safeBottomIndex,
+                    destinations: destinations,
+                    onSelected: (bottomIndex) {
                       if (hasMore &&
-                          bottomIndex ==
-                              primary.length) {
+                          bottomIndex == primary.length) {
                         _openMore(
                           context,
                           controller,
@@ -26540,14 +26630,12 @@ class _AdminBottomNavigationShell
                       }
 
                       if (bottomIndex >= 0 &&
-                          bottomIndex <
-                              primary.length) {
+                          bottomIndex < primary.length) {
                         controller.animateTo(
                           primary[bottomIndex],
                         );
                       }
                     },
-                  ),
                   ),
                 ),
               );

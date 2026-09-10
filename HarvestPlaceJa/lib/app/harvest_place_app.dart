@@ -901,6 +901,13 @@ class _AuthGateState extends State<AuthGate> {
         onCreateAccount: () {
           unawaited(openAuth(createAccount: true));
         },
+        onBrowseMarket: () {
+          if (!mounted) return;
+          setState(() {
+            hasEnteredMarket = true;
+            shouldChooseWorkspace = false;
+          });
+        },
       );
     }
 
@@ -2013,11 +2020,13 @@ class EmailConfirmationProgressScreen extends StatelessWidget {
 class PublicLandingScreen extends StatefulWidget {
   final VoidCallback onEnterWorkspaces;
   final VoidCallback onCreateAccount;
+  final VoidCallback? onBrowseMarket;
 
   const PublicLandingScreen({
     super.key,
     required this.onEnterWorkspaces,
     required this.onCreateAccount,
+    this.onBrowseMarket,
   });
 
   @override
@@ -2032,12 +2041,6 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
   static const Color _lime = Color(0xFF9EDB45);
   static const Color _gold = Color(0xFFF0AF2A);
 
-  final ScrollController _websiteScrollController = ScrollController();
-  final GlobalKey _howItWorksKey = GlobalKey();
-  final GlobalKey _farmerKey = GlobalKey();
-  final GlobalKey _businessKey = GlobalKey();
-  final GlobalKey _trustKey = GlobalKey();
-
   @override
   void initState() {
     super.initState();
@@ -2046,12 +2049,6 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
     // Home Hero slide 1 is used only as a backward-compatible fallback.
     _welcomeBackgroundFuture = fetchPublicWelcomeBackgroundUrl();
     _legacyLandingBackgroundFuture = fetchPublicHomeHeroSlides();
-  }
-
-  @override
-  void dispose() {
-    _websiteScrollController.dispose();
-    super.dispose();
   }
 
   Widget _backgroundFallback() {
@@ -2477,52 +2474,23 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
     );
   }
 
-  void _scrollToSection(GlobalKey key) {
-    final targetContext = key.currentContext;
-    if (targetContext == null) return;
+  VoidCallback get _browseMarketAction =>
+      widget.onBrowseMarket ?? widget.onEnterWorkspaces;
 
-    Scrollable.ensureVisible(
-      targetContext,
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
-      alignment: 0.03,
-    );
-  }
-
-  Widget _webLogo({double size = 44}) {
-    return Container(
-      width: size,
-      height: size,
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(
-          color: const Color(0xFFD9E5D5),
-        ),
-      ),
-      child: Image.asset(
-        'lib/assets/images/logo.png',
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => const Icon(
-          Icons.eco_rounded,
-          color: _forest,
-        ),
-      ),
-    );
-  }
-
-  Widget _webNavItem(
-    String label,
-    VoidCallback onTap,
-  ) {
+  Widget _webNavLink({
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return TextButton(
       onPressed: onTap,
       style: TextButton.styleFrom(
         foregroundColor: _forest,
         padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 11,
+          horizontal: 13,
+          vertical: 12,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
         textStyle: const TextStyle(
           fontSize: 13.5,
@@ -2533,700 +2501,44 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
     );
   }
 
-  Widget _webTopBar() {
-    return Container(
-      height: 76,
-      decoration: const BoxDecoration(
-        color: Color(0xFFFCFEFB),
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFFDCE7D9),
-          ),
-        ),
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 1240,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24,
-            ),
-            child: Row(
-              children: [
-                InkWell(
-                  mouseCursor: SystemMouseCursors.click,
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    if (_websiteScrollController.hasClients) {
-                      _websiteScrollController.animateTo(
-                        0,
-                        duration: const Duration(milliseconds: 380),
-                        curve: Curves.easeOutCubic,
-                      );
-                    }
-                  },
-                  child: Row(
-                    children: [
-                      _webLogo(size: 44),
-                      const SizedBox(width: 11),
-                      const Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'The Harvest Place Ja',
-                            style: TextStyle(
-                              color: _forest,
-                              fontSize: 16.5,
-                              height: 1.0,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.25,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Fresh • Local • Jamaican',
-                            style: TextStyle(
-                              color: Color(0xFF5C725F),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                _webNavItem(
-                  'How it works',
-                  () => _scrollToSection(_howItWorksKey),
-                ),
-                _webNavItem(
-                  'For Farmers',
-                  () => _scrollToSection(_farmerKey),
-                ),
-                _webNavItem(
-                  'For Business',
-                  () => _scrollToSection(_businessKey),
-                ),
-                _webNavItem(
-                  'Trust',
-                  () => _scrollToSection(_trustKey),
-                ),
-                _webNavItem(
-                  'About',
-                  () => _openUtility(
-                    const AboutHpjScreen(),
-                  ),
-                ),
-                _webNavItem(
-                  'Support',
-                  () => _openUtility(
-                    const SupportScreen(
-                      initialSubject: 'Account help',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 7),
-                OutlinedButton(
-                  onPressed: widget.onEnterWorkspaces,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _forest,
-                    side: const BorderSide(
-                      color: Color(0xFFB8CAB4),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 17,
-                      vertical: 13,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                  ),
-                  child: const Text(
-                    'Sign in',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 9),
-                FilledButton(
-                  onPressed: widget.onCreateAccount,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _forest,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 19,
-                      vertical: 14,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                  ),
-                  child: const Text(
-                    'Create account',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _webHeroRoleLine({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF4E7),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(
-              icon,
-              color: _forest,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: _forest,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFF607063),
-                    fontSize: 11.5,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _webHero() {
-    return SizedBox(
-      height: 620,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          _landingBackground(),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                stops: [
-                  0.00,
-                  0.46,
-                  0.72,
-                  1.00,
-                ],
-                colors: [
-                  Color(0xE90A2D1F),
-                  Color(0xCC0A2D1F),
-                  Color(0x660A2D1F),
-                  Color(0x2A0A2D1F),
-                ],
-              ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  const Color(0xFF061E15).withOpacity(0.22),
-                ],
-              ),
-            ),
-          ),
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 1240,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 28,
-                  vertical: 54,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 6,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: 650,
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 7,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.28),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'JAMAICA’S CONNECTED PRODUCE MARKETPLACE',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.05,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              const Text(
-                                'Fresh Jamaican produce.\nCloser to the people who grow it.',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 50,
-                                  height: 1.02,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -1.5,
-                                  shadows: [
-                                    Shadow(
-                                      color: Color(0x55000000),
-                                      blurRadius: 14,
-                                      offset: Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 18),
-                              Text(
-                                'Shop fresh produce, share your farm supply, or plan wholesale purchasing through one Jamaican agriculture platform.',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.94),
-                                  fontSize: 17,
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w600,
-                                  shadows: const [
-                                    Shadow(
-                                      color: Color(0x44000000),
-                                      blurRadius: 8,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 28),
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 10,
-                                children: [
-                                  FilledButton.icon(
-                                    onPressed: widget.onEnterWorkspaces,
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: _forest,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 23,
-                                        vertical: 17,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                    ),
-                                    icon: const Icon(
-                                      Icons.grid_view_rounded,
-                                    ),
-                                    label: const Text(
-                                      'Explore HPJ',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: widget.onCreateAccount,
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.white,
-                                      backgroundColor: const Color(0xFF06281C)
-                                          .withOpacity(0.34),
-                                      side: const BorderSide(
-                                        color: Colors.white,
-                                        width: 1.2,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 22,
-                                        vertical: 16,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                    ),
-                                    icon: const Icon(
-                                        Icons.person_add_alt_1_rounded),
-                                    label: const Text(
-                                      'Create an account',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 46),
-                    Expanded(
-                      flex: 4,
-                      child: Container(
-                        padding: const EdgeInsets.all(22),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.95),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.95),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.18),
-                              blurRadius: 34,
-                              offset: const Offset(0, 14),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'One marketplace. Three ways to use HPJ.',
-                              style: TextStyle(
-                                color: _forest,
-                                fontSize: 20,
-                                height: 1.12,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.35,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Choose the workspace that fits what you need today.',
-                              style: TextStyle(
-                                color: Color(0xFF68776A),
-                                fontSize: 12.3,
-                                height: 1.4,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            _webHeroRoleLine(
-                              icon: Icons.shopping_basket_outlined,
-                              title: 'Customer Shopping',
-                              subtitle:
-                                  'Discover fresh Jamaican produce and manage your orders.',
-                            ),
-                            _webHeroRoleLine(
-                              icon: Icons.agriculture_outlined,
-                              title: 'Farmer Partner',
-                              subtitle:
-                                  'Keep your supply current and connect it with real demand.',
-                            ),
-                            _webHeroRoleLine(
-                              icon: Icons.storefront_outlined,
-                              title: 'Wholesale Business',
-                              subtitle:
-                                  'Source produce, plan ahead and follow procurement.',
-                            ),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton(
-                                onPressed: widget.onEnterWorkspaces,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _forest,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 15,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(13),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Choose your workspace',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _webSectionHeading({
-    required String eyebrow,
-    required String title,
-    required String subtitle,
-  }) {
-    return Column(
-      children: [
-        Text(
-          eyebrow.toUpperCase(),
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFF4F7D4E),
-            fontSize: 10.5,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.25,
-          ),
-        ),
-        const SizedBox(height: 9),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: _forest,
-            fontSize: 34,
-            height: 1.06,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.75,
-          ),
-        ),
-        const SizedBox(height: 11),
-        ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 700,
-          ),
-          child: Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF667468),
-              fontSize: 14.5,
-              height: 1.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _webHowCard({
-    required String number,
+  Widget _webBenefit({
     required IconData icon,
     required String title,
     required String body,
   }) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: const Color(0xFFDCE7D9),
+          color: const Color(0xFFDDE7DA),
         ),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0xFF173B22).withOpacity(0.05),
-            blurRadius: 22,
-            offset: const Offset(0, 8),
+            color: Color(0x0C083D2A),
+            blurRadius: 28,
+            offset: Offset(0, 10),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF4E7),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  icon,
-                  color: _forest,
-                  size: 24,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                number,
-                style: TextStyle(
-                  color: _forest.withOpacity(0.22),
-                  fontSize: 30,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            title,
-            style: const TextStyle(
-              color: _forest,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            body,
-            style: const TextStyle(
-              color: Color(0xFF687568),
-              fontSize: 12.5,
-              height: 1.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _webHowItWorksSection() {
-    return Container(
-      key: _howItWorksKey,
-      color: const Color(0xFFFCFEFB),
-      padding: const EdgeInsets.symmetric(
-        vertical: 76,
-        horizontal: 24,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 1180,
-          ),
-          child: Column(
-            children: [
-              _webSectionHeading(
-                eyebrow: 'How HPJ works',
-                title: 'From Jamaican farms to real demand.',
-                subtitle:
-                    'HPJ brings supply, purchasing and fulfilment into one connected journey without taking away the identity of the local farm.',
-              ),
-              const SizedBox(height: 38),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _webHowCard(
-                      number: '01',
-                      icon: Icons.agriculture_rounded,
-                      title: 'Farmers share supply',
-                      body:
-                          'Farmers keep crops, expected quantities and availability current so HPJ can see what is coming.',
-                    ),
-                  ),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    child: _webHowCard(
-                      number: '02',
-                      icon: Icons.hub_outlined,
-                      title: 'HPJ connects demand',
-                      body:
-                          'Customer and business demand can be matched with available or upcoming Jamaican farm supply.',
-                    ),
-                  ),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    child: _webHowCard(
-                      number: '03',
-                      icon: Icons.local_shipping_outlined,
-                      title: 'Orders move forward',
-                      body:
-                          'Orders, collections, receiving, packing and delivery can be followed through the same platform.',
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _webRoleFeature({
-    required IconData icon,
-    required String title,
-    required String body,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 13),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
-              color: const Color(0xFFEAF4E7),
-              borderRadius: BorderRadius.circular(10),
+              color: const Color(0xFFEAF4E5),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
               icon,
-              size: 18,
               color: _forest,
+              size: 23,
             ),
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3235,17 +2547,18 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
                   title,
                   style: const TextStyle(
                     color: _forest,
-                    fontSize: 13.5,
+                    fontSize: 16,
+                    height: 1.12,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 6),
                 Text(
                   body,
                   style: const TextStyle(
-                    color: Color(0xFF687568),
-                    fontSize: 11.5,
-                    height: 1.4,
+                    color: Color(0xFF667268),
+                    fontSize: 13,
+                    height: 1.45,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -3258,23 +2571,34 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
   }
 
   Widget _webAudienceCard({
-    required GlobalKey sectionKey,
+    required IconData icon,
     required String eyebrow,
     required String title,
-    required String description,
-    required IconData icon,
-    required List<Widget> features,
+    required String body,
     required String actionLabel,
+    required VoidCallback onTap,
+    bool emphasized = false,
   }) {
+    final cardColor = emphasized ? const Color(0xFF0B432F) : Colors.white;
+    final titleColor = emphasized ? Colors.white : _forest;
+    final bodyColor =
+        emphasized ? Colors.white.withOpacity(0.80) : const Color(0xFF68736B);
+
     return Container(
-      key: sectionKey,
       padding: const EdgeInsets.all(26),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: const Color(0xFFD8E5D5),
+          color: emphasized ? const Color(0xFF0B432F) : const Color(0xFFDCE6D9),
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10083D2A),
+            blurRadius: 34,
+            offset: Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3283,697 +2607,1014 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: const Color(0xFFEAF4E7),
+              color: emphasized
+                  ? Colors.white.withOpacity(0.12)
+                  : const Color(0xFFEAF4E5),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(
               icon,
-              color: _forest,
+              color: emphasized ? _lime : _forest,
               size: 27,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
           Text(
             eyebrow.toUpperCase(),
-            style: const TextStyle(
-              color: Color(0xFF4F7D4E),
-              fontSize: 9.5,
+            style: TextStyle(
+              color: emphasized ? _lime : const Color(0xFF6A8A65),
+              fontSize: 10.5,
+              letterSpacing: 1.3,
               fontWeight: FontWeight.w900,
-              letterSpacing: 1.1,
             ),
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 8),
           Text(
             title,
-            style: const TextStyle(
-              color: _forest,
-              fontSize: 24,
-              height: 1.08,
+            style: TextStyle(
+              color: titleColor,
+              fontSize: 23,
+              height: 1.05,
+              letterSpacing: -0.4,
               fontWeight: FontWeight.w900,
-              letterSpacing: -0.45,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
-            description,
-            style: const TextStyle(
-              color: Color(0xFF687568),
-              fontSize: 12.5,
-              height: 1.48,
+            body,
+            style: TextStyle(
+              color: bodyColor,
+              fontSize: 13.5,
+              height: 1.5,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 20),
-          ...features,
           const Spacer(),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: widget.onCreateAccount,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _forest,
-                side: const BorderSide(
-                  color: Color(0xFFB8CAB4),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  vertical: 15,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-              ),
-              icon: const Icon(
-                Icons.arrow_forward_rounded,
-                size: 19,
-              ),
-              label: Text(
-                actionLabel,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                ),
+          const SizedBox(height: 22),
+          TextButton.icon(
+            onPressed: onTap,
+            style: TextButton.styleFrom(
+              foregroundColor: emphasized ? Colors.white : _forest,
+              padding: EdgeInsets.zero,
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 13.5,
               ),
             ),
+            iconAlignment: IconAlignment.end,
+            icon: const Icon(
+              Icons.arrow_forward_rounded,
+              size: 18,
+            ),
+            label: Text(actionLabel),
           ),
         ],
       ),
     );
   }
 
-  Widget _webAudienceSection() {
-    return Container(
-      color: const Color(0xFFF5F8F2),
-      padding: const EdgeInsets.symmetric(
-        vertical: 76,
-        horizontal: 24,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 1180,
-          ),
-          child: Column(
-            children: [
-              _webSectionHeading(
-                eyebrow: 'Built for the marketplace',
-                title: 'One platform for homes, farms and businesses.',
-                subtitle:
-                    'Use the part of HPJ that matches your role while the same marketplace keeps the journey connected.',
-              ),
-              const SizedBox(height: 38),
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _webAudienceCard(
-                        sectionKey: GlobalKey(),
-                        eyebrow: 'Customers',
-                        title: 'Shop fresh Jamaican produce',
-                        description:
-                            'Build your box, discover farms and follow your order from checkout to fulfilment.',
-                        icon: Icons.shopping_basket_outlined,
-                        features: [
-                          _webRoleFeature(
-                            icon: Icons.storefront_outlined,
-                            title: 'Browse fresh produce',
-                            body:
-                                'See available products and the farms behind them.',
-                          ),
-                          _webRoleFeature(
-                            icon: Icons.inventory_2_outlined,
-                            title: 'Build My Box',
-                            body:
-                                'Add products, manage quantities and check out in one place.',
-                          ),
-                          _webRoleFeature(
-                            icon: Icons.receipt_long_outlined,
-                            title: 'Follow orders',
-                            body:
-                                'Keep order status, receipts and updates together.',
-                          ),
-                        ],
-                        actionLabel: 'Create customer account',
-                      ),
-                    ),
-                    const SizedBox(width: 18),
-                    Expanded(
-                      child: _webAudienceCard(
-                        sectionKey: _farmerKey,
-                        eyebrow: 'Farmers',
-                        title: 'Turn farm supply into opportunity',
-                        description:
-                            'Keep your crop supply visible, review demand and follow collection and payment activity.',
-                        icon: Icons.agriculture_outlined,
-                        features: [
-                          _webRoleFeature(
-                            icon: Icons.grass_rounded,
-                            title: 'Keep supply current',
-                            body:
-                                'Share crops, quantities and expected harvest dates.',
-                          ),
-                          _webRoleFeature(
-                            icon: Icons.insights_outlined,
-                            title: 'See buyer demand',
-                            body:
-                                'Review opportunities that can match what you grow.',
-                          ),
-                          _webRoleFeature(
-                            icon: Icons.local_shipping_outlined,
-                            title: 'Follow operations',
-                            body:
-                                'Track collections, orders and farmer payment activity.',
-                          ),
-                        ],
-                        actionLabel: 'Join as a farmer',
-                      ),
-                    ),
-                    const SizedBox(width: 18),
-                    Expanded(
-                      child: _webAudienceCard(
-                        sectionKey: _businessKey,
-                        eyebrow: 'Businesses',
-                        title: 'Source produce with more visibility',
-                        description:
-                            'Order fresh supply, plan future needs, discover farms and follow wholesale orders.',
-                        icon: Icons.storefront_outlined,
-                        features: [
-                          _webRoleFeature(
-                            icon: Icons.shopping_cart_outlined,
-                            title: 'Order produce',
-                            body:
-                                'Build wholesale requests from available supply.',
-                          ),
-                          _webRoleFeature(
-                            icon: Icons.event_note_outlined,
-                            title: 'Plan ahead',
-                            body:
-                                'Record future requirements so HPJ can prepare earlier.',
-                          ),
-                          _webRoleFeature(
-                            icon: Icons.agriculture_outlined,
-                            title: 'Find suppliers',
-                            body:
-                                'Explore participating farm profiles and supply.',
-                          ),
-                        ],
-                        actionLabel: 'Create business account',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _webTrustItem({
-    required IconData icon,
+  Widget _webStep({
+    required String number,
     required String title,
     required String body,
   }) {
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 46,
-          height: 46,
+          width: 42,
+          height: 42,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: const Color(0xFFEAF4E7),
-            borderRadius: BorderRadius.circular(14),
+            color: _gold,
+            borderRadius: BorderRadius.circular(13),
           ),
-          child: Icon(
-            icon,
-            color: _forest,
-            size: 23,
+          child: Text(
+            number,
+            style: const TextStyle(
+              color: _forest,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
-        const SizedBox(width: 13),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: _forest,
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                body,
-                style: const TextStyle(
-                  color: Color(0xFF687568),
-                  fontSize: 12,
-                  height: 1.45,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+        const SizedBox(height: 16),
+        Text(
+          title,
+          style: const TextStyle(
+            color: _forest,
+            fontSize: 18,
+            height: 1.1,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          body,
+          style: const TextStyle(
+            color: Color(0xFF68736B),
+            fontSize: 13.2,
+            height: 1.48,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
     );
   }
 
-  Widget _webTrustSection() {
-    return Container(
-      key: _trustKey,
-      color: const Color(0xFFFCFEFB),
-      padding: const EdgeInsets.symmetric(
-        vertical: 76,
-        horizontal: 24,
-      ),
-      child: Center(
+  Widget _desktopPublicWebsite(BuildContext context) {
+    const pageBackground = Color(0xFFF5F8F2);
+    const line = Color(0xFFDDE7DA);
+    const muted = Color(0xFF68736B);
+
+    Widget maxWidth(Widget child, {double width = 1180}) {
+      return Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 1120,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                flex: 5,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'TRUSTED MARKETPLACE DESIGN',
-                      style: TextStyle(
-                        color: Color(0xFF4F7D4E),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Built to keep the people and the produce visible.',
-                      style: TextStyle(
-                        color: _forest,
-                        fontSize: 34,
-                        height: 1.08,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.7,
-                      ),
-                    ),
-                    const SizedBox(height: 13),
-                    const Text(
-                      'HPJ brings marketplace tools together while keeping farm identity, order information, policies and support easy to reach.',
-                      style: TextStyle(
-                        color: Color(0xFF687568),
-                        fontSize: 14,
-                        height: 1.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () => _openUtility(
-                            const TrustCenterScreen(),
-                          ),
-                          icon: const Icon(Icons.shield_outlined),
-                          label: const Text('Visit Trust Center'),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => _openUtility(
-                            const AboutHpjScreen(),
-                          ),
-                          icon: const Icon(Icons.info_outline_rounded),
-                          label: const Text('About HPJ'),
-                        ),
-                      ],
-                    ),
-                  ],
+          constraints: BoxConstraints(maxWidth: width),
+          child: child,
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: pageBackground,
+      body: Column(
+        children: [
+          Material(
+            color: Colors.white,
+            elevation: 0,
+            child: Container(
+              height: 76,
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: line),
                 ),
               ),
-              const SizedBox(width: 60),
-              Expanded(
-                flex: 5,
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F8F2),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: const Color(0xFFDCE7D9),
-                    ),
-                  ),
-                  child: Column(
+              child: maxWidth(
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
                     children: [
-                      _webTrustItem(
-                        icon: Icons.agriculture_rounded,
-                        title: 'Farm identity stays visible',
-                        body:
-                            'Public farm profiles can show the farm, its story, photos and available produce.',
+                      InkWell(
+                        onTap: () {},
+                        mouseCursor: SystemMouseCursors.click,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 2,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: Image.asset(
+                                  'lib/assets/images/logo.png',
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.eco_rounded,
+                                    color: _forest,
+                                    size: 34,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'The Harvest Place Ja',
+                                    style: TextStyle(
+                                      color: _forest,
+                                      fontSize: 15.5,
+                                      height: 1.05,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: -0.25,
+                                    ),
+                                  ),
+                                  SizedBox(height: 3),
+                                  Text(
+                                    'Fresh • Local • Jamaican',
+                                    style: TextStyle(
+                                      color: Color(0xFF6B806B),
+                                      fontSize: 9.8,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 20),
-                      _webTrustItem(
-                        icon: Icons.receipt_long_rounded,
-                        title: 'Order activity stays organized',
-                        body:
-                            'Customers, farmers, businesses and staff each use the workspace designed for their role.',
+                      const Spacer(),
+                      _webNavLink(
+                        label: 'Shop Fresh',
+                        onTap: _browseMarketAction,
                       ),
-                      const SizedBox(height: 20),
-                      _webTrustItem(
-                        icon: Icons.policy_outlined,
-                        title: 'Policies are easy to reach',
-                        body:
-                            'Terms, Privacy, Refunds and FAQs remain available from the public website.',
+                      _webNavLink(
+                        label: 'For Farmers',
+                        onTap: widget.onCreateAccount,
                       ),
-                      const SizedBox(height: 20),
-                      _webTrustItem(
-                        icon: Icons.support_agent_rounded,
-                        title: 'Support is built in',
-                        body:
-                            'Account and marketplace support remains available through the existing HPJ Support screen.',
+                      _webNavLink(
+                        label: 'For Business',
+                        onTap: widget.onCreateAccount,
+                      ),
+                      _webNavLink(
+                        label: 'About',
+                        onTap: () => _openUtility(
+                          const AboutHpjScreen(),
+                        ),
+                      ),
+                      _webNavLink(
+                        label: 'FAQ',
+                        onTap: () => _openUtility(
+                          const HpjFaqScreen(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: widget.onEnterWorkspaces,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _forest,
+                          side: const BorderSide(color: _forest),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        child: const Text('Sign In'),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: widget.onCreateAccount,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _forest,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        child: const Text('Get Started'),
                       ),
                     ],
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _webFinalCta() {
-    return Container(
-      color: _forest,
-      padding: const EdgeInsets.symmetric(
-        vertical: 58,
-        horizontal: 24,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 1120,
-          ),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Ready to use The Harvest Place Ja?',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 30,
-                        height: 1.08,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.65,
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 535,
+                    width: double.infinity,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _landingBackground(),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                const Color(0xFF06281C).withOpacity(0.90),
+                                const Color(0xFF06281C).withOpacity(0.62),
+                                const Color(0xFF06281C).withOpacity(0.16),
+                              ],
+                            ),
+                          ),
+                        ),
+                        maxWidth(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 11,
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.12),
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          border: Border.all(
+                                            color:
+                                                Colors.white.withOpacity(0.22),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'JAMAICA’S CONNECTED FRESH-PRODUCE MARKETPLACE',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10.5,
+                                            letterSpacing: 1.15,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      const Text(
+                                        'Fresh Jamaican produce.\nCloser to home.',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 52,
+                                          height: 0.98,
+                                          letterSpacing: -1.8,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      Text(
+                                        'Shop fresh produce, connect with local farms, or plan reliable supply for your business — through one Jamaican agriculture platform.',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.90),
+                                          fontSize: 18,
+                                          height: 1.45,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 28),
+                                      Row(
+                                        children: [
+                                          FilledButton.icon(
+                                            onPressed: _browseMarketAction,
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor: _gold,
+                                              foregroundColor: _forest,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 24,
+                                                vertical: 18,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                  14,
+                                                ),
+                                              ),
+                                              textStyle: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                            icon: const Icon(
+                                              Icons.shopping_basket_outlined,
+                                              size: 20,
+                                            ),
+                                            label: const Text('Shop Fresh'),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          OutlinedButton.icon(
+                                            onPressed: widget.onCreateAccount,
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: Colors.white,
+                                              side: BorderSide(
+                                                color: Colors.white
+                                                    .withOpacity(0.72),
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 22,
+                                                vertical: 18,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                  14,
+                                                ),
+                                              ),
+                                              textStyle: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                            icon: const Icon(
+                                              Icons.storefront_outlined,
+                                              size: 20,
+                                            ),
+                                            label: const Text(
+                                              'Sell or Source with HPJ',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 18),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.verified_user_outlined,
+                                            color: _lime,
+                                            size: 18,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Built for customers, Jamaican farmers and businesses.',
+                                            style: TextStyle(
+                                              color: Colors.white
+                                                  .withOpacity(0.82),
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Spacer(flex: 8),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    color: Colors.white,
+                    child: maxWidth(
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 24,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _webBenefit(
+                                icon: Icons.eco_outlined,
+                                title: 'Local-first sourcing',
+                                body:
+                                    'A marketplace designed around fresh Jamaican agriculture.',
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _webBenefit(
+                                icon: Icons.route_outlined,
+                                title: 'One connected journey',
+                                body:
+                                    'From farmer supply to customer or business order.',
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _webBenefit(
+                                icon: Icons.verified_outlined,
+                                title: 'Built for trust',
+                                body:
+                                    'Clear accounts, order tracking and HPJ support.',
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    SizedBox(height: 9),
-                    Text(
-                      'Choose a workspace or create your HPJ account.',
-                      style: TextStyle(
-                        color: Color(0xFFDCEBDD),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                  ),
+                  maxWidth(
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        24,
+                        72,
+                        24,
+                        70,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'ONE MARKETPLACE. THREE WAYS TO USE HPJ.',
+                            style: TextStyle(
+                              color: Color(0xFF6B8A67),
+                              fontSize: 10.8,
+                              letterSpacing: 1.35,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Built around how Jamaica buys and sells fresh produce.',
+                            style: TextStyle(
+                              color: _forest,
+                              fontSize: 34,
+                              height: 1.05,
+                              letterSpacing: -0.9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Start as a customer, grow with HPJ as a farmer, or plan supply for your business.',
+                            style: TextStyle(
+                              color: muted,
+                              fontSize: 15,
+                              height: 1.45,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          SizedBox(
+                            height: 330,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: _webAudienceCard(
+                                    icon: Icons.shopping_basket_outlined,
+                                    eyebrow: 'Customer',
+                                    title: 'Shop fresh Jamaican produce',
+                                    body:
+                                        'Browse available produce, build your box, follow your order and come back for what you love.',
+                                    actionLabel: 'Explore Marketplace',
+                                    onTap: _browseMarketAction,
+                                    emphasized: true,
+                                  ),
+                                ),
+                                const SizedBox(width: 18),
+                                Expanded(
+                                  child: _webAudienceCard(
+                                    icon: Icons.agriculture_outlined,
+                                    eyebrow: 'Farmer',
+                                    title: 'Turn supply into opportunity',
+                                    body:
+                                        'Keep crop availability current, see buyer demand, follow collections and build your HPJ history.',
+                                    actionLabel: 'Join as a Farmer',
+                                    onTap: widget.onCreateAccount,
+                                  ),
+                                ),
+                                const SizedBox(width: 18),
+                                Expanded(
+                                  child: _webAudienceCard(
+                                    icon: Icons.storefront_outlined,
+                                    eyebrow: 'Business',
+                                    title: 'Plan produce purchasing',
+                                    body:
+                                        'Order wholesale produce, plan future needs, find suppliers and follow fulfilment in one place.',
+                                    actionLabel: 'Create Business Account',
+                                    onTap: widget.onCreateAccount,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    color: Colors.white,
+                    child: maxWidth(
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          24,
+                          70,
+                          24,
+                          72,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'HOW HPJ WORKS',
+                              style: TextStyle(
+                                color: Color(0xFF6B8A67),
+                                fontSize: 10.8,
+                                letterSpacing: 1.35,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Fresh produce, with a clearer path from farm to buyer.',
+                              style: TextStyle(
+                                color: _forest,
+                                fontSize: 32,
+                                height: 1.06,
+                                letterSpacing: -0.7,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _webStep(
+                                    number: '01',
+                                    title: 'Supply becomes visible',
+                                    body:
+                                        'Farmers keep expected produce and harvest timing current in HPJ.',
+                                  ),
+                                ),
+                                const SizedBox(width: 36),
+                                Expanded(
+                                  child: _webStep(
+                                    number: '02',
+                                    title: 'Buyers find what they need',
+                                    body:
+                                        'Customers shop fresh produce while businesses can order and plan ahead.',
+                                  ),
+                                ),
+                                const SizedBox(width: 36),
+                                Expanded(
+                                  child: _webStep(
+                                    number: '03',
+                                    title: 'HPJ connects the journey',
+                                    body:
+                                        'Orders, collection, fulfilment and support stay connected through the platform.',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    color: const Color(0xFF0B432F),
+                    child: maxWidth(
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          24,
+                          58,
+                          24,
+                          58,
+                        ),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Ready to enter The Harvest Place Ja?',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 30,
+                                      height: 1.05,
+                                      letterSpacing: -0.65,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  SizedBox(height: 10),
+                                  Text(
+                                    'Shop as a customer or create an account for Farmer and Business workspaces.',
+                                    style: TextStyle(
+                                      color: Color(0xFFD5E5D3),
+                                      fontSize: 14,
+                                      height: 1.45,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 30),
+                            FilledButton(
+                              onPressed: _browseMarketAction,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _gold,
+                                foregroundColor: _forest,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 22,
+                                  vertical: 17,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(13),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              child: const Text('Shop Fresh'),
+                            ),
+                            const SizedBox(width: 10),
+                            OutlinedButton(
+                              onPressed: widget.onCreateAccount,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: Color(0xFFB8D0B8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 22,
+                                  vertical: 17,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(13),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              child: const Text('Create Account'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    color: const Color(0xFF06281C),
+                    child: maxWidth(
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          24,
+                          42,
+                          24,
+                          34,
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      SizedBox(
+                                        width: 58,
+                                        height: 58,
+                                        child: Image.asset(
+                                          'lib/assets/images/logo.png',
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                            Icons.eco_rounded,
+                                            color: Colors.white,
+                                            size: 38,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        'The Harvest Place Ja',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 5),
+                                      const Text(
+                                        'Fresh • Local • Jamaican',
+                                        style: TextStyle(
+                                          color: _lime,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Explore',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _webFooterLink(
+                                        'Shop Fresh',
+                                        _browseMarketAction,
+                                      ),
+                                      _webFooterLink(
+                                        'About HPJ',
+                                        () => _openUtility(
+                                          const AboutHpjScreen(),
+                                        ),
+                                      ),
+                                      _webFooterLink(
+                                        'FAQ',
+                                        () => _openUtility(
+                                          const HpjFaqScreen(),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Partners',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _webFooterLink(
+                                        'Farmers',
+                                        widget.onCreateAccount,
+                                      ),
+                                      _webFooterLink(
+                                        'Businesses',
+                                        widget.onCreateAccount,
+                                      ),
+                                      _webFooterLink(
+                                        'Sign In',
+                                        widget.onEnterWorkspaces,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Trust & Help',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _webFooterLink(
+                                        'Trust',
+                                        () => _openUtility(
+                                          const TrustCenterScreen(),
+                                        ),
+                                      ),
+                                      _webFooterLink(
+                                        'Support',
+                                        () => _openUtility(
+                                          const SupportScreen(
+                                            initialSubject: 'Account help',
+                                          ),
+                                        ),
+                                      ),
+                                      _webFooterLink(
+                                        'Contact',
+                                        () => _openUtility(
+                                          const SupportScreen(
+                                            initialSubject: 'General enquiry',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Legal',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _webFooterLink(
+                                        'Terms',
+                                        () => _openUtility(
+                                          const TermsOfServiceScreen(),
+                                        ),
+                                      ),
+                                      _webFooterLink(
+                                        'Privacy',
+                                        () => _openUtility(
+                                          const PrivacyPolicyScreen(),
+                                        ),
+                                      ),
+                                      _webFooterLink(
+                                        'Refunds',
+                                        () => _openUtility(
+                                          const RefundPolicyScreen(),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 30),
+                            Container(
+                              height: 1,
+                              color: Colors.white.withOpacity(0.12),
+                            ),
+                            const SizedBox(height: 18),
+                            Row(
+                              children: [
+                                Text(
+                                  '© ${DateTime.now().year} The Harvest Place Ja',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.62),
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  'Jamaica',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.62),
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 30),
-              FilledButton(
-                onPressed: widget.onEnterWorkspaces,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: _forest,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 16,
-                  ),
-                ),
-                child: const Text(
-                  'Explore workspaces',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              OutlinedButton(
-                onPressed: widget.onCreateAccount,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 16,
-                  ),
-                ),
-                child: const Text(
-                  'Create account',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
   Widget _webFooterLink(
     String label,
-    Widget screen,
+    VoidCallback onTap,
   ) {
-    return TextButton(
-      onPressed: () => _openUtility(screen),
-      style: TextButton.styleFrom(
-        foregroundColor: const Color(0xFFD5E4D7),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 0,
-          vertical: 7,
-        ),
-        alignment: Alignment.centerLeft,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _webFooterColumn({
-    required String title,
-    required List<Widget> links,
-  }) {
-    return SizedBox(
-      width: 145,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: Colors.white.withOpacity(0.72),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 0,
+            vertical: 5,
           ),
-          const SizedBox(height: 8),
-          ...links,
-        ],
-      ),
-    );
-  }
-
-  Widget _webFooter() {
-    return Container(
-      color: const Color(0xFF052419),
-      padding: const EdgeInsets.symmetric(
-        vertical: 44,
-        horizontal: 24,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 1180,
-          ),
-          child: Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _webLogo(size: 54),
-                        const SizedBox(width: 14),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'The Harvest Place Ja',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              SizedBox(height: 5),
-                              Text(
-                                'Fresh • Local • Jamaican',
-                                style: TextStyle(
-                                  color: _lime,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              SizedBox(height: 10),
-                              Text(
-                                'A connected marketplace for Jamaican customers, farmers and businesses.',
-                                style: TextStyle(
-                                  color: Color(0xFFB9CCBC),
-                                  fontSize: 11.5,
-                                  height: 1.45,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 60),
-                  _webFooterColumn(
-                    title: 'Company',
-                    links: [
-                      _webFooterLink(
-                        'About',
-                        const AboutHpjScreen(),
-                      ),
-                      _webFooterLink(
-                        'Trust',
-                        const TrustCenterScreen(),
-                      ),
-                      _webFooterLink(
-                        'Support',
-                        const SupportScreen(
-                          initialSubject: 'Account help',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 28),
-                  _webFooterColumn(
-                    title: 'Help',
-                    links: [
-                      _webFooterLink(
-                        'FAQ',
-                        const HpjFaqScreen(),
-                      ),
-                      _webFooterLink(
-                        'Refunds',
-                        const RefundPolicyScreen(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 28),
-                  _webFooterColumn(
-                    title: 'Legal',
-                    links: [
-                      _webFooterLink(
-                        'Terms',
-                        const TermsOfServiceScreen(),
-                      ),
-                      _webFooterLink(
-                        'Privacy',
-                        const PrivacyPolicyScreen(),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
-              Container(
-                height: 1,
-                color: Colors.white.withOpacity(0.10),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Text(
-                    '© ${DateTime.now().year} The Harvest Place Ja',
-                    style: const TextStyle(
-                      color: Color(0xFF9FB4A2),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  const Text(
-                    'Fresh • Local • Jamaican',
-                    style: TextStyle(
-                      color: Color(0xFF9FB4A2),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          minimumSize: const Size(0, 0),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: const TextStyle(
+            fontSize: 11.8,
+            fontWeight: FontWeight.w600,
           ),
         ),
+        child: Text(label),
       ),
     );
   }
 
-  Widget _buildDesktopWebsite(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F8F2),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _webTopBar(),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: _websiteScrollController,
-                physics: const ClampingScrollPhysics(),
-                child: Column(
-                  children: [
-                    _webHero(),
-                    _webHowItWorksSection(),
-                    _webAudienceSection(),
-                    _webTrustSection(),
-                    _webFinalCta(),
-                    _webFooter(),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMobileLanding(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
+    final desktopWeb = kIsWeb && media.size.width >= 1100;
+
+    if (desktopWeb) {
+      return _desktopPublicWebsite(context);
+    }
+
     final compact = media.size.height < 760 || media.size.width < 355;
     final veryCompact = media.size.height < 650;
     final bottomInset = media.viewPadding.bottom;
@@ -4220,17 +3861,6 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
         ],
       ),
     );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final desktopWeb = kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
-
-    if (desktopWeb) {
-      return _buildDesktopWebsite(context);
-    }
-
-    return _buildMobileLanding(context);
   }
 }
 

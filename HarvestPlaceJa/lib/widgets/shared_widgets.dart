@@ -1843,6 +1843,689 @@ class FarmBottomOption {
   });
 }
 
+// =====================================================
+// HPJ WEB WEBSITE MODE
+// Permanent desktop design system for Customer / Farmer / Business / Staff.
+// Mobile + Android remain on the existing compact presentation.
+// =====================================================
+
+class HpjWebUi {
+  static const double desktopBreakpoint = 1100;
+  static const double railWidth = 240;
+
+  static const Color canvas = Color(0xFFF5F8F2);
+  static const Color chrome = Color(0xFFFBFDF9);
+  static const Color panel = Color(0xFFFFFFFF);
+  static const Color hover = Color(0xFFF0F6ED);
+  static const Color border = Color(0xFFDCE7D9);
+  static const Color softShadow = Color(0x120B2B18);
+
+  static bool isDesktop(BuildContext context) =>
+      kIsWeb && MediaQuery.sizeOf(context).width >= desktopBreakpoint;
+}
+
+ThemeData _hpjDesktopWorkspaceTheme(BuildContext context) {
+  final base = Theme.of(context);
+
+  final webInputBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(14),
+    borderSide: const BorderSide(
+      color: HpjWebUi.border,
+      width: 1,
+    ),
+  );
+
+  return base.copyWith(
+    scaffoldBackgroundColor: HpjWebUi.canvas,
+    visualDensity: VisualDensity.standard,
+    dividerTheme: const DividerThemeData(
+      color: HpjWebUi.border,
+      thickness: 1,
+      space: 1,
+    ),
+    appBarTheme: base.appBarTheme.copyWith(
+      backgroundColor: HpjWebUi.chrome,
+      foregroundColor: FarmColors.ink,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      toolbarHeight: 64,
+      shape: const Border(
+        bottom: BorderSide(color: HpjWebUi.border),
+      ),
+      titleTextStyle: const TextStyle(
+        color: FarmColors.ink,
+        fontSize: 20,
+        height: 1.05,
+        fontWeight: FontWeight.w900,
+        letterSpacing: -0.25,
+      ),
+      iconTheme: const IconThemeData(
+        color: FarmColors.ink,
+        size: 22,
+      ),
+      actionsIconTheme: const IconThemeData(
+        color: FarmColors.ink,
+        size: 22,
+      ),
+    ),
+    inputDecorationTheme: base.inputDecorationTheme.copyWith(
+      filled: true,
+      fillColor: HpjWebUi.panel,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 15,
+      ),
+      border: webInputBorder,
+      enabledBorder: webInputBorder,
+      focusedBorder: webInputBorder.copyWith(
+        borderSide: const BorderSide(
+          color: FarmColors.primary,
+          width: 1.6,
+        ),
+      ),
+      errorBorder: webInputBorder.copyWith(
+        borderSide: const BorderSide(
+          color: FarmColors.danger,
+          width: 1.2,
+        ),
+      ),
+      focusedErrorBorder: webInputBorder.copyWith(
+        borderSide: const BorderSide(
+          color: FarmColors.danger,
+          width: 1.6,
+        ),
+      ),
+    ),
+    cardTheme: CardThemeData(
+      color: HpjWebUi.panel,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(
+          color: HpjWebUi.border,
+        ),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: HpjWebUi.panel,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+    ),
+    listTileTheme: const ListTileThemeData(
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 4,
+      ),
+      iconColor: FarmColors.primary,
+      textColor: FarmColors.ink,
+      minLeadingWidth: 24,
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 14,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: 14,
+        ),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 14,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: 14,
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 46),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 13,
+        ),
+        side: const BorderSide(color: HpjWebUi.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 13.5,
+        ),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    ),
+    tooltipTheme: base.tooltipTheme.copyWith(
+      waitDuration: const Duration(milliseconds: 350),
+      showDuration: const Duration(seconds: 3),
+      decoration: BoxDecoration(
+        color: FarmColors.ink,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+}
+
+class HpjResponsiveWorkspaceScaffold extends StatelessWidget {
+  final Widget body;
+  final PreferredSizeWidget? appBar;
+  final Color? backgroundColor;
+  final int selectedIndex;
+  final List<FarmBottomOption> destinations;
+  final ValueChanged<int> onSelected;
+  final String workspaceLabel;
+  final double desktopBreakpoint;
+  final double desktopMaxContentWidth;
+  final Widget? floatingActionButton;
+  final FloatingActionButtonLocation? floatingActionButtonLocation;
+
+  const HpjResponsiveWorkspaceScaffold({
+    super.key,
+    required this.body,
+    this.appBar,
+    this.backgroundColor,
+    required this.selectedIndex,
+    required this.destinations,
+    required this.onSelected,
+    required this.workspaceLabel,
+    this.desktopBreakpoint = 1100,
+    this.desktopMaxContentWidth = 1480,
+    this.floatingActionButton,
+    this.floatingActionButtonLocation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final useDesktopShell = kIsWeb && width >= desktopBreakpoint;
+
+    if (!useDesktopShell) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        appBar: appBar,
+        body: body,
+        floatingActionButton: floatingActionButton,
+        floatingActionButtonLocation: floatingActionButtonLocation,
+        bottomNavigationBar: FarmBottomOptionsBar(
+          selectedIndex: selectedIndex,
+          destinations: destinations,
+          onSelected: onSelected,
+        ),
+      );
+    }
+
+    final safeIndex = destinations.isEmpty
+        ? 0
+        : selectedIndex.clamp(0, destinations.length - 1).toInt();
+    final desktopTheme = _hpjDesktopWorkspaceTheme(context);
+
+    return Theme(
+      data: desktopTheme,
+      child: Scaffold(
+        backgroundColor: HpjWebUi.canvas,
+        floatingActionButton: floatingActionButton,
+        floatingActionButtonLocation: floatingActionButtonLocation,
+        body: SafeArea(
+          child: Row(
+            children: [
+              _HpjDesktopWorkspaceRail(
+                selectedIndex: safeIndex,
+                destinations: destinations,
+                onSelected: onSelected,
+                workspaceLabel: workspaceLabel,
+              ),
+              Expanded(
+                child: ColoredBox(
+                  color: HpjWebUi.canvas,
+                  child: Column(
+                    children: [
+                      if (appBar != null)
+                        SizedBox(
+                          width: double.infinity,
+                          height: desktopTheme.appBarTheme.toolbarHeight ??
+                              appBar!.preferredSize.height,
+                          child: appBar!,
+                        ),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: desktopMaxContentWidth,
+                            ),
+                            child: SizedBox.expand(child: body),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HpjDesktopWorkspaceRail extends StatelessWidget {
+  final int selectedIndex;
+  final List<FarmBottomOption> destinations;
+  final ValueChanged<int> onSelected;
+  final String workspaceLabel;
+
+  const _HpjDesktopWorkspaceRail({
+    required this.selectedIndex,
+    required this.destinations,
+    required this.onSelected,
+    required this.workspaceLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: HpjWebUi.railWidth,
+      decoration: const BoxDecoration(
+        color: HpjWebUi.chrome,
+        border: Border(
+          right: BorderSide(color: FarmColors.line),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+            child: Tooltip(
+              message: 'Go to $workspaceLabel Home',
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(18),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  hoverColor: HpjWebUi.hover,
+                  mouseCursor: SystemMouseCursors.click,
+                  onTap: () {
+                    if (selectedIndex != 0) {
+                      onSelected(0);
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 50,
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: FarmColors.line,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Image.asset(
+                            'lib/assets/images/logo.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.eco_rounded,
+                              color: FarmColors.primary,
+                              size: 26,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'HPJ',
+                                style: TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                workspaceLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: HpjWebUi.border),
+          const SizedBox(height: 14),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: destinations.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 7),
+              itemBuilder: (context, index) {
+                final option = destinations[index];
+                final selected = index == selectedIndex;
+
+                return Material(
+                  color: selected ? FarmColors.primarySoft : Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    hoverColor: HpjWebUi.hover,
+                    mouseCursor: SystemMouseCursors.click,
+                    onTap: () => onSelected(index),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 3,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? FarmColors.primary
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Stack(
+                            clipBehavior: Clip.none,
+                            alignment: Alignment.center,
+                            children: [
+                              IconTheme(
+                                data: IconThemeData(
+                                  color: selected
+                                      ? FarmColors.primary
+                                      : FarmColors.muted,
+                                  size: 22,
+                                ),
+                                child: selected
+                                    ? option.selectedIcon
+                                    : option.icon,
+                              ),
+                              if (option.badgeCount > 0)
+                                Positioned(
+                                  top: -9,
+                                  right: -12,
+                                  child: Container(
+                                    constraints: const BoxConstraints(
+                                      minWidth: 18,
+                                      minHeight: 18,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: FarmColors.accent,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      option.badgeCount > 99
+                                          ? '99+'
+                                          : option.badgeCount.toString(),
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: FarmColors.ink,
+                                        fontSize: 9,
+                                        height: 1,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(width: 13),
+                          Expanded(
+                            child: Text(
+                              option.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: selected
+                                    ? FarmColors.primary
+                                    : FarmColors.ink,
+                                fontSize: 13,
+                                fontWeight: selected
+                                    ? FontWeight.w900
+                                    : FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 12, 18, 18),
+            child: Text(
+              'Fresh • Local • Jamaican',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HpjWebTwoColumn extends StatelessWidget {
+  final Widget primary;
+  final Widget secondary;
+  final double primaryFlex;
+  final double secondaryFlex;
+  final double gap;
+  final double breakpoint;
+
+  const HpjWebTwoColumn({
+    super.key,
+    required this.primary,
+    required this.secondary,
+    this.primaryFlex = 1,
+    this.secondaryFlex = 1,
+    this.gap = 18,
+    this.breakpoint = 980,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final sideBySide = kIsWeb && width >= breakpoint;
+
+    if (!sideBySide) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          primary,
+          SizedBox(height: gap),
+          secondary,
+        ],
+      );
+    }
+
+    final total = primaryFlex + secondaryFlex;
+    final primaryWeight = ((primaryFlex / total) * 1000).round();
+    final secondaryWeight = 1000 - primaryWeight;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: primaryWeight,
+          child: primary,
+        ),
+        SizedBox(width: gap),
+        Expanded(
+          flex: secondaryWeight,
+          child: secondary,
+        ),
+      ],
+    );
+  }
+}
+
+class HpjWebResponsiveGrid extends StatelessWidget {
+  final List<Widget> children;
+  final double minItemWidth;
+  final double spacing;
+  final double runSpacing;
+
+  const HpjWebResponsiveGrid({
+    super.key,
+    required this.children,
+    this.minItemWidth = 260,
+    this.spacing = 16,
+    this.runSpacing = 16,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!kIsWeb || constraints.maxWidth < 700) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                children[i],
+                if (i != children.length - 1) SizedBox(height: runSpacing),
+              ],
+            ],
+          );
+        }
+
+        final count = (constraints.maxWidth / minItemWidth)
+            .floor()
+            .clamp(1, children.length)
+            .toInt();
+        final itemWidth =
+            (constraints.maxWidth - ((count - 1) * spacing)) / count;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: runSpacing,
+          children: [
+            for (final child in children)
+              SizedBox(
+                width: itemWidth,
+                child: child,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class HpjWebSection extends StatelessWidget {
+  final String? title;
+  final String? subtitle;
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  const HpjWebSection({
+    super.key,
+    this.title,
+    this.subtitle,
+    required this.child,
+    this.padding = const EdgeInsets.symmetric(vertical: 10),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasHeading = (title?.trim().isNotEmpty ?? false) ||
+        (subtitle?.trim().isNotEmpty ?? false);
+
+    return Padding(
+      padding: padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (hasHeading) ...[
+            SectionHeader(
+              title: title?.trim() ?? '',
+              subtitle: subtitle?.trim() ?? '',
+            ),
+            const SizedBox(height: 12),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+}
+
 class FarmBottomOptionsBar extends StatelessWidget {
   final int selectedIndex;
   final List<FarmBottomOption> destinations;
@@ -6078,10 +6761,14 @@ class Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.of(context).size.width < 360;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 360;
+    final desktopWeb = kIsWeb && width >= HpjWebUi.desktopBreakpoint;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(1, 5, 1, 3),
+      padding: desktopWeb
+          ? const EdgeInsets.fromLTRB(1, 8, 1, 6)
+          : const EdgeInsets.fromLTRB(1, 5, 1, 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -6106,11 +6793,11 @@ class Header extends StatelessWidget {
                   maxLines: compact ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: compact ? 20 : 22,
-                    height: 1.08,
-                    letterSpacing: -0.25,
+                    fontSize: desktopWeb ? 28 : (compact ? 20 : 22),
+                    height: desktopWeb ? 1.04 : 1.08,
+                    letterSpacing: desktopWeb ? -0.5 : -0.25,
                     color: FarmColors.ink,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
                 if (subtitle.trim().isNotEmpty) ...[
@@ -8345,18 +9032,35 @@ class FarmCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return Material(
       color: Colors.transparent,
       child: Container(
         margin: margin,
-        padding: padding ?? const EdgeInsets.all(HpjMvpUi.cardPadding),
+        padding: padding ??
+            EdgeInsets.all(
+              desktopWeb ? 18 : HpjMvpUi.cardPadding,
+            ),
         decoration: BoxDecoration(
-          color: color ?? FarmColors.surface,
-          borderRadius: BorderRadius.circular(HpjMvpUi.cardRadius),
+          color: color ?? (desktopWeb ? HpjWebUi.panel : FarmColors.surface),
+          borderRadius: BorderRadius.circular(
+            desktopWeb ? 18 : HpjMvpUi.cardRadius,
+          ),
           border: Border.all(
-            color: FarmColors.line.withOpacity(.88),
+            color:
+                desktopWeb ? HpjWebUi.border : FarmColors.line.withOpacity(.88),
             width: 1,
           ),
+          boxShadow: desktopWeb
+              ? const [
+                  BoxShadow(
+                    color: HpjWebUi.softShadow,
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: child,
       ),
@@ -8371,15 +9075,17 @@ class SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return Text(
       text,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        fontSize: 18,
+      style: TextStyle(
+        fontSize: desktopWeb ? 20 : 18,
         height: 1.08,
-        fontWeight: FontWeight.w800,
-        letterSpacing: -0.15,
+        fontWeight: desktopWeb ? FontWeight.w900 : FontWeight.w800,
+        letterSpacing: desktopWeb ? -0.25 : -0.15,
         color: FarmColors.ink,
       ),
     );
@@ -8402,6 +9108,8 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -8416,11 +9124,11 @@ class SectionHeader extends StatelessWidget {
                   subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: FarmColors.mutedText,
-                    fontSize: 11,
+                    fontSize: desktopWeb ? 12.5 : 11,
                     fontWeight: FontWeight.w500,
-                    height: 1.28,
+                    height: desktopWeb ? 1.35 : 1.28,
                   ),
                 ),
               ],
@@ -10230,14 +10938,302 @@ class _HpjAgricultureUpdateCardState extends State<HpjAgricultureUpdateCard> {
 
   Future<void> _runAction() async {
     await _markSeen();
+
+    final actionType = widget.update.actionType.trim().toLowerCase();
     final callback = widget.onAction;
-    if (callback != null) {
+
+    // Preserve the existing customer/farmer/wholesale workspace routing for
+    // every configured action, including external actions.
+    if (actionType.isNotEmpty && actionType != 'none' && callback != null) {
       await callback(widget.update);
       return;
     }
-    if (widget.update.actionType == 'external') {
+
+    // Source-only updates should still open when the user taps the card.
+    // With no action and no source, the tap simply records the update as seen.
+    if (widget.update.hasSource) {
       await _openSource();
     }
+  }
+
+  String _readerTimeLabel(DateTime value) {
+    final local = value.toLocal();
+    final hour = local.hour == 0
+        ? 12
+        : local.hour > 12
+            ? local.hour - 12
+            : local.hour;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
+  Future<void> _openFullUpdate() async {
+    await _markSeen();
+    if (!mounted) return;
+
+    final update = widget.update;
+    final imageUrl =
+        widget.showImages ? cleanHostedImageUrl(update.imageUrl) : null;
+    final priorityColor = _priorityColor;
+    final actionType = update.actionType.trim().toLowerCase();
+    final actionLabel = (update.actionLabel ?? '').trim().isEmpty
+        ? 'Open'
+        : update.actionLabel!.trim();
+    final showActionButton = update.hasAction && actionType != 'external';
+    final sourceButtonLabel =
+        actionType == 'external' && (update.actionLabel ?? '').trim().isNotEmpty
+            ? update.actionLabel!.trim()
+            : 'Read source';
+    final source = (update.sourceName ?? '').trim();
+    final meta = <String>[
+      if (source.isNotEmpty) source,
+      '${_dateLabel(update.publishAt)} • ${_readerTimeLabel(update.publishAt)}',
+    ].join(' • ');
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.36),
+      builder: (sheetContext) {
+        Future<void> runSourceFromReader() async {
+          Navigator.of(sheetContext).pop();
+          await Future<void>.delayed(Duration.zero);
+          if (!mounted) return;
+          await _openSource();
+        }
+
+        Future<void> runActionFromReader() async {
+          Navigator.of(sheetContext).pop();
+          await Future<void>.delayed(Duration.zero);
+          if (!mounted) return;
+          await _runAction();
+        }
+
+        final media = MediaQuery.of(sheetContext);
+        final heightFactor = media.size.height < 650 ? 0.96 : 0.92;
+
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: FractionallySizedBox(
+              widthFactor: 1,
+              heightFactor: heightFactor,
+              child: Material(
+                color: FarmColors.background,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 10, 6),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: FarmColors.line,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          8,
+                          20,
+                          24 + media.viewInsets.bottom,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    color: priorityColor.withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Icon(
+                                    _categoryIcon,
+                                    color: priorityColor,
+                                    size: 21,
+                                  ),
+                                ),
+                                const SizedBox(width: 11),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        update.categoryLabel.toUpperCase(),
+                                        style: TextStyle(
+                                          color: priorityColor,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.75,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        meta,
+                                        style: const TextStyle(
+                                          color: FarmColors.mutedText,
+                                          fontSize: 10.5,
+                                          height: 1.25,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (update.isImportant) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: priorityColor.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      update.priorityLabel.toUpperCase(),
+                                      style: TextStyle(
+                                        color: priorityColor,
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              update.title,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 24,
+                                height: 1.12,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.45,
+                              ),
+                            ),
+                            if (imageUrl != null) ...[
+                              const SizedBox(height: 18),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: AspectRatio(
+                                  aspectRatio: 16 / 9,
+                                  child: Image.network(
+                                    imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: FarmColors.primarySoft,
+                                      alignment: Alignment.center,
+                                      child: Icon(
+                                        _categoryIcon,
+                                        color: FarmColors.primary,
+                                        size: 42,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 20),
+                            Text(
+                              update.summary,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 14.2,
+                                height: 1.58,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (update.hasSource || showActionButton) ...[
+                              const SizedBox(height: 24),
+                              const Divider(height: 1),
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: [
+                                  if (update.hasSource)
+                                    OutlinedButton.icon(
+                                      onPressed: runSourceFromReader,
+                                      icon: const Icon(
+                                        Icons.open_in_new_rounded,
+                                        size: 17,
+                                      ),
+                                      label: Text(sourceButtonLabel),
+                                    ),
+                                  if (showActionButton)
+                                    FilledButton.icon(
+                                      onPressed: runActionFromReader,
+                                      icon: const Icon(
+                                        Icons.arrow_forward_rounded,
+                                        size: 17,
+                                      ),
+                                      label: Text(actionLabel),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+                      decoration: const BoxDecoration(
+                        color: FarmColors.card,
+                        border: Border(
+                          top: BorderSide(color: FarmColors.line),
+                        ),
+                      ),
+                      child: SafeArea(
+                        top: false,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded, size: 17),
+                            label: const Text('Close'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   IconData get _categoryIcon {
@@ -10313,7 +11309,7 @@ class _HpjAgricultureUpdateCardState extends State<HpjAgricultureUpdateCard> {
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: _markSeen,
+        onTap: _openFullUpdate,
         child: Container(
           padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
           decoration: BoxDecoration(
@@ -10548,7 +11544,7 @@ class _HpjAgricultureUpdateCardState extends State<HpjAgricultureUpdateCard> {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: _markSeen,
+        onTap: _openFullUpdate,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
@@ -11721,6 +12717,8 @@ class HpjAccountHelpInfoScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final signedIn = isLoggedIn;
+
     return Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
@@ -11741,19 +12739,22 @@ class HpjAccountHelpInfoScreen extends StatelessWidget {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
-                  AccountListTile(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    title: 'Inbox & support',
-                    subtitle: 'Private messages with the HPJ team.',
-                    onTap: () => _open(
-                      context,
-                      SupportScreen(initialSubject: supportSubject),
+                  if (signedIn)
+                    AccountListTile(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      title: 'Inbox & support',
+                      subtitle: 'Private messages with the HPJ team.',
+                      onTap: () => _open(
+                        context,
+                        SupportScreen(initialSubject: supportSubject),
+                      ),
                     ),
-                  ),
                   AccountListTile(
                     icon: Icons.contact_support_outlined,
                     title: 'Contact HPJ',
-                    subtitle: 'Chat, WhatsApp or call us.',
+                    subtitle: signedIn
+                        ? 'Chat, WhatsApp, email or call us.'
+                        : 'Call, email or WhatsApp HPJ.',
                     isLast: !showTrustCenter,
                     onTap: () => _open(
                       context,

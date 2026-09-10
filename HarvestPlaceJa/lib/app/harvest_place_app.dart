@@ -6582,24 +6582,24 @@ class _MainNavigationState extends State<MainNavigation>
           return const CustomerMarketplaceComingSoonScreen();
         }
 
-        return Scaffold(
+        return HpjResponsiveWorkspaceScaffold(
+          workspaceLabel: 'Customer',
+          desktopMaxContentWidth: 1180,
           body: IndexedStack(index: safeSelectedIndex, children: pages),
-          bottomNavigationBar: FarmBottomOptionsBar(
-            selectedIndex: safeSelectedIndex,
-            destinations: destinations,
-            onSelected: (index) async {
-              if (!mounted) return;
+          selectedIndex: safeSelectedIndex,
+          destinations: destinations,
+          onSelected: (index) async {
+            if (!mounted) return;
 
-              final tappedAccountTab = index == accountTabIndex;
+            final tappedAccountTab = index == accountTabIndex;
 
-              if (tappedAccountTab && !isLoggedIn) {
-                await openSignInFromTab();
-                return;
-              }
+            if (tappedAccountTab && !isLoggedIn) {
+              await openSignInFromTab();
+              return;
+            }
 
-              _selectCustomerTab(index);
-            },
-          ),
+            _selectCustomerTab(index);
+          },
         );
       },
     );

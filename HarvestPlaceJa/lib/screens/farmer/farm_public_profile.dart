@@ -1192,6 +1192,19 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
     );
   }
 
+  bool get _fromFarmerWorkspace =>
+      widget.sourceWorkspace.trim().toLowerCase() == 'farmer';
+
+  void _switchWorkspace() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const OwnerWorkspaceSwitcherScreen(
+          currentWorkspace: 'farmer',
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -1347,6 +1360,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
+      isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: Colors.white,
       builder: (sheetContext) {
@@ -1357,128 +1371,136 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
           await action();
         }
 
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            18,
-            4,
-            18,
-            24,
+        final sheetHeight = MediaQuery.sizeOf(sheetContext).height * 0.88;
+
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: sheetHeight,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Share this farm',
-                style: TextStyle(
-                  color: FarmColors.deepGreen,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Send the public farm profile without exposing private farmer contact details.',
-                style: TextStyle(
-                  color: FarmColors.mutedText,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const CircleAvatar(
-                  backgroundColor: FarmColors.primarySoft,
-                  child: Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: FarmColors.green,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              18,
+              4,
+              18,
+              24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Share this farm',
+                  style: TextStyle(
+                    color: FarmColors.deepGreen,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                title: const Text(
-                  'WhatsApp',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                subtitle: const Text('Send the farm profile in a chat'),
-                onTap: () => unawaited(
-                  closeThen(() async {
-                    final opened = await _openFarmWhatsAppShare(text);
-                    if (!mounted) return;
-                    if (!opened) {
-                      await _copyFarmShareText(text);
-                    }
-                  }),
-                ),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const CircleAvatar(
-                  backgroundColor: FarmColors.primarySoft,
-                  child: Icon(
-                    Icons.sms_outlined,
-                    color: FarmColors.green,
+                const SizedBox(height: 4),
+                const Text(
+                  'Send the public farm profile without exposing private farmer contact details.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                title: const Text(
-                  'Text message',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: FarmColors.primarySoft,
+                    child: Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: FarmColors.green,
+                    ),
+                  ),
+                  title: const Text(
+                    'WhatsApp',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: const Text('Send the farm profile in a chat'),
+                  onTap: () => unawaited(
+                    closeThen(() async {
+                      final opened = await _openFarmWhatsAppShare(text);
+                      if (!mounted) return;
+                      if (!opened) {
+                        await _copyFarmShareText(text);
+                      }
+                    }),
+                  ),
                 ),
-                subtitle: const Text('Open your phone’s messaging app'),
-                onTap: () => unawaited(
-                  closeThen(
-                    () => _openFarmShareUrl(
-                      url: 'sms:?body=$encodedText',
-                      successMessage: 'Opening Messages...',
-                      fallbackText: text,
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: FarmColors.primarySoft,
+                    child: Icon(
+                      Icons.sms_outlined,
+                      color: FarmColors.green,
+                    ),
+                  ),
+                  title: const Text(
+                    'Text message',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: const Text('Open your phone’s messaging app'),
+                  onTap: () => unawaited(
+                    closeThen(
+                      () => _openFarmShareUrl(
+                        url: 'sms:?body=$encodedText',
+                        successMessage: 'Opening Messages...',
+                        fallbackText: text,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const CircleAvatar(
-                  backgroundColor: FarmColors.primarySoft,
-                  child: Icon(
-                    Icons.email_outlined,
-                    color: FarmColors.green,
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: FarmColors.primarySoft,
+                    child: Icon(
+                      Icons.email_outlined,
+                      color: FarmColors.green,
+                    ),
                   ),
-                ),
-                title: const Text(
-                  'Email',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                subtitle: const Text('Share through your email app'),
-                onTap: () => unawaited(
-                  closeThen(
-                    () => _openFarmShareUrl(
-                      url: 'mailto:?subject=$subject&body=$encodedText',
-                      successMessage: 'Opening Email...',
-                      fallbackText: text,
+                  title: const Text(
+                    'Email',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: const Text('Share through your email app'),
+                  onTap: () => unawaited(
+                    closeThen(
+                      () => _openFarmShareUrl(
+                        url: 'mailto:?subject=$subject&body=$encodedText',
+                        successMessage: 'Opening Email...',
+                        fallbackText: text,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const CircleAvatar(
-                  backgroundColor: FarmColors.primarySoft,
-                  child: Icon(
-                    Icons.copy_outlined,
-                    color: FarmColors.green,
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: FarmColors.primarySoft,
+                    child: Icon(
+                      Icons.copy_outlined,
+                      color: FarmColors.green,
+                    ),
+                  ),
+                  title: const Text(
+                    'Copy',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle:
+                      const Text('Copy the farm details to paste anywhere'),
+                  onTap: () => unawaited(
+                    closeThen(
+                      () => _copyFarmShareText(text),
+                    ),
                   ),
                 ),
-                title: const Text(
-                  'Copy',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                subtitle: const Text('Copy the farm details to paste anywhere'),
-                onTap: () => unawaited(
-                  closeThen(
-                    () => _copyFarmShareText(text),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -1817,8 +1839,23 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
         : profile.publicName.trim();
     final logo = cleanHostedImageUrl(profile.logoImageUrl);
 
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final desktopWeb = kIsWeb && screenWidth >= 1100;
+
+    // Website mode: the public farm storefront is intentionally capped at
+    // 1180 px. Calculate the cover from that storefront width, not from the
+    // entire browser window, so a farm photo never becomes an ultra-wide strip.
+    // Mobile/tablet keeps the existing compact hero exactly as before.
+    final double profileContentWidth =
+        desktopWeb ? screenWidth.clamp(0.0, 1180.0).toDouble() : screenWidth;
+    final double coverHeight = desktopWeb
+        ? (profileContentWidth * 0.28).clamp(300.0, 340.0).toDouble()
+        : 198.0;
+    final double profileCardTop = desktopWeb ? coverHeight - 44.0 : 158.0;
+    final double heroHeight = desktopWeb ? profileCardTop + 246.0 : 404.0;
+
     return SizedBox(
-      height: 404,
+      height: heroHeight,
       width: double.infinity,
       child: Stack(
         clipBehavior: Clip.none,
@@ -1827,7 +1864,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
             top: 0,
             left: 0,
             right: 0,
-            height: 198,
+            height: coverHeight,
             child: GestureDetector(
               onTap: cover == null
                   ? null
@@ -1837,14 +1874,15 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
                       ),
               child: _networkImage(
                 cover,
-                height: 198,
+                height: coverHeight,
+                fit: BoxFit.cover,
               ),
             ),
           ),
           Positioned(
             left: 12,
             right: 12,
-            top: 158,
+            top: profileCardTop,
             child: Container(
               padding: const EdgeInsets.fromLTRB(16, 15, 16, 14),
               decoration: BoxDecoration(
@@ -2152,6 +2190,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
   }
 
   Widget _availableProductCard(Product product) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
     final unit = (product.unit ?? '').trim();
     final isWholesale =
         widget.sourceWorkspace.trim().toLowerCase() == 'wholesale';
@@ -2180,11 +2219,11 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                height: 76,
+                height: desktopWeb ? 104 : 76,
                 width: double.infinity,
                 child: productImagePreviewFromUrl(
                   imageUrl: product.imageUrl,
-                  height: 76,
+                  height: desktopWeb ? 104 : 76,
                 ),
               ),
               const SizedBox(height: 7),
@@ -2473,6 +2512,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
   }
 
   Widget _availableProductsSection(List<Product> products) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
     final visible = products.take(3).toList(growable: false);
 
     return Column(
@@ -2533,7 +2573,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
 
                 if (twoCardWidth < 122) {
                   return SizedBox(
-                    height: 196,
+                    height: desktopWeb ? 224 : 196,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: 2,
@@ -2549,7 +2589,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
                 }
 
                 return SizedBox(
-                  height: 196,
+                  height: desktopWeb ? 224 : 196,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -2569,7 +2609,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
 
               if (cardWidth < 104) {
                 return SizedBox(
-                  height: 196,
+                  height: desktopWeb ? 224 : 196,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: visible.length,
@@ -2585,7 +2625,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
               }
 
               return SizedBox(
-                height: 196,
+                height: desktopWeb ? 224 : 196,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -3253,6 +3293,8 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
   Widget _farmPhotos(List<FarmPublicPhoto> photos) {
     if (photos.isEmpty) return const SizedBox.shrink();
 
+    final desktopWeb = HpjWebUi.isDesktop(context);
+    final photoHeight = desktopWeb ? 160.0 : 92.0;
     final visible = photos.take(3).toList(growable: false);
 
     return Column(
@@ -3264,7 +3306,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
         ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 92,
+          height: photoHeight,
           child: Row(
             children: [
               for (var i = 0; i < visible.length; i++) ...[
@@ -3280,7 +3322,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
                       child: Image.network(
                         visible[i].imageUrl,
                         width: double.infinity,
-                        height: 92,
+                        height: photoHeight,
                         fit: BoxFit.cover,
                         filterQuality: FilterQuality.medium,
                         errorBuilder: (_, __, ___) => const ColoredBox(
@@ -3549,42 +3591,103 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
     final farmName = profile.publicName.trim().isEmpty
         ? 'this Farm'
         : profile.publicName.trim();
+    final desktopWeb = HpjWebUi.isDesktop(context);
 
-    return Material(
-      color: FarmColors.deepGreen,
-      elevation: 10,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
-          child: SizedBox(
-            height: 46,
-            child: ElevatedButton.icon(
-              onPressed: _scrollToProducts,
-              icon: Icon(
-                wholesale
-                    ? Icons.shopping_bag_outlined
-                    : Icons.shopping_cart_outlined,
-                size: 20,
+    Widget shopButton() {
+      return SizedBox(
+        height: 46,
+        child: ElevatedButton.icon(
+          onPressed: _scrollToProducts,
+          icon: Icon(
+            wholesale
+                ? Icons.shopping_bag_outlined
+                : Icons.shopping_cart_outlined,
+            size: 20,
+          ),
+          label: Text(
+            wholesale ? 'View $farmName Supply' : 'Shop $farmName',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: FarmColors.deepGreen,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            side: BorderSide(
+              color: Colors.white.withOpacity(.18),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!desktopWeb) {
+      return Material(
+        color: FarmColors.deepGreen,
+        elevation: 10,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
+            child: shopButton(),
+          ),
+        ),
+      );
+    }
+
+    // Website mode: force a compact footer height so the CTA can never
+    // expand into the full browser viewport. Keep the action visible without
+    // making the Farm Profile look like a mobile bottom sheet.
+    return SizedBox(
+      height: 72,
+      child: Material(
+        color: Colors.white,
+        elevation: 10,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: Color(0xFFE0E8DE),
               ),
-              label: Text(
-                wholesale ? 'View $farmName Supply' : 'Shop $farmName',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 1180,
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: FarmColors.deepGreen,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                side: BorderSide(
-                  color: Colors.white.withOpacity(.18),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 10,
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Fresh produce from this farm',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 18),
+                    SizedBox(
+                      width: 300,
+                      child: shopButton(),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -3599,6 +3702,14 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Farm Profile'),
+        actions: [
+          if (_fromFarmerWorkspace)
+            IconButton(
+              tooltip: 'Switch Workspace',
+              onPressed: _switchWorkspace,
+              icon: const Icon(Icons.apps_rounded),
+            ),
+        ],
       ),
       body: FarmPage(
         child: ListView(
@@ -3633,7 +3744,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
               elevation: 0,
               centerTitle: true,
               leading: IconButton(
-                tooltip: 'Back',
+                tooltip: _fromFarmerWorkspace ? 'Back to Farmer' : 'Back',
                 color: Colors.white,
                 onPressed: () => Navigator.of(context).maybePop(),
                 icon: const Icon(Icons.arrow_back_rounded),
@@ -3645,6 +3756,18 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              actions: [
+                if (_fromFarmerWorkspace)
+                  IconButton(
+                    tooltip: 'Switch Workspace',
+                    color: Colors.white,
+                    onPressed: _switchWorkspace,
+                    icon: const Icon(
+                      Icons.apps_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+              ],
             ),
             body: const Center(
               child: CircularProgressIndicator(),
@@ -3683,8 +3806,10 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
             )
             .toList();
 
+        final desktopWeb = HpjWebUi.isDesktop(context);
+
         return Scaffold(
-          backgroundColor: Colors.white,
+          backgroundColor: desktopWeb ? HpjWebUi.canvas : Colors.white,
           appBar: AppBar(
             backgroundColor: FarmColors.deepGreen,
             foregroundColor: Colors.white,
@@ -3694,7 +3819,7 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
             elevation: 0,
             centerTitle: true,
             leading: IconButton(
-              tooltip: 'Back',
+              tooltip: _fromFarmerWorkspace ? 'Back to Farmer' : 'Back',
               color: Colors.white,
               onPressed: () => Navigator.of(context).maybePop(),
               icon: const Icon(
@@ -3711,6 +3836,16 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
               ),
             ),
             actions: [
+              if (_fromFarmerWorkspace)
+                IconButton(
+                  tooltip: 'Switch Workspace',
+                  color: Colors.white,
+                  onPressed: _switchWorkspace,
+                  icon: const Icon(
+                    Icons.apps_rounded,
+                    color: Colors.white,
+                  ),
+                ),
               IconButton(
                 tooltip: 'Share farm',
                 color: Colors.white,
@@ -3732,46 +3867,58 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.zero,
                 children: [
-                  _profileHero(
-                    profile,
-                    data.products,
-                    data.photos,
-                  ),
-                  Container(
-                    color: Colors.white,
-                    padding: const EdgeInsets.fromLTRB(
-                      18,
-                      0,
-                      18,
-                      32,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _availableProductsSection(available),
-                        const SizedBox(height: 18),
-                        _comingSoonSection(
-                          readySoonProducts: comingSoon,
-                          supply: data.growingSupply,
-                          allProducts: data.products,
-                          farm: profile,
-                        ),
-                        if (comingSoon.isNotEmpty ||
-                            data.growingSupply.any(
-                              (item) => !item.isReadyNow,
-                            ))
-                          const SizedBox(height: 18),
-                        if (data.photos.isNotEmpty) ...[
-                          _farmPhotos(data.photos),
-                          const SizedBox(height: 18),
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: desktopWeb ? 1180 : double.infinity,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _profileHero(
+                            profile,
+                            data.products,
+                            data.photos,
+                          ),
+                          Container(
+                            color: Colors.white,
+                            padding: const EdgeInsets.fromLTRB(
+                              18,
+                              0,
+                              18,
+                              32,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _availableProductsSection(available),
+                                const SizedBox(height: 18),
+                                _comingSoonSection(
+                                  readySoonProducts: comingSoon,
+                                  supply: data.growingSupply,
+                                  allProducts: data.products,
+                                  farm: profile,
+                                ),
+                                if (comingSoon.isNotEmpty ||
+                                    data.growingSupply.any(
+                                      (item) => !item.isReadyNow,
+                                    ))
+                                  const SizedBox(height: 18),
+                                if (data.photos.isNotEmpty) ...[
+                                  _farmPhotos(data.photos),
+                                  const SizedBox(height: 18),
+                                ],
+                                _whyOrderThroughHpj(),
+                                const SizedBox(height: 18),
+                                _primaryActions(profile),
+                                const SizedBox(height: 10),
+                                _hpjTrustNotice(),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
+                          ),
                         ],
-                        _whyOrderThroughHpj(),
-                        const SizedBox(height: 18),
-                        _primaryActions(profile),
-                        const SizedBox(height: 10),
-                        _hpjTrustNotice(),
-                        const SizedBox(height: 24),
-                      ],
+                      ),
                     ),
                   ),
                 ],

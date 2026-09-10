@@ -2213,8 +2213,11 @@ class AccountActionGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
-        final columns = availableWidth >= 560 ? 3 : 2;
-        final spacing = 10.0;
+        final desktopWeb = HpjWebUi.isDesktop(context);
+        final columns = desktopWeb
+            ? 4
+            : (availableWidth >= 560 ? 3 : 2);
+        final spacing = desktopWeb ? 14.0 : 10.0;
         final tileWidth = (availableWidth - spacing * (columns - 1)) / columns;
 
         return Wrap(
@@ -2248,6 +2251,12 @@ class AccountActionTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
+        hoverColor: HpjWebUi.isDesktop(context)
+            ? HpjWebUi.hover
+            : Colors.transparent,
+        mouseCursor: kIsWeb
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
         onTap: action.onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: 84),
@@ -2345,6 +2354,12 @@ class AccountListTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        hoverColor: HpjWebUi.isDesktop(context)
+            ? HpjWebUi.hover
+            : Colors.transparent,
+        mouseCursor: kIsWeb
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
@@ -3131,67 +3146,211 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
     required HomeHeroSlide slide,
     required int totalCount,
   }) {
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
+
+    // Preserve the current Android/mobile hero exactly.
+    if (!desktopWeb) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onShopTap,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _networkHeroImage(slide.imageUrl),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      const Color(0xFFE5F3DF).withOpacity(0.99),
+                      const Color(0xFFE5F3DF).withOpacity(0.90),
+                      const Color(0xFFE5F3DF).withOpacity(0.36),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.48, 0.72, 1.0],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 13, 108, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _titleForSlide(slide),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.deepGreen,
+                        fontSize: 16,
+                        height: 1.08,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.25,
+                      ),
+                    ),
+                    Text(
+                      _subtitleForSlide(slide),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.deepGreen.withOpacity(0.72),
+                        fontSize: 11.5,
+                        height: 1.18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: 14,
+                bottom: 9,
+                child: _pageDots(totalCount),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: widget.onShopTap,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _networkHeroImage(slide.imageUrl),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    const Color(0xFFE5F3DF).withOpacity(0.99),
-                    const Color(0xFFE5F3DF).withOpacity(0.90),
-                    const Color(0xFFE5F3DF).withOpacity(0.36),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.0, 0.48, 0.72, 1.0],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final copyWidth =
+                (constraints.maxWidth * 0.50).clamp(380.0, 590.0).toDouble();
+
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                _networkHeroImage(slide.imageUrl),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        const Color(0xFFE5F3DF).withOpacity(1.0),
+                        const Color(0xFFE5F3DF).withOpacity(0.96),
+                        const Color(0xFFE5F3DF).withOpacity(0.58),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.40, 0.67, 1.0],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 13, 108, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _titleForSlide(slide),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: FarmColors.deepGreen,
-                      fontSize: 16,
-                      height: 1.08,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.25,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(34, 26, 34, 34),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      width: copyWidth,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.80),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: FarmColors.green.withOpacity(0.14),
+                              ),
+                            ),
+                            child: const Text(
+                              'FRESH • LOCAL • JAMAICAN',
+                              style: TextStyle(
+                                color: FarmColors.green,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.70,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _titleForSlide(slide),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.deepGreen,
+                              fontSize: 30,
+                              height: 1.02,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.80,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            _subtitleForSlide(slide),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: FarmColors.deepGreen.withOpacity(0.76),
+                              fontSize: 15,
+                              height: 1.30,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Container(
+                            height: 38,
+                            padding: const EdgeInsets.symmetric(horizontal: 15),
+                            decoration: BoxDecoration(
+                              color: FarmColors.green,
+                              borderRadius: BorderRadius.circular(999),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: FarmColors.green.withOpacity(0.16),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            alignment: Alignment.center,
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Shop fresh',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                SizedBox(width: 5),
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  color: Colors.white,
+                                  size: 17,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  Text(
-                    _subtitleForSlide(slide),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: FarmColors.deepGreen.withOpacity(0.72),
-                      fontSize: 11.5,
-                      height: 1.18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 14,
-              bottom: 9,
-              child: _pageDots(totalCount),
-            ),
-          ],
+                ),
+                Positioned(
+                  left: 34,
+                  bottom: 16,
+                  child: _pageDots(totalCount),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -3199,6 +3358,8 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
 
   Widget _buildWeeklyMealSlide({required int totalCount}) {
     final meal = _mealForWeekday(DateTime.now().weekday);
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
 
     return Material(
       color: Colors.transparent,
@@ -3206,9 +3367,11 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
         onTap: _openWeeklyMeals,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final contentWidth = constraints.maxWidth < 340
-                ? constraints.maxWidth * 0.72
-                : constraints.maxWidth * 0.68;
+            final contentWidth = desktopWeb
+                ? (constraints.maxWidth * 0.50).clamp(380.0, 590.0).toDouble()
+                : constraints.maxWidth < 340
+                    ? constraints.maxWidth * 0.72
+                    : constraints.maxWidth * 0.68;
 
             return Stack(
               fit: StackFit.expand,
@@ -3227,68 +3390,80 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
                       colors: [
                         const Color(0xFFFFF8E9).withOpacity(1.0),
                         const Color(0xFFF3F7E9).withOpacity(0.98),
-                        const Color(0xFFE8F2DE).withOpacity(0.70),
+                        const Color(0xFFE8F2DE)
+                            .withOpacity(desktopWeb ? 0.58 : 0.70),
                         Colors.transparent,
                       ],
-                      stops: const [0.0, 0.48, 0.76, 1.0],
+                      stops: desktopWeb
+                          ? const [0.0, 0.40, 0.67, 1.0]
+                          : const [0.0, 0.48, 0.76, 1.0],
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 8, 23),
+                  padding: desktopWeb
+                      ? const EdgeInsets.fromLTRB(34, 24, 34, 34)
+                      : const EdgeInsets.fromLTRB(14, 10, 8, 23),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: SizedBox(
                       width: contentWidth,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: desktopWeb
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 3,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: desktopWeb ? 11 : 7,
+                                  vertical: desktopWeb ? 6 : 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.74),
+                                  color: Colors.white.withOpacity(
+                                    desktopWeb ? 0.80 : 0.74,
+                                  ),
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
                                     color: FarmColors.green.withOpacity(0.16),
                                   ),
                                 ),
-                                child: const Text(
+                                child: Text(
                                   'JAMAICAN MEAL GUIDE',
                                   style: TextStyle(
                                     color: FarmColors.green,
-                                    fontSize: 7.8,
+                                    fontSize: desktopWeb ? 10.5 : 7.8,
                                     fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.45,
+                                    letterSpacing:
+                                        desktopWeb ? 0.70 : 0.45,
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const Text(
+                          if (desktopWeb) const SizedBox(height: 16),
+                          Text(
                             "WHAT'S COOKING THIS WEEK?",
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: FarmColors.deepGreen,
-                              fontSize: 14.6,
-                              height: 1.04,
+                              fontSize: desktopWeb ? 28 : 14.6,
+                              height: desktopWeb ? 1.02 : 1.04,
                               fontWeight: FontWeight.w900,
-                              letterSpacing: -0.20,
+                              letterSpacing: desktopWeb ? -0.70 : -0.20,
                             ),
                           ),
+                          if (desktopWeb) const SizedBox(height: 12),
                           Row(
                             children: [
                               Expanded(
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 4,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: desktopWeb ? 12 : 7,
+                                    vertical: desktopWeb ? 8 : 4,
                                   ),
                                   decoration: BoxDecoration(
                                     color: FarmColors.accentSoft,
@@ -3302,19 +3477,20 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
                                     '${meal.day} • ${meal.name}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: FarmColors.warning,
-                                      fontSize: 8.6,
+                                      fontSize: desktopWeb ? 12 : 8.6,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 5),
+                              SizedBox(width: desktopWeb ? 8 : 5),
                               Container(
-                                height: 25,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 9),
+                                height: desktopWeb ? 38 : 25,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: desktopWeb ? 15 : 9,
+                                ),
                                 decoration: BoxDecoration(
                                   color: FarmColors.green,
                                   borderRadius: BorderRadius.circular(999),
@@ -3327,22 +3503,22 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
                                   ],
                                 ),
                                 alignment: Alignment.center,
-                                child: const Row(
+                                child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
                                       'Explore',
                                       style: TextStyle(
                                         color: Colors.white,
-                                        fontSize: 8.8,
+                                        fontSize: desktopWeb ? 12 : 8.8,
                                         fontWeight: FontWeight.w900,
                                       ),
                                     ),
-                                    SizedBox(width: 2),
+                                    SizedBox(width: desktopWeb ? 5 : 2),
                                     Icon(
                                       Icons.arrow_forward_rounded,
                                       color: Colors.white,
-                                      size: 12,
+                                      size: desktopWeb ? 17 : 12,
                                     ),
                                   ],
                                 ),
@@ -3355,8 +3531,8 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
                   ),
                 ),
                 Positioned(
-                  left: 14,
-                  bottom: 9,
+                  left: desktopWeb ? 34 : 14,
+                  bottom: desktopWeb ? 16 : 9,
                   child: _pageDots(totalCount),
                 ),
               ],
@@ -3369,6 +3545,11 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
+    final heroHeight = desktopWeb ? 248.0 : 128.0;
+    final heroRadius = desktopWeb ? 28.0 : 22.0;
+
     return FutureBuilder<List<HomeHeroSlide>>(
       future: _slidesFuture,
       builder: (context, snapshot) {
@@ -3378,18 +3559,18 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return ClipRRect(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(heroRadius),
             child: Container(
-              height: 128,
+              height: heroHeight,
               decoration: BoxDecoration(
                 color: FarmColors.primarySoft,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(heroRadius),
                 border: Border.all(color: FarmColors.line),
                 boxShadow: [
                   BoxShadow(
                     color: FarmColors.shadow.withOpacity(0.06),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
+                    blurRadius: desktopWeb ? 24 : 18,
+                    offset: Offset(0, desktopWeb ? 10 : 8),
                   ),
                 ],
               ),
@@ -3412,24 +3593,26 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
         final secondSlide =
             differentSlides.isNotEmpty ? differentSlides.first : firstSlide;
 
+        // Preserve the current 3-slide sequence:
+        // Admin hero 1 -> Weekly Meal -> Admin hero 2.
         const totalCount = 3;
         _lastSlideCount = totalCount;
 
         if (_index >= totalCount) _index = 0;
 
         return ClipRRect(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(heroRadius),
           child: Container(
-            height: 128,
+            height: heroHeight,
             decoration: BoxDecoration(
               color: FarmColors.primarySoft,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(heroRadius),
               border: Border.all(color: FarmColors.line),
               boxShadow: [
                 BoxShadow(
                   color: FarmColors.shadow.withOpacity(0.06),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
+                  blurRadius: desktopWeb ? 24 : 18,
+                  offset: Offset(0, desktopWeb ? 10 : 8),
                 ),
               ],
             ),
@@ -6938,7 +7121,8 @@ class HPJHomeSwipeCarousel extends StatefulWidget {
 }
 
 class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
-  late final PageController _pageController;
+  PageController? _pageController;
+  bool? _desktopCarouselMode;
 
   int _currentPage = 0;
 
@@ -6972,20 +7156,46 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
         if (mounted) setState(() {});
       }),
     );
+  }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
+
+    if (_pageController != null &&
+        _desktopCarouselMode == desktopWeb) {
+      return;
+    }
+
+    final oldController = _pageController;
+
+    _desktopCarouselMode = desktopWeb;
     _pageController = PageController(
-      viewportFraction: 0.94,
+      initialPage: _currentPage,
+      viewportFraction: desktopWeb ? 1.0 : 0.94,
     );
+
+    if (oldController != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        oldController.dispose();
+      });
+    }
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _pageController?.dispose();
     super.dispose();
   }
 
   void _goToPage(int index) {
-    _pageController.animateToPage(
+    final controller = _pageController;
+    if (controller == null || !controller.hasClients) return;
+
+    controller.animateToPage(
       index,
       duration: const Duration(milliseconds: 380),
       curve: Curves.easeOutCubic,
@@ -7216,11 +7426,16 @@ final hasFreshPick =
     final farmName =
         (farmProduct?.farmName ?? farmProduct?.farmerName ?? '').trim();
 
-    final screenWidth = MediaQuery.sizeOf(context).width;
+     final screenWidth = MediaQuery.sizeOf(context).width;
+    final desktopWeb = kIsWeb && screenWidth >= 1100;
 
     final double heroHeight;
 
-    if (screenWidth < 360) {
+    if (desktopWeb) {
+      // Keep the desktop hero proportional to the narrower Customer
+      // content column without changing tablet, mobile, or Android.
+      heroHeight = 310;
+    } else if (screenWidth < 360) {
       heroHeight = 250;
     } else if (screenWidth >= 700) {
       heroHeight = 276;
@@ -7436,7 +7651,9 @@ else {
   );
 }
               return Padding(
-                padding: const EdgeInsets.only(right: 12),
+                padding: EdgeInsets.only(
+                  right: desktopWeb ? 0 : 12,
+                ),
                 child: card,
               );
             },
@@ -8034,6 +8251,8 @@ class _HomeScreenState extends State<HomeScreen> {
     required int maxItems,
   }) {
     final visible = products.take(maxItems).toList();
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
 
     if (visible.isEmpty) {
       return const FarmCard(
@@ -8043,85 +8262,92 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return SizedBox(
-      height: 146,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        cacheExtent: AppPerformanceConfig.productRailCacheExtent,
-        itemCount: visible.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, index) {
-          final product = visible[index];
-
-          return InkWell(
-            borderRadius: BorderRadius.circular(24),
-            onTap: () {
-              unawaited(openProduct(product));
-            },
-            child: SizedBox(
-              width: 142,
-              child: Opacity(
-                opacity: product.isOutOfStock ? 0.72 : 1,
-                child: FarmCard(
-                  padding: const EdgeInsets.all(9),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Center(
-                        child: ProductVisual(
-                          product: product,
-                          size: 104,
-                          showOrganicBadge: false,
-                        ),
+    final productCards = visible.map((product) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(24),
+        hoverColor: desktopWeb
+            ? HpjWebUi.hover
+            : Colors.transparent,
+        mouseCursor: kIsWeb
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
+        onTap: () {
+          unawaited(openProduct(product));
+        },
+        child: SizedBox(
+          width: desktopWeb ? 170 : 142,
+          child: Opacity(
+            opacity: product.isOutOfStock ? 0.72 : 1,
+            child: FarmCard(
+              padding: EdgeInsets.all(desktopWeb ? 10 : 9),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Center(
+                    child: ProductVisual(
+                      product: product,
+                      size: desktopWeb ? 132 : 104,
+                      showOrganicBadge: false,
+                    ),
+                  ),
+                  if (product.isOrganic)
+                    const Positioned(
+                      top: 2,
+                      left: 2,
+                      child: OrganicImageStamp(compact: true),
+                    ),
+                  if (product.hasActiveDiscount)
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: DiscountBadge(
+                        product: product,
+                        compact: true,
                       ),
-                      if (product.isOrganic)
-                        const Positioned(
-                          top: 2,
-                          left: 2,
-                          child: OrganicImageStamp(compact: true),
-                        ),
-                      if (product.hasActiveDiscount)
-                        Positioned(
-                          top: 2,
-                          right: 2,
-                          child: DiscountBadge(
+                    ),
+                  Positioned(
+                    left: 2,
+                    bottom: 2,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: desktopWeb ? 132 : 106,
+                      ),
+                      child: Wrap(
+                        alignment: WrapAlignment.start,
+                        crossAxisAlignment:
+                            WrapCrossAlignment.start,
+                        spacing: 5,
+                        runSpacing: 5,
+                        children: [
+                          ProductOriginBadge(
                             product: product,
                             compact: true,
+                            includeIcon: false,
                           ),
-                        ),
-                      Positioned(
-                        left: 2,
-                        bottom: 2,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 106),
-                          child: Wrap(
-                            alignment: WrapAlignment.start,
-                            crossAxisAlignment: WrapCrossAlignment.start,
-                            spacing: 5,
-                            runSpacing: 5,
-                            children: [
-                              ProductOriginBadge(
-                                product: product,
-                                compact: true,
-                                includeIcon: false,
-                              ),
-                              if (product.isOutOfStock || product.isLowStock)
-                                ProductAvailabilityChip(
-                                  product: product,
-                                  compact: true,
-                                ),
-                            ],
-                          ),
-                        ),
+                          if (product.isOutOfStock ||
+                              product.isLowStock)
+                            ProductAvailabilityChip(
+                              product: product,
+                              compact: true,
+                            ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          );
-        },
-      ),
+          ),
+        ),
+      );
+    }).toList(growable: false);
+
+    return _HpjDesktopHorizontalRail(
+      height: desktopWeb ? 184 : 146,
+      spacing: desktopWeb ? 14 : 12,
+      cacheExtent:
+          AppPerformanceConfig.productRailCacheExtent,
+      children: productCards,
     );
   }
 
@@ -9531,11 +9757,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                 !heroSnapshot.hasData) {
                               final screenWidth =
                                   MediaQuery.sizeOf(context).width;
-                              final placeholderHeight = screenWidth < 360
-                                  ? 322.0
-                                  : screenWidth >= 700
-                                      ? 348.0
-                                      : 332.0;
+                              final desktopWeb =
+                                  kIsWeb && screenWidth >= 1100;
+                              final placeholderHeight = desktopWeb
+                                  ? 310.0
+                                  : screenWidth < 360
+                                      ? 322.0
+                                      : screenWidth >= 700
+                                          ? 348.0
+                                          : 332.0;
 
                               return Container(
                                 height: placeholderHeight,
@@ -9884,18 +10114,35 @@ class _HPJCategorySwipeCarousel extends StatefulWidget {
 }
 
 class _HPJCategorySwipeCarouselState extends State<_HPJCategorySwipeCarousel> {
-  late final PageController _pageController;
+  PageController? _pageController;
+  bool? _desktopCategoryMode;
   int _currentPage = 0;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
 
-    // Each page contains multiple category cards,
-    // so the page should nearly fill the available width.
+    final desktopWeb =
+        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
+
+    if (_pageController != null &&
+        _desktopCategoryMode == desktopWeb) {
+      return;
+    }
+
+    final oldController = _pageController;
+
+    _desktopCategoryMode = desktopWeb;
     _pageController = PageController(
-      viewportFraction: 0.98,
+      initialPage: _currentPage,
+      viewportFraction: desktopWeb ? 1.0 : 0.98,
     );
+
+    if (oldController != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        oldController.dispose();
+      });
+    }
   }
 
   List<Product> _previewProductsFor(
@@ -10028,12 +10275,14 @@ class _HPJCategorySwipeCarouselState extends State<_HPJCategorySwipeCarousel> {
         }
 
         final pageCount = (widget.categories.length / cardsPerPage).ceil();
+        final desktopWeb =
+            kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              height: 166,
+              height: desktopWeb ? 198 : 166,
               child: PageView.builder(
                 controller: _pageController,
                 padEnds: false,
@@ -10131,7 +10380,7 @@ class _HPJCategorySwipeCarouselState extends State<_HPJCategorySwipeCarousel> {
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _pageController?.dispose();
     super.dispose();
   }
 } // closes _HPJCategorySwipeCarouselState
@@ -10512,6 +10761,209 @@ class VeganIngredientBookScreen extends StatefulWidget {
   @override
   State<VeganIngredientBookScreen> createState() =>
       _VeganIngredientBookScreenState();
+}
+
+
+class _HpjDesktopHorizontalRail extends StatefulWidget {
+  final double height;
+  final double spacing;
+  final double? cacheExtent;
+  final List<Widget> children;
+
+  const _HpjDesktopHorizontalRail({
+    required this.height,
+    required this.spacing,
+    required this.children,
+    this.cacheExtent,
+  });
+
+  @override
+  State<_HpjDesktopHorizontalRail> createState() =>
+      _HpjDesktopHorizontalRailState();
+}
+
+class _HpjDesktopHorizontalRailState
+    extends State<_HpjDesktopHorizontalRail> {
+  late final ScrollController _controller;
+
+  bool _canScrollBack = false;
+  bool _canScrollForward = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ScrollController()..addListener(_syncArrows);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncArrows();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _HpjDesktopHorizontalRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncArrows();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_syncArrows)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _syncArrows() {
+    if (!mounted || !_controller.hasClients) return;
+
+    final position = _controller.position;
+    final maxExtent = position.maxScrollExtent;
+    final pixels = position.pixels;
+
+    final canBack = maxExtent > 0 && pixels > 6;
+    final canForward = maxExtent > 0 && pixels < maxExtent - 6;
+
+    if (canBack == _canScrollBack &&
+        canForward == _canScrollForward) {
+      return;
+    }
+
+    setState(() {
+      _canScrollBack = canBack;
+      _canScrollForward = canForward;
+    });
+  }
+
+  Future<void> _scrollByPage({
+    required bool forward,
+  }) async {
+    if (!_controller.hasClients) return;
+
+    final position = _controller.position;
+    final travel = (position.viewportDimension * 0.82)
+        .clamp(320.0, 720.0)
+        .toDouble();
+
+    final target = (
+      position.pixels + (forward ? travel : -travel)
+    ).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    ).toDouble();
+
+    await _controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+
+    _syncArrows();
+  }
+
+  Widget _arrowButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white,
+        elevation: 4,
+        shadowColor: Colors.black.withOpacity(0.16),
+        shape: const CircleBorder(
+          side: BorderSide(
+            color: HpjWebUi.border,
+          ),
+        ),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          hoverColor: HpjWebUi.hover,
+          mouseCursor: SystemMouseCursors.click,
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(
+              icon,
+              size: 21,
+              color: FarmColors.primary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
+    final rail = ListView.separated(
+      controller: _controller,
+      scrollDirection: Axis.horizontal,
+      cacheExtent: widget.cacheExtent,
+      physics: desktopWeb
+          ? const ClampingScrollPhysics()
+          : const BouncingScrollPhysics(),
+      itemCount: widget.children.length,
+      separatorBuilder: (_, __) => SizedBox(
+        width: widget.spacing,
+      ),
+      itemBuilder: (context, index) => widget.children[index],
+    );
+
+    if (!desktopWeb) {
+      return SizedBox(
+        height: widget.height,
+        child: rail,
+      );
+    }
+
+    return SizedBox(
+      height: widget.height,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: rail,
+          ),
+          if (_canScrollBack)
+            Positioned(
+              left: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: _arrowButton(
+                  icon: Icons.chevron_left_rounded,
+                  tooltip: 'Previous products',
+                  onTap: () {
+                    _scrollByPage(forward: false);
+                  },
+                ),
+              ),
+            ),
+          if (_canScrollForward)
+            Positioned(
+              right: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: _arrowButton(
+                  icon: Icons.chevron_right_rounded,
+                  tooltip: 'More products',
+                  onTap: () {
+                    _scrollByPage(forward: true);
+                  },
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class ShopScreen extends StatefulWidget {
@@ -11808,6 +12260,7 @@ if (harvestPulseContext == 'fresh' &&
 }
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
     final availableCategories = categories;
     final activeCategory = availableCategories.contains(selectedCategory)
         ? selectedCategory
@@ -11830,6 +12283,86 @@ if (harvestPulseContext == 'fresh' &&
             favoriteProducts: favoriteProducts,
           )
         : sortedShopProducts(visibleCustomerProducts);
+    Widget buildShopProductTile(Product product) {
+      final quantity = widget.quantityForProduct(product);
+            final activeNutrient = _activeShopNutrient();
+
+            final shopNutrientBadges = _nutrientBadgesForProduct(
+              product,
+              selectedNutrient: activeNutrient,
+            );
+
+            final detailNutrientBadges = _nutrientBadgesForProduct(
+              product,
+              selectedNutrient: activeNutrient,
+              limit: null,
+            );
+
+            return SafeShopProductTile(
+              key: ValueKey(
+                'shop-${product.id}-${product.name}',
+              ),
+              product: product,
+              quantity: quantity,
+              nutrientBadges: shopNutrientBadges,
+              isFavorite: _isFavoriteProduct(product),
+              isFreshPick:
+      harvestPulseContext == 'fresh' &&
+      harvestPulseFreshPickIdContext != null &&
+      product.id == harvestPulseFreshPickIdContext,
+              onFavorite: () => _toggleFavoriteProduct(product),
+              onAdd: () => _addProductToCart(product),
+              onRemove: () => _removeProductFromCart(product),
+              onOpenDetails: () async {
+                _rememberViewedProduct(product);
+
+                final nutrientToFilter = await Navigator.push<String>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (detailContext) => ProductDetailScreen(
+                      product: product,
+                      quantity: quantity,
+                      nutrientBadges: detailNutrientBadges,
+                      onNutrientTap: (nutrient) {
+                        Navigator.of(detailContext).pop(nutrient);
+                      },
+                      onAdd: () => _addProductToCart(product),
+                      onRemove: () => _removeProductFromCart(product),
+                      onAddProduct: _addProductToCart,
+                      onViewed: _rememberViewedProduct,
+                      onViewMyBox: widget.onViewMyBox,
+                      onCheckout: widget.onCheckout,
+                    ),
+                  ),
+                );
+
+                if (!mounted ||
+                    nutrientToFilter == null ||
+                    nutrientToFilter.trim().isEmpty) {
+                  return;
+                }
+
+                setState(() {
+                  selectedCategory = 'All';
+                  selectedShopFilter = 'All items';
+                  selectedShopNutrient = nutrientToFilter.trim();
+                  selectedSort = 'Featured';
+                  searchController.clear();
+                });
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Showing products with '
+                      '${nutrientToFilter.trim()}.',
+                    ),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            );
+    }
+
     final contentSections = <Widget>[
       if (harvestPulseContext != null)
         _harvestPulseShopBanner(
@@ -11892,86 +12425,19 @@ if (harvestPulseContext == 'fresh' &&
           ),
         ),
       ] else ...[
-        ...availableNowProducts.map((product) {
-          final quantity = widget.quantityForProduct(product);
-          final activeNutrient = _activeShopNutrient();
+        if (desktopWeb)
+          HpjWebResponsiveGrid(
+            minItemWidth: 360,
+            spacing: 16,
+            runSpacing: 16,
+            children: availableNowProducts
+                .map(buildShopProductTile)
+                .toList(growable: false),
+          ),
+        if (!desktopWeb)
+          ...availableNowProducts.map(buildShopProductTile),
 
-          final shopNutrientBadges = _nutrientBadgesForProduct(
-            product,
-            selectedNutrient: activeNutrient,
-          );
-
-          final detailNutrientBadges = _nutrientBadgesForProduct(
-            product,
-            selectedNutrient: activeNutrient,
-            limit: null,
-          );
-
-          return SafeShopProductTile(
-            key: ValueKey(
-              'shop-${product.id}-${product.name}',
-            ),
-            product: product,
-            quantity: quantity,
-            nutrientBadges: shopNutrientBadges,
-            isFavorite: _isFavoriteProduct(product),
-            isFreshPick:
-    harvestPulseContext == 'fresh' &&
-    harvestPulseFreshPickIdContext != null &&
-    product.id == harvestPulseFreshPickIdContext,
-            onFavorite: () => _toggleFavoriteProduct(product),
-            onAdd: () => _addProductToCart(product),
-            onRemove: () => _removeProductFromCart(product),
-            onOpenDetails: () async {
-              _rememberViewedProduct(product);
-
-              final nutrientToFilter = await Navigator.push<String>(
-                context,
-                MaterialPageRoute(
-                  builder: (detailContext) => ProductDetailScreen(
-                    product: product,
-                    quantity: quantity,
-                    nutrientBadges: detailNutrientBadges,
-                    onNutrientTap: (nutrient) {
-                      Navigator.of(detailContext).pop(nutrient);
-                    },
-                    onAdd: () => _addProductToCart(product),
-                    onRemove: () => _removeProductFromCart(product),
-                    onAddProduct: _addProductToCart,
-                    onViewed: _rememberViewedProduct,
-                    onViewMyBox: widget.onViewMyBox,
-                    onCheckout: widget.onCheckout,
-                  ),
-                ),
-              );
-
-              if (!mounted ||
-                  nutrientToFilter == null ||
-                  nutrientToFilter.trim().isEmpty) {
-                return;
-              }
-
-              setState(() {
-                selectedCategory = 'All';
-                selectedShopFilter = 'All items';
-                selectedShopNutrient = nutrientToFilter.trim();
-                selectedSort = 'Featured';
-                searchController.clear();
-              });
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Showing products with '
-                    '${nutrientToFilter.trim()}.',
-                  ),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-          );
-        }),
-        const SizedBox(height: 90),
+        SizedBox(height: desktopWeb ? 28 : 90),
       ],
     ];
     return FarmPage(
@@ -12078,6 +12544,7 @@ class SafeShopProductTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
     final name = product.name.trim().isEmpty ? 'Product' : product.name.trim();
     final description = (product.description ?? '').trim().isEmpty
         ? 'Fresh natural harvest from the farm.'
@@ -12209,8 +12676,8 @@ class SafeShopProductTile extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Container(
-            height: 82,
-            width: 82,
+            height: desktopWeb ? 96 : 82,
+            width: desktopWeb ? 96 : 82,
             decoration: BoxDecoration(
               color: FarmColors.primarySoft.withOpacity(0.55),
               borderRadius: BorderRadius.circular(20),
@@ -12219,7 +12686,7 @@ class SafeShopProductTile extends StatelessWidget {
             child: Center(
               child: ProductVisual(
                 product: product,
-                size: 64,
+                size: desktopWeb ? 72 : 64,
                 showOrganicBadge: false,
               ),
             ),
@@ -12307,10 +12774,14 @@ class SafeShopProductTile extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: desktopWeb
+          ? EdgeInsets.zero
+          : const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: muted ? FarmColors.cardSoft : Colors.white,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(
+          desktopWeb ? 18 : 26,
+        ),
         border: Border.all(
           color: muted
               ? FarmColors.danger.withOpacity(0.13)
@@ -12328,12 +12799,18 @@ class SafeShopProductTile extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(
+            desktopWeb ? 18 : 26,
+          ),
+          hoverColor: desktopWeb ? HpjWebUi.hover : Colors.transparent,
+          mouseCursor: kIsWeb
+              ? SystemMouseCursors.click
+              : MouseCursor.defer,
           onTap: onOpenDetails,
           child: Opacity(
             opacity: 1,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: EdgeInsets.all(desktopWeb ? 14 : 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -13634,10 +14111,56 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
   Widget build(BuildContext context) {
     final lines = groupedCart.values.toList();
     final hasItems = lines.isNotEmpty;
+    final desktopWeb = HpjWebUi.isDesktop(context);
 
     if (isLoggedIn && loadingSavedCart && savedCartLines == null) {
       return const FarmPage(
         child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (desktopWeb) {
+      return FarmPage(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () => _loadSavedCartIfNeeded(force: true),
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.zero,
+                    children: [
+                      _boxHeroCard(lines),
+                      const SizedBox(height: 18),
+                      if (lines.isEmpty)
+                        _emptyBoxInviteCard(context)
+                      else ...[
+                        _selectedItemsHeader(lines),
+                        const SizedBox(height: 12),
+                        ...lines.map(_cartLineCard),
+                        const SizedBox(height: 6),
+                        _shareListCard(context, lines),
+                        const SizedBox(height: 18),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              if (hasItems) ...[
+                const SizedBox(width: 22),
+                SizedBox(
+                  width: 360,
+                  child: SingleChildScrollView(
+                    child: _checkoutBar(context, lines),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       );
     }
 
@@ -13648,27 +14171,27 @@ class _FarmBoxScreenState extends State<FarmBoxScreen> {
             onRefresh: () => _loadSavedCartIfNeeded(force: true),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              18,
-              18,
-              18,
-              hasItems ? 250 : 120,
-            ),
-            children: [
-              _boxHeroCard(lines),
-              const SizedBox(height: 18),
-              if (lines.isEmpty)
-                _emptyBoxInviteCard(context)
-              else ...[
-                _selectedItemsHeader(lines),
-                const SizedBox(height: 12),
-                ...lines.map(_cartLineCard),
-                const SizedBox(height: 6),
-                _shareListCard(context, lines),
+              padding: EdgeInsets.fromLTRB(
+                18,
+                18,
+                18,
+                hasItems ? 250 : 120,
+              ),
+              children: [
+                _boxHeroCard(lines),
                 const SizedBox(height: 18),
+                if (lines.isEmpty)
+                  _emptyBoxInviteCard(context)
+                else ...[
+                  _selectedItemsHeader(lines),
+                  const SizedBox(height: 12),
+                  ...lines.map(_cartLineCard),
+                  const SizedBox(height: 6),
+                  _shareListCard(context, lines),
+                  const SizedBox(height: 18),
+                ],
               ],
-            ],
-          ),
+            ),
           ),
           if (hasItems)
             Positioned(
@@ -13799,8 +14322,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
     super.dispose();
   }
 
+  Widget _buildCustomerOrderCard(
+    BuildContext context,
+    FarmOrder order,
+  ) {
+    return OrderCard(
+      order: '#${order.shortId}',
+      status: _titleCase(order.status),
+      type:
+          '${_orderPlacedDateLabel(order.createdAt)}\n'
+          '${order.formattedType} • ${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}',
+      total: order.formattedTotal,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OrderDetailsScreen(
+              orderId: order.id,
+              onAddToCart: widget.onAddToCart,
+              onOpenMyBox: widget.onOpenMyBox,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final desktopWeb = HpjWebUi.isDesktop(context);
+
     if (!isLoggedIn) {
       return const GuestProtectedScreen(
         title: 'My Orders',
@@ -13820,7 +14371,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             Header(
               title: 'My Orders',
               subtitle: 'Track your farm orders',
-              showBackButton: true,
+              showBackButton: !desktopWeb,
               backTooltip: 'Back to Home',
               onBack: () {
                 if (Navigator.of(context).canPop()) {
@@ -13900,29 +14451,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         title: 'No matching orders',
                         message: _emptyFilterMessage,
                       )
+                    else if (desktopWeb)
+                      HpjWebResponsiveGrid(
+                        minItemWidth: 470,
+                        spacing: 16,
+                        runSpacing: 16,
+                        children: filteredOrders
+                            .map(
+                              (order) =>
+                                  _buildCustomerOrderCard(context, order),
+                            )
+                            .toList(growable: false),
+                      )
                     else
-                      ...filteredOrders.map((order) {
-                        return OrderCard(
-                          order: '#${order.shortId}',
-                          status: _titleCase(order.status),
-                          type:
-                              '${_orderPlacedDateLabel(order.createdAt)}\n'
-                              '${order.formattedType} • ${order.formattedPaymentMethod} • ${order.formattedPaymentStatus}',
-                          total: order.formattedTotal,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => OrderDetailsScreen(
-                                  orderId: order.id,
-                                  onAddToCart: widget.onAddToCart,
-                                  onOpenMyBox: widget.onOpenMyBox,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      }),
+                      ...filteredOrders.map(
+                        (order) =>
+                            _buildCustomerOrderCard(context, order),
+                      ),
                   ],
                 );
               },
@@ -19823,9 +20368,121 @@ class ProductDetailScreen extends StatelessWidget {
     final unit = (product.unit ?? '').trim();
     final bottomSafePadding = MediaQuery.of(context).viewPadding.bottom;
     final screenWidth = MediaQuery.of(context).size.width;
-    final detailImageHeight = screenWidth < 380 ? 228.0 : 260.0;
+    final desktopWeb = HpjWebUi.isDesktop(context);
+    final detailImageHeight = desktopWeb
+        ? 420.0
+        : (screenWidth < 380 ? 228.0 : 260.0);
+    final desktopSidePadding = desktopWeb
+        ? ((screenWidth - 1100) / 2).clamp(18.0, 220.0).toDouble()
+        : 18.0;
 
-    return Scaffold(
+    final imagePanel = ClipRRect(
+  borderRadius: BorderRadius.circular(30),
+  child: Container(
+    color: FarmColors.surface,
+    padding: const EdgeInsets.all(14),
+    child: Hero(
+      tag: 'product-${product.id}',
+      child: productImagePreviewFromUrl(
+        imageUrl: product.imageUrl,
+        height: detailImageHeight,
+      ),
+    ),
+  ),
+);
+    final infoPanel = FarmCard(
+  padding: const EdgeInsets.all(18),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        product.name,
+        style: const TextStyle(
+          fontSize: 30,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -0.4,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        farmLine,
+        style: const TextStyle(
+          color: FarmColors.green,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      if ((product.farmerId ?? '').trim().isNotEmpty) ...[
+        const SizedBox(height: 10),
+        PublicFarmProfileButton(
+          product: product,
+          sourceWorkspace: 'customer',
+          onAddProduct: onAddProduct,
+        ),
+      ],
+      const SizedBox(height: 12),
+      Text(
+        description,
+        style: const TextStyle(
+          fontSize: 15,
+          height: 1.42,
+          color: FarmColors.mutedText,
+        ),
+      ),
+      const SizedBox(height: 14),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          badge(
+            label: productFreshnessLabel(product),
+            icon: Icons.speed_outlined,
+            color: productFreshnessColor(product),
+          ),
+          if (product.isOrganic)
+            badge(
+              label: 'Organic',
+              icon: Icons.eco_outlined,
+              color: FarmColors.green,
+            ),
+          badge(
+            label: product.originLabel,
+            icon: productOriginIcon(product),
+            color: productOriginColor(product),
+          ),
+          badge(
+            label: product.category,
+            icon: Icons.category_outlined,
+          ),
+          if (unit.isNotEmpty)
+            badge(
+              label: unit,
+              icon: Icons.straighten_outlined,
+            ),
+
+          // Show the same nutrient information seen in Shop.
+
+          if (product.isOutOfStock)
+            badge(
+              label: 'Out of stock',
+              icon: Icons.block_outlined,
+              color: FarmColors.danger,
+            ),
+        ],
+      ),
+      if (displayNutrientBadges.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        _ProductNutritionHighlightsCard(
+          badges: displayNutrientBadges,
+          onNutrientTap: onNutrientTap,
+        ),
+      ],
+      const SizedBox(height: 16),
+      DiscountPriceText(product: product),
+    ],
+  ),
+);
+
+    final detailScaffold = Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
         backgroundColor: FarmColors.background,
@@ -19835,114 +20492,27 @@ class ProductDetailScreen extends StatelessWidget {
       body: SafeArea(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(18, 18, 18, 128 + bottomSafePadding),
+          padding: EdgeInsets.fromLTRB(
+            desktopSidePadding,
+            18,
+            desktopSidePadding,
+            128 + bottomSafePadding,
+          ),
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(30),
-              child: Container(
-                color: FarmColors.surface,
-                padding: const EdgeInsets.all(14),
-                child: Hero(
-                  tag: 'product-${product.id}',
-                  child: productImagePreviewFromUrl(
-                    imageUrl: product.imageUrl,
-                    height: detailImageHeight,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            FarmCard(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    style: const TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.4,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    farmLine,
-                    style: const TextStyle(
-                      color: FarmColors.green,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if ((product.farmerId ?? '').trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    PublicFarmProfileButton(
-                      product: product,
-                      sourceWorkspace: 'customer',
-                      onAddProduct: onAddProduct,
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Text(
-                    description,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      height: 1.42,
-                      color: FarmColors.mutedText,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      badge(
-                        label: productFreshnessLabel(product),
-                        icon: Icons.speed_outlined,
-                        color: productFreshnessColor(product),
-                      ),
-                      if (product.isOrganic)
-                        badge(
-                          label: 'Organic',
-                          icon: Icons.eco_outlined,
-                          color: FarmColors.green,
-                        ),
-                      badge(
-                        label: product.originLabel,
-                        icon: productOriginIcon(product),
-                        color: productOriginColor(product),
-                      ),
-                      badge(
-                        label: product.category,
-                        icon: Icons.category_outlined,
-                      ),
-                      if (unit.isNotEmpty)
-                        badge(
-                          label: unit,
-                          icon: Icons.straighten_outlined,
-                        ),
+            if (desktopWeb)
+              HpjWebTwoColumn(
+                primary: imagePanel,
+                secondary: infoPanel,
+                primaryFlex: 0.94,
+                secondaryFlex: 1.06,
+                gap: 24,
+              )
+            else ...[
+              imagePanel,
+              const SizedBox(height: 16),
+              infoPanel,
+            ],
 
-                      // Show the same nutrient information seen in Shop.
-
-                      if (product.isOutOfStock)
-                        badge(
-                          label: 'Out of stock',
-                          icon: Icons.block_outlined,
-                          color: FarmColors.danger,
-                        ),
-                    ],
-                  ),
-                  if (displayNutrientBadges.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    _ProductNutritionHighlightsCard(
-                      badges: displayNutrientBadges,
-                      onNutrientTap: onNutrientTap,
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  DiscountPriceText(product: product),
-                ],
-              ),
-            ),
             if (isLoggedIn && product.canAddToCart) ...[
               const SizedBox(height: 14),
               FarmCard(
@@ -20086,7 +20656,12 @@ class ProductDetailScreen extends StatelessWidget {
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(
+            desktopSidePadding,
+            16,
+            desktopSidePadding,
+            16,
+          ),
           decoration: BoxDecoration(
             color: Colors.white,
             boxShadow: [
@@ -20141,6 +20716,8 @@ class ProductDetailScreen extends StatelessWidget {
         ),
       ),
     );
+
+    return detailScaffold;
   }
 }
 
@@ -21267,7 +21844,461 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final desktopWeb = HpjWebUi.isDesktop(context);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final desktopSidePadding = desktopWeb
+        ? ((screenWidth - 1180) / 2).clamp(18.0, 220.0).toDouble()
+        : 18.0;
+
+    final reviewCard = FarmCard(
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _checkoutSectionHeader(
+        icon: Icons.receipt_long_outlined,
+        title: 'Review Order',
+        subtitle:
+            'Check your items and total before placing the order.',
+      ),
+      const SizedBox(height: 12),
+      ...widget.cartLines.map(_checkoutLineItem),
+      _checkoutSummaryBanner(),
+      const SizedBox(height: 14),
+      _checkoutRow(
+        'Subtotal',
+        'J\$${widget.subtotal.toStringAsFixed(2)}',
+      ),
+      _checkoutRow(
+        'Fulfillment',
+        formatFulfillmentType(fulfillmentType),
+      ),
+      _checkoutRow(
+        'Payment',
+        formatPaymentMethod(effectivePaymentMethod),
+      ),
+      if (deliveryFee > 0)
+        _checkoutRow(
+          'Delivery fee',
+          'J\$${deliveryFee.toStringAsFixed(2)}',
+        ),
+      if (discountAmount > 0)
+        _checkoutRow(
+          'Discount ${appliedCouponCode ?? ''}',
+          '-J\$${discountAmount.toStringAsFixed(2)}',
+        ),
+      const Divider(),
+      _checkoutRow(
+        effectivePaymentMethod == 'bank_transfer'
+            ? 'Total to transfer'
+            : 'Total to pay',
+        'J\$${checkoutTotal.toStringAsFixed(2)}',
+        strong: true,
+      ),
+      const SizedBox(height: 8),
+      Text(
+        fulfillmentType == 'delivery'
+            ? 'Home Delivery requires payment before delivery.'
+            : 'Pay when you collect is available for Farm Pickup.',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+    ],
+  ),
+);
+    final detailsCard = FarmCard(
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _checkoutSectionHeader(
+        icon: Icons.person_outline,
+        title: 'Contact',
+        subtitle: 'Tell us who the order is for.',
+      ),
+      TextField(
+        controller: nameController,
+        textInputAction: TextInputAction.next,
+        decoration: const InputDecoration(
+          labelText: 'Full name',
+          prefixIcon: Icon(Icons.person_outline),
+        ),
+      ),
+      const SizedBox(height: 14),
+      TextField(
+        controller: phoneController,
+        keyboardType: TextInputType.phone,
+        textInputAction: TextInputAction.next,
+        decoration: const InputDecoration(
+          labelText: 'Phone number',
+          prefixIcon: Icon(Icons.phone_outlined),
+        ),
+      ),
+      const SizedBox(height: 18),
+      _checkoutSectionHeader(
+        icon: Icons.local_shipping_outlined,
+        title: 'Pickup or Delivery',
+        subtitle:
+            'Choose how and when you want to receive your farm box.',
+      ),
+      DropdownButtonFormField<String>(
+        isExpanded: true,
+        value: fulfillmentType,
+        items: const [
+          DropdownMenuItem(
+            value: 'pickup',
+            child: Text('Farm Pickup',
+                overflow: TextOverflow.ellipsis),
+          ),
+          DropdownMenuItem(
+            value: 'delivery',
+            child: Text('Home Delivery',
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+        onChanged: (value) {
+          if (value == null) return;
+          setState(() => _syncPaymentMethodForFulfillment(value));
+          unawaited(_saveSmartCheckoutDefaults());
+        },
+        decoration: const InputDecoration(
+          labelText: 'Pickup or delivery',
+          prefixIcon: Icon(Icons.local_shipping_outlined),
+        ),
+      ),
+      const SizedBox(height: 14),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: fulfillmentType == 'delivery'
+              ? FarmColors.warningSoft
+              : FarmColors.lightGreen,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: FarmColors.line),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              fulfillmentType == 'delivery'
+                  ? Icons.lock_outline
+                  : Icons.payments_outlined,
+              color: fulfillmentType == 'delivery'
+                  ? FarmColors.warning
+                  : FarmColors.green,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                fulfillmentType == 'delivery'
+                    ? 'Home Delivery requires payment before delivery. Choose Bank Transfer for delivery.'
+                    : 'Pay when you collect is available for Farm Pickup. You can also choose Bank Transfer.',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 14),
+      if (fulfillmentType == 'delivery') ...[
+        DropdownButtonFormField<String>(
+          isExpanded: true,
+          value: deliveryZones.any(
+            (zone) => zone.displayName == deliveryZone,
+          )
+              ? deliveryZone
+              : null,
+          items: deliveryZones
+              .where((zone) => zone.isActive)
+              .map(
+                (zone) => DropdownMenuItem(
+                  value: zone.displayName,
+                  child: Text(
+                    '${zone.displayName} • ${formatJmd(zone.deliveryFee)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: deliveryZonesLoading
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  setState(() => deliveryZone = value);
+                  unawaited(_saveSmartCheckoutDefaults());
+                },
+          decoration: InputDecoration(
+            labelText: deliveryZonesLoading
+                ? 'Loading delivery parishes...'
+                : 'Delivery parish',
+            prefixIcon: const Icon(Icons.local_shipping_outlined),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: FarmColors.lightGreen,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: FarmColors.line),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.verified_outlined,
+                color: FarmColors.green,
+                size: 19,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Delivery fee for $deliveryZone: ${formatJmd(deliveryFee)}. Admin can update active parishes and fees anytime.',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: FarmColors.green,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+      ],
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          _selectionButton(
+            icon: Icons.calendar_month,
+            label: scheduledDateText,
+            onPressed: () async {
+              final now = DateTime.now();
+              final picked = await showDatePicker(
+                context: context,
+                firstDate: DateTime(now.year, now.month, now.day),
+                lastDate: now.add(const Duration(days: 30)),
+                initialDate: scheduledDate ??
+                    DateTime(now.year, now.month, now.day),
+              );
+              if (picked != null) {
+                setState(() => scheduledDate = picked);
+              }
+            },
+          ),
+          _selectionButton(
+            icon: Icons.schedule,
+            label: scheduledTimeText,
+            onPressed: () async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: scheduledTime ??
+                    const TimeOfDay(hour: 16, minute: 0),
+              );
+              if (picked != null) {
+                setState(() => scheduledTime = picked);
+              }
+            },
+          ),
+        ],
+      ),
+      const SizedBox(height: 18),
+      _checkoutSectionHeader(
+        icon: Icons.payments_outlined,
+        title: 'Payment',
+        subtitle: fulfillmentType == 'delivery'
+            ? 'Choose Bank Transfer for delivery. Payment is required before delivery.'
+            : 'Add a promo code if you have one. Pay when you collect is available for pickup.',
+      ),
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ConstrainedBox(
+            constraints:
+                const BoxConstraints(minWidth: 180, maxWidth: 520),
+            child: TextField(
+              controller: couponController,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                labelText: 'Promo code',
+                prefixIcon:
+                    Icon(Icons.confirmation_number_outlined),
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: applyingCoupon ? null : applyCoupon,
+            child: Text(applyingCoupon ? 'Applying...' : 'Apply'),
+          ),
+        ],
+      ),
+      if (discountAmount > 0)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            'Promo ${appliedCouponCode ?? ''} applied: -J\$${discountAmount.toStringAsFixed(2)}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.green,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      const SizedBox(height: 14),
+      DropdownButtonFormField<String>(
+        isExpanded: true,
+        value: effectivePaymentMethod,
+        items: _paymentMethodItems(),
+        onChanged: (value) {
+          if (value == null) return;
+          setState(() => paymentMethod = value);
+          unawaited(_saveSmartCheckoutDefaults());
+        },
+        decoration: const InputDecoration(
+          labelText: 'Payment method',
+          prefixIcon: Icon(Icons.payments_outlined),
+        ),
+      ),
+      if (effectivePaymentMethod == 'bank_transfer') ...[
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: FarmColors.lightGreen,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Bank Transfer Instructions',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              const Text('Bank: National Commercial Bank',
+                  maxLines: 2),
+              const Text('Account Name: The Harvest Place Ja',
+                  maxLines: 2),
+              const Text('Account Number: #', maxLines: 2),
+              const SizedBox(height: 8),
+              Text(
+                  'Product subtotal: ${formatJmd(widget.subtotal)}',
+                  maxLines: 2),
+              if (deliveryFee > 0)
+                Text('Delivery fee: ${formatJmd(deliveryFee)}',
+                    maxLines: 2),
+              if (discountAmount > 0)
+                Text(
+                  'Discount: -${formatJmd(discountAmount)}',
+                  maxLines: 2,
+                ),
+              Text(
+                'Total to transfer: ${formatJmd(checkoutTotal)}',
+                maxLines: 2,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: FarmColors.green,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Please transfer the full total, including delivery, then enter your reference below.',
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: bankReferenceController,
+          decoration: const InputDecoration(
+            labelText: 'Bank transfer reference number',
+            prefixIcon: Icon(Icons.confirmation_number_outlined),
+          ),
+        ),
+      ],
+      const SizedBox(height: 14),
+      if (savedProfile != null &&
+          (savedProfile!.address.trim().isNotEmpty ||
+              savedProfile!.phone.trim().isNotEmpty)) ...[
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: FarmColors.lightGreen,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Saved delivery details',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              if (savedProfile!.address.trim().isNotEmpty)
+                Text(
+                  savedProfile!.address,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              if (savedProfile!.phone.trim().isNotEmpty)
+                Text(
+                  'Phone: ${savedProfile!.phone}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.location_on_outlined),
+                    label: const Text('Use saved address'),
+                    onPressed: useSavedDeliveryAddress,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+      ],
+      TextField(
+        controller: addressController,
+        enabled: fulfillmentType == 'delivery',
+        maxLines: 2,
+        decoration: InputDecoration(
+          labelText: fulfillmentType == 'delivery'
+              ? 'Delivery address'
+              : 'Delivery address (not needed for pickup)',
+          prefixIcon: const Icon(Icons.location_on_outlined),
+        ),
+      ),
+      const SizedBox(height: 14),
+      TextField(
+        controller: notesController,
+        maxLines: 2,
+        decoration: const InputDecoration(
+          labelText: 'Order notes (optional)',
+          prefixIcon: Icon(Icons.notes_outlined),
+        ),
+      ),
+    ],
+  ),
+);
+
+    final checkoutScaffold = Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
         leading: const BackButton(),
@@ -21278,458 +22309,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         bottom: true,
         child: ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+          padding: EdgeInsets.fromLTRB(
+            desktopSidePadding,
+            18,
+            desktopSidePadding,
+            120,
+          ),
           children: [
             _checkoutHeroCard(),
             const SizedBox(height: 18),
-            FarmCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _checkoutSectionHeader(
-                    icon: Icons.receipt_long_outlined,
-                    title: 'Review Order',
-                    subtitle:
-                        'Check your items and total before placing the order.',
-                  ),
-                  const SizedBox(height: 12),
-                  ...widget.cartLines.map(_checkoutLineItem),
-                  _checkoutSummaryBanner(),
-                  const SizedBox(height: 14),
-                  _checkoutRow(
-                    'Subtotal',
-                    'J\$${widget.subtotal.toStringAsFixed(2)}',
-                  ),
-                  _checkoutRow(
-                    'Fulfillment',
-                    formatFulfillmentType(fulfillmentType),
-                  ),
-                  _checkoutRow(
-                    'Payment',
-                    formatPaymentMethod(effectivePaymentMethod),
-                  ),
-                  if (deliveryFee > 0)
-                    _checkoutRow(
-                      'Delivery fee',
-                      'J\$${deliveryFee.toStringAsFixed(2)}',
-                    ),
-                  if (discountAmount > 0)
-                    _checkoutRow(
-                      'Discount ${appliedCouponCode ?? ''}',
-                      '-J\$${discountAmount.toStringAsFixed(2)}',
-                    ),
-                  const Divider(),
-                  _checkoutRow(
-                    effectivePaymentMethod == 'bank_transfer'
-                        ? 'Total to transfer'
-                        : 'Total to pay',
-                    'J\$${checkoutTotal.toStringAsFixed(2)}',
-                    strong: true,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    fulfillmentType == 'delivery'
-                        ? 'Home Delivery requires payment before delivery.'
-                        : 'Pay when you collect is available for Farm Pickup.',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            FarmCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _checkoutSectionHeader(
-                    icon: Icons.person_outline,
-                    title: 'Contact',
-                    subtitle: 'Tell us who the order is for.',
-                  ),
-                  TextField(
-                    controller: nameController,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Full name',
-                      prefixIcon: Icon(Icons.person_outline),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: phoneController,
-                    keyboardType: TextInputType.phone,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone number',
-                      prefixIcon: Icon(Icons.phone_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  _checkoutSectionHeader(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'Pickup or Delivery',
-                    subtitle:
-                        'Choose how and when you want to receive your farm box.',
-                  ),
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    value: fulfillmentType,
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'pickup',
-                        child: Text('Farm Pickup',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      DropdownMenuItem(
-                        value: 'delivery',
-                        child: Text('Home Delivery',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => _syncPaymentMethodForFulfillment(value));
-                      unawaited(_saveSmartCheckoutDefaults());
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Pickup or delivery',
-                      prefixIcon: Icon(Icons.local_shipping_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: fulfillmentType == 'delivery'
-                          ? FarmColors.warningSoft
-                          : FarmColors.lightGreen,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: FarmColors.line),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          fulfillmentType == 'delivery'
-                              ? Icons.lock_outline
-                              : Icons.payments_outlined,
-                          color: fulfillmentType == 'delivery'
-                              ? FarmColors.warning
-                              : FarmColors.green,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            fulfillmentType == 'delivery'
-                                ? 'Home Delivery requires payment before delivery. Choose Bank Transfer for delivery.'
-                                : 'Pay when you collect is available for Farm Pickup. You can also choose Bank Transfer.',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              height: 1.3,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  if (fulfillmentType == 'delivery') ...[
-                    DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      value: deliveryZones.any(
-                        (zone) => zone.displayName == deliveryZone,
-                      )
-                          ? deliveryZone
-                          : null,
-                      items: deliveryZones
-                          .where((zone) => zone.isActive)
-                          .map(
-                            (zone) => DropdownMenuItem(
-                              value: zone.displayName,
-                              child: Text(
-                                '${zone.displayName} • ${formatJmd(zone.deliveryFee)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: deliveryZonesLoading
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setState(() => deliveryZone = value);
-                              unawaited(_saveSmartCheckoutDefaults());
-                            },
-                      decoration: InputDecoration(
-                        labelText: deliveryZonesLoading
-                            ? 'Loading delivery parishes...'
-                            : 'Delivery parish',
-                        prefixIcon: const Icon(Icons.local_shipping_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: FarmColors.lightGreen,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: FarmColors.line),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.verified_outlined,
-                            color: FarmColors.green,
-                            size: 19,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Delivery fee for $deliveryZone: ${formatJmd(deliveryFee)}. Admin can update active parishes and fees anytime.',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: FarmColors.green,
-                                height: 1.25,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _selectionButton(
-                        icon: Icons.calendar_month,
-                        label: scheduledDateText,
-                        onPressed: () async {
-                          final now = DateTime.now();
-                          final picked = await showDatePicker(
-                            context: context,
-                            firstDate: DateTime(now.year, now.month, now.day),
-                            lastDate: now.add(const Duration(days: 30)),
-                            initialDate: scheduledDate ??
-                                DateTime(now.year, now.month, now.day),
-                          );
-                          if (picked != null) {
-                            setState(() => scheduledDate = picked);
-                          }
-                        },
-                      ),
-                      _selectionButton(
-                        icon: Icons.schedule,
-                        label: scheduledTimeText,
-                        onPressed: () async {
-                          final picked = await showTimePicker(
-                            context: context,
-                            initialTime: scheduledTime ??
-                                const TimeOfDay(hour: 16, minute: 0),
-                          );
-                          if (picked != null) {
-                            setState(() => scheduledTime = picked);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  _checkoutSectionHeader(
-                    icon: Icons.payments_outlined,
-                    title: 'Payment',
-                    subtitle: fulfillmentType == 'delivery'
-                        ? 'Choose Bank Transfer for delivery. Payment is required before delivery.'
-                        : 'Add a promo code if you have one. Pay when you collect is available for pickup.',
-                  ),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      ConstrainedBox(
-                        constraints:
-                            const BoxConstraints(minWidth: 180, maxWidth: 520),
-                        child: TextField(
-                          controller: couponController,
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: const InputDecoration(
-                            labelText: 'Promo code',
-                            prefixIcon:
-                                Icon(Icons.confirmation_number_outlined),
-                          ),
-                        ),
-                      ),
-                      ElevatedButton(
-                        onPressed: applyingCoupon ? null : applyCoupon,
-                        child: Text(applyingCoupon ? 'Applying...' : 'Apply'),
-                      ),
-                    ],
-                  ),
-                  if (discountAmount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Promo ${appliedCouponCode ?? ''} applied: -J\$${discountAmount.toStringAsFixed(2)}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: FarmColors.green,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    value: effectivePaymentMethod,
-                    items: _paymentMethodItems(),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => paymentMethod = value);
-                      unawaited(_saveSmartCheckoutDefaults());
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Payment method',
-                      prefixIcon: Icon(Icons.payments_outlined),
-                    ),
-                  ),
-                  if (effectivePaymentMethod == 'bank_transfer') ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: FarmColors.lightGreen,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'Bank Transfer Instructions',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text('Bank: National Commercial Bank',
-                              maxLines: 2),
-                          const Text('Account Name: The Harvest Place Ja',
-                              maxLines: 2),
-                          const Text('Account Number: #', maxLines: 2),
-                          const SizedBox(height: 8),
-                          Text(
-                              'Product subtotal: ${formatJmd(widget.subtotal)}',
-                              maxLines: 2),
-                          if (deliveryFee > 0)
-                            Text('Delivery fee: ${formatJmd(deliveryFee)}',
-                                maxLines: 2),
-                          if (discountAmount > 0)
-                            Text(
-                              'Discount: -${formatJmd(discountAmount)}',
-                              maxLines: 2,
-                            ),
-                          Text(
-                            'Total to transfer: ${formatJmd(checkoutTotal)}',
-                            maxLines: 2,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: FarmColors.green,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'Please transfer the full total, including delivery, then enter your reference below.',
-                            maxLines: 3,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: bankReferenceController,
-                      decoration: const InputDecoration(
-                        labelText: 'Bank transfer reference number',
-                        prefixIcon: Icon(Icons.confirmation_number_outlined),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  if (savedProfile != null &&
-                      (savedProfile!.address.trim().isNotEmpty ||
-                          savedProfile!.phone.trim().isNotEmpty)) ...[
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: FarmColors.lightGreen,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'Saved delivery details',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 6),
-                          if (savedProfile!.address.trim().isNotEmpty)
-                            Text(
-                              savedProfile!.address,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          if (savedProfile!.phone.trim().isNotEmpty)
-                            Text(
-                              'Phone: ${savedProfile!.phone}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: [
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.location_on_outlined),
-                                label: const Text('Use saved address'),
-                                onPressed: useSavedDeliveryAddress,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  TextField(
-                    controller: addressController,
-                    enabled: fulfillmentType == 'delivery',
-                    maxLines: 2,
-                    decoration: InputDecoration(
-                      labelText: fulfillmentType == 'delivery'
-                          ? 'Delivery address'
-                          : 'Delivery address (not needed for pickup)',
-                      prefixIcon: const Icon(Icons.location_on_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: notesController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Order notes (optional)',
-                      prefixIcon: Icon(Icons.notes_outlined),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            if (desktopWeb)
+              HpjWebTwoColumn(
+                primary: reviewCard,
+                secondary: detailsCard,
+                primaryFlex: 0.88,
+                secondaryFlex: 1.12,
+                gap: 20,
+              )
+            else ...[
+              reviewCard,
+              const SizedBox(height: 16),
+              detailsCard,
+            ],
+
             const SizedBox(height: 22),
           ],
         ),
@@ -21737,7 +22339,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+          padding: EdgeInsets.fromLTRB(
+            desktopSidePadding,
+            12,
+            desktopSidePadding,
+            14,
+          ),
           decoration: BoxDecoration(
             color: FarmColors.surface,
             border: Border(top: BorderSide(color: FarmColors.line)),
@@ -21806,6 +22413,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
       ),
     );
+
+    return checkoutScaffold;
   }
 }
 

@@ -37,6 +37,7 @@ part 'screens/admin/admin_screens.dart';
 part 'screens/admin/driver_delivery_management.dart';
 part 'screens/farmer/farmer_partner_tools.dart';
 part 'screens/farmer/farm_public_profile.dart';
+part 'screens/business/business_management.dart';
 part 'screens/wholesale/wholesale_management.dart';
 part 'screens/warehouse/procurement_command_center.dart';
 part 'screens/warehouse/collection_planning.dart';

@@ -1,6 +1,17 @@
+// HPJ PHASE 88 — WHOLESALE CORE + ADMIN OPERATIONS (BUSINESS UI EXTRACTED)
 // HPJ RC2K HOTFIX 003 VERIFIED REPLACEMENT — 2026-08-27
 // Compile repair base: Hotfix 002 + visible verification marker.
 part of harvest_place_app;
+// HPJ GLOBAL PORTAL HEADER COMPATIBILITY — CURRENT SPLIT-ARCHITECTURE BUILD — 2026-09-13
+// HPJ PREMIUM PHASE 27 — WEB MVP BUSINESS HOME
+// HPJ PREMIUM PHASE 23 — WEB WAREHOUSE + DISPATCH CONTROL
+// HPJ PREMIUM PHASE 22 — PROCUREMENT MATCHING + COLLECTION + RECEIVING
+// HPJ PREMIUM PHASE 21 — ADMIN WHOLESALE ORDERS COMMAND CENTER
+// HPJ PREMIUM PHASE 19 — BUSINESS ACCOUNT + CREDIT + RECURRING ORDERS
+// HPJ PREMIUM PHASE 18 — BUSINESS ORDERS + TRACKING + INVOICES
+// HPJ PREMIUM PHASE 17 — PLANNING AHEAD + SUPPLIER DISCOVERY
+// HPJ PREMIUM PHASE 16 — WHOLESALE SHOP + BUYING EXPERIENCE
+// HPJ PREMIUM PHASE 15 — BUSINESS HQ + PREMIUM HOME ACTIONS
 
 // ================================================================
 // THE HARVEST PLACE JA
@@ -10083,5172 +10094,6 @@ Future<void> prepareApprovedWholesaleRequestForProcurement(
   await reserveWholesaleFulfillmentStock(fulfillment);
 }
 
-class _BusinessWholesaleHubSnapshot {
-  final MarketplaceProgramSettings settings;
-  final BusinessAccount? account;
-
-  const _BusinessWholesaleHubSnapshot({
-    required this.settings,
-    required this.account,
-  });
-}
-
-Future<_BusinessWholesaleHubSnapshot>
-    fetchBusinessWholesaleHubSnapshot() async {
-  final values = await Future.wait<dynamic>([
-    fetchMarketplaceProgramSettings(),
-    fetchCurrentBusinessAccount(),
-  ]);
-
-  return _BusinessWholesaleHubSnapshot(
-    settings: values[0] as MarketplaceProgramSettings,
-    account: values[1] as BusinessAccount?,
-  );
-}
-
-PreferredSizeWidget _wholesaleAccessAppBar(
-  BuildContext context,
-  String title,
-) {
-  final navigator = Navigator.of(context);
-  final canGoBack = navigator.canPop();
-
-  return AppBar(
-    automaticallyImplyLeading: false,
-    leading: canGoBack
-        ? IconButton(
-            tooltip: 'Back',
-            onPressed: () => navigator.maybePop(),
-            icon: const Icon(Icons.arrow_back_rounded),
-          )
-        : null,
-    title: Text(title),
-    actions: [
-      IconButton(
-        tooltip: 'Switch Workspace',
-        onPressed: () {
-          navigator.push(
-            MaterialPageRoute<void>(
-              builder: (_) => const OwnerWorkspaceSwitcherScreen(
-                currentWorkspace: 'wholesale',
-              ),
-            ),
-          );
-        },
-        icon: const Icon(Icons.apps_rounded),
-      ),
-    ],
-  );
-}
-
-class BusinessWholesaleHubScreen extends StatefulWidget {
-  final int initialTab;
-  final String? initialRecordId;
-
-  const BusinessWholesaleHubScreen({
-    super.key,
-    this.initialTab = 0,
-    this.initialRecordId,
-  });
-
-  @override
-  State<BusinessWholesaleHubScreen> createState() =>
-      _BusinessWholesaleHubScreenState();
-}
-
-class _BusinessWholesaleHubScreenState
-    extends State<BusinessWholesaleHubScreen> {
-  late Future<_BusinessWholesaleHubSnapshot> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = fetchBusinessWholesaleHubSnapshot();
-  }
-
-  Future<void> _reload() async {
-    final next = fetchBusinessWholesaleHubSnapshot();
-
-    if (mounted) {
-      setState(() {
-        _future = next;
-      });
-    }
-
-    await next;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!isLoggedIn || supabase.auth.currentUser == null) {
-      return const GuestProtectedScreen(
-        title: 'Business & Wholesale',
-        subtitle: 'Bulk shopping for organisations',
-        message:
-            'Sign in with your customer account to apply for wholesale access.',
-      );
-    }
-
-    return FutureBuilder<_BusinessWholesaleHubSnapshot>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            snapshot.data == null) {
-          return Scaffold(
-            backgroundColor: FarmColors.background,
-            appBar: _wholesaleAccessAppBar(
-              context,
-              'Business & Wholesale',
-            ),
-            body: const Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
-
-        final data = snapshot.data;
-
-        if (data == null) {
-          return Scaffold(
-            backgroundColor: FarmColors.background,
-            appBar: _wholesaleAccessAppBar(
-              context,
-              'Business & Wholesale',
-            ),
-            body: FarmPage(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  18,
-                  18,
-                  18,
-                  120,
-                ),
-                children: [
-                  _MarketplaceProgramNotice(
-                    icon: Icons.error_outline,
-                    title: 'Could not load wholesale access',
-                    message:
-                        'Please check your connection and try again.',
-                    actionLabel: 'Try Again',
-                    onAction: _reload,
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        final account = data.account;
-        final settings = data.settings;
-
-        if (account != null &&
-            account.isApproved &&
-            settings.wholesaleWorkspaceEnabled) {
-          return _WholesaleWorkspaceShell(
-            account: account,
-            initialIndex: widget.initialTab,
-            initialRecordId: widget.initialRecordId,
-          );
-        }
-
-        Widget content;
-
-        if (account == null &&
-            !settings.wholesaleApplicationsEnabled) {
-          content = _MarketplaceProgramNotice(
-            icon: Icons.storefront_outlined,
-            title: 'Wholesale applications are paused',
-            message:
-                'You can continue shopping at regular customer prices. Please check again when business applications reopen.',
-            actionLabel: 'Refresh Status',
-            onAction: _reload,
-          );
-        } else if (account == null) {
-          content = BusinessApplicationForm(
-            onSubmitted: _reload,
-          );
-        } else if (!account.isApproved) {
-          content = _BusinessApplicationStatusCard(
-            account: account,
-            onUpdated: _reload,
-          );
-        } else {
-          content = _MarketplaceProgramNotice(
-            icon: Icons.pause_circle_outline,
-            title: 'Wholesale ordering is temporarily paused',
-            message:
-                'Your approved business account is safe. Regular shopping remains available while the wholesale workspace is paused.',
-            actionLabel: 'Refresh Status',
-            onAction: _reload,
-          );
-        }
-
-        return Scaffold(
-          backgroundColor: FarmColors.background,
-          appBar: _wholesaleAccessAppBar(
-            context,
-            'Business & Wholesale',
-          ),
-          body: FarmPage(
-            child: RefreshIndicator(
-              onRefresh: _reload,
-              child: ListView(
-                physics:
-                    const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(
-                  18,
-                  18,
-                  18,
-                  120,
-                ),
-                children: [
-                  if (account == null ||
-                      !account.isApproved) ...[
-                    const _WholesaleHeroCard(),
-                    const SizedBox(height: 16),
-                  ],
-                  content,
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _WholesaleWorkspaceShell extends StatefulWidget {
-  final BusinessAccount account;
-  final int initialIndex;
-  final String? initialRecordId;
-
-  const _WholesaleWorkspaceShell({
-    required this.account,
-    this.initialIndex = 0,
-    this.initialRecordId,
-  });
-
-  @override
-  State<_WholesaleWorkspaceShell> createState() =>
-      _WholesaleWorkspaceShellState();
-}
-
-class _WholesaleWorkspaceShellState
-    extends State<_WholesaleWorkspaceShell>
-    with WidgetsBindingObserver {
-  int selectedIndex = 0;
-  int todayRefreshKey = 0;
-  late BusinessAccount currentAccount;
-  StreamSubscription<AuthState>? _authBoundarySubscription;
-  String? _authBoundaryUserId;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    selectedIndex = widget.initialIndex.clamp(0, 4).toInt();
-    currentAccount = widget.account;
-    _authBoundaryUserId =
-        supabase.auth.currentUser?.id.trim();
-
-    _authBoundarySubscription =
-        supabase.auth.onAuthStateChange.listen((authState) {
-      if (!mounted) return;
-
-      final rawUserId =
-          authState.session?.user.id.trim() ?? '';
-      final nextUserId =
-          rawUserId.isEmpty ? null : rawUserId;
-      final previousUserId = _authBoundaryUserId;
-
-      if (nextUserId == previousUserId) return;
-
-      _authBoundaryUserId = nextUserId;
-      clearHpjPrivateAccountMemory();
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute<void>(
-            builder: (_) => nextUserId == null
-                ? const AuthGate()
-                : const OwnerWorkspaceSwitcherScreen(
-                    showCloseButton: false,
-                  ),
-          ),
-          (route) => false,
-        );
-      });
-    });
-
-    unawaited(
-      saveHpjNavigationPreference(
-        workspace: 'wholesale',
-        tab: selectedIndex,
-      ),
-    );
-  }
-
-  BusinessAccount get account => currentAccount;
-
-  Future<void> _reloadAccount() async {
-    final operationBoundary =
-        captureHpjPrivateOperationBoundary();
-
-    final latest = await fetchCurrentBusinessAccount();
-
-    if (!mounted ||
-        latest == null ||
-        !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
-      return;
-    }
-
-    setState(() {
-      currentAccount = latest;
-      todayRefreshKey++;
-    });
-  }
-
-  Future<void> _revalidateWholesaleWorkspace() async {
-    if (!mounted) return;
-
-    final operationBoundary =
-        captureHpjPrivateOperationBoundary();
-
-    if (!isLoggedIn || supabase.auth.currentUser == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute<void>(
-            builder: (_) => const AuthGate(),
-          ),
-          (route) => false,
-        );
-      });
-      return;
-    }
-
-    try {
-      final access = await fetchOwnerWorkspaceAccessSnapshot();
-
-      if (!mounted ||
-          !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
-        return;
-      }
-
-      final latest = access.businessAccount;
-      final active = latest != null &&
-          latest.isApproved &&
-          access.programSettings.wholesaleWorkspaceEnabled;
-
-      if (!active) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute<void>(
-              builder: (_) => const BusinessWholesaleHubScreen(
-                initialTab: 0,
-              ),
-            ),
-            (route) => false,
-          );
-        });
-        return;
-      }
-
-      setState(() {
-        currentAccount = latest;
-        todayRefreshKey++;
-      });
-    } catch (error) {
-      farmDebugLog(
-        'Wholesale workspace resume validation skipped: $error',
-      );
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
-    unawaited(_revalidateWholesaleWorkspace());
-  }
-
-  @override
-  void dispose() {
-    _authBoundarySubscription?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  static const titles = <String>[
-    'Business Home',
-    'Wholesale Shop',
-    'Planning Ahead',
-    'Orders',
-    'Business Account',
-  ];
-
-  void _select(int index) {
-    if (!mounted) return;
-
-    final safeIndex = index.clamp(0, 4).toInt();
-    setState(() {
-      selectedIndex = safeIndex;
-    });
-    unawaited(
-      saveHpjNavigationPreference(
-        workspace: 'wholesale',
-        tab: safeIndex,
-      ),
-    );
-  }
-
-  void _switchWorkspace() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const OwnerWorkspaceSwitcherScreen(
-          currentWorkspace: 'wholesale',
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = <Widget>[
-      _WholesaleTodayWorkspacePage(
-        key: ValueKey(
-          'wholesale-today-$todayRefreshKey',
-        ),
-        account: account,
-        onOpenShop: () => _select(1),
-        onOpenPlan: () => _select(2),
-        onOpenOrders: () => _select(3),
-        onOpenAccount: () => _select(4),
-      ),
-      WholesaleCatalogueScreen(
-        account: account,
-        embedded: true,
-      ),
-      WholesalePlanningAheadScreen(
-        account: account,
-        embedded: true,
-        initialForecastId: selectedIndex == 2
-            ? widget.initialRecordId
-            : null,
-      ),
-      MyWholesaleRequestsScreen(
-        embedded: true,
-        initialRequestId: selectedIndex == 3
-            ? widget.initialRecordId
-            : null,
-      ),
-      _WholesaleAccountWorkspacePage(
-        account: account,
-        onOpenShop: () => _select(1),
-        onOpenPlan: () => _select(2),
-        onOpenOrders: () => _select(3),
-        onBusinessUpdated: _reloadAccount,
-      ),
-    ];
-
-    const destinations = <FarmBottomOption>[
-      FarmBottomOption(
-        icon: Icon(
-          Icons.home_outlined,
-          size: 27,
-        ),
-        selectedIcon: Icon(
-          Icons.home_rounded,
-          size: 27,
-        ),
-        label: 'Home',
-      ),
-      FarmBottomOption(
-        icon: Icon(
-          Icons.storefront_outlined,
-          size: 27,
-        ),
-        selectedIcon: Icon(
-          Icons.storefront_rounded,
-          size: 27,
-        ),
-        label: 'Shop',
-      ),
-      FarmBottomOption(
-        icon: Icon(
-          Icons.event_note_outlined,
-          size: 27,
-        ),
-        selectedIcon: Icon(
-          Icons.event_note,
-          size: 27,
-        ),
-        label: 'Plan',
-      ),
-      FarmBottomOption(
-        icon: Icon(
-          Icons.receipt_long_outlined,
-          size: 27,
-        ),
-        selectedIcon: Icon(
-          Icons.receipt_long_rounded,
-          size: 27,
-        ),
-        label: 'Orders',
-      ),
-      FarmBottomOption(
-        icon: Icon(
-          Icons.business_outlined,
-          size: 27,
-        ),
-        selectedIcon: Icon(
-          Icons.business,
-          size: 27,
-        ),
-        label: 'Account',
-      ),
-    ];
-
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop || !mounted) return;
-
-        if (selectedIndex != 0) {
-          _select(0);
-        }
-        // Wholesale Home is the workspace root. Back never opens the
-        // workspace selector; use Switch Workspace for that action.
-      },
-      child: HpjResponsiveWorkspaceScaffold(
-        workspaceLabel: 'Business',
-        desktopMaxContentWidth: 1320,
-        backgroundColor: FarmColors.background,
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          leading: selectedIndex == 0
-              ? null
-              : IconButton(
-                  tooltip: 'Back to Business Home',
-                  onPressed: () => _select(0),
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                  ),
-                ),
-          title: Text(
-            titles[selectedIndex],
-          ),
-          actions: [
-            const HpjInboxActionButton(),
-            IconButton(
-              tooltip: 'Switch Workspace',
-              onPressed: _switchWorkspace,
-              icon: const Icon(
-                Icons.apps_rounded,
-              ),
-            ),
-            if (selectedIndex == 0)
-              IconButton(
-                tooltip: 'Refresh Home',
-                onPressed: () {
-                  setState(() {
-                    todayRefreshKey++;
-                  });
-                },
-                icon: const Icon(
-                  Icons.refresh_rounded,
-                ),
-              ),
-          ],
-        ),
-        body: IndexedStack(
-          index: selectedIndex,
-          children: pages,
-        ),
-        selectedIndex: selectedIndex,
-        destinations: destinations,
-        onSelected: _select,
-      ),
-    );
-  }
-}
-
-class _WholesaleTodayWorkspacePage
-    extends StatefulWidget {
-  final BusinessAccount account;
-  final VoidCallback onOpenShop;
-  final VoidCallback onOpenPlan;
-  final VoidCallback onOpenOrders;
-  final VoidCallback onOpenAccount;
-
-  const _WholesaleTodayWorkspacePage({
-    super.key,
-    required this.account,
-    required this.onOpenShop,
-    required this.onOpenPlan,
-    required this.onOpenOrders,
-    required this.onOpenAccount,
-  });
-
-  @override
-  State<_WholesaleTodayWorkspacePage> createState() =>
-      _WholesaleTodayWorkspacePageState();
-}
-
-class _WholesaleTodayWorkspacePageState
-    extends State<_WholesaleTodayWorkspacePage> {
-  int refreshKey = 0;
-
-  Future<void> _refresh() async {
-    setState(() {
-      refreshKey++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FarmPage(
-      child: RefreshIndicator(
-        onRefresh: _refresh,
-        child: ListView(
-          physics:
-              const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(
-            18,
-            16,
-            18,
-            120,
-          ),
-          children: [
-            KeyedSubtree(
-              key: ValueKey(
-                'wholesale-dashboard-$refreshKey',
-              ),
-              child: _ApprovedWholesaleDashboard(
-                account: widget.account,
-                onOpenShop: widget.onOpenShop,
-                onOpenPlan: widget.onOpenPlan,
-                onOpenOrders: widget.onOpenOrders,
-                onOpenAccount: widget.onOpenAccount,
-                onRetry: _refresh,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-
-
-class _WholesaleSettingsScreen extends StatefulWidget {
-  const _WholesaleSettingsScreen();
-
-  @override
-  State<_WholesaleSettingsScreen> createState() =>
-      _WholesaleSettingsScreenState();
-}
-
-class _WholesaleSettingsScreenState
-    extends State<_WholesaleSettingsScreen> {
-  UserExperiencePreferences preferences =
-      UserExperiencePreferences.defaults;
-  bool loading = true;
-  bool saving = false;
-  String? loadError;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    if (!mounted) return;
-
-    setState(() {
-      loading = true;
-      loadError = null;
-    });
-
-    try {
-      final next = await fetchCurrentUserExperiencePreferences(
-        throwOnError: true,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        preferences = next;
-        loading = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        loadError = friendlyAppError(error);
-      });
-    }
-  }
-
-  Future<void> _save() async {
-    if (saving) return;
-
-    setState(() => saving = true);
-
-    try {
-      await saveCurrentUserExperiencePreferences(preferences);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Wholesale settings saved.'),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    } finally {
-      if (mounted) setState(() => saving = false);
-    }
-  }
-
-  Widget _preferenceSwitch({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    bool isLast = false,
-  }) {
-    return Column(
-      children: [
-        SwitchListTile.adaptive(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 15,
-            vertical: 2,
-          ),
-          secondary: Icon(
-            icon,
-            color: FarmColors.primary,
-          ),
-          title: Text(
-            title,
-            style: const TextStyle(
-              color: FarmColors.ink,
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 10.2,
-              height: 1.3,
-            ),
-          ),
-          value: value,
-          onChanged: saving ? null : onChanged,
-        ),
-        if (!isLast) const Divider(height: 1),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Wholesale Settings'),
-      ),
-      body: FarmPage(
-        child: loading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : loadError != null
-                ? ListView(
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-                    children: [
-                      FarmCard(
-                        child: Column(
-                          children: [
-                            const Icon(
-                              Icons.sync_problem_outlined,
-                              color: FarmColors.warning,
-                              size: 34,
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Settings could not be loaded',
-                              style: TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              loadError!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 11,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                              onPressed: _load,
-                              icon: const Icon(Icons.refresh_rounded),
-                              label: const Text('Try again'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
-                    children: [
-                      const HpjCompactAccountHero(
-                        icon: Icons.tune_rounded,
-                        title: 'Business preferences',
-                        subtitle:
-                            'Choose the updates and market information most useful to your team.',
-                        badge: 'Wholesale',
-                        badgeColor: FarmColors.success,
-                      ),
-                      const SizedBox(height: 16),
-                      FarmCard(
-                        padding: EdgeInsets.zero,
-                        child: Column(
-                          children: [
-                            _preferenceSwitch(
-                              icon: Icons.local_shipping_outlined,
-                              title: 'Order & delivery alerts',
-                              subtitle:
-                                  'Updates about wholesale orders, preparation and delivery.',
-                              value: preferences.pushOrderUpdates,
-                              onChanged: (value) {
-                                setState(() {
-                                  preferences = preferences.copyWith(
-                                    pushOrderUpdates: value,
-                                  );
-                                });
-                              },
-                            ),
-                            _preferenceSwitch(
-                              icon: Icons.chat_bubble_outline_rounded,
-                              title: 'Messages',
-                              subtitle:
-                                  'Alerts when HPJ sends a business or support message.',
-                              value: preferences.pushMessages,
-                              onChanged: (value) {
-                                setState(() {
-                                  preferences = preferences.copyWith(
-                                    pushMessages: value,
-                                  );
-                                });
-                              },
-                            ),
-                            _preferenceSwitch(
-                              icon: Icons.price_change_outlined,
-                              title: 'Price & availability alerts',
-                              subtitle:
-                                  'Useful changes in product price or availability.',
-                              value: preferences.pushPriceDrops,
-                              onChanged: (value) {
-                                setState(() {
-                                  preferences = preferences.copyWith(
-                                    pushPriceDrops: value,
-                                  );
-                                });
-                              },
-                            ),
-                            _preferenceSwitch(
-                              icon: Icons.insights_outlined,
-                              title: 'Market intelligence',
-                              subtitle:
-                                  'Show agriculture and market intelligence in the Wholesale workspace.',
-                              value: preferences.showAgricultureNews,
-                              isLast: true,
-                              onChanged: (value) {
-                                setState(() {
-                                  preferences = preferences.copyWith(
-                                    showAgricultureNews: value,
-                                  );
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const FarmCard(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.info_outline_rounded,
-                              color: FarmColors.primary,
-                              size: 20,
-                            ),
-                            SizedBox(width: 9),
-                            Expanded(
-                              child: Text(
-                                'These are convenience preferences. Critical account, payment or security information remains available in HPJ Updates.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 10.5,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      PrimaryFarmButton(
-                        label: saving ? 'Saving...' : 'Save Settings',
-                        icon: Icons.save_outlined,
-                        onPressed: saving ? null : _save,
-                      ),
-                    ],
-                  ),
-      ),
-    );
-  }
-}
-
-
-class _WholesaleAccountWorkspacePage extends StatelessWidget {
-  final BusinessAccount account;
-  final VoidCallback onOpenShop;
-  final VoidCallback onOpenPlan;
-  final VoidCallback onOpenOrders;
-  final Future<void> Function() onBusinessUpdated;
-
-  const _WholesaleAccountWorkspacePage({
-    required this.account,
-    required this.onOpenShop,
-    required this.onOpenPlan,
-    required this.onOpenOrders,
-    required this.onBusinessUpdated,
-  });
-
-  void _open(BuildContext context, Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => screen),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final subtitleParts = <String>[
-      if (account.businessType.trim().isNotEmpty) account.businessType.trim(),
-      if (account.parish.trim().isNotEmpty) account.parish.trim(),
-    ];
-
-    return FarmPage(
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
-        children: [
-          HpjCompactAccountHero(
-            icon: Icons.business_outlined,
-            title: account.displayName,
-            subtitle: subtitleParts.join(' • '),
-            badge: 'Wholesale',
-            badgeColor: FarmColors.success,
-          ),
-          const SizedBox(height: 16),
-
-          FarmCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(15, 14, 15, 5),
-                  child: AccountSectionHeading(
-                    title: 'Business & purchasing',
-                    subtitle: 'Your purchasing setup and records.',
-                  ),
-                ),
-                AccountListTile(
-                  icon: Icons.business_center_outlined,
-                  title: 'Business Details',
-                  subtitle: 'Contacts, address and delivery preferences.',
-                  onTap: () async {
-                    final changed = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute<bool>(
-                        builder: (_) => _BusinessDetailsEditScreen(
-                          account: account,
-                        ),
-                      ),
-                    );
-
-                    if (changed == true) {
-                      await onBusinessUpdated();
-                    }
-                  },
-                ),
-                AccountListTile(
-                  icon: Icons.repeat_rounded,
-                  title: 'Repeat & Standing Orders',
-                  subtitle: 'Manage regular purchasing.',
-                  onTap: () => _open(
-                    context,
-                    WholesaleRepeatStandingOrdersScreen(account: account),
-                  ),
-                ),
-                AccountListTile(
-                  icon: Icons.payments_outlined,
-                  title: 'Invoices & Payments',
-                  subtitle: 'Balances, invoices and confirmations.',
-                  onTap: () => _open(
-                    context,
-                    BusinessWholesaleInvoicesScreen(account: account),
-                  ),
-                ),
-                AccountListTile(
-                  icon: Icons.tune_rounded,
-                  title: 'Settings',
-                  subtitle: 'Order, delivery, messages and market preferences.',
-                  onTap: () => _open(
-                    context,
-                    const _WholesaleSettingsScreen(),
-                  ),
-                ),
-                AccountListTile(
-                  icon: Icons.description_outlined,
-                  title: 'Activity Statement',
-                  subtitle: 'Planning, orders, invoices and payments.',
-                  isLast: true,
-                  onTap: () => _open(
-                    context,
-                    _WholesaleActivityStatementScreen(account: account),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          const _WholesaleWorkspaceSwitchCard(
-            currentWorkspace: 'wholesale',
-          ),
-          const SizedBox(height: 12),
-
-          FarmCard(
-            padding: EdgeInsets.zero,
-            child: AccountListTile(
-              icon: Icons.help_outline_rounded,
-              title: 'Help & information',
-              subtitle: 'Support, contact details and HPJ policies.',
-              isLast: true,
-              onTap: () => _open(
-                context,
-                const HpjAccountHelpInfoScreen(
-                  supportSubject: 'Wholesale support',
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          OutlinedButton.icon(
-            icon: const Icon(Icons.logout_outlined, size: 18),
-            label: const Text('Sign Out'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: FarmColors.danger,
-              side: BorderSide(
-                color: FarmColors.danger.withOpacity(.24),
-              ),
-              backgroundColor: FarmColors.card,
-              padding: const EdgeInsets.symmetric(
-                vertical: 13,
-                horizontal: 16,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  HpjMvpUi.controlRadius,
-                ),
-              ),
-            ),
-            onPressed: () async {
-              await clearPrivateSessionStateForGuestBrowsing();
-
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const MainNavigation(),
-                  ),
-                  (_) => false,
-                );
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-String _wholesaleStatementDate(
-  DateTime? value,
-) {
-  if (value == null) return '-';
-
-  return '${value.year}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
-}
-
-String _wholesaleStatementStatus(
-  String value,
-) {
-  final clean = value
-      .trim()
-      .replaceAll('_', ' ');
-
-  if (clean.isEmpty) return '-';
-
-  return clean
-      .split(' ')
-      .where((item) => item.isNotEmpty)
-      .map(
-        (item) =>
-            '${item[0].toUpperCase()}${item.substring(1)}',
-      )
-      .join(' ');
-}
-
-Future<Uint8List>
-    _buildWholesaleActivityStatementPdf(
-  BusinessAccount account,
-  _WholesaleTodaySnapshot data,
-) async {
-  final pdf = pw.Document();
-  final logo =
-      await _loadBusinessPortalPdfLogo();
-
-  final green =
-      PdfColor.fromInt(0xFF1F6B3A);
-  final softGreen =
-      PdfColor.fromInt(0xFFEAF3EC);
-
-  final totalPaid =
-      data.invoices.fold<double>(
-    0,
-    (sum, item) =>
-        sum + item.paidAmount,
-  );
-
-  final totalDue =
-      data.invoices.fold<double>(
-    0,
-    (sum, item) =>
-        sum + item.amountDue,
-  );
-
-  final completedOrders =
-      data.requests.where(
-    (item) {
-      final status =
-          item.status.trim().toLowerCase();
-
-      return status == 'completed' ||
-          status == 'delivered';
-    },
-  ).length;
-
-  pw.Widget metric(
-    String label,
-    String value,
-  ) {
-    return pw.Expanded(
-      child: pw.Container(
-        padding: const pw.EdgeInsets.all(9),
-        decoration: pw.BoxDecoration(
-          color: softGreen,
-          borderRadius:
-              pw.BorderRadius.circular(6),
-        ),
-        child: pw.Column(
-          crossAxisAlignment:
-              pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              label,
-              style: const pw.TextStyle(
-                fontSize: 7.5,
-                color: PdfColors.grey700,
-              ),
-            ),
-            pw.SizedBox(height: 4),
-            pw.Text(
-              _businessPortalPdfClean(
-                value,
-              ),
-              style: pw.TextStyle(
-                fontSize: 11,
-                fontWeight:
-                    pw.FontWeight.bold,
-                color: green,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  pw.Widget sectionTitle(String value) {
-    return pw.Container(
-      width: double.infinity,
-      padding:
-          const pw.EdgeInsets.symmetric(
-        vertical: 6,
-        horizontal: 8,
-      ),
-      decoration: pw.BoxDecoration(
-        color: softGreen,
-        borderRadius:
-            pw.BorderRadius.circular(5),
-      ),
-      child: pw.Text(
-        value,
-        style: pw.TextStyle(
-          fontSize: 10,
-          fontWeight: pw.FontWeight.bold,
-          color: green,
-        ),
-      ),
-    );
-  }
-
-  pw.Widget table({
-    required List<String> headers,
-    required List<List<String>> rows,
-  }) {
-    if (rows.isEmpty) {
-      return pw.Padding(
-        padding:
-            const pw.EdgeInsets.symmetric(
-          vertical: 8,
-        ),
-        child: pw.Text(
-          'No records available.',
-          style: const pw.TextStyle(
-            fontSize: 8.5,
-            color: PdfColors.grey600,
-          ),
-        ),
-      );
-    }
-
-    return pw.TableHelper.fromTextArray(
-      headers: headers,
-      data: rows
-          .map(
-            (row) => row
-                .map(
-                  _businessPortalPdfClean,
-                )
-                .toList(),
-          )
-          .toList(),
-      headerDecoration: pw.BoxDecoration(
-        color: PdfColors.grey200,
-      ),
-      headerStyle: pw.TextStyle(
-        fontSize: 7.5,
-        fontWeight: pw.FontWeight.bold,
-      ),
-      cellStyle:
-          const pw.TextStyle(fontSize: 7.2),
-      cellPadding:
-          const pw.EdgeInsets.all(4),
-      border: pw.TableBorder.all(
-        color: PdfColors.grey300,
-        width: 0.5,
-      ),
-    );
-  }
-
-  final forecasts =
-      List<WholesaleDemandForecast>.from(
-    data.forecasts,
-  )
-        ..sort(
-          (a, b) => b.needByDate
-              .compareTo(a.needByDate),
-        );
-
-  final requests =
-      List<WholesaleOrderRequest>.from(
-    data.requests,
-  )
-        ..sort(
-          (a, b) =>
-              (b.createdAt ??
-                      DateTime(2000))
-                  .compareTo(
-            a.createdAt ??
-                DateTime(2000),
-          ),
-        );
-
-  final invoices =
-      List<WholesaleInvoice>.from(
-    data.invoices,
-  )
-        ..sort(
-          (a, b) =>
-              (b.issueDate ??
-                      b.createdAt ??
-                      DateTime(2000))
-                  .compareTo(
-            a.issueDate ??
-                a.createdAt ??
-                DateTime(2000),
-          ),
-        );
-
-  pdf.addPage(
-    pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.fromLTRB(
-        32,
-        30,
-        32,
-        34,
-      ),
-      footer: (context) => pw.Column(
-        children: [
-          pw.Divider(
-            color: PdfColors.grey300,
-          ),
-          pw.Row(
-            mainAxisAlignment:
-                pw.MainAxisAlignment
-                    .spaceBetween,
-            children: [
-              pw.Text(
-                'The Harvest Place Ja',
-                style: const pw.TextStyle(
-                  fontSize: 7,
-                  color: PdfColors.grey600,
-                ),
-              ),
-              pw.Text(
-                'Page ${context.pageNumber} of ${context.pagesCount}',
-                style: const pw.TextStyle(
-                  fontSize: 7,
-                  color: PdfColors.grey600,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      build: (context) => [
-        _businessPortalPdfHeader(
-          logo: logo,
-          title:
-              'BUSINESS ACTIVITY STATEMENT',
-          reference:
-              _wholesaleStatementDate(
-            DateTime.now(),
-          ),
-        ),
-
-        pw.SizedBox(height: 14),
-
-        pw.Container(
-          width: double.infinity,
-          padding:
-              const pw.EdgeInsets.all(10),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(
-              color: PdfColors.grey300,
-            ),
-            borderRadius:
-                pw.BorderRadius.circular(6),
-          ),
-          child: pw.Column(
-            crossAxisAlignment:
-                pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                _businessPortalPdfClean(
-                  account.displayName,
-                ),
-                style: pw.TextStyle(
-                  fontSize: 10.5,
-                  fontWeight:
-                      pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 3),
-              pw.Text(
-                _businessPortalPdfClean(
-                  [
-                    if (account.parish
-                        .trim()
-                        .isNotEmpty)
-                      account.parish,
-                    if (account.phone
-                        .trim()
-                        .isNotEmpty)
-                      account.phone,
-                  ].join(' | '),
-                ),
-                style: const pw.TextStyle(
-                  fontSize: 8,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        pw.SizedBox(height: 12),
-
-        pw.Row(
-          children: [
-            metric(
-              'Future needs',
-              '${data.forecasts.length}',
-            ),
-            pw.SizedBox(width: 7),
-            metric(
-              'Orders completed',
-              '$completedOrders',
-            ),
-            pw.SizedBox(width: 7),
-            metric(
-              'Payments recorded',
-              formatJmd(totalPaid),
-            ),
-          ],
-        ),
-
-        pw.SizedBox(height: 7),
-
-        pw.Row(
-          children: [
-            metric(
-              'Orders placed',
-              '${data.requests.length}',
-            ),
-            pw.SizedBox(width: 7),
-            metric(
-              'Invoices',
-              '${data.invoices.length}',
-            ),
-            pw.SizedBox(width: 7),
-            metric(
-              'Amount due',
-              formatJmd(totalDue),
-            ),
-          ],
-        ),
-
-        pw.SizedBox(height: 18),
-        sectionTitle(
-          'PLANNING AHEAD HISTORY',
-        ),
-        pw.SizedBox(height: 6),
-        table(
-          headers: const [
-            'Product',
-            'Quantity',
-            'Need by',
-            'Status',
-          ],
-          rows: forecasts
-              .take(30)
-              .map(
-                (item) => [
-                  item.productName,
-                  item.formattedQuantity,
-                  _wholesaleStatementDate(
-                    item.needByDate,
-                  ),
-                  item.statusLabel,
-                ],
-              )
-              .toList(),
-        ),
-
-        pw.SizedBox(height: 16),
-        sectionTitle(
-          'WHOLESALE ORDER HISTORY',
-        ),
-        pw.SizedBox(height: 6),
-        table(
-          headers: const [
-            'Created',
-            'Reference',
-            'Estimate',
-            'Status',
-          ],
-          rows: requests
-              .take(30)
-              .map(
-                (item) => [
-                  _wholesaleStatementDate(
-                    item.createdAt,
-                  ),
-                  item.shortId,
-                  formatJmd(
-                    item.quotedTotal ??
-                        item.subtotalEstimate,
-                  ),
-                  _wholesaleStatementStatus(
-                    item.status,
-                  ),
-                ],
-              )
-              .toList(),
-        ),
-
-        pw.SizedBox(height: 16),
-        sectionTitle(
-          'INVOICE & PAYMENT HISTORY',
-        ),
-        pw.SizedBox(height: 6),
-        table(
-          headers: const [
-            'Date',
-            'Invoice',
-            'Total',
-            'Paid',
-            'Due',
-            'Status',
-          ],
-          rows: invoices
-              .take(30)
-              .map(
-                (item) => [
-                  _wholesaleStatementDate(
-                    item.issueDate ??
-                        item.createdAt,
-                  ),
-                  item.invoiceNumber,
-                  formatJmd(
-                    item.totalAmount,
-                  ),
-                  formatJmd(
-                    item.paidAmount,
-                  ),
-                  formatJmd(
-                    item.amountDue,
-                  ),
-                  item.paymentStatusLabel,
-                ],
-              )
-              .toList(),
-        ),
-
-        pw.SizedBox(height: 18),
-
-        pw.Container(
-          padding:
-              const pw.EdgeInsets.all(9),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.grey100,
-            borderRadius:
-                pw.BorderRadius.circular(5),
-          ),
-          child: pw.Text(
-            'This statement is a record of activity held in The Harvest Place Ja system. '
-            'It is not a bank statement, audited financial statement, credit rating or tax certificate.',
-            style: const pw.TextStyle(
-              fontSize: 7.4,
-              color: PdfColors.grey700,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  return pdf.save();
-}
-
-class _WholesaleActivityStatementScreen
-    extends StatefulWidget {
-  final BusinessAccount account;
-
-  const _WholesaleActivityStatementScreen({
-    required this.account,
-  });
-
-  @override
-  State<_WholesaleActivityStatementScreen>
-      createState() =>
-          _WholesaleActivityStatementScreenState();
-}
-
-class _WholesaleActivityStatementScreenState
-    extends State<
-        _WholesaleActivityStatementScreen> {
-  late Future<_WholesaleTodaySnapshot>
-      future;
-
-  bool exporting = false;
-
-  @override
-  void initState() {
-    super.initState();
-
-    future =
-        fetchWholesaleTodaySnapshot();
-  }
-
-  Future<void> _refresh() async {
-    setState(() {
-      future =
-          fetchWholesaleTodaySnapshot();
-    });
-
-    await future;
-  }
-
-  Future<void> _printOrSave(
-    _WholesaleTodaySnapshot data,
-  ) async {
-    if (exporting) return;
-
-    setState(() {
-      exporting = true;
-    });
-
-    try {
-      final bytes =
-          await _buildWholesaleActivityStatementPdf(
-        widget.account,
-        data,
-      );
-
-      await Printing.layoutPdf(
-        onLayout: (_) async => bytes,
-        name:
-            'HPJ_Business_Activity_Statement.pdf',
-      );
-    } catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            friendlyAppError(error),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          exporting = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _share(
-    _WholesaleTodaySnapshot data,
-  ) async {
-    if (exporting) return;
-
-    setState(() {
-      exporting = true;
-    });
-
-    try {
-      final bytes =
-          await _buildWholesaleActivityStatementPdf(
-        widget.account,
-        data,
-      );
-
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename:
-            'HPJ_Business_Activity_Statement.pdf',
-      );
-    } catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            friendlyAppError(error),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          exporting = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text(
-          'Business Activity Statement',
-        ),
-      ),
-      body:
-          FutureBuilder<_WholesaleTodaySnapshot>(
-        future: future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-                  ConnectionState.waiting &&
-              snapshot.data == null) {
-            return const Center(
-              child:
-                  CircularProgressIndicator(),
-            );
-          }
-
-          if (snapshot.hasError ||
-              snapshot.data == null) {
-            return Center(
-              child: Padding(
-                padding:
-                    const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize:
-                      MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Your business statement could not be loaded.',
-                      textAlign:
-                          TextAlign.center,
-                    ),
-                    const SizedBox(
-                      height: 12,
-                    ),
-                    OutlinedButton(
-                      onPressed: _refresh,
-                      child: const Text(
-                        'Try Again',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final data = snapshot.data!;
-
-          final totalPaid =
-              data.invoices.fold<double>(
-            0,
-            (sum, item) =>
-                sum + item.paidAmount,
-          );
-
-          final totalDue =
-              data.invoices.fold<double>(
-            0,
-            (sum, item) =>
-                sum + item.amountDue,
-          );
-
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView(
-              padding:
-                  const EdgeInsets.fromLTRB(
-                18,
-                16,
-                18,
-                32,
-              ),
-              children: [
-                FarmCard(
-                  padding:
-                      const EdgeInsets.all(
-                    16,
-                  ),
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
-                    children: [
-                      Text(
-                        widget.account
-                            .displayName,
-                        style:
-                            const TextStyle(
-                          color:
-                              FarmColors.ink,
-                          fontSize: 17,
-                          fontWeight:
-                              FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(
-                        height: 4,
-                      ),
-                      const Text(
-                        'Your own HPJ planning, purchasing and payment record.',
-                        style: TextStyle(
-                          color: FarmColors
-                              .mutedText,
-                          fontSize: 10.2,
-                          height: 1.35,
-                          fontWeight:
-                              FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(
-                        height: 14,
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child:
-                                _WholesaleStatementMetric(
-                              label:
-                                  'Future needs',
-                              value:
-                                  '${data.forecasts.length}',
-                            ),
-                          ),
-                          const SizedBox(
-                            width: 8,
-                          ),
-                          Expanded(
-                            child:
-                                _WholesaleStatementMetric(
-                              label:
-                                  'Orders',
-                              value:
-                                  '${data.requests.length}',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(
-                        height: 8,
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child:
-                                _WholesaleStatementMetric(
-                              label:
-                                  'Payments recorded',
-                              value:
-                                  formatJmd(totalPaid),
-                            ),
-                          ),
-                          const SizedBox(
-                            width: 8,
-                          ),
-                          Expanded(
-                            child:
-                                _WholesaleStatementMetric(
-                              label:
-                                  'Amount due',
-                              value:
-                                  formatJmd(totalDue),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                FarmCard(
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
-                    children: [
-                      const Text(
-                        'Export your record',
-                        style: TextStyle(
-                          color:
-                              FarmColors.ink,
-                          fontSize: 13,
-                          fontWeight:
-                              FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(
-                        height: 4,
-                      ),
-                      const Text(
-                        'Keep a PDF copy for your internal records or share it with the appropriate person in your business.',
-                        style: TextStyle(
-                          color: FarmColors
-                              .mutedText,
-                          fontSize: 9.6,
-                          height: 1.35,
-                          fontWeight:
-                              FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(
-                        height: 12,
-                      ),
-                      SizedBox(
-                        width:
-                            double.infinity,
-                        child: ElevatedButton
-                            .icon(
-                          onPressed: exporting
-                              ? null
-                              : () =>
-                                  _printOrSave(
-                                    data,
-                                  ),
-                          icon: const Icon(
-                            Icons
-                                .picture_as_pdf_outlined,
-                          ),
-                          label: Text(
-                            exporting
-                                ? 'Preparing...'
-                                : 'View / Save PDF',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(
-                        height: 7,
-                      ),
-                      SizedBox(
-                        width:
-                            double.infinity,
-                        child:
-                            OutlinedButton.icon(
-                          onPressed: exporting
-                              ? null
-                              : () =>
-                                  _share(
-                                    data,
-                                  ),
-                          icon: const Icon(
-                            Icons.share_outlined,
-                          ),
-                          label:
-                              const Text(
-                            'Share PDF',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                Container(
-                  padding:
-                      const EdgeInsets.all(
-                    12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(
-                      0xFFF0F4EC,
-                    ),
-                    borderRadius:
-                        BorderRadius.circular(
-                      15,
-                    ),
-                    border: Border.all(
-                      color: const Color(
-                        0xFFDCE4D8,
-                      ),
-                    ),
-                  ),
-                  child: const Text(
-                    'This is an HPJ activity record, not a bank statement, audited financial statement, credit rating or tax certificate.',
-                    style: TextStyle(
-                      color: FarmColors
-                          .mutedText,
-                      fontSize: 9.4,
-                      height: 1.35,
-                      fontWeight:
-                          FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _WholesaleStatementMetric
-    extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _WholesaleStatementMetric({
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding:
-          const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: FarmColors.background,
-        borderRadius:
-            BorderRadius.circular(14),
-        border: Border.all(
-          color: FarmColors.line,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 8.7,
-              fontWeight:
-                  FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: FarmColors.ink,
-              fontSize: 13,
-              fontWeight:
-                  FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-class _WholesaleWorkspaceSwitchCard extends StatelessWidget {
-  final String currentWorkspace;
-
-  const _WholesaleWorkspaceSwitchCard({
-    required this.currentWorkspace,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 1),
-      child: HpjMvpListRow(
-        icon: Icons.apps_rounded,
-        title: 'Switch workspace',
-        subtitle: 'Open another approved HPJ workspace.',
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => OwnerWorkspaceSwitcherScreen(
-                currentWorkspace: currentWorkspace,
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-
-class _WholesaleHeroCard extends StatelessWidget {
-  const _WholesaleHeroCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-          ],
-        ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: FarmColors.deepGreen.withOpacity(0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.storefront_outlined, color: Colors.white, size: 34),
-          SizedBox(height: 16),
-          Text(
-            'Fresh produce for your business.',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 25,
-              fontWeight: FontWeight.w900,
-              height: 1.05,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Wholesale pricing, bulk quantities, organised requests, and dependable Jamaican farm supply.',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w700,
-              height: 1.35,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class BusinessApplicationForm extends StatefulWidget {
-  final BusinessAccount? existing;
-  final Future<void> Function() onSubmitted;
-
-  const BusinessApplicationForm({
-    super.key,
-    this.existing,
-    required this.onSubmitted,
-  });
-
-  @override
-  State<BusinessApplicationForm> createState() =>
-      _BusinessApplicationFormState();
-}
-
-class _BusinessApplicationFormState extends State<BusinessApplicationForm> {
-  late final TextEditingController businessNameController;
-  late final TextEditingController contactController;
-  late final TextEditingController phoneController;
-  late final TextEditingController whatsappController;
-  late final TextEditingController addressController;
-  late final TextEditingController parishController;
-  late final TextEditingController registrationController;
-  late final TextEditingController spendController;
-  String businessType = 'Restaurant / Food Service';
-  final Set<String> selectedDays = <String>{};
-  bool saving = false;
-
-  static const List<String> businessTypes = <String>[
-    'Restaurant / Food Service',
-    'Hotel / Guesthouse',
-    'School / Institution',
-    'Supermarket / Shop',
-    'Caterer',
-    'Juice Bar',
-    'Food Vendor',
-    'Church / Community Group',
-    'Other',
-  ];
-
-  static const List<String> deliveryDays = <String>[
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    final account = widget.existing;
-    final user = supabase.auth.currentUser;
-    final metadata = user?.userMetadata ?? const <String, dynamic>{};
-
-    businessNameController = TextEditingController(
-      text:
-          account?.businessName ?? (metadata['business_name'] ?? '').toString(),
-    );
-    contactController = TextEditingController(
-      text: account?.contactName ?? (metadata['full_name'] ?? '').toString(),
-    );
-    phoneController = TextEditingController(
-      text: account?.phone ?? (metadata['business_phone'] ?? '').toString(),
-    );
-    whatsappController = TextEditingController(text: account?.whatsapp ?? '');
-    addressController = TextEditingController(text: account?.address ?? '');
-    parishController = TextEditingController(
-      text: account?.parish ?? (metadata['business_parish'] ?? '').toString(),
-    );
-    registrationController = TextEditingController(
-      text: account?.registrationNumber ?? '',
-    );
-    spendController = TextEditingController(
-      text: account != null && account.expectedWeeklySpend > 0
-          ? account.expectedWeeklySpend.toStringAsFixed(0)
-          : '',
-    );
-
-    final candidateType =
-        account?.businessType ?? (metadata['business_type'] ?? '').toString();
-    if (businessTypes.contains(candidateType)) {
-      businessType = candidateType;
-    }
-
-    selectedDays.addAll(account?.preferredDeliveryDays ?? const <String>[]);
-  }
-
-  @override
-  void dispose() {
-    businessNameController.dispose();
-    contactController.dispose();
-    phoneController.dispose();
-    whatsappController.dispose();
-    addressController.dispose();
-    parishController.dispose();
-    registrationController.dispose();
-    spendController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (saving) return;
-
-    final spend =
-        double.tryParse(spendController.text.trim().replaceAll(',', '')) ?? 0;
-
-    setState(() => saving = true);
-    try {
-      await submitBusinessApplication(
-        businessName: businessNameController.text,
-        businessType: businessType,
-        contactName: contactController.text,
-        phone: phoneController.text,
-        whatsapp: whatsappController.text,
-        address: addressController.text,
-        parish: parishController.text,
-        registrationNumber: registrationController.text,
-        expectedWeeklySpend: spend,
-        preferredDeliveryDays: selectedDays.toList(),
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Business application submitted for review.',
-          ),
-        ),
-      );
-      await widget.onSubmitted();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error.toString().replaceFirst('Exception: ', ''),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Business shopper application',
-            style: TextStyle(
-              color: FarmColors.ink,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Tell us about your organisation. You can continue shopping at retail prices while the application is reviewed.',
-            style: TextStyle(
-              color: FarmColors.mutedText,
-              fontWeight: FontWeight.w700,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 18),
-          TextField(
-            controller: businessNameController,
-            decoration: const InputDecoration(
-              labelText: 'Business name *',
-              prefixIcon: Icon(Icons.store_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: businessType,
-            decoration: const InputDecoration(
-              labelText: 'Business type',
-              prefixIcon: Icon(Icons.category_outlined),
-            ),
-            items: businessTypes
-                .map(
-                  (type) => DropdownMenuItem<String>(
-                    value: type,
-                    child: Text(type),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value != null) setState(() => businessType = value);
-            },
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: contactController,
-            decoration: const InputDecoration(
-              labelText: 'Contact person *',
-              prefixIcon: Icon(Icons.person_outline),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Business phone *',
-              prefixIcon: Icon(Icons.phone_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: whatsappController,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'WhatsApp number',
-              prefixIcon: Icon(Icons.chat_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: addressController,
-            maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Business address',
-              prefixIcon: Icon(Icons.location_on_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          JamaicaParishDropdown(
-            controller: parishController,
-            label: 'Parish *',
-            enabled: !saving,
-            prefixIcon: Icons.map_outlined,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: registrationController,
-            decoration: const InputDecoration(
-              labelText: 'TRN or registration number (optional)',
-              prefixIcon: Icon(Icons.badge_outlined),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: spendController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Expected weekly spend (J\$)',
-              prefixIcon: Icon(Icons.payments_outlined),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Preferred delivery days',
-            style: TextStyle(
-              color: FarmColors.ink,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: deliveryDays.map((day) {
-              final selected = selectedDays.contains(day);
-              return FilterChip(
-                label: Text(day),
-                selected: selected,
-                onSelected: (value) {
-                  setState(() {
-                    if (value) {
-                      selectedDays.add(day);
-                    } else {
-                      selectedDays.remove(day);
-                    }
-                  });
-                },
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.send_outlined),
-              label: Text(
-                saving
-                    ? 'Submitting...'
-                    : widget.existing == null
-                        ? 'Submit Application'
-                        : 'Update Application',
-              ),
-              onPressed: saving ? null : _submit,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BusinessApplicationStatusCard extends StatefulWidget {
-  final BusinessAccount account;
-  final Future<void> Function() onUpdated;
-
-  const _BusinessApplicationStatusCard({
-    required this.account,
-    required this.onUpdated,
-  });
-
-  @override
-  State<_BusinessApplicationStatusCard> createState() =>
-      _BusinessApplicationStatusCardState();
-}
-
-class _BusinessApplicationStatusCardState
-    extends State<_BusinessApplicationStatusCard> {
-  bool editing = false;
-
-  @override
-  Widget build(BuildContext context) {
-    if (editing) {
-      return BusinessApplicationForm(
-        existing: widget.account,
-        onSubmitted: () async {
-          setState(() => editing = false);
-          await widget.onUpdated();
-        },
-      );
-    }
-
-    final account = widget.account;
-    final color = businessAccountStatusColor(account.status);
-
-    return FarmCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.business_center_outlined, color: color),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      account.displayName,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      businessAccountStatusLabel(account.status),
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            account.isPending
-                ? 'Your application is being reviewed. You may continue using normal retail shopping while you wait.'
-                : account.isRejected
-                    ? 'Please review your business details and submit an update.'
-                    : 'Wholesale access is currently paused. Contact support for assistance.',
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontWeight: FontWeight.w700,
-              height: 1.35,
-            ),
-          ),
-          if (account.adminNotes.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: FarmColors.cardSoft,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: FarmColors.line),
-              ),
-              child: Text(
-                account.adminNotes,
-                style: const TextStyle(
-                  color: FarmColors.ink,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text('Review Business Details'),
-              onPressed: () => setState(() => editing = true),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// =====================================================
-// PHASE 3N — BUSINESS ACCOUNT INVOICE PORTAL
-// Approved wholesale businesses can view only their own
-// issued invoices, balances and payment receipts.
-// =====================================================
-
-String _businessPortalPdfClean(
-  String? value, {
-  String fallback = '',
-}) {
-  final clean = value
-          ?.replaceAll('•', '-')
-          .replaceAll('–', '-')
-          .replaceAll('—', '-')
-          .replaceAll('\u00A0', ' ')
-          .trim() ??
-      '';
-
-  return clean.isEmpty ? fallback : clean;
-}
-
-String _businessPortalPdfDate(DateTime? value) {
-  if (value == null) return 'Not available';
-
-  final date = value.toLocal();
-  const months = <String>[
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  return '${months[date.month - 1]} ${date.day}, ${date.year}';
-}
-
-String _businessPortalPdfMoney(double value) {
-  return 'J\$${value.toStringAsFixed(2)}';
-}
-
-String _businessPortalShortId(String value) {
-  final clean = value.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
-
-  return clean.length <= 8 ? clean : clean.substring(0, 8);
-}
-
-Future<pw.MemoryImage?> _loadBusinessPortalPdfLogo() async {
-  try {
-    final bytes = await rootBundle.load('lib/assets/images/logo.png');
-    return pw.MemoryImage(bytes.buffer.asUint8List());
-  } catch (_) {
-    return null;
-  }
-}
-
-pw.Widget _businessPortalPdfHeader({
-  required pw.MemoryImage? logo,
-  required String title,
-  required String reference,
-}) {
-  final green = PdfColor.fromInt(0xFF1F6B3A);
-  final deepGreen = PdfColor.fromInt(0xFF124D32);
-
-  return pw.Column(
-    children: [
-      pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.center,
-        children: [
-          pw.SizedBox(
-            width: 62,
-            height: 62,
-            child: logo != null
-                ? pw.Image(logo, fit: pw.BoxFit.contain)
-                : pw.Center(
-                    child: pw.Text(
-                      'HPJ',
-                      style: pw.TextStyle(
-                        fontSize: 19,
-                        fontWeight: pw.FontWeight.bold,
-                        color: green,
-                      ),
-                    ),
-                  ),
-          ),
-          pw.SizedBox(width: 12),
-          pw.Container(width: 2, height: 56, color: green),
-          pw.SizedBox(width: 14),
-          pw.Expanded(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'THE HARVEST PLACE JA',
-                  style: pw.TextStyle(
-                    fontSize: 20,
-                    fontWeight: pw.FontWeight.bold,
-                    color: deepGreen,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
-                  style: const pw.TextStyle(
-                    fontSize: 9,
-                    color: PdfColors.grey700,
-                  ),
-                ),
-                pw.SizedBox(height: 3),
-                pw.Text(
-                  'Fresh - Local - Jamaican',
-                  style: pw.TextStyle(
-                    fontSize: 8.5,
-                    fontWeight: pw.FontWeight.bold,
-                    color: green,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      pw.SizedBox(height: 10),
-      pw.Container(height: 2, width: double.infinity, color: green),
-      pw.SizedBox(height: 9),
-      pw.Row(
-        children: [
-          pw.Expanded(
-            child: pw.Text(
-              title,
-              style: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-                color: green,
-                letterSpacing: .35,
-              ),
-            ),
-          ),
-          pw.Text(
-            reference,
-            style: pw.TextStyle(
-              fontSize: 10,
-              fontWeight: pw.FontWeight.bold,
-              color: deepGreen,
-            ),
-          ),
-        ],
-      ),
-    ],
-  );
-}
-
-pw.Widget _businessPortalPdfInfoBox({
-  required String title,
-  required List<String> lines,
-}) {
-  final green = PdfColor.fromInt(0xFF1F6B3A);
-
-  return pw.Container(
-    padding: const pw.EdgeInsets.all(12),
-    decoration: pw.BoxDecoration(
-      border: pw.Border.all(color: PdfColor.fromInt(0xFFD8E8D8)),
-      borderRadius: pw.BorderRadius.circular(9),
-    ),
-    child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          title,
-          style: pw.TextStyle(
-            fontSize: 10.5,
-            fontWeight: pw.FontWeight.bold,
-            color: green,
-          ),
-        ),
-        pw.SizedBox(height: 7),
-        ...lines.where((line) => line.trim().isNotEmpty).map(
-              (line) => pw.Padding(
-                padding: const pw.EdgeInsets.only(bottom: 3),
-                child: pw.Text(
-                  _businessPortalPdfClean(line),
-                  style: const pw.TextStyle(
-                    fontSize: 9,
-                    color: PdfColors.grey800,
-                  ),
-                ),
-              ),
-            ),
-      ],
-    ),
-  );
-}
-
-pw.Widget _businessPortalPdfAmountRow(
-  String label,
-  String value, {
-  bool strong = false,
-  bool green = false,
-}) {
-  return pw.Padding(
-    padding: const pw.EdgeInsets.only(bottom: 5),
-    child: pw.Row(
-      children: [
-        pw.Expanded(
-          child: pw.Text(
-            label,
-            style: pw.TextStyle(
-              fontSize: strong ? 10.5 : 9.5,
-              fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal,
-            ),
-          ),
-        ),
-        pw.Text(
-          value,
-          style: pw.TextStyle(
-            fontSize: strong ? 11.5 : 9.5,
-            fontWeight: strong ? pw.FontWeight.bold : pw.FontWeight.normal,
-            color: green ? PdfColor.fromInt(0xFF1F6B3A) : PdfColors.black,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-Future<Uint8List> _buildBusinessPortalInvoicePdf(
-  WholesaleInvoice invoice,
-) async {
-  final pdf = pw.Document();
-  final logo = await _loadBusinessPortalPdfLogo();
-  final green = PdfColor.fromInt(0xFF1F6B3A);
-  final softGreen = PdfColor.fromInt(0xFFEAF3EC);
-  final requestRef = _businessPortalShortId(invoice.requestId);
-
-  pw.Widget cell(
-    String value, {
-    bool bold = false,
-    pw.TextAlign align = pw.TextAlign.left,
-  }) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-      child: pw.Text(
-        _businessPortalPdfClean(value),
-        textAlign: align,
-        style: pw.TextStyle(
-          fontSize: 8.5,
-          fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-        ),
-      ),
-    );
-  }
-
-  pdf.addPage(
-    pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.fromLTRB(34, 32, 34, 34),
-      footer: (context) => pw.Column(
-        children: [
-          pw.Divider(color: PdfColors.grey400),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text(
-                'The Harvest Place Ja',
-                style: const pw.TextStyle(
-                  fontSize: 7.5,
-                  color: PdfColors.grey600,
-                ),
-              ),
-              pw.Text(
-                'Page ${context.pageNumber} of ${context.pagesCount}',
-                style: const pw.TextStyle(
-                  fontSize: 7.5,
-                  color: PdfColors.grey600,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      build: (context) => [
-        _businessPortalPdfHeader(
-          logo: logo,
-          title: 'WHOLESALE INVOICE',
-          reference: invoice.invoiceNumber,
-        ),
-        pw.SizedBox(height: 18),
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Expanded(
-              child: _businessPortalPdfInfoBox(
-                title: 'BILL TO',
-                lines: [
-                  invoice.businessName.trim().isEmpty
-                      ? 'Wholesale Business'
-                      : invoice.businessName,
-                  invoice.contactName,
-                  invoice.contactPhone,
-                  invoice.billingAddress,
-                  invoice.billingParish,
-                ],
-              ),
-            ),
-            pw.SizedBox(width: 12),
-            pw.Expanded(
-              child: _businessPortalPdfInfoBox(
-                title: 'INVOICE DETAILS',
-                lines: [
-                  'Invoice: ${invoice.invoiceNumber}',
-                  'Request: #$requestRef',
-                  'Issued: ${_businessPortalPdfDate(invoice.issueDate ?? invoice.issuedAt)}',
-                  'Due: ${_businessPortalPdfDate(invoice.dueDate)}',
-                  'Terms: ${invoice.paymentTermsDays} day${invoice.paymentTermsDays == 1 ? '' : 's'}',
-                  'Payment: ${invoice.paymentStatusLabel}',
-                ],
-              ),
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 18),
-        pw.Text(
-          'INVOICE ITEMS',
-          style: pw.TextStyle(
-            fontSize: 11,
-            fontWeight: pw.FontWeight.bold,
-            color: green,
-          ),
-        ),
-        pw.SizedBox(height: 7),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.grey300, width: .6),
-          columnWidths: const {
-            0: pw.FlexColumnWidth(3.6),
-            1: pw.FlexColumnWidth(1.4),
-            2: pw.FlexColumnWidth(1.4),
-            3: pw.FlexColumnWidth(1.6),
-            4: pw.FlexColumnWidth(1.7),
-          },
-          children: [
-            pw.TableRow(
-              decoration: pw.BoxDecoration(color: softGreen),
-              children: [
-                cell('Product', bold: true),
-                cell('Qty', bold: true),
-                cell('Unit', bold: true),
-                cell('Unit Price', bold: true, align: pw.TextAlign.right),
-                cell('Total', bold: true, align: pw.TextAlign.right),
-              ],
-            ),
-            ...invoice.items.map(
-              (item) => pw.TableRow(
-                children: [
-                  cell(item.productName),
-                  cell(item.quantityLabel),
-                  cell(item.unit),
-                  cell(
-                    _businessPortalPdfMoney(item.unitPrice),
-                    align: pw.TextAlign.right,
-                  ),
-                  cell(
-                    _businessPortalPdfMoney(item.lineTotal),
-                    bold: true,
-                    align: pw.TextAlign.right,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 18),
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Expanded(
-              flex: 5,
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  if (invoice.customerNote.trim().isNotEmpty) ...[
-                    pw.Text(
-                      'NOTE',
-                      style: pw.TextStyle(
-                        fontSize: 10,
-                        fontWeight: pw.FontWeight.bold,
-                        color: green,
-                      ),
-                    ),
-                    pw.SizedBox(height: 5),
-                    pw.Text(
-                      _businessPortalPdfClean(invoice.customerNote),
-                      style: const pw.TextStyle(fontSize: 9),
-                    ),
-                    pw.SizedBox(height: 14),
-                  ],
-                  pw.Text(
-                    'PAYMENT REFERENCE',
-                    style: pw.TextStyle(
-                      fontSize: 10,
-                      fontWeight: pw.FontWeight.bold,
-                      color: green,
-                    ),
-                  ),
-                  pw.SizedBox(height: 5),
-                  pw.Text(
-                    'When paying by bank transfer, use ${invoice.invoiceNumber} as the payment reference.',
-                    style: const pw.TextStyle(fontSize: 8.5, height: 1.35),
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(width: 24),
-            pw.Expanded(
-              flex: 4,
-              child: pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.grey100,
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Column(
-                  children: [
-                    _businessPortalPdfAmountRow(
-                      'Subtotal',
-                      _businessPortalPdfMoney(invoice.subtotal),
-                    ),
-                    if (invoice.deliveryFee > 0)
-                      _businessPortalPdfAmountRow(
-                        'Delivery',
-                        _businessPortalPdfMoney(invoice.deliveryFee),
-                      ),
-                    if (invoice.discountAmount > 0)
-                      _businessPortalPdfAmountRow(
-                        'Discount',
-                        '-${_businessPortalPdfMoney(invoice.discountAmount)}',
-                      ),
-                    if (invoice.taxAmount > 0)
-                      _businessPortalPdfAmountRow(
-                        'Tax',
-                        _businessPortalPdfMoney(invoice.taxAmount),
-                      ),
-                    if (invoice.otherAmount > 0)
-                      _businessPortalPdfAmountRow(
-                        'Other',
-                        _businessPortalPdfMoney(invoice.otherAmount),
-                      ),
-                    pw.Divider(),
-                    _businessPortalPdfAmountRow(
-                      'TOTAL',
-                      _businessPortalPdfMoney(invoice.totalAmount),
-                      strong: true,
-                    ),
-                    if (invoice.paidAmount > 0)
-                      _businessPortalPdfAmountRow(
-                        'Paid',
-                        _businessPortalPdfMoney(invoice.paidAmount),
-                      ),
-                    _businessPortalPdfAmountRow(
-                      'BALANCE DUE',
-                      _businessPortalPdfMoney(invoice.amountDue),
-                      strong: true,
-                      green: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        if (invoice.payments.isNotEmpty) ...[
-          pw.SizedBox(height: 22),
-          pw.Text(
-            'PAYMENT HISTORY',
-            style: pw.TextStyle(
-              fontSize: 10,
-              fontWeight: pw.FontWeight.bold,
-              color: green,
-            ),
-          ),
-          pw.SizedBox(height: 7),
-          ...invoice.payments.map(
-            (payment) => pw.Container(
-              margin: const pw.EdgeInsets.only(bottom: 5),
-              padding: const pw.EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 6,
-              ),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.grey300),
-                borderRadius: pw.BorderRadius.circular(5),
-              ),
-              child: pw.Row(
-                children: [
-                  pw.Expanded(
-                    child: pw.Text(
-                      '${_businessPortalPdfDate(payment.paidAt)} - ${payment.methodLabel}'
-                      '${payment.paymentReference.isEmpty ? '' : ' - Ref: ${payment.paymentReference}'}',
-                      style: const pw.TextStyle(fontSize: 8),
-                    ),
-                  ),
-                  pw.Text(
-                    payment.isReversed
-                        ? 'REVERSED'
-                        : _businessPortalPdfMoney(payment.amount),
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                      color: payment.isReversed ? PdfColors.red700 : green,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-        pw.SizedBox(height: 24),
-        pw.Container(
-          width: double.infinity,
-          padding: const pw.EdgeInsets.symmetric(vertical: 8),
-          decoration: pw.BoxDecoration(
-            color: green,
-            borderRadius: pw.BorderRadius.circular(5),
-          ),
-          child: pw.Center(
-            child: pw.Text(
-              invoice.isPaid
-                  ? 'PAID IN FULL - THANK YOU'
-                  : 'Thank you for supporting Jamaican agriculture.',
-              style: pw.TextStyle(
-                color: PdfColors.white,
-                fontSize: 9,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  return pdf.save();
-}
-
-Future<Uint8List> _buildBusinessPortalReceiptPdf(
-  WholesaleInvoice invoice,
-  WholesaleInvoicePayment payment,
-) async {
-  if (payment.isReversed) {
-    throw Exception('A reversed payment does not have an active receipt.');
-  }
-
-  final pdf = pw.Document();
-  final logo = await _loadBusinessPortalPdfLogo();
-  final green = PdfColor.fromInt(0xFF1F6B3A);
-
-  final confirmed = invoice.payments.where((item) => item.isConfirmed).toList()
-    ..sort((a, b) {
-      final aDate = a.paidAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bDate = b.paidAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return aDate.compareTo(bDate);
-    });
-
-  double paidToDate = 0;
-  bool found = false;
-
-  for (final item in confirmed) {
-    paidToDate += item.amount;
-    if (item.id == payment.id) {
-      found = true;
-      break;
-    }
-  }
-
-  if (!found) paidToDate = invoice.paidAmount;
-
-  final balance = invoice.totalAmount - paidToDate;
-  final remaining = balance < 0 ? 0.0 : balance;
-  final receiptNumber = _businessPortalShortId(payment.id);
-
-  pdf.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(38),
-      build: (context) => pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          _businessPortalPdfHeader(
-            logo: logo,
-            title: 'OFFICIAL WHOLESALE PAYMENT RECEIPT',
-            reference: 'Receipt #$receiptNumber',
-          ),
-          pw.SizedBox(height: 22),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Expanded(
-                child: _businessPortalPdfInfoBox(
-                  title: 'RECEIVED FROM',
-                  lines: [
-                    invoice.businessName.trim().isEmpty
-                        ? 'Wholesale Business'
-                        : invoice.businessName,
-                    invoice.contactName,
-                    invoice.contactPhone,
-                  ],
-                ),
-              ),
-              pw.SizedBox(width: 12),
-              pw.Expanded(
-                child: _businessPortalPdfInfoBox(
-                  title: 'PAYMENT DETAILS',
-                  lines: [
-                    'Invoice: ${invoice.invoiceNumber}',
-                    'Date: ${_businessPortalPdfDate(payment.paidAt)}',
-                    'Method: ${payment.methodLabel}',
-                    if (payment.paymentReference.isNotEmpty)
-                      'Reference: ${payment.paymentReference}',
-                  ],
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 22),
-          pw.Container(
-            width: double.infinity,
-            padding: const pw.EdgeInsets.all(18),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromInt(0xFFEAF3EC),
-              borderRadius: pw.BorderRadius.circular(10),
-            ),
-            child: pw.Column(
-              children: [
-                pw.Text(
-                  'PAYMENT RECEIVED',
-                  style: pw.TextStyle(
-                    color: green,
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                pw.Text(
-                  _businessPortalPdfMoney(payment.amount),
-                  style: pw.TextStyle(
-                    color: green,
-                    fontSize: 27,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          pw.SizedBox(height: 22),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(14),
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.grey300),
-              borderRadius: pw.BorderRadius.circular(8),
-            ),
-            child: pw.Column(
-              children: [
-                _businessPortalPdfAmountRow(
-                  'Invoice Total',
-                  _businessPortalPdfMoney(invoice.totalAmount),
-                  strong: true,
-                ),
-                _businessPortalPdfAmountRow(
-                  'This Payment',
-                  _businessPortalPdfMoney(payment.amount),
-                  green: true,
-                ),
-                _businessPortalPdfAmountRow(
-                  'Paid To Date',
-                  _businessPortalPdfMoney(paidToDate),
-                ),
-                pw.Divider(),
-                _businessPortalPdfAmountRow(
-                  'Remaining Balance',
-                  _businessPortalPdfMoney(remaining),
-                  strong: true,
-                  green: remaining <= .01,
-                ),
-              ],
-            ),
-          ),
-          if (payment.paymentNote.trim().isNotEmpty) ...[
-            pw.SizedBox(height: 18),
-            pw.Text(
-              'PAYMENT NOTE',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: green,
-              ),
-            ),
-            pw.SizedBox(height: 5),
-            pw.Text(
-              _businessPortalPdfClean(payment.paymentNote),
-              style: const pw.TextStyle(fontSize: 9),
-            ),
-          ],
-          pw.Spacer(),
-          pw.Container(
-            width: double.infinity,
-            padding: const pw.EdgeInsets.symmetric(vertical: 10),
-            decoration: pw.BoxDecoration(
-              color: green,
-              borderRadius: pw.BorderRadius.circular(5),
-            ),
-            child: pw.Center(
-              child: pw.Text(
-                remaining <= .01
-                    ? 'PAID IN FULL'
-                    : 'PAYMENT RECEIVED - THANK YOU',
-                style: pw.TextStyle(
-                  color: PdfColors.white,
-                  fontSize: 11,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Center(
-            child: pw.Text(
-              'This receipt confirms payment recorded against ${invoice.invoiceNumber}.',
-              style: const pw.TextStyle(
-                fontSize: 8,
-                color: PdfColors.grey600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  return pdf.save();
-}
-
-class BusinessWholesaleInvoicesScreen extends StatefulWidget {
-  final BusinessAccount account;
-
-  const BusinessWholesaleInvoicesScreen({
-    super.key,
-    required this.account,
-  });
-
-  @override
-  State<BusinessWholesaleInvoicesScreen> createState() =>
-      _BusinessWholesaleInvoicesScreenState();
-}
-
-class _BusinessWholesaleInvoicesScreenState
-    extends State<BusinessWholesaleInvoicesScreen> {
-  late Future<List<WholesaleInvoice>> _future;
-  late Future<List<WholesalePaymentSubmission>> _submissionsFuture;
-  String _filter = 'all';
-
-  @override
-  void initState() {
-    super.initState();
-    _future = fetchMyWholesaleInvoices();
-    _submissionsFuture = fetchMyWholesalePaymentSubmissions();
-  }
-
-  Future<void> _reload() async {
-    final nextInvoices = fetchMyWholesaleInvoices();
-    final nextSubmissions = fetchMyWholesalePaymentSubmissions();
-
-    setState(() {
-      _future = nextInvoices;
-      _submissionsFuture = nextSubmissions;
-    });
-
-    await Future.wait<Object>([
-      nextInvoices,
-      nextSubmissions,
-    ]);
-  }
-
-  String _dateLabel(DateTime? value) {
-    if (value == null) return '—';
-    final date = value.toLocal();
-    return '${date.day.toString().padLeft(2, '0')}/'
-        '${date.month.toString().padLeft(2, '0')}/'
-        '${date.year}';
-  }
-
-  Color _paymentColor(WholesaleInvoice invoice) {
-    if (invoice.isPaid) return FarmColors.green;
-    if (invoice.isOverdue) return FarmColors.danger;
-    if (invoice.isPartiallyPaid) return FarmColors.warning;
-    return FarmColors.primary;
-  }
-
-  String _paymentLabel(WholesaleInvoice invoice) {
-    if (invoice.isOverdue) return 'OVERDUE';
-    return invoice.paymentStatusLabel.toUpperCase();
-  }
-
-  Widget _metric({
-    required String label,
-    required String value,
-  }) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 112),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-      decoration: BoxDecoration(
-        color: FarmColors.cardSoft,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: const TextStyle(
-              color: FarmColors.ink,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _amountRow({
-    required String label,
-    required String value,
-    bool strong = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: strong ? FarmColors.ink : FarmColors.mutedText,
-                fontSize: strong ? 11 : 10,
-                fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              color: strong ? FarmColors.ink : FarmColors.mutedText,
-              fontSize: strong ? 12 : 10,
-              fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _shareInvoice(WholesaleInvoice invoice) async {
-    try {
-      final bytes = await _buildBusinessPortalInvoicePdf(invoice);
-      final safeName = invoice.invoiceNumber.replaceAll(
-        RegExp(r'[^A-Za-z0-9_-]'),
-        '_',
-      );
-
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: '$safeName.pdf',
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not create invoice PDF: ${friendlyAppError(error)}',
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _shareReceipt(
-    WholesaleInvoice invoice,
-    WholesaleInvoicePayment payment,
-  ) async {
-    try {
-      final bytes = await _buildBusinessPortalReceiptPdf(invoice, payment);
-      final receiptId = _businessPortalShortId(payment.id);
-
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'HPJ-Wholesale-Receipt-$receiptId.pdf',
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not create receipt PDF: ${friendlyAppError(error)}',
-          ),
-        ),
-      );
-    }
-  }
-
-  List<WholesaleInvoice> _filtered(List<WholesaleInvoice> invoices) {
-    switch (_filter) {
-      case 'outstanding':
-        return invoices.where((invoice) => !invoice.isPaid).toList();
-      case 'paid':
-        return invoices.where((invoice) => invoice.isPaid).toList();
-      case 'overdue':
-        return invoices.where((invoice) => invoice.isOverdue).toList();
-      default:
-        return invoices;
-    }
-  }
-
-  WholesalePaymentSubmission? _latestSubmissionForInvoice(
-    WholesaleInvoice invoice,
-    List<WholesalePaymentSubmission> submissions,
-  ) {
-    final matches =
-        submissions.where((item) => item.invoiceId == invoice.id).toList()
-          ..sort((a, b) {
-            final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return bDate.compareTo(aDate);
-          });
-
-    return matches.isEmpty ? null : matches.first;
-  }
-
-  Future<void> _cancelPaymentConfirmation(
-    WholesalePaymentSubmission submission,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Cancel Payment Confirmation?'),
-        content: const Text(
-          'This removes the confirmation from HPJ\'s review queue. The invoice and any recorded payments are not changed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Back'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Cancel Confirmation'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await cancelWholesalePaymentConfirmation(submission);
-      await _reload();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment confirmation cancelled.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  Future<void> _submitPaymentProof(WholesaleInvoice invoice) async {
-    final amountController = TextEditingController(
-      text: invoice.amountDue.toStringAsFixed(2),
-    );
-    final referenceController = TextEditingController();
-    final noteController = TextEditingController();
-
-    String method = 'bank_transfer';
-    PickedProductImage? proofFile;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> chooseProof() async {
-              HpjImageSource source = HpjImageSource.gallery;
-
-              if (!kIsWeb) {
-                final selected = await showModalBottomSheet<HpjImageSource>(
-                  context: dialogContext,
-                  showDragHandle: true,
-                  builder: (sheetContext) => SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.camera_alt_outlined),
-                          title: const Text('Take payment proof photo'),
-                          onTap: () => Navigator.pop(
-                            sheetContext,
-                            HpjImageSource.camera,
-                          ),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.photo_library_outlined),
-                          title: const Text('Choose screenshot / image'),
-                          onTap: () => Navigator.pop(
-                            sheetContext,
-                            HpjImageSource.gallery,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ),
-                  ),
-                );
-
-                if (selected == null) return;
-                source = selected;
-              }
-
-              try {
-                final image = await pickProductImageFromDevice(
-                  source: source,
-                );
-
-                if (image != null) {
-                  setDialogState(() => proofFile = image);
-                }
-              } catch (error) {
-                if (!dialogContext.mounted) return;
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text(friendlyAppError(error))),
-                );
-              }
-            }
-
-            return AlertDialog(
-              title: Text('Confirm Payment • ${invoice.invoiceNumber}'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Balance due: ${invoice.formattedDue}',
-                      style: const TextStyle(
-                        color: FarmColors.green,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: amountController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Amount paid',
-                        prefixText: 'J\$ ',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: method,
-                      decoration: const InputDecoration(
-                        labelText: 'Payment method',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'bank_transfer',
-                          child: Text('Bank Transfer'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'cheque',
-                          child: Text('Cheque'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'cash',
-                          child: Text('Cash'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'card',
-                          child: Text('Card'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'other',
-                          child: Text('Other'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setDialogState(() => method = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: referenceController,
-                      decoration: const InputDecoration(
-                        labelText: 'Payment reference',
-                        hintText: 'Bank reference, cheque number, etc.',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: noteController,
-                      minLines: 2,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Note (optional)',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: chooseProof,
-                        icon: Icon(
-                          proofFile == null
-                              ? Icons.upload_file_outlined
-                              : Icons.check_circle_outline,
-                        ),
-                        label: Text(
-                          proofFile == null
-                              ? 'Choose Payment Screenshot / Photo'
-                              : 'Payment Proof Selected',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'HPJ will verify the payment before it is added to your invoice balance.',
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Back'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    final amount = double.tryParse(
-                      amountController.text.trim().replaceAll(',', ''),
-                    );
-
-                    if (amount == null ||
-                        amount <= 0 ||
-                        amount > invoice.amountDue + .01) {
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Enter an amount between J\$0.01 and ${invoice.formattedDue}.',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
-
-                    if (proofFile == null) {
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                        const SnackBar(
-                          content: Text('Choose a payment proof image first.'),
-                        ),
-                      );
-                      return;
-                    }
-
-                    Navigator.pop(dialogContext, true);
-                  },
-                  child: const Text('Submit for Verification'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (confirmed != true || proofFile == null) {
-      amountController.dispose();
-      referenceController.dispose();
-      noteController.dispose();
-      return;
-    }
-
-    final amount = double.parse(
-      amountController.text.trim().replaceAll(',', ''),
-    );
-
-    try {
-      final path = await uploadWholesalePaymentProof(
-        invoice: invoice,
-        image: proofFile!,
-      );
-
-      await submitWholesalePaymentConfirmation(
-        invoice: invoice,
-        amount: amount,
-        paymentMethod: method,
-        paymentReference: referenceController.text,
-        proofPath: path,
-        note: noteController.text,
-      );
-
-      await _reload();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payment confirmation sent to HPJ for verification.'),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    } finally {
-      amountController.dispose();
-      referenceController.dispose();
-      noteController.dispose();
-    }
-  }
-
-  Widget _paymentSubmissionCard(
-    WholesaleInvoice invoice,
-    WholesalePaymentSubmission submission,
-  ) {
-    final color = submission.isPending
-        ? FarmColors.warning
-        : submission.isRejected
-            ? FarmColors.danger
-            : submission.isApproved
-                ? FarmColors.green
-                : FarmColors.mutedText;
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.07),
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: color.withOpacity(.24)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.verified_user_outlined, color: color, size: 17),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  submission.statusLabel,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Text(
-                submission.formattedAmount,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(
-            submission.isPending
-                ? 'HPJ is checking your payment proof. Your invoice balance will update after approval.'
-                : submission.isRejected
-                    ? (submission.adminNote.isEmpty
-                        ? 'HPJ could not verify this payment. You may submit a new confirmation.'
-                        : submission.adminNote)
-                    : submission.isApproved
-                        ? 'This payment confirmation was approved.'
-                        : 'This payment confirmation was cancelled.',
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 9.5,
-              height: 1.35,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (submission.paymentReference.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              'Ref: ${submission.paymentReference}',
-              style: const TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-          if (submission.isPending) ...[
-            const SizedBox(height: 5),
-            TextButton(
-              onPressed: () => _cancelPaymentConfirmation(submission),
-              child: const Text('Cancel Confirmation'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _invoiceCard(
-    WholesaleInvoice invoice,
-    List<WholesalePaymentSubmission> submissions,
-  ) {
-    final color = _paymentColor(invoice);
-    final confirmedPayments =
-        invoice.payments.where((payment) => payment.isConfirmed).toList();
-
-    final latestSubmission = _latestSubmissionForInvoice(
-      invoice,
-      submissions,
-    );
-
-    final hasPendingSubmission = latestSubmission?.isPending == true;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: FarmCard(
-        padding: const EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        invoice.invoiceNumber,
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Issued ${_dateLabel(invoice.issueDate ?? invoice.issuedAt)}'
-                        ' • Due ${_dateLabel(invoice.dueDate)}',
-                        style: const TextStyle(
-                          color: FarmColors.mutedText,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(.10),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    _paymentLabel(invoice),
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ...invoice.items.take(4).map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${item.productName} • ${item.formattedQuantity}',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          item.formattedLineTotal,
-                          style: const TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            if (invoice.items.length > 4)
-              Text(
-                '+ ${invoice.items.length - 4} more items',
-                style: const TextStyle(
-                  color: FarmColors.primary,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            const Divider(height: 22),
-            _amountRow(label: 'Invoice Total', value: invoice.formattedTotal),
-            if (invoice.paidAmount > 0)
-              _amountRow(label: 'Paid', value: invoice.formattedPaid),
-            _amountRow(
-              label: 'Balance Due',
-              value: invoice.formattedDue,
-              strong: true,
-            ),
-            if (invoice.customerNote.trim().isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: FarmColors.cardSoft,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: FarmColors.line),
-                ),
-                child: Text(
-                  invoice.customerNote,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 10,
-                    height: 1.35,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 11),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _shareInvoice(invoice),
-                icon: const Icon(Icons.picture_as_pdf_outlined, size: 17),
-                label: const Text('Share / Save Invoice PDF'),
-              ),
-            ),
-            if (latestSubmission != null &&
-                (latestSubmission.isPending || latestSubmission.isRejected))
-              _paymentSubmissionCard(invoice, latestSubmission),
-            if (!invoice.isPaid && !hasPendingSubmission) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _submitPaymentProof(invoice),
-                  icon: const Icon(Icons.account_balance_outlined),
-                  label: Text(
-                    latestSubmission?.isRejected == true
-                        ? 'Resubmit Payment Confirmation'
-                        : 'I Have Made a Payment',
-                  ),
-                ),
-              ),
-            ],
-            if (invoice.payments.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: EdgeInsets.zero,
-                title: Text(
-                  'Payment History (${invoice.payments.length})',
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                children: invoice.payments.map((payment) {
-                  final reversed = payment.isReversed;
-                  return Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(bottom: 7),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: FarmColors.cardSoft,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: FarmColors.line),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                payment.formattedAmount,
-                                style: TextStyle(
-                                  color: reversed
-                                      ? FarmColors.mutedText
-                                      : FarmColors.green,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              payment.statusLabel,
-                              style: TextStyle(
-                                color: reversed
-                                    ? FarmColors.danger
-                                    : FarmColors.green,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${payment.methodLabel} • ${_dateLabel(payment.paidAt)}',
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 9.5,
-                          ),
-                        ),
-                        if (payment.paymentReference.isNotEmpty)
-                          Text(
-                            'Ref: ${payment.paymentReference}',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        if (reversed && payment.reversalReason.isNotEmpty)
-                          Text(
-                            'Reversed: ${payment.reversalReason}',
-                            style: const TextStyle(
-                              color: FarmColors.danger,
-                              fontSize: 9.5,
-                            ),
-                          ),
-                        if (!reversed) ...[
-                          const SizedBox(height: 5),
-                          OutlinedButton.icon(
-                            onPressed: () => _shareReceipt(invoice, payment),
-                            icon: const Icon(
-                              Icons.receipt_long_outlined,
-                              size: 15,
-                            ),
-                            label: const Text('Receipt PDF'),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-            if (invoice.isPaid && confirmedPayments.isNotEmpty) ...[
-              const SizedBox(height: 5),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.verified_outlined,
-                      color: FarmColors.green,
-                      size: 18,
-                    ),
-                    SizedBox(width: 7),
-                    Text(
-                      'PAID IN FULL',
-                      style: TextStyle(
-                        color: FarmColors.green,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(title: const Text('Invoices & Payments')),
-      body: FarmPage(
-        child: FutureBuilder<List<Object>>(
-          future: Future.wait<Object>([
-            _future,
-            _submissionsFuture,
-          ]),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError) {
-              return RefreshIndicator(
-                onRefresh: _reload,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
-                  children: [
-                    FarmEmptyState(
-                      icon: Icons.error_outline,
-                      title: 'Invoices could not be loaded',
-                      message: friendlyAppError(snapshot.error!),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            final data = snapshot.data;
-            final invoices = data == null
-                ? const <WholesaleInvoice>[]
-                : data[0] as List<WholesaleInvoice>;
-            final submissions = data == null
-                ? const <WholesalePaymentSubmission>[]
-                : data[1] as List<WholesalePaymentSubmission>;
-            final outstanding = invoices
-                .where((invoice) => !invoice.isPaid)
-                .fold<double>(0, (sum, invoice) => sum + invoice.amountDue);
-            final overdue =
-                invoices.where((invoice) => invoice.isOverdue).length;
-            final paid = invoices.where((invoice) => invoice.isPaid).length;
-            final filtered = _filtered(invoices);
-
-            return RefreshIndicator(
-              onRefresh: _reload,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
-                children: [
-                  FarmCard(
-                    padding: const EdgeInsets.all(17),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: FarmColors.primarySoft,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(
-                            Icons.account_balance_wallet_outlined,
-                            color: FarmColors.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Invoices & Payments',
-                                style: TextStyle(
-                                  color: FarmColors.ink,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.account.displayName,
-                                style: const TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                'View issued invoices, outstanding balances and payment receipts.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 10.5,
-                                  height: 1.35,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _metric(
-                          label: 'Outstanding',
-                          value: formatJmd(outstanding),
-                        ),
-                        const SizedBox(width: 8),
-                        _metric(label: 'Overdue', value: '$overdue'),
-                        const SizedBox(width: 8),
-                        _metric(label: 'Paid', value: '$paid'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        ChoiceChip(
-                          label: const Text('All'),
-                          selected: _filter == 'all',
-                          onSelected: (_) => setState(() => _filter = 'all'),
-                        ),
-                        const SizedBox(width: 7),
-                        ChoiceChip(
-                          label: const Text('Outstanding'),
-                          selected: _filter == 'outstanding',
-                          onSelected: (_) =>
-                              setState(() => _filter = 'outstanding'),
-                        ),
-                        const SizedBox(width: 7),
-                        ChoiceChip(
-                          label: const Text('Overdue'),
-                          selected: _filter == 'overdue',
-                          onSelected: (_) =>
-                              setState(() => _filter = 'overdue'),
-                        ),
-                        const SizedBox(width: 7),
-                        ChoiceChip(
-                          label: const Text('Paid'),
-                          selected: _filter == 'paid',
-                          onSelected: (_) => setState(() => _filter = 'paid'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (invoices.isEmpty)
-                    const FarmEmptyState(
-                      icon: Icons.receipt_long_outlined,
-                      title: 'No issued invoices yet',
-                      message:
-                          'Issued wholesale invoices will appear here automatically.',
-                    )
-                  else if (filtered.isEmpty)
-                    const FarmEmptyState(
-                      icon: Icons.filter_alt_off_outlined,
-                      title: 'Nothing in this filter',
-                      message: 'Choose another invoice filter to continue.',
-                    )
-                  else
-                    ...filtered.map(
-                      (invoice) => _invoiceCard(
-                        invoice,
-                        submissions,
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-// =====================================================
-// PHASE 3P — BUSINESS WHOLESALE ACCOUNT STATEMENT
-// =====================================================
-
-class BusinessWholesaleStatementScreen extends StatefulWidget {
-  const BusinessWholesaleStatementScreen({super.key});
-
-  @override
-  State<BusinessWholesaleStatementScreen> createState() =>
-      _BusinessWholesaleStatementScreenState();
-}
-
-class _BusinessWholesaleStatementScreenState
-    extends State<BusinessWholesaleStatementScreen> {
-  late Future<_WholesaleAccountStatementSnapshot> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = fetchMyWholesaleAccountStatement();
-  }
-
-  Future<void> _reload() async {
-    final next = fetchMyWholesaleAccountStatement();
-    setState(() => _future = next);
-    await next;
-  }
-
-  String _dateLabel(DateTime? value) {
-    if (value == null) return '—';
-    final date = value.toLocal();
-    return '${date.day.toString().padLeft(2, '0')}/'
-        '${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
-
-  int _daysOverdue(WholesaleInvoice invoice) {
-    final due = invoice.dueDate?.toLocal();
-    if (due == null || invoice.amountDue <= 0.005) return 0;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dueDay = DateTime(due.year, due.month, due.day);
-    final value = today.difference(dueDay).inDays;
-    return value < 0 ? 0 : value;
-  }
-
-  Widget _metric(String label, String value) {
-    return Container(
-      width: 132,
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-      decoration: BoxDecoration(
-        color: FarmColors.cardSoft,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: const TextStyle(
-              color: FarmColors.ink,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<pw.MemoryImage?> _statementLogo() async {
-    try {
-      final bytes = await rootBundle.load('lib/assets/images/logo.png');
-      return pw.MemoryImage(bytes.buffer.asUint8List());
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String _pdfMoney(double value) => 'J\$${value.toStringAsFixed(2)}';
-
-  String _pdfDate(DateTime? value) {
-    if (value == null) return '—';
-    final date = value.toLocal();
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-  Future<Uint8List> _buildStatementPdf(
-    _WholesaleAccountStatementSnapshot data,
-  ) async {
-    final pdf = pw.Document();
-    final logo = await _statementLogo();
-    final green = PdfColor.fromInt(0xFF1F6B3A);
-    final softGreen = PdfColor.fromInt(0xFFEAF3EC);
-    final account = data.account;
-    final aging = data.aging;
-    final openInvoices = data.invoices
-        .where(
-            (invoice) => invoice.isIssued && !invoice.isPaid && !invoice.isVoid)
-        .toList()
-      ..sort((a, b) {
-        final ad = a.dueDate ?? a.issueDate ?? a.createdAt ?? DateTime(2100);
-        final bd = b.dueDate ?? b.issueDate ?? b.createdAt ?? DateTime(2100);
-        return ad.compareTo(bd);
-      });
-
-    final recentPayments =
-        <MapEntry<WholesaleInvoice, WholesaleInvoicePayment>>[];
-    for (final invoice in data.invoices) {
-      for (final payment in invoice.payments.where((p) => p.isConfirmed)) {
-        recentPayments.add(MapEntry(invoice, payment));
-      }
-    }
-    recentPayments.sort((a, b) {
-      final ad = a.value.paidAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bd = b.value.paidAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bd.compareTo(ad);
-    });
-
-    pw.Widget amountBox(String label, double amount) {
-      return pw.Expanded(
-        child: pw.Container(
-          padding: const pw.EdgeInsets.all(10),
-          decoration: pw.BoxDecoration(
-            color: softGreen,
-            borderRadius: pw.BorderRadius.circular(7),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                label,
-                style:
-                    const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
-              ),
-              pw.SizedBox(height: 3),
-              pw.Text(
-                _pdfMoney(amount),
-                style: pw.TextStyle(
-                  fontSize: 10,
-                  fontWeight: pw.FontWeight.bold,
-                  color: green,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.fromLTRB(34, 30, 34, 34),
-        footer: (context) => pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Text(
-              'The Harvest Place Ja • Wholesale Account Statement',
-              style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600),
-            ),
-            pw.Text(
-              'Page ${context.pageNumber} of ${context.pagesCount}',
-              style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600),
-            ),
-          ],
-        ),
-        build: (_) => [
-          pw.Row(
-            children: [
-              pw.SizedBox(
-                width: 58,
-                height: 58,
-                child: logo == null
-                    ? pw.Center(
-                        child: pw.Text(
-                          'HPJ',
-                          style: pw.TextStyle(
-                            fontSize: 18,
-                            fontWeight: pw.FontWeight.bold,
-                            color: green,
-                          ),
-                        ),
-                      )
-                    : pw.Image(logo, fit: pw.BoxFit.contain),
-              ),
-              pw.SizedBox(width: 12),
-              pw.Expanded(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'THE HARVEST PLACE JA',
-                      style: pw.TextStyle(
-                        fontSize: 19,
-                        fontWeight: pw.FontWeight.bold,
-                        color: green,
-                      ),
-                    ),
-                    pw.Text(
-                      'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
-                      style: const pw.TextStyle(
-                          fontSize: 8, color: PdfColors.grey700),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Text(
-                      'WHOLESALE ACCOUNT STATEMENT',
-                      style: pw.TextStyle(
-                        fontSize: 11,
-                        fontWeight: pw.FontWeight.bold,
-                        color: green,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 14),
-          pw.Divider(color: green),
-          pw.SizedBox(height: 12),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Expanded(
-                child: pw.Container(
-                  padding: const pw.EdgeInsets.all(11),
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.grey300),
-                    borderRadius: pw.BorderRadius.circular(7),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(account.displayName,
-                          style: pw.TextStyle(
-                              fontWeight: pw.FontWeight.bold, fontSize: 11)),
-                      if (account.contactName.isNotEmpty)
-                        pw.Text(account.contactName,
-                            style: const pw.TextStyle(fontSize: 8.5)),
-                      if (account.address.isNotEmpty)
-                        pw.Text(account.address,
-                            style: const pw.TextStyle(fontSize: 8.5)),
-                      if (account.parish.isNotEmpty)
-                        pw.Text(account.parish,
-                            style: const pw.TextStyle(fontSize: 8.5)),
-                      if (account.phone.isNotEmpty)
-                        pw.Text(account.phone,
-                            style: const pw.TextStyle(fontSize: 8.5)),
-                    ],
-                  ),
-                ),
-              ),
-              pw.SizedBox(width: 12),
-              pw.Expanded(
-                child: pw.Container(
-                  padding: const pw.EdgeInsets.all(11),
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.grey300),
-                    borderRadius: pw.BorderRadius.circular(7),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text('Statement date: ${_pdfDate(DateTime.now())}',
-                          style: const pw.TextStyle(fontSize: 8.5)),
-                      pw.Text('Account: ${account.wholesaleCreditStatusLabel}',
-                          style: const pw.TextStyle(fontSize: 8.5)),
-                      pw.Text('Terms: ${account.wholesalePaymentTermsLabel}',
-                          style: const pw.TextStyle(fontSize: 8.5)),
-                      pw.Text(
-                        account.wholesaleCreditLimit > 0
-                            ? 'Credit limit: ${_pdfMoney(account.wholesaleCreditLimit)}'
-                            : 'Credit limit: Not set',
-                        style: const pw.TextStyle(fontSize: 8.5),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 16),
-          pw.Text('AGING SUMMARY',
-              style: pw.TextStyle(
-                  fontSize: 10, fontWeight: pw.FontWeight.bold, color: green)),
-          pw.SizedBox(height: 7),
-          pw.Row(
-            children: [
-              amountBox('Current', aging.current),
-              pw.SizedBox(width: 6),
-              amountBox('1-30 Days', aging.days1To30),
-              pw.SizedBox(width: 6),
-              amountBox('31-60 Days', aging.days31To60),
-              pw.SizedBox(width: 6),
-              amountBox('61+ Days', aging.days61Plus),
-            ],
-          ),
-          pw.SizedBox(height: 10),
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'TOTAL OUTSTANDING: ${_pdfMoney(aging.total)}',
-              style: pw.TextStyle(
-                  fontSize: 12, fontWeight: pw.FontWeight.bold, color: green),
-            ),
-          ),
-          pw.SizedBox(height: 18),
-          pw.Text('OPEN INVOICES',
-              style: pw.TextStyle(
-                  fontSize: 10, fontWeight: pw.FontWeight.bold, color: green)),
-          pw.SizedBox(height: 7),
-          if (openInvoices.isEmpty)
-            pw.Text('No outstanding invoices.',
-                style: const pw.TextStyle(fontSize: 9))
-          else
-            pw.Table.fromTextArray(
-              headers: const [
-                'Invoice',
-                'Issued',
-                'Due',
-                'Total',
-                'Paid',
-                'Balance'
-              ],
-              data: openInvoices
-                  .map((invoice) => [
-                        invoice.invoiceNumber,
-                        _pdfDate(invoice.issueDate ?? invoice.issuedAt),
-                        _pdfDate(invoice.dueDate),
-                        _pdfMoney(invoice.totalAmount),
-                        _pdfMoney(invoice.paidAmount),
-                        _pdfMoney(invoice.amountDue),
-                      ])
-                  .toList(),
-              headerDecoration: pw.BoxDecoration(color: green),
-              headerStyle: pw.TextStyle(
-                color: PdfColors.white,
-                fontSize: 7.5,
-                fontWeight: pw.FontWeight.bold,
-              ),
-              cellStyle: const pw.TextStyle(fontSize: 7.5),
-              border: pw.TableBorder.all(color: PdfColors.grey300, width: .5),
-              cellPadding: const pw.EdgeInsets.all(5),
-            ),
-          if (recentPayments.isNotEmpty) ...[
-            pw.SizedBox(height: 18),
-            pw.Text('RECENT PAYMENTS',
-                style: pw.TextStyle(
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold,
-                    color: green)),
-            pw.SizedBox(height: 7),
-            ...recentPayments.take(10).map(
-                  (entry) => pw.Container(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 4),
-                    decoration: const pw.BoxDecoration(
-                      border: pw.Border(
-                          bottom: pw.BorderSide(
-                              color: PdfColors.grey300, width: .4)),
-                    ),
-                    child: pw.Row(
-                      children: [
-                        pw.Expanded(
-                          child: pw.Text(
-                            '${_pdfDate(entry.value.paidAt)} • ${entry.key.invoiceNumber} • ${entry.value.methodLabel}',
-                            style: const pw.TextStyle(fontSize: 8),
-                          ),
-                        ),
-                        pw.Text(
-                          _pdfMoney(entry.value.amount),
-                          style: pw.TextStyle(
-                              fontSize: 8,
-                              fontWeight: pw.FontWeight.bold,
-                              color: green),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-          ],
-          pw.SizedBox(height: 20),
-          pw.Text(
-            'Please quote your invoice number when making payment. '
-            'Contact The Harvest Place Ja if any transaction on this statement needs review.',
-            style: const pw.TextStyle(
-                fontSize: 8, color: PdfColors.grey700, height: 1.35),
-          ),
-        ],
-      ),
-    );
-
-    return pdf.save();
-  }
-
-  Future<void> _shareStatement(
-    _WholesaleAccountStatementSnapshot data,
-  ) async {
-    try {
-      final bytes = await _buildStatementPdf(data);
-      final safeName =
-          data.account.displayName.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'HPJ-Wholesale-Statement-$safeName.pdf',
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(title: const Text('Account Statement')),
-      body: FarmPage(
-        child: FutureBuilder<_WholesaleAccountStatementSnapshot>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                snapshot.data == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError || snapshot.data == null) {
-              return RefreshIndicator(
-                onRefresh: _reload,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
-                  children: [
-                    FarmEmptyState(
-                      icon: Icons.error_outline,
-                      title: 'Statement could not be loaded',
-                      message: snapshot.hasError
-                          ? friendlyAppError(snapshot.error!)
-                          : 'Please refresh and try again.',
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            final data = snapshot.data!;
-            final account = data.account;
-            final aging = data.aging;
-            final openInvoices = data.invoices
-                .where((invoice) =>
-                    invoice.isIssued && !invoice.isPaid && !invoice.isVoid)
-                .toList()
-              ..sort((a, b) {
-                final ad =
-                    a.dueDate ?? a.issueDate ?? a.createdAt ?? DateTime(2100);
-                final bd =
-                    b.dueDate ?? b.issueDate ?? b.createdAt ?? DateTime(2100);
-                return ad.compareTo(bd);
-              });
-
-            return RefreshIndicator(
-              onRefresh: _reload,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
-                children: [
-                  FarmCard(
-                    padding: const EdgeInsets.all(17),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: FarmColors.primarySoft,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(
-                            Icons.summarize_outlined,
-                            color: FarmColors.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Wholesale Account Statement',
-                                style: TextStyle(
-                                  color: FarmColors.ink,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                account.displayName,
-                                style: const TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                'As at ${_dateLabel(DateTime.now())}',
-                                style: const TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 10.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FarmCard(
-                    padding: const EdgeInsets.all(15),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                account.wholesaleCreditStatusLabel,
-                                style: TextStyle(
-                                  color: account.isWholesaleCreditOnHold
-                                      ? FarmColors.danger
-                                      : FarmColors.green,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              account.wholesalePaymentTermsLabel,
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          account.wholesaleCreditLimit > 0
-                              ? 'Credit limit: ${formatJmd(account.wholesaleCreditLimit)}'
-                              : account.hasActiveWholesaleCredit
-                                  ? 'No hard credit limit is currently set.'
-                                  : 'Payment is due when an invoice is issued.',
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (account.hasActiveWholesaleCredit &&
-                            account.wholesaleCreditLimit > 0) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            'Available credit: ${formatJmd(data.availableCredit)}',
-                            style: const TextStyle(
-                              color: FarmColors.primary,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                        if (account.wholesaleCreditNote.isNotEmpty) ...[
-                          const SizedBox(height: 7),
-                          Text(
-                            account.wholesaleCreditNote,
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 10.5,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _metric('Current', formatJmd(aging.current)),
-                        const SizedBox(width: 8),
-                        _metric('1-30 Days', formatJmd(aging.days1To30)),
-                        const SizedBox(width: 8),
-                        _metric('31-60 Days', formatJmd(aging.days31To60)),
-                        const SizedBox(width: 8),
-                        _metric('61+ Days', formatJmd(aging.days61Plus)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FarmCard(
-                    padding: const EdgeInsets.all(15),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Total Outstanding',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          formatJmd(aging.total),
-                          style: TextStyle(
-                            color: aging.days61Plus > 0
-                                ? FarmColors.danger
-                                : FarmColors.green,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _shareStatement(data),
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                      label: const Text('Share / Save Statement PDF'),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Open Invoices',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 9),
-                  if (openInvoices.isEmpty)
-                    const FarmEmptyState(
-                      icon: Icons.verified_outlined,
-                      title: 'Account is clear',
-                      message: 'There are no outstanding wholesale invoices.',
-                    )
-                  else
-                    ...openInvoices.map((invoice) {
-                      final overdueDays = _daysOverdue(invoice);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 9),
-                        child: FarmCard(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      invoice.invoiceNumber,
-                                      style: const TextStyle(
-                                        color: FarmColors.ink,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    formatJmd(invoice.amountDue),
-                                    style: const TextStyle(
-                                      color: FarmColors.green,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                'Issued ${_dateLabel(invoice.issueDate ?? invoice.issuedAt)} • '
-                                'Due ${_dateLabel(invoice.dueDate)}',
-                                style: const TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              if (overdueDays > 0) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  '$overdueDays day${overdueDays == 1 ? '' : 's'} overdue',
-                                  style: const TextStyle(
-                                    color: FarmColors.danger,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-// =====================================================
-// PHASE 3R — ADMIN SCHEDULING & CAPACITY WORKSPACE
-// =====================================================
-
 class WholesaleSchedulingAdminScreen extends StatefulWidget {
   const WholesaleSchedulingAdminScreen({super.key});
 
@@ -15923,10450 +10768,6 @@ Future<WholesaleDemandForecast>
   );
 }
 
-class WholesaleDemandGapLine {
-  final String demandForecastId;
-  final String productName;
-  final String unit;
-  final double requiredQuantity;
-  final double securedQuantity;
-  final double gapQuantity;
-  final DateTime needByDate;
-  final String demandStatus;
-  final String sourceType;
-
-  const WholesaleDemandGapLine({
-    required this.demandForecastId,
-    required this.productName,
-    required this.unit,
-    required this.requiredQuantity,
-    required this.securedQuantity,
-    required this.gapQuantity,
-    required this.needByDate,
-    required this.demandStatus,
-    required this.sourceType,
-  });
-
-  factory WholesaleDemandGapLine.fromSupabase(Map<String, dynamic> data) {
-    double number(dynamic value) {
-      if (value is num) return value.toDouble();
-      return double.tryParse(value?.toString() ?? '') ?? 0;
-    }
-
-    return WholesaleDemandGapLine(
-      demandForecastId: (data['demand_forecast_id'] ?? '').toString(),
-      productName: (data['product_name'] ?? 'Produce').toString().trim(),
-      unit: (data['unit'] ?? 'unit').toString().trim(),
-      requiredQuantity: number(data['required_quantity']),
-      securedQuantity: number(data['secured_quantity']),
-      gapQuantity: number(data['gap_quantity']),
-      needByDate: parseProductDate(data['need_by_date']) ?? DateTime.now(),
-      demandStatus: (data['demand_status'] ?? 'forecast').toString().trim().toLowerCase(),
-      sourceType: (data['source_type'] ?? 'planning').toString().trim().toLowerCase(),
-    );
-  }
-
-  bool get hasGap => gapQuantity > 0.0001;
-}
-
-Future<List<WholesaleDemandGapLine>> fetchMyWholesaleDemandGap({
-  int horizonDays = 30,
-}) async {
-  final user = supabase.auth.currentUser;
-  if (user == null) return const <WholesaleDemandGapLine>[];
-
-  try {
-    final response = await supabase.rpc(
-      'business_wholesale_demand_gap',
-      params: {
-        'p_horizon_days': horizonDays.clamp(1, 365),
-      },
-    );
-
-    return (response as List)
-        .map(
-          (item) => WholesaleDemandGapLine.fromSupabase(
-            Map<String, dynamic>.from(item as Map),
-          ),
-        )
-        .toList();
-  } catch (error) {
-    farmDebugLog(
-      'Wholesale business demand-gap insight unavailable: $error',
-    );
-    rethrow;
-  }
-}
-
-class _WholesaleTodaySnapshot {
-  final List<WholesaleDemandForecast> forecasts;
-  final List<WholesaleOrderRequest> requests;
-  final List<WholesaleInvoice> invoices;
-  final List<WholesaleOrderJourney> journeys;
-  final List<WholesaleProduct> catalogue;
-  final List<WholesaleDemandGapLine> demandGaps;
-  final WholesaleOrderingControl? orderingControl;
-  final Set<String> unavailableSections;
-
-  const _WholesaleTodaySnapshot({
-    required this.forecasts,
-    required this.requests,
-    required this.invoices,
-    required this.journeys,
-    required this.catalogue,
-    this.demandGaps = const <WholesaleDemandGapLine>[],
-    this.orderingControl,
-    this.unavailableSections = const <String>{},
-  });
-
-  bool get hasLoadIssues => unavailableSections.isNotEmpty;
-}
-
-Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
-  BusinessAccount? account,
-}) async {
-  final unavailableSections = <String>{};
-
-  Future<List<WholesaleDemandForecast>> loadForecasts() async {
-    try {
-      return await fetchMyWholesaleDemandForecasts(
-        includeCancelled: false,
-      );
-    } catch (error) {
-      unavailableSections.add('Planning');
-      farmDebugLog('Wholesale Today — planning unavailable: $error');
-      return <WholesaleDemandForecast>[];
-    }
-  }
-
-  Future<List<WholesaleOrderRequest>> loadRequests() async {
-    try {
-      return await fetchMyWholesaleRequests(
-        limit: 200,
-      );
-    } catch (error) {
-      unavailableSections.add('Orders');
-      farmDebugLog('Wholesale Today — orders unavailable: $error');
-      return <WholesaleOrderRequest>[];
-    }
-  }
-
-  Future<List<WholesaleInvoice>> loadInvoices() async {
-    try {
-      return await fetchMyWholesaleInvoices(
-        includePaid: true,
-        limit: 300,
-      );
-    } catch (error) {
-      unavailableSections.add('Invoices');
-      farmDebugLog('Wholesale Today — invoices unavailable: $error');
-      return <WholesaleInvoice>[];
-    }
-  }
-
-  Future<List<WholesaleOrderJourney>> loadJourneys() async {
-    try {
-      return await fetchMyWholesaleOrderJourneys();
-    } catch (error) {
-      unavailableSections.add('Tracking');
-      farmDebugLog('Wholesale Today — tracking unavailable: $error');
-      return <WholesaleOrderJourney>[];
-    }
-  }
-
-  Future<List<WholesaleProduct>> loadCatalogue() async {
-    try {
-      return await fetchWholesaleCatalogue();
-    } catch (error) {
-      unavailableSections.add('Catalogue');
-      farmDebugLog('Wholesale Today — catalogue unavailable: $error');
-      return <WholesaleProduct>[];
-    }
-  }
-
-  Future<List<WholesaleDemandGapLine>> loadDemandGaps() async {
-    try {
-      return await fetchMyWholesaleDemandGap(
-        horizonDays: 30,
-      );
-    } catch (error) {
-      unavailableSections.add('Demand insight');
-      farmDebugLog(
-        'Wholesale Today — business insight unavailable: $error',
-      );
-      return <WholesaleDemandGapLine>[];
-    }
-  }
-
-  Future<WholesaleOrderingControl?> loadOrderingControl() async {
-    try {
-      return await fetchWholesaleOrderingControl(
-        account: account,
-      );
-    } catch (error) {
-      unavailableSections.add('Ordering status');
-      farmDebugLog(
-        'Wholesale Today — ordering status unavailable: $error',
-      );
-      return null;
-    }
-  }
-
-  final forecastsFuture = loadForecasts();
-  final requestsFuture = loadRequests();
-  final invoicesFuture = loadInvoices();
-  final journeysFuture = loadJourneys();
-  final catalogueFuture = loadCatalogue();
-  final demandGapsFuture = loadDemandGaps();
-  final orderingControlFuture = loadOrderingControl();
-
-  final forecasts = await forecastsFuture;
-  final requests = await requestsFuture;
-  final invoices = await invoicesFuture;
-  final journeys = await journeysFuture;
-  final catalogue = await catalogueFuture;
-  var demandGaps = await demandGapsFuture;
-  final orderingControl = await orderingControlFuture;
-
-  if (demandGaps.isEmpty && forecasts.isNotEmpty) {
-    final today = DateTime.now();
-    final cutoff = today.add(
-      const Duration(days: 30),
-    );
-
-    demandGaps = forecasts
-        .where(
-          (item) =>
-              !item.isCancelled &&
-              !item.needByDate.isBefore(
-                DateTime(
-                  today.year,
-                  today.month,
-                  today.day,
-                ),
-              ) &&
-              !item.needByDate.isAfter(cutoff),
-        )
-        .map(
-          (item) {
-            final fullySecured =
-                item.isReserved || item.isConverted;
-
-            return WholesaleDemandGapLine(
-              demandForecastId: item.id,
-              productName: item.productName,
-              unit: item.unit,
-              requiredQuantity: item.quantity,
-              securedQuantity:
-                  fullySecured ? item.quantity : 0,
-              gapQuantity:
-                  fullySecured ? 0 : item.quantity,
-              needByDate: item.needByDate,
-              demandStatus: item.status,
-              sourceType: item.sourceType,
-            );
-          },
-        )
-        .toList();
-  }
-
-  return _WholesaleTodaySnapshot(
-    forecasts: forecasts,
-    requests: requests,
-    invoices: invoices,
-    journeys: journeys,
-    catalogue: catalogue,
-    demandGaps: demandGaps,
-    orderingControl: orderingControl,
-    unavailableSections:
-        Set<String>.unmodifiable(unavailableSections),
-  );
-}
-
-class _ApprovedWholesaleDashboard extends StatelessWidget {
-  final BusinessAccount account;
-  final VoidCallback? onOpenShop;
-  final VoidCallback? onOpenPlan;
-  final VoidCallback? onOpenOrders;
-  final VoidCallback? onOpenAccount;
-  final VoidCallback? onRetry;
-
-  const _ApprovedWholesaleDashboard({
-    required this.account,
-    this.onOpenShop,
-    this.onOpenPlan,
-    this.onOpenOrders,
-    this.onOpenAccount,
-    this.onRetry,
-  });
-
-  void _open(BuildContext context, Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => screen),
-    );
-  }
-
-  void _goPlan(BuildContext context) {
-    final callback = onOpenPlan;
-    if (callback != null) {
-      callback();
-      return;
-    }
-    _open(context, WholesalePlanningAheadScreen(account: account));
-  }
-
-  void _goShop(BuildContext context) {
-    final callback = onOpenShop;
-    if (callback != null) {
-      callback();
-      return;
-    }
-    _open(context, WholesaleCatalogueScreen(account: account));
-  }
-
-  void _goOrders(BuildContext context) {
-    final callback = onOpenOrders;
-    if (callback != null) {
-      callback();
-      return;
-    }
-    _open(context, const MyWholesaleRequestsScreen());
-  }
-
-  void _goAccount(BuildContext context) {
-    final callback = onOpenAccount;
-    if (callback != null) {
-      callback();
-      return;
-    }
-    _open(context, _BusinessDetailsEditScreen(account: account));
-  }
-
-  void _goInvoices(BuildContext context) {
-    _open(
-      context,
-      BusinessWholesaleInvoicesScreen(account: account),
-    );
-  }
-
-  void _goRepeatOrders(BuildContext context) {
-    _open(
-      context,
-      WholesaleRepeatStandingOrdersScreen(account: account),
-    );
-  }
-
-  Future<void> _handleAgricultureFeedAction(
-    BuildContext context,
-    AgricultureFeedUpdate update,
-  ) async {
-    switch (update.actionType) {
-      case 'wholesale_shop':
-        _goShop(context);
-        return;
-      case 'wholesale_plan':
-        _goPlan(context);
-        return;
-      case 'customer_care':
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => SupportScreen(
-              initialSubject: update.title,
-            ),
-          ),
-        );
-        return;
-      case 'external':
-        final url = update.sourceUrl?.trim() ?? '';
-        if (url.isEmpty) return;
-        final opened = await openExternalShareUrl(url);
-        if (!opened && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open the source link.')),
-          );
-        }
-        return;
-      default:
-        return;
-    }
-  }
-
-  bool _sameDay(DateTime? value, DateTime day) {
-    if (value == null) return false;
-    final local = value.toLocal();
-    return local.year == day.year &&
-        local.month == day.month &&
-        local.day == day.day;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<_WholesaleTodaySnapshot>(
-      future: fetchWholesaleTodaySnapshot(account: account),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            snapshot.data == null) {
-          return const SizedBox(
-            height: 360,
-            child: SkeletonList(count: 4),
-          );
-        }
-
-        final data = snapshot.data ??
-            const _WholesaleTodaySnapshot(
-              forecasts: <WholesaleDemandForecast>[],
-              requests: <WholesaleOrderRequest>[],
-              invoices: <WholesaleInvoice>[],
-              journeys: <WholesaleOrderJourney>[],
-              catalogue: <WholesaleProduct>[],
-            );
-
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final activeForecasts =
-            data.forecasts.where((item) => item.isActive).toList()
-              ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
-
-        final forecastsNeedingReview =
-            activeForecasts.where(_wholesaleForecastNeedsReview).toList();
-
-        final deliveriesToday = data.journeys.where((journey) {
-          return !journey.isCollection &&
-              journey.requestStatus != 'cancelled' &&
-              journey.requestStatus != 'rejected' &&
-              _sameDay(journey.scheduledFor, today);
-        }).length;
-
-        final awaitingReceipt = data.journeys
-            .where((journey) => journey.canConfirmReceipt)
-            .toList(growable: false);
-
-        final overdueInvoices = data.invoices
-            .where(
-              (item) =>
-                  item.amountDue > 0.0001 &&
-                  item.dueDate != null &&
-                  item.dueDate!.isBefore(today),
-            )
-            .toList();
-
-        final nextNeed = activeForecasts.isEmpty ? null : activeForecasts.first;
-        final nextNeedSoon = nextNeed != null &&
-            nextNeed.needByDate.difference(today).inDays <= 7;
-        final nextNeedNeedsReview =
-            nextNeed != null && _wholesaleForecastNeedsReview(nextNeed);
-
-        final detailsReady = account.phone.trim().isNotEmpty &&
-            account.address.trim().isNotEmpty &&
-            account.parish.trim().isNotEmpty;
-
-        final dailyPicks = _wholesaleSmartCataloguePicks(
-          catalogue: data.catalogue,
-          forecasts: activeForecasts,
-          requests: data.requests,
-          day: today,
-        );
-
-        final gapLines = data.demandGaps;
-        final gapLinesNeedingSupply = gapLines
-            .where((item) => item.hasGap)
-            .toList(growable: false);
-        final securedDemandLines = gapLines
-            .where((item) => !item.hasGap)
-            .length;
-
-        final thirtyDaysAgo = now.subtract(const Duration(days: 30));
-        final ninetyDaysAgo = now.subtract(const Duration(days: 90));
-
-        // Financial purchasing totals come from the latest issued invoice for
-        // each request, not from request status or the earlier order estimate.
-        // This keeps Purchased/90-day spend aligned with the final packed bill.
-        final invoiceByRequest = <String, WholesaleInvoice>{};
-        for (final invoice in data.invoices) {
-          final requestId = invoice.requestId.trim();
-          if (requestId.isEmpty || invoice.isVoid) continue;
-          invoiceByRequest.putIfAbsent(requestId, () => invoice);
-        }
-
-        DateTime? invoiceActivityDate(WholesaleInvoice invoice) {
-          return invoice.issuedAt ?? invoice.issueDate ?? invoice.createdAt;
-        }
-
-        bool invoicedSince(WholesaleInvoice invoice, DateTime cutoff) {
-          final activity = invoiceActivityDate(invoice);
-          return activity != null && !activity.isBefore(cutoff);
-        }
-
-        final finalInvoices = invoiceByRequest.values.toList(growable: false);
-        final purchased30 = finalInvoices
-            .where((item) => invoicedSince(item, thirtyDaysAgo))
-            .toList(growable: false);
-        final purchased90 = finalInvoices
-            .where((item) => invoicedSince(item, ninetyDaysAgo))
-            .toList(growable: false);
-        final spend30 = purchased30.fold<double>(
-          0,
-          (sum, item) => sum + item.totalAmount,
-        );
-        final spend90 = purchased90.fold<double>(
-          0,
-          (sum, item) => sum + item.totalAmount,
-        );
-
-        final orderingControl = data.orderingControl;
-        final attentionRows = <Widget>[];
-
-        void addAttention(Widget row) {
-          attentionRows.add(row);
-        }
-
-        if (orderingControl != null &&
-            (orderingControl.isBlocked || orderingControl.hasWarning)) {
-          addAttention(
-            _WholesaleAttentionRow(
-              title: orderingControl.statusLabel,
-              message: orderingControl.reason.isEmpty
-                  ? 'Review your wholesale account before placing another order.'
-                  : orderingControl.reason,
-              action: orderingControl.outstandingInvoices > 0
-                  ? 'Payments'
-                  : 'Account',
-              onTap: orderingControl.outstandingInvoices > 0
-                  ? () => _goInvoices(context)
-                  : () => _goAccount(context),
-            ),
-          );
-        }
-
-        if (!detailsReady) {
-          addAttention(
-            _WholesaleAttentionRow(
-              title: 'Complete business details',
-              message:
-                  'Add your phone, parish and delivery address before fulfilment.',
-              action: 'Account',
-              onTap: () => _goAccount(context),
-            ),
-          );
-        }
-
-        if (forecastsNeedingReview.isNotEmpty) {
-          addAttention(
-            _WholesaleAttentionRow(
-              title:
-                  '${forecastsNeedingReview.length} planned need${forecastsNeedingReview.length == 1 ? '' : 's'} need review',
-              message:
-                  'Confirm dates and quantities so HPJ can keep your supply plan current.',
-              action: 'Review',
-              onTap: () => _goPlan(context),
-            ),
-          );
-        } else if (nextNeed != null && nextNeedSoon && !nextNeedNeedsReview) {
-          addAttention(
-            _WholesaleAttentionRow(
-              title: '${nextNeed.productName} is needed soon',
-              message:
-                  '${nextNeed.quantity.toStringAsFixed(nextNeed.quantity == nextNeed.quantity.roundToDouble() ? 0 : 1)} ${nextNeed.unit} is planned for ${_wholesaleSimpleDate(nextNeed.needByDate)}.',
-              action: 'View plan',
-              onTap: () => _goPlan(context),
-            ),
-          );
-        }
-
-        if (overdueInvoices.isNotEmpty) {
-          addAttention(
-            _WholesaleAttentionRow(
-              title:
-                  '${overdueInvoices.length} overdue invoice${overdueInvoices.length == 1 ? '' : 's'}',
-              message:
-                  '${formatJmd(overdueInvoices.fold<double>(0, (sum, item) => sum + item.amountDue))} requires attention.',
-              action: 'Payments',
-              onTap: () => _goInvoices(context),
-            ),
-          );
-        }
-
-        if (awaitingReceipt.isNotEmpty) {
-          addAttention(
-            _WholesaleAttentionRow(
-              title:
-                  'Confirm ${awaitingReceipt.length} delivered order${awaitingReceipt.length == 1 ? '' : 's'}',
-              message:
-                  'HPJ marked ${awaitingReceipt.length == 1 ? 'this delivery' : 'these deliveries'} delivered. Confirm receipt after your business checks the order.',
-              action: 'Orders',
-              onTap: () => _goOrders(context),
-            ),
-          );
-        }
-
-        if (attentionRows.isEmpty &&
-            !data.hasLoadIssues &&
-            data.forecasts.isEmpty &&
-            data.requests.isEmpty) {
-          addAttention(
-            _WholesaleAttentionRow(
-              title: 'Add your upcoming needs',
-              message:
-                  'Tell HPJ what your business expects to need so supply can be prepared early.',
-              action: 'Plan Ahead',
-              onTap: () => _goPlan(context),
-            ),
-          );
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            HpjCompactAccountHero(
-              icon: Icons.business_outlined,
-              title: account.displayName,
-              subtitle: <String>[
-                if (account.businessType.trim().isNotEmpty)
-                  account.businessType.trim(),
-                if (account.parish.trim().isNotEmpty)
-                  account.parish.trim(),
-              ].join(' • '),
-              badge: 'Approved Business',
-              badgeColor: FarmColors.success,
-            ),
-            if (data.hasLoadIssues) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(
-                  12,
-                  10,
-                  8,
-                  10,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7E8),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: FarmColors.warning.withOpacity(.28),
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: FarmColors.warning,
-                      size: 19,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Some business data could not load: '
-                        '${data.unavailableSections.join(', ')}. '
-                        'Figures marked unavailable should not be treated as zero.',
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 9.6,
-                          height: 1.35,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: onRetry,
-                      child: const Text('Refresh'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            _WholesaleHomeQuickActions(
-              onOrderNow: () => _goShop(context),
-              onPlanAhead: () => _goPlan(context),
-              onFindSuppliers: () => _open(
-                context,
-                WholesaleSupplierDiscoveryScreen(account: account),
-              ),
-              onTrackOrders: () => _goOrders(context),
-            ),
-            const SizedBox(height: 20),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final desktopWeb =
-                    kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
-                final useDesktopRow =
-                    desktopWeb &&
-                    constraints.maxWidth >= 980 &&
-                    attentionRows.isNotEmpty;
-
-                final businessStatus = _WholesaleBusinessSnapshotCard(
-                  businessName: account.displayName,
-                  demandLineCount: gapLines.length,
-                  securedLineCount: securedDemandLines,
-                  gapLineCount: gapLinesNeedingSupply.length,
-                  purchasedOrders30: purchased30.length,
-                  spend30: spend30,
-                  spend90: spend90,
-                  deliveriesToday: deliveriesToday,
-                  gapLines: gapLinesNeedingSupply,
-                  unavailableSections: data.unavailableSections,
-                  onOpenPlan: () => _goPlan(context),
-                  onOpenOrders: () => _goOrders(context),
-                );
-
-                if (!useDesktopRow) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (attentionRows.isNotEmpty) ...[
-                        const SectionHeader(
-                          title: 'Action needed',
-                          subtitle:
-                              'The highest-priority item for your business.',
-                        ),
-                        const SizedBox(height: 9),
-                        FarmCard(
-                          padding: const EdgeInsets.all(14),
-                          child: attentionRows.first,
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-                      businessStatus,
-                    ],
-                  );
-                }
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SectionHeader(
-                            title: 'Action needed',
-                            subtitle:
-                                'The highest-priority item for your business.',
-                          ),
-                          const SizedBox(height: 9),
-                          FarmCard(
-                            padding: const EdgeInsets.all(14),
-                            child: attentionRows.first,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 6,
-                      child: businessStatus,
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-            _WholesaleMarketIntelligenceCard(
-              dailyPicks: dailyPicks,
-              activeForecasts: activeForecasts,
-              gapLines: gapLinesNeedingSupply,
-              onOpenShop: () => _goShop(context),
-              onOpenPlan: () => _goPlan(context),
-              onAgricultureAction: (update) =>
-                  _handleAgricultureFeedAction(context, update),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-
-
-// =====================================================
-// HPJ PHASE 044D — WHOLESALE SECONDARY INTELLIGENCE
-// =====================================================
-
-class _WholesaleMarketIntelligenceCard extends StatefulWidget {
-  final List<WholesaleProduct> dailyPicks;
-  final List<WholesaleDemandForecast> activeForecasts;
-  final List<WholesaleDemandGapLine> gapLines;
-  final VoidCallback onOpenShop;
-  final VoidCallback onOpenPlan;
-  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
-
-  const _WholesaleMarketIntelligenceCard({
-    required this.dailyPicks,
-    required this.activeForecasts,
-    required this.gapLines,
-    required this.onOpenShop,
-    required this.onOpenPlan,
-    required this.onAgricultureAction,
-  });
-
-  @override
-  State<_WholesaleMarketIntelligenceCard> createState() =>
-      _WholesaleMarketIntelligenceCardState();
-}
-
-class _WholesaleMarketIntelligenceCardState
-    extends State<_WholesaleMarketIntelligenceCard> {
-  bool expanded = true;
-
-  String _qty(double value) {
-    return value == value.roundToDouble()
-        ? value.toInt().toString()
-        : value.toStringAsFixed(1);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final topGaps = widget.gapLines.take(2).toList(growable: false);
-    final showMarketIntelligence =
-        hpjCurrentUserExperiencePreferences.showAgricultureNews;
-
-    return FarmCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(HpjMvpUi.cardRadius),
-              onTap: () => setState(() => expanded = !expanded),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 15,
-                  vertical: 13,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: FarmColors.primarySoft,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.insights_outlined,
-                        size: 20,
-                        color: FarmColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Market intelligence',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          SizedBox(height: 3),
-                          Text(
-                            'Fresh supply, demand gaps, reels and updates',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 9.8,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    AnimatedRotation(
-                      turns: expanded ? .5 : 0,
-                      duration: const Duration(milliseconds: 160),
-                      child: const Icon(
-                        Icons.expand_more_rounded,
-                        color: FarmColors.mutedText,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (expanded) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(15, 14, 15, 15),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (topGaps.isNotEmpty) ...[
-                    const SectionHeader(
-                      title: 'Supply gaps',
-                      subtitle: 'Requirements HPJ is still working to secure.',
-                    ),
-                    const SizedBox(height: 7),
-                    for (final gap in topGaps)
-                      HpjMvpListRow(
-                        icon: Icons.warning_amber_rounded,
-                        title: gap.productName,
-                        subtitle:
-                            'Still Needed • ${_qty(gap.gapQuantity)} ${gap.unit} • '
-                            '${_qty(gap.securedQuantity)} secured of '
-                            '${_qty(gap.requiredQuantity)} required',
-                        iconColor: FarmColors.warning,
-                        onTap: widget.onOpenPlan,
-                      ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (showMarketIntelligence &&
-                      widget.dailyPicks.isNotEmpty) ...[
-                    _WholesaleDailyFeed(
-                      products: widget.dailyPicks,
-                      onOpenShop: widget.onOpenShop,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (showMarketIntelligence &&
-                      hpjCurrentUserExperiencePreferences.showFreshReels) ...[
-                    FreshReelFeedPreviewCard(
-                      preferences: hpjCurrentUserExperiencePreferences,
-                      audience: 'wholesale',
-                      placement: freshReelPlacementWholesaleFeed,
-                      refreshKey: 0,
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (showMarketIntelligence)
-                    HpjJamaicaMarketPulseSection(
-                      audience: 'wholesale',
-                      limit: 4,
-                      socialStyle: true,
-                      preferredCropNames: widget.activeForecasts
-                          .map((item) => item.productName)
-                          .toList(growable: false),
-                      onPrimaryAction: (insight) async {
-                        insight.hasShortage
-                            ? widget.onOpenPlan()
-                            : widget.onOpenShop();
-                      },
-                    )
-                  else
-                    const HpjMvpListRow(
-                      icon: Icons.visibility_off_outlined,
-                      title: 'Market intelligence hidden',
-                      subtitle: 'Turn it on from Account → Settings.',
-                      iconColor: FarmColors.mutedText,
-                    ),
-                  if (showMarketIntelligence) ...[
-                    const SizedBox(height: 14),
-                    HpjAgricultureUpdatesSection(
-                      audience: 'wholesale',
-                      workspace: 'wholesale',
-                      limit: 1,
-                      socialStyle: true,
-                      title: 'Agriculture update',
-                      subtitle: 'One relevant update for your business.',
-                      onAction: widget.onAgricultureAction,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-
-class _WholesaleBusinessSnapshotCard extends StatelessWidget {
-  final String businessName;
-  final int demandLineCount;
-  final int securedLineCount;
-  final int gapLineCount;
-  final int purchasedOrders30;
-  final double spend30;
-  final double spend90;
-  final int deliveriesToday;
-  final List<WholesaleDemandGapLine> gapLines;
-  final Set<String> unavailableSections;
-  final VoidCallback onOpenPlan;
-  final VoidCallback onOpenOrders;
-
-  const _WholesaleBusinessSnapshotCard({
-    required this.businessName,
-    required this.demandLineCount,
-    required this.securedLineCount,
-    required this.gapLineCount,
-    required this.purchasedOrders30,
-    required this.spend30,
-    required this.spend90,
-    required this.deliveriesToday,
-    required this.gapLines,
-    this.unavailableSections = const <String>{},
-    required this.onOpenPlan,
-    required this.onOpenOrders,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final demandUnavailable =
-        unavailableSections.contains('Planning') ||
-        unavailableSections.contains('Demand insight');
-
-    final invoicesUnavailable =
-        unavailableSections.contains('Invoices');
-
-    final trackingUnavailable =
-        unavailableSections.contains('Tracking');
-
-    final footer = <String>[
-      if (!demandUnavailable)
-        '$securedLineCount secured',
-      if (!trackingUnavailable && deliveriesToday > 0)
-        '$deliveriesToday ${deliveriesToday == 1 ? 'delivery' : 'deliveries'} today',
-      if (!invoicesUnavailable)
-        '${purchasedOrders30} invoice${purchasedOrders30 == 1 ? '' : 's'}',
-      if (!invoicesUnavailable)
-        '90d ${formatJmd(spend90)}',
-    ];
-
-    if (footer.isEmpty) {
-      footer.add(
-        'Live status is temporarily incomplete',
-      );
-    }
-
-    return FarmCard(
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Business status',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.lock_outline_rounded,
-                size: 15,
-                color: FarmColors.mutedText.withOpacity(.75),
-              ),
-            ],
-          ),
-          const SizedBox(height: 11),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final twoColumns = constraints.maxWidth < 310;
-              final itemWidth = twoColumns
-                  ? (constraints.maxWidth - 8) / 2
-                  : (constraints.maxWidth - 16) / 3;
-
-              return Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  SizedBox(
-                    width: itemWidth,
-                    child: _WholesaleBusinessMetric(
-                      label: 'Demand',
-                      value: demandUnavailable
-                          ? '—'
-                          : '$demandLineCount',
-                      note: demandUnavailable
-                          ? 'Unavailable'
-                          : 'Next 30 days',
-                      onTap: onOpenPlan,
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _WholesaleBusinessMetric(
-                      label: 'Supply gaps',
-                      value: demandUnavailable
-                          ? '—'
-                          : '$gapLineCount',
-                      note: demandUnavailable
-                          ? 'Unavailable'
-                          : gapLineCount == 0
-                              ? 'Covered'
-                              : 'Need attention',
-                      warning:
-                          !demandUnavailable && gapLineCount > 0,
-                      onTap: onOpenPlan,
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _WholesaleBusinessMetric(
-                      label: 'Purchased',
-                      value: invoicesUnavailable
-                          ? '—'
-                          : formatJmd(spend30),
-                      note: invoicesUnavailable
-                          ? 'Unavailable'
-                          : 'Last 30 days',
-                      onTap: onOpenOrders,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 9),
-          Text(
-            footer.join(' • '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 9.6,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-
-class _WholesaleBusinessMetric extends StatelessWidget {
-  final String label;
-  final String value;
-  final String note;
-  final bool warning;
-  final VoidCallback onTap;
-
-  const _WholesaleBusinessMetric({
-    required this.label,
-    required this.value,
-    required this.note,
-    this.warning = false,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = warning ? FarmColors.warning : FarmColors.primary;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
-        decoration: BoxDecoration(
-          color: FarmColors.background,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: FarmColors.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: accent,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: FarmColors.ink,
-                fontSize: 9.6,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              note,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 8.6,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-class _WholesaleHomeQuickActions extends StatelessWidget {
-  final VoidCallback onOrderNow;
-  final VoidCallback onPlanAhead;
-  final VoidCallback onFindSuppliers;
-  final VoidCallback onTrackOrders;
-
-  const _WholesaleHomeQuickActions({
-    required this.onOrderNow,
-    required this.onPlanAhead,
-    required this.onFindSuppliers,
-    required this.onTrackOrders,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final desktopWeb =
-        kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionHeader(
-          title: 'What do you need?',
-          subtitle: 'The main jobs for your business.',
-        ),
-        SizedBox(height: desktopWeb ? 12 : 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final useFourColumns =
-                desktopWeb && constraints.maxWidth >= 980;
-            final columns = useFourColumns ? 4 : 2;
-            const spacing = 10.0;
-            final width =
-                (constraints.maxWidth - spacing * (columns - 1)) / columns;
-
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.shopping_cart_outlined,
-                    title: 'Order Produce',
-                    subtitle: 'Shop fresh supply',
-                    onTap: onOrderNow,
-                    emphasized: true,
-                  ),
-                ),
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.event_note_outlined,
-                    title: 'Plan Ahead',
-                    subtitle: 'Future requirements',
-                    onTap: onPlanAhead,
-                  ),
-                ),
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.agriculture_outlined,
-                    title: 'Find Suppliers',
-                    subtitle: 'Browse HPJ farms',
-                    onTap: onFindSuppliers,
-                  ),
-                ),
-                SizedBox(
-                  width: width,
-                  child: HpjMvpActionTile(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'Track Orders',
-                    subtitle: 'Orders & delivery',
-                    onTap: onTrackOrders,
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-
-class _WholesaleHomeActionTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _WholesaleHomeActionTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: FarmColors.card,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          height: 92,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 12,
-          ),
-          decoration: BoxDecoration(
-            border: Border.all(color: FarmColors.line),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 23,
-                color: FarmColors.primary,
-              ),
-              const SizedBox(height: 7),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 9.8,
-                  height: 1.15,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesaleHomeSectionHeading extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-
-  const _WholesaleHomeSectionHeading({
-    required this.title,
-    this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: FarmColors.ink,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
-          const SizedBox(height: 3),
-          Text(
-            subtitle!,
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 10.5,
-              height: 1.3,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _WholesaleSocialFeedFilters extends StatelessWidget {
-  final String selected;
-  final ValueChanged<String> onSelected;
-
-  const _WholesaleSocialFeedFilters({
-    required this.selected,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const filters = <(String, IconData)>[
-      ('For You', Icons.home_rounded),
-      ('Market', Icons.query_stats_rounded),
-      ('News', Icons.newspaper_rounded),
-      ('Orders', Icons.local_shipping_outlined),
-      ('Alerts', Icons.notifications_none_rounded),
-    ];
-
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 40,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: filters.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final item = filters[index];
-                final active = selected == item.$1;
-                return ChoiceChip(
-                  selected: active,
-                  onSelected: (_) => onSelected(item.$1),
-                  avatar: Icon(
-                    item.$2,
-                    size: 15,
-                    color: active ? Colors.white : FarmColors.primary,
-                  ),
-                  label: Text(item.$1),
-                  labelStyle: TextStyle(
-                    color: active ? Colors.white : FarmColors.ink,
-                    fontSize: 11.2,
-                    fontWeight: FontWeight.w800,
-                  ),
-                  selectedColor: FarmColors.primary,
-                  backgroundColor: FarmColors.card,
-                  side: BorderSide(
-                    color: active ? FarmColors.primary : FarmColors.line,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  showCheckmark: false,
-                );
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        const FarmNotificationButton(size: 38),
-      ],
-    );
-  }
-}
-
-class _WholesaleSocialEmptyState extends StatelessWidget {
-  final IconData icon;
-  final String message;
-
-  const _WholesaleSocialEmptyState({
-    required this.icon,
-    required this.message,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: FarmColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: FarmColors.primary, size: 23),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 11.5,
-                height: 1.4,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WholesaleFeedStories extends StatelessWidget {
-  final WholesaleProduct? firstPick;
-  final int freshCount;
-  final int openOrderCount;
-  final int planCount;
-  final int paymentCount;
-  final VoidCallback onOpenFresh;
-  final VoidCallback onOpenOrders;
-  final VoidCallback onOpenPlans;
-  final VoidCallback onOpenPayments;
-
-  const _WholesaleFeedStories({
-    required this.firstPick,
-    required this.freshCount,
-    required this.openOrderCount,
-    required this.planCount,
-    required this.paymentCount,
-    required this.onOpenFresh,
-    required this.onOpenOrders,
-    required this.onOpenPlans,
-    required this.onOpenPayments,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Quick updates',
-          style: TextStyle(
-            color: FarmColors.ink,
-            fontSize: 14.5,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 92,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            children: [
-              _WholesaleFeedStory(
-                label: 'Fresh',
-                count: freshCount,
-                product: firstPick,
-                icon: Icons.eco_rounded,
-                onTap: onOpenFresh,
-              ),
-              const SizedBox(width: 13),
-              _WholesaleFeedStory(
-                label: 'Orders',
-                count: openOrderCount,
-                icon: Icons.local_shipping_rounded,
-                onTap: onOpenOrders,
-              ),
-              const SizedBox(width: 13),
-              _WholesaleFeedStory(
-                label: 'Plans',
-                count: planCount,
-                icon: Icons.event_note_rounded,
-                onTap: onOpenPlans,
-              ),
-              const SizedBox(width: 13),
-              _WholesaleFeedStory(
-                label: 'Payments',
-                count: paymentCount,
-                icon: Icons.receipt_long_rounded,
-                onTap: onOpenPayments,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WholesaleFeedStory extends StatelessWidget {
-  final String label;
-  final int count;
-  final WholesaleProduct? product;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _WholesaleFeedStory({
-    required this.label,
-    required this.count,
-    this.product,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasUpdate = count > 0;
-
-    return SizedBox(
-      width: 72,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Column(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 62,
-                  height: 62,
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: hasUpdate ? FarmColors.primary : FarmColors.line,
-                      width: hasUpdate ? 2.4 : 1.4,
-                    ),
-                  ),
-                  child: ClipOval(
-                    child: product != null
-                        ? HpjProductThumb(
-                            productId: product!.product.id,
-                            productName: product!.product.name,
-                            size: 54,
-                            radius: 27,
-                          )
-                        : Container(
-                            color: FarmColors.primarySoft,
-                            alignment: Alignment.center,
-                            child: Icon(
-                              icon,
-                              color: FarmColors.primary,
-                              size: 25,
-                            ),
-                          ),
-                  ),
-                ),
-                if (hasUpdate)
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      constraints: const BoxConstraints(
-                        minWidth: 20,
-                        minHeight: 20,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      decoration: BoxDecoration(
-                        color: FarmColors.primary,
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(color: FarmColors.card, width: 2),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        count > 9 ? '9+' : '$count',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: FarmColors.ink,
-                fontSize: 11.1,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesaleFeedHeader extends StatelessWidget {
-  final int count;
-  final DateTime date;
-
-  const _WholesaleFeedHeader({
-    required this.count,
-    required this.date,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: FarmColors.primarySoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.dynamic_feed_rounded,
-                color: FarmColors.primary,
-                size: 19,
-              ),
-            ),
-            const SizedBox(width: 9),
-            const Expanded(
-              child: Text(
-                "Today's feed",
-                style: TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            const FarmNotificationButton(size: 36),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          count == 0
-              ? '${_wholesaleSimpleDate(date)} • You are caught up'
-              : '${_wholesaleSimpleDate(date)} • $count useful update${count == 1 ? '' : 's'}',
-          style: const TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 12.2,
-            height: 1.3,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        const Text(
-          'Pull down to refresh orders, plans, payments and fresh catalogue picks.',
-          style: TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 12,
-            height: 1.35,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WholesaleFeedSectionLabel extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _WholesaleFeedSectionLabel({
-    required this.icon,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: FarmColors.primary, size: 17),
-        const SizedBox(width: 7),
-        Text(
-          label,
-          style: const TextStyle(
-            color: FarmColors.ink,
-            fontSize: 13.2,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WholesaleFeedAllClearCard extends StatelessWidget {
-  const _WholesaleFeedAllClearCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F4EC),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: const Color(0xFFDCE4D8)),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.check_circle_outline_rounded, color: FarmColors.primary),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'You are caught up. New order, planning and catalogue updates will appear here.',
-              style: TextStyle(
-                color: Color(0xFF5F6D65),
-                fontSize: 12,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-List<WholesaleProduct> _wholesaleSmartCataloguePicks({
-  required List<WholesaleProduct> catalogue,
-  required List<WholesaleDemandForecast> forecasts,
-  required List<WholesaleOrderRequest> requests,
-  required DateTime day,
-}) {
-  if (catalogue.isEmpty) return const <WholesaleProduct>[];
-
-  final productScores = <String, int>{};
-  final today = DateTime(day.year, day.month, day.day);
-
-  for (final forecast in forecasts.where((item) => item.isActive)) {
-    final key = hpjSmartNormalizeSearch(forecast.productName);
-    if (key.isEmpty) continue;
-    var score = 3500;
-    final days = forecast.needByDate.difference(today).inDays;
-    if (days <= 7) score += 2500;
-    if (days <= 3) score += 1800;
-    productScores[key] = (productScores[key] ?? 0) + score;
-  }
-
-  for (final request in requests) {
-    final ageDays = request.createdAt == null
-        ? 999
-        : today.difference(request.createdAt!).inDays.abs();
-    final recency = ageDays <= 30 ? 1200 : ageDays <= 90 ? 700 : 300;
-    for (final line in request.items) {
-      final key = hpjSmartNormalizeSearch(line.productName);
-      if (key.isEmpty) continue;
-      productScores[key] = (productScores[key] ?? 0) + recency;
-    }
-  }
-
-  final dayOfYear = day.difference(DateTime(day.year, 1, 1)).inDays;
-  final ranked = List<WholesaleProduct>.from(catalogue)
-    ..sort((a, b) {
-      int score(WholesaleProduct item) {
-        final key = hpjSmartNormalizeSearch(item.product.name);
-        var value = productScores[key] ?? 0;
-        if (item.canOrder) value += 400;
-        if (item.product.hasActiveDiscount) value += 160;
-        if (item.product.isLocal) value += 80;
-        // Stable daily movement for ties so the feed still feels fresh.
-        final seed = item.product.id.hashCode.abs() + dayOfYear;
-        value += seed % 97;
-        return value;
-      }
-
-      final compare = score(b).compareTo(score(a));
-      if (compare != 0) return compare;
-      return a.product.name.toLowerCase().compareTo(
-            b.product.name.toLowerCase(),
-          );
-    });
-
-  final count = ranked.length < 3 ? ranked.length : 3;
-  return ranked.take(count).toList(growable: false);
-}
-
-
-class _WholesaleDailyFeed extends StatelessWidget {
-  final List<WholesaleProduct> products;
-  final VoidCallback onOpenShop;
-
-  const _WholesaleDailyFeed({
-    required this.products,
-    required this.onOpenShop,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: FarmColors.primarySoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.inventory_2_outlined,
-                color: FarmColors.primary,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: 9),
-            const Expanded(
-              child: Text(
-                'Fresh Supply',
-                style: TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: onOpenShop,
-              child: const Text('View all'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Wholesale products available now.',
-          style: TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 11.3,
-            height: 1.35,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 232,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            itemCount: products.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final item = products[index];
-              return _WholesaleDailyPickCard(
-                item: item,
-                onTap: onOpenShop,
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WholesaleDailyPickCard extends StatefulWidget {
-  final WholesaleProduct item;
-  final VoidCallback onTap;
-
-  const _WholesaleDailyPickCard({
-    required this.item,
-    required this.onTap,
-  });
-
-  @override
-  State<_WholesaleDailyPickCard> createState() => _WholesaleDailyPickCardState();
-}
-
-class _WholesaleDailyPickCardState extends State<_WholesaleDailyPickCard> {
-  bool seen = true;
-
-  String get feedKey {
-    final now = DateTime.now();
-    final date = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    return 'fresh:${widget.item.product.id}:$date';
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSeen();
-  }
-
-  @override
-  void didUpdateWidget(covariant _WholesaleDailyPickCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.item.product.id != widget.item.product.id) {
-      _loadSeen();
-    }
-  }
-
-  Future<void> _loadSeen() async {
-    final value = await isHpjFeedItemSeen(
-      workspace: 'wholesale',
-      itemKey: feedKey,
-    );
-    if (mounted) setState(() => seen = value);
-  }
-
-  Future<void> _open() async {
-    if (!seen && mounted) setState(() => seen = true);
-    await markHpjFeedItemSeen(
-      workspace: 'wholesale',
-      itemKey: feedKey,
-    );
-    if (!mounted) return;
-    widget.onTap();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.item;
-    return SizedBox(
-      width: 148,
-      child: Material(
-        color: FarmColors.card,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: _open,
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: FarmColors.line),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  children: [
-                    HpjProductThumb(
-                      productId: item.product.id,
-                      productName: item.product.name,
-                      size: 106,
-                      radius: 14,
-                    ),
-                    if (!seen)
-                      Positioned(
-                        left: 6,
-                        top: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: FarmColors.danger,
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                          child: const Text(
-                            'NEW',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 8.8,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  item.product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 12.6,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${item.formattedWholesalePrice} / ${item.wholesaleUnit}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.primary,
-                    fontSize: 10.4,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const Spacer(),
-                SizedBox(
-                  width: double.infinity,
-                  child: HpjWatchButton(
-                    workspace: 'wholesale',
-                    watchType: 'product',
-                    entityKey: item.product.id,
-                    entityName: item.product.name,
-                    compact: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesaleWelcomeCard extends StatelessWidget {
-  final VoidCallback onOpenShop;
-
-  const _WholesaleWelcomeCard({
-    required this.onOpenShop,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: FarmColors.primarySoft,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.storefront_rounded,
-              color: FarmColors.primary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Welcome to HPJ Wholesale',
-            style: TextStyle(
-              color: FarmColors.ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            'Order fresh Jamaican produce for your business. When you know what you will need later, use Planning Ahead so HPJ can prepare supply early.',
-            style: TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 10.5,
-              height: 1.4,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 13),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: onOpenShop,
-              child: const Text('Start Shopping'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WholesaleActiveOrderCard extends StatelessWidget {
-  final WholesaleOrderRequest request;
-  final VoidCallback onTap;
-
-  const _WholesaleActiveOrderCard({
-    required this.request,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final requestedDate = request.requestedDate == null
-        ? null
-        : _wholesaleSimpleDate(request.requestedDate!);
-    final fulfilment = request.requestedDispatchMethod == 'business_collection'
-        ? 'Business collection'
-        : 'HPJ delivery';
-    final itemCount = request.items.length;
-    final firstItem = itemCount == 0 ? null : request.items.first;
-
-    Widget orderVisual() {
-      if (firstItem == null) {
-        return Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            color: FarmColors.primarySoft,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Icon(
-            Icons.local_shipping_outlined,
-            color: FarmColors.primary,
-          ),
-        );
-      }
-
-      return SizedBox(
-        width: 62,
-        height: 62,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            HpjProductThumb(
-              productId: firstItem.productId,
-              productName: firstItem.productName,
-              size: 58,
-              radius: 14,
-            ),
-            if (itemCount > 1)
-              Positioned(
-                right: -2,
-                bottom: -2,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: FarmColors.primary,
-                    borderRadius: BorderRadius.circular(99),
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: Text(
-                    '+${itemCount - 1}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-
-    return FarmCard(
-      padding: EdgeInsets.zero,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              orderVisual(),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Order in progress',
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 9.2,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Order #${request.shortId}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      [
-                        _wholesaleStatementStatus(request.status),
-                        if (itemCount > 0)
-                          '$itemCount item${itemCount == 1 ? '' : 's'}',
-                        fulfilment,
-                        if (requestedDate != null) 'Requested $requestedDate',
-                      ].join(' • '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 9.6,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: FarmColors.mutedText,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesalePlanningSummaryCard extends StatelessWidget {
-  final WholesaleDemandForecast? nextNeed;
-  final VoidCallback onTap;
-
-  const _WholesalePlanningSummaryCard({
-    required this.nextNeed,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final planned = nextNeed;
-    final quantity = planned == null
-        ? ''
-        : planned.quantity.toStringAsFixed(
-            planned.quantity == planned.quantity.roundToDouble() ? 0 : 1,
-          );
-
-    return FarmCard(
-      padding: const EdgeInsets.all(14),
-      child: planned == null
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(
-                      Icons.event_note_outlined,
-                      color: FarmColors.primary,
-                      size: 23,
-                    ),
-                    SizedBox(width: 9),
-                    Text(
-                      'Planning Ahead',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 13.2,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                const Text(
-                  'Tell HPJ what your business may need in the coming weeks.',
-                  style: TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 11.4,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: onTap,
-                    child: const Text('Plan Ahead'),
-                  ),
-                ),
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                HpjProductThumb(
-                  productId: planned.productId,
-                  productName: planned.productName,
-                  size: 78,
-                  radius: 15,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Next planned need',
-                        style: TextStyle(
-                          color: FarmColors.mutedText,
-                          fontSize: 10.4,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        planned.productName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '$quantity ${planned.unit} • Needed by ${_wholesaleSimpleDate(planned.needByDate)}',
-                        style: const TextStyle(
-                          color: FarmColors.mutedText,
-                          fontSize: 11.4,
-                          height: 1.35,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: onTap,
-                          child: const Text('View Plan'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-}
-
-String _wholesaleSimpleDate(DateTime value) {
-  const months = <String>[
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  return '${value.day} ${months[value.month - 1]}';
-}
-
-class _WholesaleTodayMetric extends StatelessWidget {
-  final String label;
-  final String value;
-  final String note;
-  final VoidCallback? onTap;
-
-  const _WholesaleTodayMetric({
-    required this.label,
-    required this.value,
-    required this.note,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(17),
-        onTap: onTap,
-        child: Container(
-          height: 102,
-          padding: const EdgeInsets.all(11),
-          decoration: BoxDecoration(
-            color: FarmColors.card,
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(
-              color: FarmColors.line,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF183D30).withOpacity(0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 10.8,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                note,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 10.2,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesaleAttentionRow extends StatelessWidget {
-  final String title;
-  final String message;
-  final String action;
-  final VoidCallback onTap;
-
-  const _WholesaleAttentionRow({
-    required this.title,
-    required this.message,
-    required this.action,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          margin: const EdgeInsets.only(top: 5),
-          decoration: const BoxDecoration(
-            color: Color(0xFF0B4C36),
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 13.2,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                message,
-                style: const TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 11.4,
-                  height: 1.32,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        TextButton(
-          onPressed: onTap,
-          child: Text(
-            action,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WholesaleSimpleMenuTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _WholesaleSimpleMenuTile({
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 2,
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: FarmColors.ink,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(
-          color: FarmColors.mutedText,
-          fontSize: 9.6,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      trailing: const Icon(
-        Icons.chevron_right_rounded,
-        size: 19,
-      ),
-      onTap: onTap,
-    );
-  }
-}
-
-class _BusinessDetailsEditScreen extends StatelessWidget {
-  final BusinessAccount account;
-
-  const _BusinessDetailsEditScreen({required this.account});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(title: const Text('Business Details')),
-      body: FarmPage(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-          children: [
-            BusinessApplicationForm(
-              existing: account,
-              onSubmitted: () async {
-                if (context.mounted) {
-                  Navigator.of(context).pop(true);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesaleMenuTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _WholesaleMenuTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
-      leading: CircleAvatar(
-        backgroundColor: FarmColors.primarySoft,
-        child: Icon(icon, color: FarmColors.primary),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: FarmColors.ink,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(
-          color: FarmColors.mutedText,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-      onTap: onTap,
-    );
-  }
-}
-// =====================================================
-// WHOLESALE PLANNING AHEAD
-// =====================================================
-
-class _WholesalePlanningLineDraft {
-  final Product product;
-  String quantityText;
-  DateTime? customNeedBy;
-
-  _WholesalePlanningLineDraft({
-    required this.product,
-    required this.quantityText,
-    this.customNeedBy,
-  });
-}
-
-class WholesalePlanningAheadScreen extends StatefulWidget {
-  final BusinessAccount account;
-  final bool embedded;
-  final String? initialForecastId;
-
-  const WholesalePlanningAheadScreen({
-    super.key,
-    required this.account,
-    this.embedded = false,
-    this.initialForecastId,
-  });
-
-  @override
-  State<WholesalePlanningAheadScreen> createState() =>
-      _WholesalePlanningAheadScreenState();
-}
-
-class _WholesalePlanningAheadScreenState
-    extends State<WholesalePlanningAheadScreen> {
-  int refreshKey = 0;
-  late Future<List<Product>> _planningProductsFuture;
-
-  bool _showPlanningForm = false;
-  bool _savingPlanning = false;
-  int _planningStep = 0;
-
-  final List<_WholesalePlanningLineDraft> _lines =
-      <_WholesalePlanningLineDraft>[];
-  List<WholesaleDemandForecast> _recentPlanningForecasts =
-      <WholesaleDemandForecast>[];
-
-  String _productQuery = '';
-  String _notesText = '';
-  String? _smartPlanningMessage;
-
-  DateTime _needByDate = DateTime.now().add(
-    const Duration(days: 14),
-  );
-  String _frequency = 'one_time';
-  String _certainty = 'likely';
-
-  @override
-  void initState() {
-    super.initState();
-    _planningProductsFuture = _loadPlanningProducts();
-    unawaited(_restorePlanningDraft());
-  }
-
-  String _unitFor(Product product) {
-    final clean = (product.unit ?? '').trim();
-    return clean.isEmpty ? 'unit' : clean;
-  }
-
-  String _simpleNumber(double value) {
-    if (value == value.roundToDouble()) {
-      return value.toStringAsFixed(0);
-    }
-    return value.toStringAsFixed(1);
-  }
-
-  int _cadenceDays(String frequency) {
-    switch (frequency) {
-      case 'weekly':
-        return 7;
-      case 'biweekly':
-        return 14;
-      case 'monthly':
-        return 30;
-      default:
-        return 14;
-    }
-  }
-
-  String _encodeDraftLines() {
-    return _lines.map((line) {
-      final customMs = line.customNeedBy?.millisecondsSinceEpoch ?? 0;
-      return '${line.product.id}|${line.quantityText.trim()}|$customMs';
-    }).join(';;');
-  }
-
-  List<List<String>> _decodeDraftLines(String? raw) {
-    final clean = raw?.trim() ?? '';
-    if (clean.isEmpty) return const <List<String>>[];
-
-    return clean
-        .split(';;')
-        .map((entry) => entry.split('|'))
-        .where((parts) => parts.length >= 3 && parts.first.trim().isNotEmpty)
-        .toList();
-  }
-
-  Future<void> _restorePlanningDraft() async {
-    final wasOpen =
-        await HpjSmartLocalStore.readBool('wholesale_plan_open');
-    if (wasOpen != true) return;
-
-    final encodedLines =
-        await HpjSmartLocalStore.readString('wholesale_plan_lines');
-    final legacyProductId =
-        await HpjSmartLocalStore.readString('wholesale_plan_product');
-    final legacyQuantity =
-        await HpjSmartLocalStore.readString('wholesale_plan_quantity');
-    final notes = await HpjSmartLocalStore.readString('wholesale_plan_notes');
-    final frequency =
-        await HpjSmartLocalStore.readString('wholesale_plan_frequency');
-    final certainty =
-        await HpjSmartLocalStore.readString('wholesale_plan_certainty');
-    final needByMs =
-        await HpjSmartLocalStore.readInt('wholesale_plan_need_by');
-    final savedStep =
-        await HpjSmartLocalStore.readInt('wholesale_plan_step');
-
-    List<Product> products;
-    try {
-      products = await _planningProductsFuture;
-    } catch (_) {
-      products = const <Product>[];
-    }
-
-    final decoded = _decodeDraftLines(encodedLines).toList();
-    if (decoded.isEmpty && (legacyProductId ?? '').trim().isNotEmpty) {
-      decoded.add(<String>[
-        legacyProductId!.trim(),
-        (legacyQuantity ?? '10').trim().isEmpty
-            ? '10'
-            : legacyQuantity!.trim(),
-        '0',
-      ]);
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _showPlanningForm = true;
-      _planningStep = (savedStep ?? 0).clamp(0, 2).toInt();
-      _notesText = notes ?? '';
-
-      if (const <String>['one_time', 'weekly', 'biweekly', 'monthly']
-          .contains(frequency)) {
-        _frequency = frequency!;
-      }
-      if (const <String>['tentative', 'likely', 'expected']
-          .contains(certainty)) {
-        _certainty = certainty!;
-      }
-      if (needByMs != null && needByMs > 0) {
-        _needByDate = DateTime.fromMillisecondsSinceEpoch(needByMs);
-      }
-
-      _lines.clear();
-      for (final parts in decoded) {
-        final id = parts[0].trim();
-        Product? product;
-        for (final candidate in products) {
-          if (candidate.id == id) {
-            product = candidate;
-            break;
-          }
-        }
-        if (product == null) continue;
-
-        final customMs = int.tryParse(parts[2].trim()) ?? 0;
-        _lines.add(
-          _WholesalePlanningLineDraft(
-            product: product,
-            quantityText: parts[1].trim().isEmpty ? '10' : parts[1].trim(),
-            customNeedBy: customMs > 0
-                ? DateTime.fromMillisecondsSinceEpoch(customMs)
-                : null,
-          ),
-        );
-      }
-
-      if (_lines.isEmpty && _planningStep > 0) {
-        _planningStep = 0;
-      }
-      _smartPlanningMessage =
-          'Draft restored. HPJ kept your unfinished planning list on this device.';
-    });
-  }
-
-  void _persistPlanningDraft() {
-    unawaited(
-      HpjSmartLocalStore.writeBool(
-        'wholesale_plan_open',
-        _showPlanningForm,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeString(
-        'wholesale_plan_lines',
-        _encodeDraftLines(),
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeString(
-        'wholesale_plan_notes',
-        _notesText,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeString(
-        'wholesale_plan_frequency',
-        _frequency,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeString(
-        'wholesale_plan_certainty',
-        _certainty,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeInt(
-        'wholesale_plan_need_by',
-        _needByDate.millisecondsSinceEpoch,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeInt(
-        'wholesale_plan_step',
-        _planningStep,
-      ),
-    );
-  }
-
-  Future<void> _clearPlanningDraft() async {
-    for (final key in const <String>[
-      'wholesale_plan_open',
-      'wholesale_plan_product',
-      'wholesale_plan_quantity',
-      'wholesale_plan_lines',
-      'wholesale_plan_notes',
-      'wholesale_plan_frequency',
-      'wholesale_plan_certainty',
-      'wholesale_plan_need_by',
-      'wholesale_plan_step',
-    ]) {
-      await HpjSmartLocalStore.remove(key);
-    }
-  }
-
-  void _startPlanning(List<WholesaleDemandForecast> active) {
-    final sorted = List<WholesaleDemandForecast>.of(active)
-      ..sort((a, b) {
-        final aDate = a.updatedAt ?? a.createdAt ?? a.needByDate;
-        final bDate = b.updatedAt ?? b.createdAt ?? b.needByDate;
-        return bDate.compareTo(aDate);
-      });
-
-    setState(() {
-      _showPlanningForm = true;
-      _planningStep = 0;
-      _lines.clear();
-      _productQuery = '';
-      _notesText = '';
-      _frequency = 'one_time';
-      _certainty = 'likely';
-      _needByDate = DateTime.now().add(const Duration(days: 14));
-      _smartPlanningMessage = null;
-      _recentPlanningForecasts = sorted.take(6).toList();
-    });
-
-    unawaited(
-      _clearPlanningDraft().then((_) async => _persistPlanningDraft()),
-    );
-  }
-
-  void _closePlanning() {
-    if (_savingPlanning) return;
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _showPlanningForm = false;
-      _planningStep = 0;
-      _lines.clear();
-      _productQuery = '';
-      _smartPlanningMessage = null;
-    });
-    unawaited(_clearPlanningDraft());
-  }
-
-  int _lineIndex(String productId) {
-    return _lines.indexWhere((line) => line.product.id == productId);
-  }
-
-  WholesaleDemandForecast? _recentForProduct(Product product) {
-    for (final forecast in _recentPlanningForecasts) {
-      final sameId = forecast.productId != null &&
-          forecast.productId!.isNotEmpty &&
-          forecast.productId == product.id;
-      final sameName = forecast.productName.trim().toLowerCase() ==
-          product.name.trim().toLowerCase();
-      if (sameId || sameName) return forecast;
-    }
-    return null;
-  }
-
-  void _addProduct(Product product) {
-    if (_lineIndex(product.id) >= 0) return;
-    if (_lines.length >= 25) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A Planning Ahead list can contain up to 25 products.'),
-        ),
-      );
-      return;
-    }
-
-    final recent = _recentForProduct(product);
-    final wasEmpty = _lines.isEmpty;
-
-    setState(() {
-      _lines.add(
-        _WholesalePlanningLineDraft(
-          product: product,
-          quantityText: recent == null ? '10' : _simpleNumber(recent.quantity),
-        ),
-      );
-
-      if (wasEmpty && recent != null) {
-        if (const <String>['one_time', 'weekly', 'biweekly', 'monthly']
-            .contains(recent.frequency)) {
-          _frequency = recent.frequency;
-        }
-        if (const <String>['tentative', 'likely', 'expected']
-            .contains(recent.certainty)) {
-          _certainty = recent.certainty;
-        }
-        _needByDate = DateTime.now().add(
-          Duration(days: _cadenceDays(_frequency)),
-        );
-      }
-
-      _smartPlanningMessage = recent == null
-          ? '${_lines.length} item${_lines.length == 1 ? '' : 's'} selected.'
-          : 'HPJ used your recent ${product.name} quantity as a starting point.';
-    });
-    _persistPlanningDraft();
-  }
-
-  void _removeProduct(Product product) {
-    setState(() {
-      _lines.removeWhere((line) => line.product.id == product.id);
-      _smartPlanningMessage = _lines.isEmpty
-          ? null
-          : '${_lines.length} item${_lines.length == 1 ? '' : 's'} selected.';
-    });
-    _persistPlanningDraft();
-  }
-
-  void _toggleProduct(Product product) {
-    _lineIndex(product.id) >= 0 ? _removeProduct(product) : _addProduct(product);
-  }
-
-  void _applyRecentPlanning(
-    WholesaleDemandForecast forecast,
-    List<Product> products,
-  ) {
-    Product? product;
-    for (final candidate in products) {
-      final sameId = forecast.productId != null &&
-          forecast.productId!.isNotEmpty &&
-          candidate.id == forecast.productId;
-      final sameName = candidate.name.trim().toLowerCase() ==
-          forecast.productName.trim().toLowerCase();
-      if (sameId || sameName) {
-        product = candidate;
-        break;
-      }
-    }
-
-    if (product == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'That recent product is not currently available for planning.',
-          ),
-        ),
-      );
-      return;
-    }
-    _addProduct(product);
-  }
-
-  bool _validateLines() {
-    if (_lines.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choose at least one product first.')),
-      );
-      return false;
-    }
-
-    for (final line in _lines) {
-      final quantity = double.tryParse(line.quantityText.trim());
-      if (quantity == null || quantity <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Enter a valid quantity for ${line.product.name}.'),
-          ),
-        );
-        return false;
-      }
-    }
-    return true;
-  }
-
-  void _planningBack() {
-    if (_savingPlanning || _planningStep <= 0) return;
-    FocusScope.of(context).unfocus();
-    setState(() => _planningStep--);
-    _persistPlanningDraft();
-  }
-
-  void _planningContinue() {
-    if (_savingPlanning) return;
-    if (_planningStep == 0 && _lines.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choose at least one product first.')),
-      );
-      return;
-    }
-    if (_planningStep == 1 && !_validateLines()) return;
-
-    FocusScope.of(context).unfocus();
-    if (_planningStep < 2) {
-      setState(() => _planningStep++);
-      _persistPlanningDraft();
-    }
-  }
-
-  void _refresh() {
-    setState(() => refreshKey++);
-  }
-
-  Future<List<Product>> _loadPlanningProducts() async {
-    final products = await fetchAllProducts();
-    final eligible = products
-        .where((product) => product.isApproved && !product.isHidden)
-        .toList()
-      ..sort(
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-      );
-    return eligible;
-  }
-
-  void _reloadPlanningProducts() {
-    setState(() {
-      _planningProductsFuture = _loadPlanningProducts();
-    });
-  }
-
-  String _planningDateLabel(DateTime date) {
-    const months = <String>[
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${date.day} ${months[date.month - 1]} ${date.year}';
-  }
-
-  DateTime _lineNeedBy(_WholesalePlanningLineDraft line) {
-    return line.customNeedBy ?? _needByDate;
-  }
-
-  void _setNeedByDays(int days) {
-    final now = DateTime.now();
-    setState(() {
-      _needByDate = DateTime(now.year, now.month, now.day)
-          .add(Duration(days: days));
-    });
-    _persistPlanningDraft();
-  }
-
-  Future<void> _chooseLineDate(_WholesalePlanningLineDraft line) async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final current = _lineNeedBy(line);
-
-    final chosen = await showDatePicker(
-      context: context,
-      initialDate: current.isBefore(today) ? today : current,
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 730)),
-      helpText: 'When will you need ${line.product.name}?',
-    );
-    if (!mounted || chosen == null) return;
-
-    setState(() {
-      final sameAsShared = chosen.year == _needByDate.year &&
-          chosen.month == _needByDate.month &&
-          chosen.day == _needByDate.day;
-      line.customNeedBy = sameAsShared ? null : chosen;
-    });
-    _persistPlanningDraft();
-  }
-
-  Future<void> _savePlanningRequirement() async {
-    if (_savingPlanning || !_validateLines()) return;
-
-    final items = <WholesaleDemandPlanItem>[
-      for (final line in _lines)
-        WholesaleDemandPlanItem(
-          productId: line.product.id,
-          productName: line.product.name,
-          category: line.product.category,
-          quantity: double.parse(line.quantityText.trim()),
-          unit: _unitFor(line.product),
-          needByDate: _lineNeedBy(line),
-        ),
-    ];
-
-    setState(() => _savingPlanning = true);
-
-    try {
-      final saved = await createWholesaleDemandForecastBatch(
-        items: items,
-        frequency: _frequency,
-        certainty: _certainty,
-        notes: _notesText.trim(),
-      );
-      if (!mounted) return;
-
-      setState(() {
-        _showPlanningForm = false;
-        _savingPlanning = false;
-        _planningStep = 0;
-        _lines.clear();
-        _productQuery = '';
-        _notesText = '';
-        _frequency = 'one_time';
-        _certainty = 'likely';
-        _smartPlanningMessage = null;
-        _needByDate = DateTime.now().add(const Duration(days: 14));
-        refreshKey++;
-      });
-
-      await _clearPlanningDraft();
-      if (!mounted) return;
-
-      final planMore = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => _WholesalePlanningBatchSavedSheet(forecasts: saved),
-      );
-      if (!mounted) return;
-      if (planMore == true) {
-        _startPlanning(<WholesaleDemandForecast>[
-          ...saved,
-          ..._recentPlanningForecasts,
-        ]);
-      }
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _savingPlanning = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  Widget _planningProgress() {
-    return Row(
-      children: [
-        for (var index = 0; index < 3; index++) ...[
-          Expanded(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              height: 4,
-              decoration: BoxDecoration(
-                color: index <= _planningStep
-                    ? FarmColors.primary
-                    : FarmColors.line,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          if (index < 2) const SizedBox(width: 5),
-        ],
-      ],
-    );
-  }
-
-  Widget _selectedMiniCard(_WholesalePlanningLineDraft line) {
-    final product = line.product;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
-      decoration: BoxDecoration(
-        color: FarmColors.primarySoft,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Row(
-        children: [
-          HpjProductThumb(
-            product: product,
-            productName: product.name,
-            size: 46,
-            radius: 10,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 10.8,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${product.category} • ${_unitFor(product)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Remove ${product.name}',
-            visualDensity: VisualDensity.compact,
-            onPressed: _savingPlanning ? null : () => _removeProduct(product),
-            icon: const Icon(Icons.close_rounded, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _lineEditor(_WholesalePlanningLineDraft line) {
-    final product = line.product;
-    final hasCustomDate = line.customNeedBy != null;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: FarmColors.card,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              HpjProductThumb(
-                product: product,
-                productName: product.name,
-                size: 56,
-                radius: 12,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      product.name,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${product.category} • ${_unitFor(product)}',
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Remove',
-                onPressed: _savingPlanning ? null : () => _removeProduct(product),
-                icon: const Icon(Icons.delete_outline_rounded, size: 20),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            key: ValueKey('plan-qty-${product.id}'),
-            initialValue: line.quantityText,
-            enabled: !_savingPlanning,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Quantity',
-              suffixText: _unitFor(product),
-            ),
-            onChanged: (value) {
-              line.quantityText = value;
-              _persistPlanningDraft();
-            },
-          ),
-          const SizedBox(height: 9),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _savingPlanning ? null : () => _chooseLineDate(line),
-                  icon: const Icon(Icons.calendar_month_outlined, size: 18),
-                  label: Text(
-                    _planningDateLabel(_lineNeedBy(line)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              if (hasCustomDate) ...[
-                const SizedBox(width: 6),
-                TextButton(
-                  onPressed: _savingPlanning
-                      ? null
-                      : () {
-                          setState(() => line.customNeedBy = null);
-                          _persistPlanningDraft();
-                        },
-                  child: const Text('Use shared'),
-                ),
-              ],
-            ],
-          ),
-          if (hasCustomDate)
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Custom date for this item',
-                style: TextStyle(
-                  color: FarmColors.primary,
-                  fontSize: 9.2,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _reviewLine(_WholesalePlanningLineDraft line) {
-    final product = line.product;
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: FarmColors.background,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Row(
-        children: [
-          HpjProductThumb(
-            product: product,
-            productName: product.name,
-            size: 48,
-            radius: 11,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 10.8,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${line.quantityText} ${_unitFor(product)} • ${_planningDateLabel(_lineNeedBy(line))}',
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.6,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _planningForm() {
-    return FutureBuilder<List<Product>>(
-      future: _planningProductsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return FarmCard(
-            padding: const EdgeInsets.all(18),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return FarmCard(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              children: [
-                FarmEmptyState(
-                  icon: Icons.inventory_2_outlined,
-                  title: 'Products could not load',
-                  message: friendlyAppError(snapshot.error!),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: _reloadPlanningProducts,
-                    child: const Text('Try Again'),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final products = snapshot.data ?? const <Product>[];
-        if (products.isEmpty) {
-          return FarmCard(
-            padding: const EdgeInsets.all(18),
-            child: const FarmEmptyState(
-              icon: Icons.inventory_2_outlined,
-              title: 'No products available for planning',
-              message:
-                  'HPJ needs at least one approved product before a future requirement can be created.',
-            ),
-          );
-        }
-
-        final query = _productQuery.trim().toLowerCase();
-        final filtered = products.where((product) {
-          if (query.isEmpty) return true;
-          return product.name.toLowerCase().contains(query) ||
-              product.category.toLowerCase().contains(query) ||
-              hpjSmartProductMatchesSearch(product, _productQuery);
-        }).toList()
-          ..sort(
-            (a, b) => hpjSmartProductSearchScore(b, _productQuery)
-                .compareTo(hpjSmartProductSearchScore(a, _productQuery)),
-          );
-        final visibleFiltered = filtered.take(12).toList();
-
-        return FarmCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'Step ${_planningStep + 1} of 3',
-                    style: const TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (_lines.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: FarmColors.primarySoft,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        '${_lines.length} selected',
-                        style: const TextStyle(
-                          color: FarmColors.primary,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  IconButton(
-                    tooltip: 'Close',
-                    onPressed: _savingPlanning ? null : _closePlanning,
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              _planningProgress(),
-              const SizedBox(height: 17),
-
-              if (_planningStep == 0) ...[
-                const Text(
-                  'What will your business need?',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Choose one or more products. Set quantities and dates on the next step.',
-                  style: TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 10.8,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                if (_lines.isNotEmpty) ...[
-                  const Text(
-                    'Selected products',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 10.8,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  for (final line in _lines) ...[
-                    _selectedMiniCard(line),
-                    const SizedBox(height: 7),
-                  ],
-                  const SizedBox(height: 6),
-                ],
-
-                if (_recentPlanningForecasts.isNotEmpty) ...[
-                  const Text(
-                    'Repeat a recent need',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 10.8,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  SizedBox(
-                    height: 106,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _recentPlanningForecasts.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final forecast = _recentPlanningForecasts[index];
-                        return Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: _savingPlanning
-                                ? null
-                                : () => _applyRecentPlanning(forecast, products),
-                            child: Ink(
-                              width: 116,
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: FarmColors.background,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: FarmColors.line),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  HpjProductThumb(
-                                    productId: forecast.productId,
-                                    productName: forecast.productName,
-                                    size: 60,
-                                    radius: 12,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    forecast.productName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: FarmColors.ink,
-                                      fontSize: 10.2,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 13),
-                ],
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: const Text('Browse product pictures'),
-                    onPressed: _savingPlanning
-                        ? null
-                        : () async {
-                            final product = await showHpjProductPicturePicker(
-                              context,
-                              title: 'Add a product to your plan',
-                              products: products,
-                            );
-                            if (!mounted || product == null) return;
-                            _addProduct(product);
-                          },
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  initialValue: _productQuery,
-                  enabled: !_savingPlanning,
-                  decoration: const InputDecoration(
-                    labelText: 'Find product',
-                    hintText: 'Search HPJ products',
-                    prefixIcon: Icon(Icons.search_rounded),
-                  ),
-                  onChanged: (value) => setState(() => _productQuery = value),
-                ),
-                const SizedBox(height: 9),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 260),
-                  decoration: BoxDecoration(
-                    color: FarmColors.background,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: FarmColors.line),
-                  ),
-                  child: visibleFiltered.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(15),
-                          child: Text(
-                            'No matching products.',
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        )
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          primary: false,
-                          itemCount: visibleFiltered.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final product = visibleFiltered[index];
-                            final selected = _lineIndex(product.id) >= 0;
-                            return ListTile(
-                              dense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              leading: HpjProductThumb(
-                                product: product,
-                                productName: product.name,
-                                size: 52,
-                                radius: 12,
-                              ),
-                              title: Text(
-                                product.name,
-                                style: const TextStyle(
-                                  color: FarmColors.ink,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              subtitle: Text(
-                                product.category.trim().isEmpty
-                                    ? 'HPJ product'
-                                    : product.category,
-                              ),
-                              trailing: Checkbox(
-                                value: selected,
-                                onChanged: _savingPlanning
-                                    ? null
-                                    : (_) => _toggleProduct(product),
-                              ),
-                              onTap: _savingPlanning
-                                  ? null
-                                  : () => _toggleProduct(product),
-                            );
-                          },
-                        ),
-                ),
-                if (_smartPlanningMessage != null) ...[
-                  const SizedBox(height: 9),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F4EC),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Text(
-                      _smartPlanningMessage!,
-                      style: const TextStyle(
-                        color: Color(0xFF5E6C64),
-                        fontSize: 9.8,
-                        height: 1.3,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ] else if (_planningStep == 1) ...[
-                const Text(
-                  'How much, and when?',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Set a shared date, then change any item that needs a different date.',
-                  style: TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 10.8,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 13),
-                const Text(
-                  'Shared need-by date',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _planningDateLabel(_needByDate),
-                  style: const TextStyle(
-                    color: FarmColors.primary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    for (final days in const <int>[7, 14, 30, 60, 90])
-                      ChoiceChip(
-                        label: Text('$days days'),
-                        selected: _needByDate
-                                .difference(
-                                  DateTime(
-                                    DateTime.now().year,
-                                    DateTime.now().month,
-                                    DateTime.now().day,
-                                  ),
-                                )
-                                .inDays ==
-                            days,
-                        onSelected: _savingPlanning
-                            ? null
-                            : (_) => _setNeedByDays(days),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 15),
-                for (final line in _lines) ...[
-                  _lineEditor(line),
-                  const SizedBox(height: 10),
-                ],
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _savingPlanning
-                        ? null
-                        : () {
-                            setState(() => _planningStep = 0);
-                            _persistPlanningDraft();
-                          },
-                    icon: const Icon(Icons.add_circle_outline_rounded),
-                    label: const Text('Add another item'),
-                  ),
-                ),
-              ] else ...[
-                const Text(
-                  'Review your planning list',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${_lines.length} product${_lines.length == 1 ? '' : 's'} will be saved as one planning list while HPJ keeps each item separate for supply matching.',
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 10.8,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 13),
-                for (final line in _lines) ...[
-                  _reviewLine(line),
-                  const SizedBox(height: 7),
-                ],
-                const SizedBox(height: 8),
-                const Text(
-                  'Frequency',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    for (final option in const <MapEntry<String, String>>[
-                      MapEntry('one_time', 'One time'),
-                      MapEntry('weekly', 'Weekly'),
-                      MapEntry('biweekly', 'Every 2 weeks'),
-                      MapEntry('monthly', 'Monthly'),
-                    ])
-                      ChoiceChip(
-                        label: Text(option.value),
-                        selected: _frequency == option.key,
-                        onSelected: _savingPlanning
-                            ? null
-                            : (_) {
-                                setState(() => _frequency = option.key);
-                                _persistPlanningDraft();
-                              },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'How certain is this need?',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    for (final option in const <MapEntry<String, String>>[
-                      MapEntry('tentative', 'Tentative'),
-                      MapEntry('likely', 'Likely'),
-                      MapEntry('expected', 'Expected'),
-                    ])
-                      ChoiceChip(
-                        label: Text(option.value),
-                        selected: _certainty == option.key,
-                        onSelected: _savingPlanning
-                            ? null
-                            : (_) {
-                                setState(() => _certainty = option.key);
-                                _persistPlanningDraft();
-                              },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  initialValue: _notesText,
-                  enabled: !_savingPlanning,
-                  minLines: 2,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes (optional)',
-                    hintText: 'Anything HPJ should know about this planning list?',
-                  ),
-                  onChanged: (value) {
-                    _notesText = value;
-                    _persistPlanningDraft();
-                  },
-                ),
-              ],
-
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  if (_planningStep > 0) ...[
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _savingPlanning ? null : _planningBack,
-                        child: const Text('Back'),
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                  ],
-                  Expanded(
-                    flex: _planningStep > 0 ? 2 : 1,
-                    child: _planningStep < 2
-                        ? ElevatedButton(
-                            onPressed:
-                                _savingPlanning ? null : _planningContinue,
-                            child: Text(
-                              _planningStep == 0
-                                  ? _lines.isEmpty
-                                      ? 'Choose products'
-                                      : 'Continue with ${_lines.length} item${_lines.length == 1 ? '' : 's'}'
-                                  : 'Continue',
-                            ),
-                          )
-                        : ElevatedButton(
-                            onPressed: _savingPlanning
-                                ? null
-                                : _savePlanningRequirement,
-                            child: Text(
-                              _savingPlanning
-                                  ? 'Saving...'
-                                  : 'Save ${_lines.length} Planned Item${_lines.length == 1 ? '' : 's'}',
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final desktopWeb = HpjWebUi.isDesktop(context);
-
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: widget.embedded
-          ? null
-          : AppBar(title: const Text('Planning Ahead')),
-      body: FarmPage(
-        child: FutureBuilder<List<WholesaleDemandForecast>>(
-          key: ValueKey('wholesale-planning-$refreshKey'),
-          future: fetchMyWholesaleDemandForecasts(includeCancelled: false),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError && !snapshot.hasData) {
-              return RefreshIndicator(
-                onRefresh: () async => _refresh(),
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
-                  children: [
-                    FarmCard(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        children: [
-                          FarmEmptyState(
-                            icon: Icons.event_busy_outlined,
-                            title: 'Plans could not load',
-                            message: friendlyAppError(snapshot.error!),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton(
-                              onPressed: _refresh,
-                              child: const Text('Try Again'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            final forecasts =
-                snapshot.data ?? const <WholesaleDemandForecast>[];
-            final allActive = forecasts.where((item) => item.isActive).toList()
-              ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
-
-            final requestedForecastId =
-                widget.initialForecastId?.trim() ?? '';
-            final focusedForecasts = requestedForecastId.isEmpty
-                ? const <WholesaleDemandForecast>[]
-                : allActive
-                    .where((item) => item.id.trim() == requestedForecastId)
-                    .toList();
-
-            final exactForecastFound = focusedForecasts.isNotEmpty;
-            final active = exactForecastFound ? focusedForecasts : allActive;
-            final needsReview =
-                active.where(_wholesaleForecastNeedsReview).toList();
-
-            return RefreshIndicator(
-              onRefresh: () async => _refresh(),
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
-                children: [
-                  FarmCard(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: FarmColors.primarySoft,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.calendar_month_outlined,
-                            color: FarmColors.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Plan before you order',
-                                style: TextStyle(
-                                  color: FarmColors.ink,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                'Add several expected products in one planning list so HPJ can prepare supply early.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 11.5,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              SizedBox(height: 7),
-                              Text(
-                                'Planning only • Not an order',
-                                style: TextStyle(
-                                  color: FarmColors.primary,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: Icon(
-                        _showPlanningForm
-                            ? Icons.close_rounded
-                            : Icons.add_rounded,
-                      ),
-                      onPressed: _savingPlanning
-                          ? null
-                          : () {
-                              _showPlanningForm
-                                  ? _closePlanning()
-                                  : _startPlanning(active);
-                            },
-                      label: Text(
-                        _showPlanningForm ? 'Close' : 'Add Planning List',
-                      ),
-                    ),
-                  ),
-                  if (_showPlanningForm) ...[
-                    const SizedBox(height: 12),
-                    _planningForm(),
-                  ],
-                  const SizedBox(height: 22),
-                  if (requestedForecastId.isNotEmpty) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(11),
-                      decoration: BoxDecoration(
-                        color: exactForecastFound
-                            ? FarmColors.primarySoft
-                            : const Color(0xFFFFF7E8),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: exactForecastFound
-                              ? FarmColors.primary.withOpacity(0.20)
-                              : FarmColors.warning.withOpacity(0.28),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            exactForecastFound
-                                ? Icons.notifications_active_outlined
-                                : Icons.info_outline_rounded,
-                            size: 18,
-                            color: exactForecastFound
-                                ? FarmColors.primary
-                                : FarmColors.warning,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              exactForecastFound
-                                  ? 'Opened from your notification. Showing the related planned need.'
-                                  : 'That planned need is no longer active. Showing your current planning list instead.',
-                              style: const TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 10,
-                                height: 1.35,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Your planned needs',
-                          style: TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      if (active.isNotEmpty)
-                        Text(
-                          '${active.length} upcoming',
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                    ],
-                  ),
-                  if (needsReview.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF7E8),
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: FarmColors.warning.withOpacity(0.28),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.schedule_outlined,
-                            color: FarmColors.warning,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 9),
-                          Expanded(
-                            child: Text(
-                              '${needsReview.length} planned need${needsReview.length == 1 ? '' : 's'} need a quick review.',
-                              style: const TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 10,
-                                height: 1.35,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  if (active.isEmpty)
-                    FarmCard(
-                      padding: const EdgeInsets.all(18),
-                      child: const Column(
-                        children: [
-                          Icon(
-                            Icons.event_note_outlined,
-                            size: 30,
-                            color: FarmColors.primary,
-                          ),
-                          SizedBox(height: 9),
-                          Text(
-                            'Nothing planned yet',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(height: 5),
-                          Text(
-                            'Add what you expect to need and HPJ can prepare ahead.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 11.5,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (desktopWeb)
-                    HpjWebResponsiveGrid(
-                      minItemWidth: 470,
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: active
-                          .map(
-                            (forecast) => _WholesalePlanningSimpleCard(
-                              forecast: forecast,
-                              onChanged: _refresh,
-                            ),
-                          )
-                          .toList(growable: false),
-                    )
-                  else
-                    ...active.map(
-                      (forecast) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _WholesalePlanningSimpleCard(
-                          forecast: forecast,
-                          onChanged: _refresh,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesalePlanningBatchSavedSheet extends StatelessWidget {
-  final List<WholesaleDemandForecast> forecasts;
-
-  const _WholesalePlanningBatchSavedSheet({required this.forecasts});
-
-  @override
-  Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    DateTime? earliest;
-    for (final forecast in forecasts) {
-      if (earliest == null || forecast.needByDate.isBefore(earliest)) {
-        earliest = forecast.needByDate;
-      }
-    }
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: screenHeight * 0.88),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: FarmColors.card,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-        ),
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: FarmColors.line,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'PLANNING LIST SAVED',
-              style: TextStyle(
-                color: FarmColors.success,
-                fontSize: 9,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              '${forecasts.length} planned item${forecasts.length == 1 ? '' : 's'} shared with HPJ.',
-              style: const TextStyle(
-                color: FarmColors.ink,
-                fontSize: 20,
-                height: 1.08,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if (earliest != null) ...[
-              const SizedBox(height: 5),
-              Text(
-                'Earliest need: ${_wholesaleSimpleDate(earliest)}',
-                style: const TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-            const SizedBox(height: 14),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: forecasts.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 7),
-                itemBuilder: (context, index) {
-                  final forecast = forecasts[index];
-                  return Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: FarmColors.background,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: FarmColors.line),
-                    ),
-                    child: Row(
-                      children: [
-                        HpjProductThumb(
-                          productId: forecast.productId,
-                          productName: forecast.productName,
-                          size: 48,
-                          radius: 11,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                forecast.productName,
-                                style: const TextStyle(
-                                  color: FarmColors.ink,
-                                  fontSize: 10.8,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '${forecast.formattedQuantity} • ${_wholesaleSimpleDate(forecast.needByDate)}',
-                                style: const TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 9.6,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(
-                          Icons.check_circle_rounded,
-                          color: FarmColors.success,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Done'),
-                  ),
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Plan More'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesalePlanningValueSheet
-    extends StatelessWidget {
-  final String productName;
-  final double quantity;
-  final String unit;
-  final DateTime needByDate;
-  final String frequency;
-  final String certainty;
-
-  const _WholesalePlanningValueSheet({
-    required this.productName,
-    required this.quantity,
-    required this.unit,
-    required this.needByDate,
-    required this.frequency,
-    required this.certainty,
-  });
-
-  String get quantityLabel {
-    if (quantity == quantity.roundToDouble()) {
-      return quantity.toStringAsFixed(0);
-    }
-
-    return quantity.toStringAsFixed(1);
-  }
-
-  String get frequencyLabel {
-    switch (frequency) {
-      case 'weekly':
-        return 'Weekly';
-      case 'biweekly':
-        return 'Every 2 weeks';
-      case 'monthly':
-        return 'Monthly';
-      default:
-        return 'One time';
-    }
-  }
-
-  String get certaintyLabel {
-    switch (certainty) {
-      case 'expected':
-        return 'Expected';
-      case 'tentative':
-        return 'Tentative';
-      default:
-        return 'Likely';
-    }
-  }
-
-  int get noticeDays {
-    final now = DateTime.now();
-    final today = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    );
-    final need = DateTime(
-      needByDate.year,
-      needByDate.month,
-      needByDate.day,
-    );
-
-    final days = need.difference(today).inDays;
-
-    return days < 0 ? 0 : days;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: screenHeight * 0.88,
-      ),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: FarmColors.card,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(26),
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(
-          18,
-          14,
-          18,
-          12,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: FarmColors.line,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            Flexible(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    HpjProductThumb(
-                      productName: productName,
-                      size: 76,
-                      radius: 16,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'PLANNED NEED SAVED',
-                      style: TextStyle(
-                        color: FarmColors.success,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      noticeDays > 0
-                          ? 'HPJ now has $noticeDays day${noticeDays == 1 ? '' : 's'} to prepare.'
-                          : 'HPJ has your planned need.',
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 20,
-                        height: 1.08,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: FarmColors.background,
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: FarmColors.line,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          _WholesaleValueRow(
-                            label: 'Product',
-                            value: productName,
-                          ),
-                          _WholesaleValueRow(
-                            label: 'Quantity',
-                            value: '$quantityLabel $unit',
-                          ),
-                          _WholesaleValueRow(
-                            label: 'Need by',
-                            value: _wholesaleSimpleDate(needByDate),
-                          ),
-                          _WholesaleValueRow(
-                            label: 'Pattern',
-                            value: '$frequencyLabel • $certaintyLabel',
-                            showDivider: false,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(false),
-                    child: const Text('Done'),
-                  ),
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(true),
-                    child: const Text('Plan Another'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesaleValueRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool showDivider;
-
-  const _WholesaleValueRow({
-    required this.label,
-    required this.value,
-    this.showDivider = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            vertical: 6,
-          ),
-          child: Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 76,
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 10.4,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (showDivider)
-          const Divider(height: 1),
-      ],
-    );
-  }
-}
-
-class _WholesaleSelectedPlanningProduct extends StatelessWidget {
-  final Product product;
-  final String unit;
-  final VoidCallback? onChange;
-
-  const _WholesaleSelectedPlanningProduct({
-    required this.product,
-    required this.unit,
-    required this.onChange,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: FarmColors.primarySoft,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: FarmColors.line,
-        ),
-      ),
-      child: Row(
-        children: [
-          HpjProductThumb(
-            product: product,
-            productName: product.name,
-            size: 62,
-            radius: 13,
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${product.category} • $unit',
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 10.3,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (onChange != null)
-            TextButton(
-              onPressed: onChange,
-              child: const Text(
-                'Change',
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// =====================================================
-// SIMPLE FORECAST CARD
-// =====================================================
-
-class _WholesalePlanningSimpleCard
-    extends StatelessWidget {
-  final WholesaleDemandForecast forecast;
-  final VoidCallback onChanged;
-
-  const _WholesalePlanningSimpleCard({
-    required this.forecast,
-    required this.onChanged,
-  });
-
-  String _date(DateTime date) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    return '${date.day} '
-        '${months[date.month - 1]} '
-        '${date.year}';
-  }
-
-  Future<void> _confirmStillNeeded(
-    BuildContext context,
-  ) async {
-    try {
-      await confirmWholesaleDemandForecastCurrent(
-        forecast,
-      );
-
-      onChanged();
-
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${forecast.productName} confirmed as still needed.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            friendlyAppError(error),
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _review(
-    BuildContext context,
-  ) async {
-    final changed =
-        await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _WholesaleForecastReviewSheet(
-        forecast: forecast,
-      ),
-    );
-
-    if (changed == true) {
-      onChanged();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final needsReview =
-        _wholesaleForecastNeedsReview(
-      forecast,
-    );
-
-    final daysToNeed =
-        _wholesaleForecastDaysToNeed(
-      forecast,
-    );
-
-    final dueMessage = daysToNeed < 0
-        ? 'Need date passed'
-        : daysToNeed == 0
-            ? 'Needed today'
-            : daysToNeed <= 7
-                ? 'Needed in $daysToNeed day${daysToNeed == 1 ? '' : 's'}'
-                : _wholesaleForecastFreshnessLabel(
-                    forecast,
-                  );
-
-    final showTiming = needsReview || daysToNeed <= 7;
-
-    final statusLabel = needsReview
-        ? 'Review'
-        : forecast.isReserved
-            ? 'Supply reserved'
-            : forecast.isMatched
-                ? 'Supply matched'
-                : 'Planned';
-
-    final statusColor =
-        needsReview ? FarmColors.warning : FarmColors.primary;
-
-    return FarmCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              HpjProductThumb(
-                productId: forecast.productId,
-                productName: forecast.productName,
-                size: 74,
-                radius: 14,
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            forecast.productName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          statusLabel,
-                          style: TextStyle(
-                            color: statusColor,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      forecast.formattedQuantity,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 12.3,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Need by ${_date(forecast.needByDate)}',
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10.4,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${forecast.frequencyLabel} • ${forecast.certaintyLabel}',
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10.2,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          if (showTiming) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 8,
-              ),
-              decoration: BoxDecoration(
-                color: needsReview
-                    ? const Color(0xFFFFF7E8)
-                    : FarmColors.background,
-                borderRadius:
-                    BorderRadius.circular(12),
-                border: Border.all(
-                  color: needsReview
-                      ? FarmColors.warning.withOpacity(
-                          0.28,
-                        )
-                      : FarmColors.line,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    needsReview
-                        ? Icons.schedule_outlined
-                        : Icons.event_available_outlined,
-                    color: needsReview
-                        ? FarmColors.warning
-                        : FarmColors.primary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      dueMessage,
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 9.7,
-                        height: 1.25,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          if (forecast.isForecast) ...[
-            const SizedBox(height: 9),
-
-            if (needsReview && daysToNeed >= 0)
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(
-                        Icons.check_rounded,
-                        size: 17,
-                      ),
-                      label: const Text(
-                        'Still Needed',
-                      ),
-                      onPressed: () =>
-                          _confirmStillNeeded(
-                        context,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () =>
-                          _review(context),
-                      child: const Text(
-                        'Review',
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () =>
-                      _review(context),
-                  icon: const Icon(
-                    Icons.edit_outlined,
-                    size: 16,
-                  ),
-                  label: Text(
-                    needsReview ? 'Review' : 'Edit plan',
-                  ),
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _WholesaleForecastReviewSheet
-    extends StatefulWidget {
-  final WholesaleDemandForecast forecast;
-
-  const _WholesaleForecastReviewSheet({
-    required this.forecast,
-  });
-
-  @override
-  State<_WholesaleForecastReviewSheet>
-      createState() =>
-          _WholesaleForecastReviewSheetState();
-}
-
-class _WholesaleForecastReviewSheetState
-    extends State<_WholesaleForecastReviewSheet> {
-  late final TextEditingController
-      quantityController;
-  late final TextEditingController
-      notesController;
-
-  late DateTime needByDate;
-  late String frequency;
-  late String certainty;
-
-  bool saving = false;
-  bool cancelling = false;
-
-  WholesaleDemandForecast get forecast =>
-      widget.forecast;
-
-  @override
-  void initState() {
-    super.initState();
-
-    quantityController = TextEditingController(
-      text: forecast.quantity ==
-              forecast.quantity.roundToDouble()
-          ? forecast.quantity.toStringAsFixed(0)
-          : forecast.quantity.toStringAsFixed(1),
-    );
-
-    notesController = TextEditingController(
-      text: forecast.notes,
-    );
-
-    needByDate = forecast.needByDate;
-    frequency = forecast.frequency;
-    certainty = forecast.certainty;
-  }
-
-  @override
-  void dispose() {
-    quantityController.dispose();
-    notesController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _chooseDate() async {
-    final now = DateTime.now();
-
-    final selected = await showDatePicker(
-      context: context,
-      initialDate:
-          needByDate.isBefore(now)
-              ? now.add(
-                  const Duration(days: 7),
-                )
-              : needByDate,
-      firstDate: now,
-      lastDate: now.add(
-        const Duration(days: 730),
-      ),
-    );
-
-    if (!mounted || selected == null) return;
-
-    setState(() {
-      needByDate = selected;
-    });
-  }
-
-  Future<void> _save() async {
-    if (saving || cancelling) return;
-
-    final quantity = double.tryParse(
-      quantityController.text.trim(),
-    );
-
-    if (quantity == null || quantity <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enter a valid quantity.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      saving = true;
-    });
-
-    try {
-      await updateWholesaleDemandForecast(
-        forecast: forecast,
-        productId: forecast.productId,
-        productName: forecast.productName,
-        category: forecast.category,
-        quantity: quantity,
-        unit: forecast.unit,
-        needByDate: needByDate,
-        frequency: frequency,
-        certainty: certainty,
-        notes: notesController.text,
-      );
-
-      if (!mounted) return;
-
-      Navigator.of(context).pop(true);
-    } catch (error) {
-      if (!mounted) return;
-
-      setState(() {
-        saving = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            friendlyAppError(error),
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _cancel() async {
-    if (saving || cancelling) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text(
-            'Cancel this future need?',
-          ),
-          content: Text(
-            '${forecast.productName} will be removed from active Planning Ahead.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext)
-                      .pop(false),
-              child: const Text('Keep'),
-            ),
-            TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext)
-                      .pop(true),
-              child: const Text(
-                'Cancel requirement',
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    setState(() {
-      cancelling = true;
-    });
-
-    try {
-      await cancelWholesaleDemandForecast(
-        forecast.id,
-      );
-
-      if (!mounted) return;
-
-      Navigator.of(context).pop(true);
-    } catch (error) {
-      if (!mounted) return;
-
-      setState(() {
-        cancelling = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            friendlyAppError(error),
-          ),
-        ),
-      );
-    }
-  }
-
-  String _dateLabel(DateTime date) {
-    return '${date.year}-'
-        '${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final busy = saving || cancelling;
-
-    return AnimatedPadding(
-      duration:
-          const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(
-        bottom:
-            MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: FarmColors.card,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(26),
-          ),
-        ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            18,
-            14,
-            18,
-            22,
-          ),
-          child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: FarmColors.line,
-                    borderRadius:
-                        BorderRadius.circular(99),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              Text(
-                forecast.productName,
-                style: const TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-
-              const SizedBox(height: 4),
-
-              const Text(
-                'Keep this future need current so HPJ can plan sourcing against reliable information.',
-                style: TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 10.5,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              TextField(
-                controller: quantityController,
-                enabled: !busy,
-                keyboardType:
-                    const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Quantity',
-                  suffixText: forecast.unit,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              InkWell(
-                onTap: busy ? null : _chooseDate,
-                borderRadius:
-                    BorderRadius.circular(16),
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Need by',
-                    suffixIcon: Icon(
-                      Icons.calendar_month_outlined,
-                    ),
-                  ),
-                  child: Text(
-                    _dateLabel(needByDate),
-                    style: const TextStyle(
-                      color: FarmColors.ink,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              const Text(
-                'Frequency',
-                style: TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-
-              const SizedBox(height: 7),
-
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: [
-                  for (final option
-                      in const <MapEntry<String, String>>[
-                    MapEntry('one_time', 'One time'),
-                    MapEntry('weekly', 'Weekly'),
-                    MapEntry('biweekly', 'Every 2 weeks'),
-                    MapEntry('monthly', 'Monthly'),
-                  ])
-                    ChoiceChip(
-                      label: Text(option.value),
-                      selected:
-                          frequency == option.key,
-                      onSelected: busy
-                          ? null
-                          : (_) {
-                              setState(() {
-                                frequency =
-                                    option.key;
-                              });
-                            },
-                    ),
-                ],
-              ),
-
-              const SizedBox(height: 14),
-
-              const Text(
-                'Confidence',
-                style: TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-
-              const SizedBox(height: 7),
-
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: [
-                  for (final option
-                      in const <MapEntry<String, String>>[
-                    MapEntry('tentative', 'Tentative'),
-                    MapEntry('likely', 'Likely'),
-                    MapEntry('expected', 'Expected'),
-                  ])
-                    ChoiceChip(
-                      label: Text(option.value),
-                      selected:
-                          certainty == option.key,
-                      onSelected: busy
-                          ? null
-                          : (_) {
-                              setState(() {
-                                certainty =
-                                    option.key;
-                              });
-                            },
-                    ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              TextField(
-                controller: notesController,
-                enabled: !busy,
-                minLines: 2,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Notes (optional)',
-                ),
-              ),
-
-              const SizedBox(height: 18),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: busy ? null : _save,
-                  child: Text(
-                    saving
-                        ? 'Saving...'
-                        : 'Save Changes',
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 7),
-
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed:
-                      busy ? null : _cancel,
-                  child: Text(
-                    cancelling
-                        ? 'Cancelling...'
-                        : 'Cancel This Requirement',
-                    style: const TextStyle(
-                      color: FarmColors.danger,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// =====================================================
-// PLANNING AHEAD UI HELPERS
-// =====================================================
-
-class _WholesalePlanningIntroCard extends StatelessWidget {
-  final BusinessAccount account;
-
-  const _WholesalePlanningIntroCard({
-    required this.account,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: FarmColors.primarySoft,
-              borderRadius: BorderRadius.circular(
-                14,
-              ),
-            ),
-            child: const Icon(
-              Icons.calendar_month_outlined,
-              color: FarmColors.primary,
-            ),
-          ),
-          const SizedBox(
-            width: 12,
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Plan before you order',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(
-                  height: 4,
-                ),
-                Text(
-                  '${account.displayName}, share likely future needs so HPJ can prepare farm supply ahead of time.',
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(
-                  height: 7,
-                ),
-                const Text(
-                  'Planning only • Not an order',
-                  style: TextStyle(
-                    color: FarmColors.primary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PlanningMiniStat extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _PlanningMiniStat({
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 10,
-      ),
-      decoration: BoxDecoration(
-        color: FarmColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: FarmColors.line,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: FarmColors.ink,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(
-            height: 2,
-          ),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WholesalePlanningCard extends StatelessWidget {
-  final WholesaleDemandForecast forecast;
-  final VoidCallback? onEdit;
-  final VoidCallback? onCancel;
-
-  const _WholesalePlanningCard({
-    required this.forecast,
-    this.onEdit,
-    this.onCancel,
-  });
-
-  Color get _statusColor {
-    if (forecast.isReserved) {
-      return FarmColors.success;
-    }
-
-    if (forecast.isMatched) {
-      return FarmColors.primary;
-    }
-
-    if (forecast.isCancelled) {
-      return FarmColors.danger;
-    }
-
-    return FarmColors.green;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _statusColor;
-
-    final notes = forecast.notes.trim();
-
-    return FarmCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(
-                    0.10,
-                  ),
-                  borderRadius: BorderRadius.circular(
-                    12,
-                  ),
-                ),
-                child: Icon(
-                  Icons.inventory_2_outlined,
-                  color: color,
-                  size: 19,
-                ),
-              ),
-              const SizedBox(
-                width: 10,
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      forecast.productName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(
-                      height: 2,
-                    ),
-                    Text(
-                      forecast.formattedQuantity,
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(
-                    0.10,
-                  ),
-                  borderRadius: BorderRadius.circular(
-                    999,
-                  ),
-                ),
-                child: Text(
-                  forecast.statusLabel,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(
-            height: 12,
-          ),
-          Row(
-            children: [
-              const Icon(
-                Icons.calendar_today_outlined,
-                color: FarmColors.mutedText,
-                size: 14,
-              ),
-              const SizedBox(
-                width: 6,
-              ),
-              Text(
-                'Need by ${_wholesalePlanningDate(forecast.needByDate)}',
-                style: const TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(
-            height: 8,
-          ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _PlanningChip(
-                label: forecast.frequencyLabel,
-              ),
-              _PlanningChip(
-                label: forecast.certaintyLabel,
-              ),
-            ],
-          ),
-          if (notes.isNotEmpty) ...[
-            const SizedBox(
-              height: 9,
-            ),
-            Text(
-              notes,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 11,
-                height: 1.3,
-              ),
-            ),
-          ],
-          if (forecast.isMatched) ...[
-            const SizedBox(
-              height: 10,
-            ),
-            const Text(
-              'HPJ is matching this need with expected farm supply.',
-              style: TextStyle(
-                color: FarmColors.primary,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-          if (forecast.isReserved) ...[
-            const SizedBox(
-              height: 10,
-            ),
-            const Text(
-              'Supply has been reserved for this requirement.',
-              style: TextStyle(
-                color: FarmColors.success,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-          if (onEdit != null || onCancel != null) ...[
-            const SizedBox(
-              height: 10,
-            ),
-            Row(
-              children: [
-                if (onEdit != null)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(
-                        Icons.edit_outlined,
-                        size: 16,
-                      ),
-                      label: const Text(
-                        'Update',
-                      ),
-                      onPressed: onEdit,
-                    ),
-                  ),
-                if (onEdit != null && onCancel != null)
-                  const SizedBox(
-                    width: 8,
-                  ),
-                if (onCancel != null)
-                  TextButton(
-                    onPressed: onCancel,
-                    child: const Text(
-                      'Cancel',
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _PlanningChip extends StatelessWidget {
-  final String label;
-
-  const _PlanningChip({
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 4,
-      ),
-      decoration: BoxDecoration(
-        color: FarmColors.primarySoft,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: FarmColors.primary,
-          fontSize: 9.5,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
-String _wholesalePlanningDate(
-  DateTime date,
-) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  return '${date.day} '
-      '${months[date.month - 1]} '
-      '${date.year}';
-}
-
-
-// =====================================================
-// HPJ PHASE 039 — WHOLESALE SUPPLIER DISCOVERY
-//
-// Business buyer → published HPJ farm → preferred-supplier demand forecast
-// → existing HPJ procurement workflow.
-//
-// This does NOT expose farmer phone, email or exact address.
-// =====================================================
-
-class _WholesaleSupplierDiscoveryEntryCard extends StatelessWidget {
-  final BusinessAccount account;
-
-  const _WholesaleSupplierDiscoveryEntryCard({
-    required this.account,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: FarmColors.card,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => WholesaleSupplierDiscoveryScreen(
-                account: account,
-              ),
-            ),
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.all(15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: FarmColors.line),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: const Icon(
-                  Icons.agriculture_outlined,
-                  color: FarmColors.primary,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Find Suppliers',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Discover verified Jamaican farms and request supply through HPJ.',
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10.5,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: FarmColors.primary,
-                size: 15,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class WholesaleSupplierDiscoveryScreen extends StatefulWidget {
-  final BusinessAccount account;
-
-  const WholesaleSupplierDiscoveryScreen({
-    super.key,
-    required this.account,
-  });
-
-  @override
-  State<WholesaleSupplierDiscoveryScreen> createState() =>
-      _WholesaleSupplierDiscoveryScreenState();
-}
-
-class _WholesaleSupplierDiscoveryScreenState
-    extends State<WholesaleSupplierDiscoveryScreen> {
-  late Future<List<FarmPublicProfileRecord>> _future;
-  final searchController = TextEditingController();
-  String query = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _future = fetchPublishedFarmPublicProfiles(limit: 80);
-  }
-
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _refresh() async {
-    final next = fetchPublishedFarmPublicProfiles(limit: 80);
-    setState(() => _future = next);
-    await next;
-  }
-
-  bool _matches(FarmPublicProfileRecord farm) {
-    final clean = query.trim().toLowerCase();
-    if (clean.isEmpty) return true;
-
-    final haystack = <String>[
-      farm.publicName,
-      farm.community,
-      farm.parish,
-      farm.publicBio,
-      ...farm.tags,
-      ...farm.farmingPractices,
-    ].join(' ').toLowerCase();
-
-    return haystack.contains(clean);
-  }
-
-  void _viewFarm(FarmPublicProfileRecord farm) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PublicFarmProfileScreen(
-          farmerId: farm.farmerId,
-          sourceWorkspace: 'wholesale',
-          wholesaleAccount: widget.account,
-        ),
-      ),
-    );
-  }
-
-  void _requestSupply(FarmPublicProfileRecord farm) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => WholesaleSupplierRequestScreen(
-          account: widget.account,
-          farm: farm,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final desktopWeb = HpjWebUi.isDesktop(context);
-
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Find Suppliers'),
-      ),
-      body: SafeArea(
-        top: false,
-        child: FutureBuilder<List<FarmPublicProfileRecord>>(
-          future: _future,
-          builder: (context, snapshot) {
-            final farms = (snapshot.data ?? const <FarmPublicProfileRecord>[])
-                .where(_matches)
-                .toList()
-              ..sort(
-                (a, b) {
-                  if (a.hpjVerified != b.hpjVerified) {
-                    return a.hpjVerified ? -1 : 1;
-                  }
-                  return a.publicName
-                      .toLowerCase()
-                      .compareTo(b.publicName.toLowerCase());
-                },
-              );
-
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
-                children: [
-                  const EliteGreenHeroCard(
-                    eyebrow: 'HPJ SUPPLIER NETWORK',
-                    title: 'Source from Jamaican farms.',
-                    subtitle:
-                        'Discover published HPJ farm partners, choose a preferred supplier, and send your requirement into HPJ procurement.',
-                    icon: Icons.agriculture_outlined,
-                    chips: [
-                      'Verified farms',
-                      'HPJ-managed sourcing',
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: searchController,
-                    onChanged: (value) => setState(() => query = value),
-                    decoration: const InputDecoration(
-                      hintText:
-                          'Search farm, parish, crop tag or farming practice...',
-                      prefixIcon: Icon(Icons.search_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: FarmColors.primarySoft,
-                      borderRadius: BorderRadius.circular(16),
-                      border:
-                          Border.all(color: FarmColors.green.withOpacity(0.12)),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.shield_outlined,
-                          color: FarmColors.green,
-                          size: 20,
-                        ),
-                        SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            'Your request stays with HPJ. A preferred farm is considered first, but HPJ may source from another verified farm if needed to complete the requirement.',
-                            style: TextStyle(
-                              color: FarmColors.deepGreen,
-                              fontSize: 10.5,
-                              height: 1.35,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (snapshot.connectionState == ConnectionState.waiting &&
-                      snapshot.data == null)
-                    const SizedBox(
-                      height: 280,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (farms.isEmpty)
-                    const FarmEmptyState(
-                      icon: Icons.agriculture_outlined,
-                      title: 'No matching suppliers',
-                      message:
-                          'Try another search or check again as more approved farms publish their HPJ pages.',
-                    )
-                  else ...[
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Jamaican suppliers',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        Chip(
-                          label: Text('${farms.length}'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    if (desktopWeb)
-                      HpjWebResponsiveGrid(
-                        minItemWidth: 330,
-                        spacing: 16,
-                        runSpacing: 16,
-                        children: farms
-                            .map(
-                              (farm) => _WholesaleSupplierCard(
-                                farm: farm,
-                                onViewFarm: () => _viewFarm(farm),
-                                onRequestSupply: () => _requestSupply(farm),
-                              ),
-                            )
-                            .toList(growable: false),
-                      )
-                    else
-                      ...farms.map(
-                        (farm) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _WholesaleSupplierCard(
-                            farm: farm,
-                            onViewFarm: () => _viewFarm(farm),
-                            onRequestSupply: () => _requestSupply(farm),
-                          ),
-                        ),
-                      ),
-                  ],
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _WholesaleSupplierCard extends StatelessWidget {
-  final FarmPublicProfileRecord farm;
-  final VoidCallback onViewFarm;
-  final VoidCallback onRequestSupply;
-
-  const _WholesaleSupplierCard({
-    required this.farm,
-    required this.onViewFarm,
-    required this.onRequestSupply,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final desktopWeb = HpjWebUi.isDesktop(context);
-    final image = cleanHostedImageUrl(farm.coverImageUrl) ??
-        cleanHostedImageUrl(farm.logoImageUrl);
-
-    return FarmCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (image != null)
-            ClipRRect(
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(desktopWeb ? 18 : 24),
-              ),
-              child: Image.network(
-                image,
-                height: desktopWeb ? 160 : 128,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(15),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        farm.publicName,
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    if (farm.hpjVerified)
-                      const Icon(
-                        Icons.verified_rounded,
-                        color: FarmColors.gold,
-                        size: 20,
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  farm.locationLine,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (farm.tags.isNotEmpty) ...[
-                  const SizedBox(height: 9),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: farm.tags
-                        .take(4)
-                        .map(
-                          (tag) => Chip(
-                            label: Text(tag),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: onViewFarm,
-                        icon: const Icon(
-                          Icons.storefront_outlined,
-                          size: 18,
-                        ),
-                        label: const Text('View Farm'),
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: onRequestSupply,
-                        icon: const Icon(
-                          Icons.add_business_outlined,
-                          size: 18,
-                        ),
-                        label: const Text('Request Supply'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class WholesaleSupplierRequestScreen extends StatefulWidget {
-  final BusinessAccount account;
-  final FarmPublicProfileRecord farm;
-  final Product? initialProduct;
-
-  const WholesaleSupplierRequestScreen({
-    super.key,
-    required this.account,
-    required this.farm,
-    this.initialProduct,
-  });
-
-  @override
-  State<WholesaleSupplierRequestScreen> createState() =>
-      _WholesaleSupplierRequestScreenState();
-}
-
-class _WholesaleSupplierRequestScreenState
-    extends State<WholesaleSupplierRequestScreen> {
-  final productNameController = TextEditingController();
-  final quantityController = TextEditingController();
-  final unitController = TextEditingController(text: 'lb');
-  final notesController = TextEditingController();
-
-  late Future<FarmPublicProfileBundle> _farmFuture;
-
-  Product? selectedProduct;
-  DateTime needByDate = DateTime.now().add(const Duration(days: 7));
-  String frequency = 'one_time';
-  String certainty = 'likely';
-  bool submitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _farmFuture = fetchFarmPublicProfileBundle(widget.farm.farmerId);
-
-    final initial = widget.initialProduct;
-    if (initial != null) {
-      selectedProduct = initial;
-      productNameController.text = initial.name;
-
-      final initialUnit = initial.unit?.trim() ?? '';
-      if (initialUnit.isNotEmpty) {
-        unitController.text = initialUnit;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    productNameController.dispose();
-    quantityController.dispose();
-    unitController.dispose();
-    notesController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: needByDate.isBefore(now) ? now : needByDate,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: DateTime(now.year + 2, 12, 31),
-    );
-
-    if (picked != null && mounted) {
-      setState(() => needByDate = picked);
-    }
-  }
-
-  String _dateLabel(DateTime value) {
-    const months = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${value.day} ${months[value.month - 1]} ${value.year}';
-  }
-
-  Future<void> _submit() async {
-    if (submitting) return;
-
-    final productName = productNameController.text.trim();
-    final quantity = double.tryParse(
-      quantityController.text.trim().replaceAll(',', ''),
-    );
-    final unit = unitController.text.trim();
-
-    if (productName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter or choose the produce you need.')),
-      );
-      return;
-    }
-
-    if (quantity == null || quantity <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid quantity.')),
-      );
-      return;
-    }
-
-    if (unit.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter the unit, for example lb or case.')),
-      );
-      return;
-    }
-
-    setState(() => submitting = true);
-
-    try {
-      final preferenceNote =
-          'Preferred HPJ farm: ${widget.farm.publicName} '
-          '(farmer_id: ${widget.farm.farmerId}).';
-      final userNotes = notesController.text.trim();
-      final combinedNotes =
-          userNotes.isEmpty ? preferenceNote : '$preferenceNote\n$userNotes';
-
-      final forecast = await createWholesaleDemandForecast(
-        productId: selectedProduct?.id,
-        productName: productName,
-        category: selectedProduct?.category,
-        quantity: quantity,
-        unit: unit,
-        needByDate: needByDate,
-        frequency: frequency,
-        certainty: certainty,
-        notes: combinedNotes,
-      );
-
-      try {
-        await saveWholesalePreferredSupplier(
-          forecast: forecast,
-          farm: widget.farm,
-        );
-      } catch (error) {
-        // The business requirement itself is already safely saved in the
-        // existing procurement pipeline. Do not ask the buyer to submit twice.
-        farmDebugLog(
-          'Preferred supplier link was not saved, but demand forecast exists: $error',
-        );
-      }
-
-      try {
-        await createAdminNotification(
-          title: 'Preferred-farm supply request',
-          message:
-              '${widget.account.displayName} prefers ${widget.farm.publicName} '
-              'for ${forecast.formattedQuantity} of ${forecast.productName}.',
-          type: 'wholesale',
-          actionType: 'admin_wholesale_demand',
-          actionId: forecast.id,
-          dedupeKey: 'preferred-farm:${forecast.id}',
-        );
-      } catch (error) {
-        farmDebugLog(
-          'Preferred-farm admin notification skipped safely: $error',
-        );
-      }
-
-      if (!mounted) return;
-
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          icon: const Icon(
-            Icons.check_circle_outline_rounded,
-            color: FarmColors.success,
-            size: 38,
-          ),
-          title: const Text('Supply request received'),
-          content: Text(
-            'HPJ will first check ${widget.farm.publicName}. '
-            'If needed, HPJ may recommend another verified farm to complete the requirement.',
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Done'),
-            ),
-          ],
-        ),
-      );
-
-      if (mounted) Navigator.of(context).pop();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    } finally {
-      if (mounted) setState(() => submitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Request Supply'),
-      ),
-      body: FarmPage(
-        child: FutureBuilder<FarmPublicProfileBundle>(
-          future: _farmFuture,
-          builder: (context, snapshot) {
-            final bundle = snapshot.data;
-            final products = bundle?.products ?? const <Product>[];
-
-            return ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
-              children: [
-                FarmCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: FarmColors.primarySoft,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(
-                          Icons.agriculture_outlined,
-                          color: FarmColors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.farm.publicName,
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${widget.farm.locationLine} • Preferred supplier',
-                              style: const TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Header(
-                  title: 'What does your business need?',
-                  subtitle:
-                      'This creates an HPJ sourcing requirement, not a direct contract with the farmer.',
-                ),
-                const SizedBox(height: 14),
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    bundle == null)
-                  const FarmCard(
-                    padding: EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 11),
-                        Expanded(
-                          child: Text('Loading this farm’s HPJ supply...'),
-                        ),
-                      ],
-                    ),
-                  )
-                else ...[
-                  if (products.isNotEmpty) ...[
-                    DropdownButtonFormField<String>(
-                      value: products.any(
-                        (product) => product.id == selectedProduct?.id,
-                      )
-                          ? selectedProduct?.id
-                          : null,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Choose from this farm',
-                        prefixIcon: Icon(Icons.eco_outlined),
-                      ),
-                      items: products
-                          .map(
-                            (product) => DropdownMenuItem<String>(
-                              value: product.id,
-                              child: Text(
-                                product.name,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        Product? match;
-                        for (final product in products) {
-                          if (product.id == value) {
-                            match = product;
-                            break;
-                          }
-                        }
-                        if (match == null) return;
-                        setState(() {
-                          selectedProduct = match;
-                          productNameController.text = match!.name;
-
-                          final selectedUnit = match.unit?.trim() ?? '';
-                          if (selectedUnit.isNotEmpty) {
-                            unitController.text = selectedUnit;
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 11),
-                    const Text(
-                      'Or type another produce item for HPJ to source.',
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  TextField(
-                    controller: productNameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Produce needed',
-                      prefixIcon: Icon(Icons.shopping_basket_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 11),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: quantityController,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'Quantity',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: unitController,
-                          decoration: const InputDecoration(
-                            labelText: 'Unit',
-                            hintText: 'lb, case, kg',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 11),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: _pickDate,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Need by',
-                        prefixIcon: Icon(Icons.calendar_month_outlined),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _dateLabel(needByDate),
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            color: FarmColors.mutedText,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 11),
-                  DropdownButtonFormField<String>(
-                    value: frequency,
-                    decoration: const InputDecoration(
-                      labelText: 'How often?',
-                      prefixIcon: Icon(Icons.repeat_rounded),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'one_time',
-                        child: Text('One time'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'weekly',
-                        child: Text('Weekly'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'biweekly',
-                        child: Text('Every 2 weeks'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'monthly',
-                        child: Text('Monthly'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setState(() => frequency = value);
-                    },
-                  ),
-                  const SizedBox(height: 11),
-                  DropdownButtonFormField<String>(
-                    value: certainty,
-                    decoration: const InputDecoration(
-                      labelText: 'Planning confidence',
-                      prefixIcon: Icon(Icons.analytics_outlined),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'tentative',
-                        child: Text('Tentative'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'likely',
-                        child: Text('Likely'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'expected',
-                        child: Text('Expected / confirmed need'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setState(() => certainty = value);
-                    },
-                  ),
-                  const SizedBox(height: 11),
-                  TextField(
-                    controller: notesController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Notes for HPJ',
-                      hintText:
-                          'Size, grade, packaging, delivery pattern or other requirement',
-                      prefixIcon: Icon(Icons.notes_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F4EC),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFDCE4D8),
-                      ),
-                    ),
-                    child: const Text(
-                      'HPJ will check the preferred farm first. Supply, pricing, collection, receiving and fulfilment remain managed through HPJ.',
-                      style: TextStyle(
-                        color: Color(0xFF5F6D65),
-                        fontSize: 10.4,
-                        height: 1.35,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  PrimaryFarmButton(
-                    label:
-                        submitting ? 'Sending Request...' : 'Send Request to HPJ',
-                    icon: Icons.send_outlined,
-                    onPressed: submitting ? null : _submit,
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-
-class WholesaleCatalogueScreen extends StatefulWidget {
-  final BusinessAccount account;
-  final bool embedded;
-  final String initialSearch;
-
-  const WholesaleCatalogueScreen({
-    super.key,
-    required this.account,
-    this.embedded = false,
-    this.initialSearch = '',
-  });
-
-  @override
-  State<WholesaleCatalogueScreen> createState() =>
-      _WholesaleCatalogueScreenState();
-}
-
-class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
-  late Future<List<WholesaleProduct>> _future;
-  final Map<String, WholesaleProduct> selectedProducts =
-      <String, WholesaleProduct>{};
-  final Map<String, int> quantities = <String, int>{};
-  final searchController = TextEditingController();
-  String search = '';
-
-  @override
-  void initState() {
-    super.initState();
-    final initialSearch = widget.initialSearch.trim();
-    if (initialSearch.isNotEmpty) {
-      search = initialSearch;
-      searchController.text = initialSearch;
-      searchController.selection = TextSelection.collapsed(
-        offset: searchController.text.length,
-      );
-    }
-    _future = fetchWholesaleCatalogue();
-  }
-
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
-  }
-
-  int get selectedLineCount => selectedProducts.length;
-
-  double get selectedEstimate {
-    double total = 0;
-    for (final entry in selectedProducts.entries) {
-      final quantity = quantities[entry.key] ?? entry.value.minimumQuantity;
-      total += entry.value.totalFor(quantity);
-    }
-    return total;
-  }
-
-  void _toggle(WholesaleProduct item) {
-    setState(() {
-      if (selectedProducts.containsKey(item.product.id)) {
-        selectedProducts.remove(item.product.id);
-        quantities.remove(item.product.id);
-      } else {
-        selectedProducts[item.product.id] = item;
-        quantities[item.product.id] = item.minimumQuantity;
-      }
-    });
-  }
-
-  void _changeQuantity(WholesaleProduct item, int change) {
-    final current = quantities[item.product.id] ?? item.minimumQuantity;
-    var next = current + change;
-
-    if (next < item.minimumQuantity) {
-      next = item.minimumQuantity;
-    }
-
-    if (item.marketAllocationManaged) {
-      final maximum = item.maximumManagedOrderQuantity;
-      if (next > maximum) {
-        next = maximum;
-      }
-    }
-
-    setState(() {
-      quantities[item.product.id] = next;
-    });
-  }
-
-  void _review() {
-    if (selectedProducts.isEmpty) return;
-
-    for (final entry in selectedProducts.entries) {
-      final item = entry.value;
-      final quantity = quantities[entry.key] ?? item.minimumQuantity;
-
-      if (item.marketAllocationManaged &&
-          quantity > item.maximumManagedOrderQuantity) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '${item.product.name} currently has only '
-              '${item.maximumManagedOrderQuantity} ${item.wholesaleUnit} '
-              'allocated for Wholesale.',
-            ),
-          ),
-        );
-        return;
-      }
-    }
-
-    final lines = selectedProducts.values
-        .map(
-          (item) => _WholesaleBasketLine(
-            item: item,
-            quantity: quantities[item.product.id] ?? item.minimumQuantity,
-          ),
-        )
-        .toList();
-
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => WholesaleRequestReviewScreen(
-          account: widget.account,
-          lines: lines,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: widget.embedded
-          ? null
-          : AppBar(title: const Text('Wholesale Catalogue')),
-      bottomNavigationBar: selectedProducts.isEmpty
-          ? null
-          : SafeArea(
-              top: false,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
-                decoration: BoxDecoration(
-                  color: FarmColors.card,
-                  border: Border(
-                    top: BorderSide(color: FarmColors.line),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: FarmColors.shadow.withOpacity(0.08),
-                      blurRadius: 20,
-                      offset: const Offset(0, -6),
-                    ),
-                  ],
-                ),
-                child: ElevatedButton(
-                  onPressed: _review,
-                  child: Text(
-                    'Review $selectedLineCount Bulk Item${selectedLineCount == 1 ? '' : 's'} • ${formatJmd(selectedEstimate)}',
-                  ),
-                ),
-              ),
-            ),
-      body: FutureBuilder<List<WholesaleProduct>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final desktopWeb = HpjWebUi.isDesktop(context);
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return FarmPage(
-              child: ListView(
-                padding: const EdgeInsets.all(18),
-                children: [
-                  FarmEmptyState(
-                    icon: Icons.lock_outline,
-                    title: 'Wholesale catalogue unavailable',
-                    message: friendlyAppError(snapshot.error!),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final all = snapshot.data ?? const <WholesaleProduct>[];
-          final query = search.trim();
-          final textQuery = hpjSmartSearchTextQuery(query);
-          final maxWholesalePrice = hpjSmartSearchMaxPrice(query);
-          final items = query.isEmpty
-              ? List<WholesaleProduct>.from(all)
-              : all.where((item) {
-                  final matchesPrice = maxWholesalePrice == null ||
-                      item.wholesalePrice <= maxWholesalePrice + 0.001;
-                  final matchesText = textQuery.isEmpty ||
-                      hpjSmartProductMatchesSearch(item.product, textQuery);
-                  return matchesPrice && matchesText;
-                }).toList();
-          items.sort((a, b) {
-            if (textQuery.isNotEmpty) {
-              final scoreCompare = hpjSmartProductSearchScore(b.product, textQuery)
-                  .compareTo(hpjSmartProductSearchScore(a.product, textQuery));
-              if (scoreCompare != 0) return scoreCompare;
-            }
-            if (maxWholesalePrice != null) {
-              final priceCompare = a.wholesalePrice.compareTo(b.wholesalePrice);
-              if (priceCompare != 0) return priceCompare;
-            }
-            if (a.canOrder != b.canOrder) return a.canOrder ? -1 : 1;
-            return a.product.name.toLowerCase().compareTo(
-                  b.product.name.toLowerCase(),
-                );
-          });
-
-          Widget buildWholesaleProductTile(WholesaleProduct item) {
-            final selected =
-                selectedProducts.containsKey(item.product.id);
-            final quantity =
-                quantities[item.product.id] ?? item.minimumQuantity;
-
-            return Padding(
-              padding: desktopWeb
-                  ? EdgeInsets.zero
-                  : const EdgeInsets.only(bottom: 12),
-              child: FarmCard(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: SizedBox(
-                        width: 82,
-                        height: 82,
-                        child: item.product.imageUrl == null
-                            ? Container(
-                                color: FarmColors.cardSoft,
-                                child: const Icon(
-                                  Icons.eco_outlined,
-                                  color: FarmColors.green,
-                                ),
-                              )
-                            : Image.network(
-                                item.product.imageUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                  color: FarmColors.cardSoft,
-                                  child: const Icon(
-                                    Icons.eco_outlined,
-                                    color: FarmColors.green,
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.product.name,
-                            style: const TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${item.formattedWholesalePrice} / ${item.wholesaleUnit}',
-                            style: const TextStyle(
-                              color: FarmColors.green,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Minimum ${item.minimumQuantity} ${item.wholesaleUnit}',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                          if (item.marketAllocationManaged) ...[
-                            const SizedBox(height: 3),
-                            Text(
-                              item.marketAvailabilityLabel,
-                              style: const TextStyle(
-                                color: FarmColors.deepGreen,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 10.5,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: HpjWatchButton(
-                              workspace: 'wholesale',
-                              watchType: 'product',
-                              entityKey: item.product.id,
-                              entityName: item.product.name,
-                              compact: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (!selected)
-                            OutlinedButton.icon(
-                              icon: const Icon(
-                                Icons.add_shopping_cart_outlined,
-                                size: 17,
-                              ),
-                              label: const Text('Add to Bulk Request'),
-                              onPressed: () => _toggle(item),
-                            )
-                          else
-                            Row(
-                              children: [
-                                IconButton.filledTonal(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () =>
-                                      _changeQuantity(item, -1),
-                                  icon: const Icon(Icons.remove),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    '$quantity ${item.wholesaleUnit}',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: FarmColors.ink,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                                IconButton.filled(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () =>
-                                      _changeQuantity(item, 1),
-                                  icon: const Icon(Icons.add),
-                                ),
-                                IconButton(
-                                  tooltip: 'Remove',
-                                  onPressed: () => _toggle(item),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    color: FarmColors.danger,
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          return FarmPage(
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                18,
-                18,
-                18,
-                selectedProducts.isEmpty ? 120 : 190,
-              ),
-              children: [
-                const Header(
-                  title: 'Bulk farm supply',
-                  subtitle:
-                      'Approved wholesale prices, minimums and HPJ-allocated supply.',
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: searchController,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (value) => setState(() => search = value),
-                  onSubmitted: (value) {
-                    unawaited(HpjSmartLocalStore.rememberRecentSearch(value));
-                  },
-                  decoration: const InputDecoration(
-                    hintText: 'Search wholesale products',
-                    prefixIcon: Icon(Icons.search),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (items.isEmpty)
-                  const FarmEmptyState(
-                    icon: Icons.inventory_2_outlined,
-                    title: 'No wholesale products',
-                    message:
-                        'Wholesale pricing will appear here after products are enabled by the owner or manager.',
-                  )
-                else
-                  if (desktopWeb)
-                    HpjWebResponsiveGrid(
-                      minItemWidth: 390,
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: items
-                          .map(buildWholesaleProductTile)
-                          .toList(growable: false),
-                    )
-                  else
-                    ...items.map(buildWholesaleProductTile),
-
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _WholesaleBasketLine {
-  final WholesaleProduct item;
-  final int quantity;
-
-  const _WholesaleBasketLine({
-    required this.item,
-    required this.quantity,
-  });
-
-  double get total => item.totalFor(quantity);
-}
-
-class WholesaleRequestReviewScreen extends StatefulWidget {
-  final BusinessAccount account;
-  final List<_WholesaleBasketLine> lines;
-  final String? standingOrderId;
-  final String? initialDispatchMethod;
-  final DateTime? preferredScheduleDate;
-
-  const WholesaleRequestReviewScreen({
-    super.key,
-    required this.account,
-    required this.lines,
-    this.standingOrderId,
-    this.initialDispatchMethod,
-    this.preferredScheduleDate,
-  });
-
-  @override
-  State<WholesaleRequestReviewScreen> createState() =>
-      _WholesaleRequestReviewScreenState();
-}
-
-class _WholesaleRequestReviewScreenState
-    extends State<WholesaleRequestReviewScreen> {
-  late final TextEditingController addressController;
-  late final TextEditingController parishController;
-  final notesController = TextEditingController();
-  bool submitting = false;
-
-  WholesaleOrderingControl? orderingControl;
-  bool loadingOrderingControl = true;
-  String? orderingControlError;
-
-  String dispatchMethod = 'hpj_delivery';
-  List<WholesaleScheduleOption> scheduleOptions =
-      const <WholesaleScheduleOption>[];
-  WholesaleScheduleOption? selectedSchedule;
-  bool loadingSchedule = true;
-  String? scheduleError;
-
-  @override
-  void initState() {
-    super.initState();
-    addressController = TextEditingController(text: widget.account.address);
-    parishController = TextEditingController(text: widget.account.parish);
-    final requestedMethod = widget.initialDispatchMethod?.trim().toLowerCase();
-    if (requestedMethod == 'business_collection' ||
-        requestedMethod == 'hpj_delivery') {
-      dispatchMethod = requestedMethod!;
-    }
-    _loadOrderingControl();
-    _loadScheduleOptions();
-  }
-
-  @override
-  void dispose() {
-    addressController.dispose();
-    parishController.dispose();
-    notesController.dispose();
-    super.dispose();
-  }
-
-  double get estimate => widget.lines.fold<double>(
-        0,
-        (sum, line) => sum + line.total,
-      );
-
-  Future<void> _loadOrderingControl() async {
-    if (mounted) {
-      setState(() {
-        loadingOrderingControl = true;
-        orderingControlError = null;
-      });
-    }
-
-    try {
-      final control = await fetchWholesaleOrderingControl(
-        account: widget.account,
-        estimatedTotal: estimate,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        orderingControl = control;
-        loadingOrderingControl = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        orderingControl = null;
-        loadingOrderingControl = false;
-        orderingControlError = friendlyAppError(error);
-      });
-    }
-  }
-
-  Future<void> _loadScheduleOptions() async {
-    if (mounted) {
-      setState(() {
-        loadingSchedule = true;
-        scheduleError = null;
-        selectedSchedule = null;
-      });
-    }
-
-    try {
-      final options = await fetchWholesaleScheduleOptions(
-        dispatchMethod: dispatchMethod,
-      );
-
-      if (!mounted) return;
-      WholesaleScheduleOption? preferred;
-      final preferredDate = widget.preferredScheduleDate;
-      if (preferredDate != null) {
-        final target = DateTime(
-          preferredDate.year,
-          preferredDate.month,
-          preferredDate.day,
-        );
-        for (final option in options) {
-          final date = option.scheduledDate.toLocal();
-          final dateOnly = DateTime(date.year, date.month, date.day);
-          if (!dateOnly.isBefore(target)) {
-            preferred = option;
-            break;
-          }
-        }
-      }
-
-      setState(() {
-        scheduleOptions = options;
-        selectedSchedule =
-            preferred ?? (options.isEmpty ? null : options.first);
-        loadingSchedule = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        scheduleOptions = const <WholesaleScheduleOption>[];
-        selectedSchedule = null;
-        loadingSchedule = false;
-        scheduleError = friendlyAppError(error);
-      });
-    }
-  }
-
-  Future<void> _changeDispatchMethod(String value) async {
-    if (dispatchMethod == value) return;
-    setState(() => dispatchMethod = value);
-    await _loadScheduleOptions();
-  }
-
-  Future<void> _submit() async {
-    if (submitting) return;
-
-    if (dispatchMethod == 'hpj_delivery' &&
-        (addressController.text.trim().isEmpty ||
-            parishController.text.trim().isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Delivery address and parish are required.'),
-        ),
-      );
-      return;
-    }
-
-    if (loadingOrderingControl) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Checking wholesale account status. Please try again.'),
-        ),
-      );
-      return;
-    }
-
-    if (orderingControl?.isBlocked == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(orderingControl!.reason)),
-      );
-      return;
-    }
-
-    if (loadingSchedule || selectedSchedule == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Choose an available delivery or collection window.'),
-        ),
-      );
-      return;
-    }
-
-    setState(() => submitting = true);
-    try {
-      final deliveryAddress = dispatchMethod == 'business_collection'
-          ? widget.account.address
-          : addressController.text;
-      final deliveryParish = dispatchMethod == 'business_collection'
-          ? widget.account.parish
-          : parishController.text;
-
-      final id = await submitWholesaleOrderRequest(
-        items: widget.lines
-            .map(
-              (line) => {
-                'product_id': line.item.product.id,
-                'quantity': line.quantity,
-              },
-            )
-            .toList(),
-        deliveryAddress: deliveryAddress,
-        deliveryParish: deliveryParish,
-        schedule: selectedSchedule!,
-        dispatchMethod: dispatchMethod,
-        notes: notesController.text,
-        estimatedTotal: estimate,
-      );
-
-      final standingId = widget.standingOrderId?.trim() ?? '';
-      if (standingId.isNotEmpty) {
-        try {
-          await markWholesaleStandingOrderUsed(
-            standingOrderId: standingId,
-            requestId: id,
-          );
-        } catch (error) {
-          farmDebugLog(
-            'Standing order next-date update skipped safely: $error',
-          );
-        }
-      }
-
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (_) => WholesaleRequestSuccessScreen(requestId: id),
-        ),
-        (route) => route.isFirst,
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ),
-      );
-      await _loadScheduleOptions();
-    } finally {
-      if (mounted) setState(() => submitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(title: const Text('Review Bulk Request')),
-      body: FarmPage(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 140),
-          children: [
-            const Header(
-              title: 'Request summary',
-              subtitle:
-                  'Final availability and pricing will be confirmed by staff.',
-            ),
-            const SizedBox(height: 14),
-            ...widget.lines.map(
-              (line) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: FarmCard(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          line.item.product.name,
-                          style: const TextStyle(
-                            color: FarmColors.ink,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${line.quantity} ${line.item.wholesaleUnit}',
-                        style: const TextStyle(
-                          color: FarmColors.mutedText,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        formatJmd(line.total),
-                        style: const TextStyle(
-                          color: FarmColors.green,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            FarmCard(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Estimated subtotal',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    formatJmd(estimate),
-                    style: const TextStyle(
-                      color: FarmColors.green,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            if (loadingOrderingControl)
-              const FarmCard(
-                padding: EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Checking account balance, aging and available credit...',
-                        style: TextStyle(
-                          color: FarmColors.mutedText,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else if (orderingControl != null)
-              _WholesaleOrderingControlCard(
-                control: orderingControl!,
-                showRequestEstimate: true,
-                onRefresh: _loadOrderingControl,
-              )
-            else
-              FarmCard(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Account check unavailable',
-                      style: TextStyle(
-                        color: FarmColors.danger,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      orderingControlError ??
-                          'Could not verify wholesale ordering status.',
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _loadOrderingControl,
-                      icon: const Icon(Icons.refresh_outlined),
-                      label: const Text('Try Again'),
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 14),
-            FarmCard(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Delivery or collection',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 9),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('HPJ Delivery'),
-                        selected: dispatchMethod == 'hpj_delivery',
-                        onSelected: (_) =>
-                            _changeDispatchMethod('hpj_delivery'),
-                      ),
-                      ChoiceChip(
-                        label: const Text('Business Collection'),
-                        selected: dispatchMethod == 'business_collection',
-                        onSelected: (_) =>
-                            _changeDispatchMethod('business_collection'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (loadingSchedule)
-                    const Row(
-                      children: [
-                        SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Checking available capacity...',
-                            style: TextStyle(color: FarmColors.mutedText),
-                          ),
-                        ),
-                      ],
-                    )
-                  else if (scheduleOptions.isEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          scheduleError ??
-                              'No available windows were found. Please try another fulfilment method or contact HPJ.',
-                          style: const TextStyle(
-                            color: FarmColors.danger,
-                            fontWeight: FontWeight.w700,
-                            height: 1.35,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: _loadScheduleOptions,
-                          icon: const Icon(Icons.refresh_outlined),
-                          label: const Text('Check Again'),
-                        ),
-                      ],
-                    )
-                  else
-                    DropdownButtonFormField<String>(
-                      value: selectedSchedule?.selectionKey,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Available window',
-                        prefixIcon: Icon(Icons.schedule_outlined),
-                      ),
-                      items: scheduleOptions
-                          .map(
-                            (option) => DropdownMenuItem<String>(
-                              value: option.selectionKey,
-                              child: Text(
-                                option.displayLabel,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        final match = scheduleOptions.where(
-                          (option) => option.selectionKey == value,
-                        );
-                        if (match.isNotEmpty) {
-                          setState(() => selectedSchedule = match.first);
-                        }
-                      },
-                    ),
-                ],
-              ),
-            ),
-            if (dispatchMethod == 'hpj_delivery') ...[
-              const SizedBox(height: 14),
-              TextField(
-                controller: addressController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Business delivery address',
-                  prefixIcon: Icon(Icons.location_on_outlined),
-                ),
-              ),
-              const SizedBox(height: 12),
-              JamaicaParishDropdown(
-                controller: parishController,
-                label: 'Delivery parish',
-                prefixIcon: Icons.map_outlined,
-              ),
-            ],
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              maxLines: 4,
-              decoration: InputDecoration(
-                labelText: dispatchMethod == 'business_collection'
-                    ? 'Collection instructions or contact notes'
-                    : 'Receiving hours or special instructions',
-                prefixIcon: const Icon(Icons.notes_outlined),
-              ),
-            ),
-            const SizedBox(height: 18),
-            ElevatedButton.icon(
-              icon: Icon(
-                orderingControl?.isBlocked == true
-                    ? Icons.block_outlined
-                    : Icons.send_outlined,
-              ),
-              label: Text(
-                submitting
-                    ? 'Submitting...'
-                    : loadingOrderingControl
-                        ? 'Checking Account...'
-                        : loadingSchedule
-                            ? 'Checking Capacity...'
-                            : orderingControl?.isBlocked == true
-                                ? 'Ordering Blocked'
-                                : selectedSchedule == null
-                                    ? 'Choose a Window'
-                                    : 'Submit Bulk Request',
-              ),
-              onPressed: submitting ||
-                      loadingOrderingControl ||
-                      loadingSchedule ||
-                      selectedSchedule == null ||
-                      orderingControl?.isBlocked == true
-                  ? null
-                  : _submit,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class WholesaleRequestSuccessScreen extends StatelessWidget {
-  final String requestId;
-
-  const WholesaleRequestSuccessScreen({
-    super.key,
-    required this.requestId,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final clean = requestId.replaceAll('-', '').toUpperCase();
-    final shortId = clean.length > 8 ? clean.substring(0, 8) : clean;
-
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: AppBar(title: const Text('Request Submitted')),
-      body: FarmPage(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 36, 18, 120),
-          children: [
-            FarmCard(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  const CircleAvatar(
-                    radius: 34,
-                    backgroundColor: FarmColors.primarySoft,
-                    child: Icon(
-                      Icons.check_circle_outline,
-                      color: FarmColors.success,
-                      size: 38,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'Bulk request received',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Request #$shortId will be reviewed for farm availability, final pricing, and delivery.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: FarmColors.mutedText,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const MyWholesaleRequestsScreen(),
-                        ),
-                      );
-                    },
-                    child: const Text('View My Bulk Requests'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class WholesaleRepeatStandingOrdersScreen extends StatefulWidget {
-  final BusinessAccount account;
-
-  const WholesaleRepeatStandingOrdersScreen({
-    super.key,
-    required this.account,
-  });
-
-  @override
-  State<WholesaleRepeatStandingOrdersScreen> createState() =>
-      _WholesaleRepeatStandingOrdersScreenState();
-}
-
-class _WholesaleRepeatStandingOrdersScreenState
-    extends State<WholesaleRepeatStandingOrdersScreen> {
-  late Future<List<WholesaleOrderTemplate>> templatesFuture;
-  late Future<List<WholesaleStandingOrder>> standingFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _reload();
-  }
-
-  void _reload() {
-    templatesFuture = fetchMyWholesaleOrderTemplates();
-    standingFuture = fetchMyWholesaleStandingOrders();
-  }
-
-  Future<void> _refresh() async {
-    setState(_reload);
-    await Future.wait<Object>([templatesFuture, standingFuture]);
-  }
-
-  Future<void> _useItems({
-    required List<WholesaleSavedOrderItem> items,
-    String? standingOrderId,
-    String? dispatchMethod,
-    DateTime? preferredDate,
-  }) async {
-    try {
-      final draft = await prepareWholesaleSavedBasket(items);
-      if (!mounted) return;
-
-      if (draft.lines.isEmpty) {
-        throw Exception(
-          'None of the saved products are currently available for wholesale ordering.',
-        );
-      }
-
-      if (draft.unavailableProducts.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Unavailable items were skipped: ${draft.unavailableProducts.join(', ')}',
-            ),
-          ),
-        );
-      }
-
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => WholesaleRequestReviewScreen(
-            account: widget.account,
-            lines: draft.lines,
-            standingOrderId: standingOrderId,
-            initialDispatchMethod: dispatchMethod,
-            preferredScheduleDate: preferredDate,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  Future<void> _renameTemplate(WholesaleOrderTemplate template) async {
-    final controller = TextEditingController(text: template.name);
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename Repeat Order'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Template name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (save == true) {
-      try {
-        await renameWholesaleOrderTemplate(
-          template: template,
-          name: controller.text,
-        );
-        await _refresh();
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(friendlyAppError(error))),
-          );
-        }
-      }
-    }
-    controller.dispose();
-  }
-
-  Future<void> _archiveTemplate(WholesaleOrderTemplate template) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Remove saved order?'),
-        content: Text(
-          'Remove “${template.name}” from your repeat-order list? Existing orders are not affected.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    try {
-      await archiveWholesaleOrderTemplate(template);
-      await _refresh();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  Future<void> _createStandingOrder(WholesaleOrderTemplate template) async {
-    final nameController = TextEditingController(text: template.name);
-    final notesController = TextEditingController();
-    String frequency = 'weekly';
-    String method = 'hpj_delivery';
-    DateTime startDate = DateTime.now().add(const Duration(days: 7));
-
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Create Standing Order'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration:
-                        const InputDecoration(labelText: 'Standing-order name'),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: frequency,
-                    decoration: const InputDecoration(labelText: 'Frequency'),
-                    items: const [
-                      DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
-                      DropdownMenuItem(
-                          value: 'biweekly', child: Text('Every 2 Weeks')),
-                      DropdownMenuItem(
-                          value: 'monthly', child: Text('Monthly')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null)
-                        setDialogState(() => frequency = value);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: method,
-                    decoration: const InputDecoration(labelText: 'Fulfilment'),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'hpj_delivery',
-                        child: Text('HPJ Delivery'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'business_collection',
-                        child: Text('Business Collection'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setDialogState(() => method = value);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.calendar_month_outlined),
-                    title: const Text('First required date'),
-                    subtitle: Text(
-                      '${startDate.day}/${startDate.month}/${startDate.year}',
-                    ),
-                    trailing: const Icon(Icons.edit_calendar_outlined),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: dialogContext,
-                        initialDate: startDate,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 730)),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => startDate = picked);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: notesController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Notes (optional)',
-                      hintText: 'Special recurring requirement',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'HPJ must approve the standing order. Each occurrence still uses current wholesale prices, live credit checks, and an available delivery/collection window.',
-                    style: TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 10.5,
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('Send for Approval'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (save == true) {
-      try {
-        await createWholesaleStandingOrderFromTemplate(
-          template: template,
-          name: nameController.text,
-          frequency: frequency,
-          startDate: startDate,
-          dispatchMethod: method,
-          deliveryAddress: widget.account.address,
-          deliveryParish: widget.account.parish,
-          notes: notesController.text,
-        );
-        await _refresh();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Standing order sent to HPJ for approval.'),
-            ),
-          );
-        }
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(friendlyAppError(error))),
-          );
-        }
-      }
-    }
-
-    nameController.dispose();
-    notesController.dispose();
-  }
-
-  Future<void> _changeStandingStatus(
-    WholesaleStandingOrder order,
-    String status,
-  ) async {
-    try {
-      await updateMyWholesaleStandingOrderStatus(order: order, status: status);
-      await _refresh();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  String _dateLabel(DateTime? value) {
-    if (value == null) return 'Not set';
-    final date = value.toLocal();
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
-  Color _standingColor(WholesaleStandingOrder order) {
-    if (order.isActive) return FarmColors.success;
-    if (order.isRejected || order.isCancelled) return FarmColors.danger;
-    if (order.isPaused) return FarmColors.warning;
-    return FarmColors.primary;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: FarmColors.background,
-        appBar: AppBar(
-          title: const Text('Repeat & Standing Orders'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(icon: Icon(Icons.replay_rounded), text: 'Repeat Orders'),
-              Tab(icon: Icon(Icons.event_repeat_rounded), text: 'Standing'),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            FutureBuilder<List<WholesaleOrderTemplate>>(
-              future: templatesFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text(friendlyAppError(snapshot.error!)));
-                }
-                final templates =
-                    snapshot.data ?? const <WholesaleOrderTemplate>[];
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-                    children: [
-                      const Header(
-                        title: 'Repeat orders',
-                        subtitle:
-                            'Save frequent bulk requests once, then review and reorder them with current prices and availability.',
-                      ),
-                      const SizedBox(height: 14),
-                      if (templates.isEmpty)
-                        const FarmEmptyState(
-                          icon: Icons.bookmark_add_outlined,
-                          title: 'No repeat orders saved',
-                          message:
-                              'Open Orders & Tracking and choose “Save Template” on any previous bulk request.',
-                        )
-                      else
-                        ...templates.map(
-                          (template) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: FarmCard(
-                              padding: const EdgeInsets.all(15),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.bookmark_outline,
-                                        color: FarmColors.primary,
-                                      ),
-                                      const SizedBox(width: 9),
-                                      Expanded(
-                                        child: Text(
-                                          template.name,
-                                          style: const TextStyle(
-                                            color: FarmColors.ink,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 7),
-                                  Text(
-                                    '${template.items.length} product line${template.items.length == 1 ? '' : 's'}',
-                                    style: const TextStyle(
-                                      color: FarmColors.mutedText,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Wrap(
-                                    spacing: 7,
-                                    runSpacing: 7,
-                                    children: [
-                                      ElevatedButton.icon(
-                                        onPressed: () => _useItems(
-                                          items: template.items,
-                                        ),
-                                        icon: const Icon(
-                                            Icons.shopping_cart_checkout,
-                                            size: 17),
-                                        label: const Text('Use Template'),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: () =>
-                                            _createStandingOrder(template),
-                                        icon: const Icon(
-                                            Icons.event_repeat_rounded,
-                                            size: 17),
-                                        label:
-                                            const Text('Make Standing Order'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            _renameTemplate(template),
-                                        child: const Text('Rename'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            _archiveTemplate(template),
-                                        child: const Text('Remove'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-            FutureBuilder<List<WholesaleStandingOrder>>(
-              future: standingFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text(friendlyAppError(snapshot.error!)));
-                }
-                final orders =
-                    snapshot.data ?? const <WholesaleStandingOrder>[];
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-                    children: [
-                      const Header(
-                        title: 'Standing orders',
-                        subtitle:
-                            'Recurring requirements approved by HPJ. Each occurrence still receives a live capacity, price and credit check before submission.',
-                      ),
-                      const SizedBox(height: 14),
-                      if (orders.isEmpty)
-                        const FarmEmptyState(
-                          icon: Icons.event_repeat_outlined,
-                          title: 'No standing orders',
-                          message:
-                              'Create one from a saved Repeat Order when your business has a regular weekly or monthly requirement.',
-                        )
-                      else
-                        ...orders.map((order) {
-                          final color = _standingColor(order);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: FarmCard(
-                              padding: const EdgeInsets.all(15),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          order.name,
-                                          style: const TextStyle(
-                                            color: FarmColors.ink,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 9,
-                                          vertical: 5,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: color.withOpacity(0.10),
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                        ),
-                                        child: Text(
-                                          order.statusLabel,
-                                          style: TextStyle(
-                                            color: color,
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 7),
-                                  Text(
-                                    '${order.frequencyLabel} • ${order.dispatchMethodLabel} • ${order.items.length} item${order.items.length == 1 ? '' : 's'}',
-                                    style: const TextStyle(
-                                      color: FarmColors.mutedText,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    'Next requirement: ${_dateLabel(order.nextDueDate)}',
-                                    style: const TextStyle(
-                                      color: FarmColors.primary,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  if (order.notes.isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      order.notes,
-                                      style: const TextStyle(
-                                        color: FarmColors.mutedText,
-                                        fontSize: 10.5,
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 12),
-                                  Wrap(
-                                    spacing: 7,
-                                    runSpacing: 7,
-                                    children: [
-                                      if (order.isActive)
-                                        ElevatedButton.icon(
-                                          onPressed: () => _useItems(
-                                            items: order.items,
-                                            standingOrderId: order.id,
-                                            dispatchMethod:
-                                                order.dispatchMethod,
-                                            preferredDate: order.nextDueDate,
-                                          ),
-                                          icon: const Icon(
-                                              Icons.playlist_add_check_rounded,
-                                              size: 17),
-                                          label:
-                                              const Text('Create Next Request'),
-                                        ),
-                                      if (order.isActive)
-                                        OutlinedButton(
-                                          onPressed: () =>
-                                              _changeStandingStatus(
-                                            order,
-                                            'paused',
-                                          ),
-                                          child: const Text('Pause'),
-                                        ),
-                                      if (order.isPaused)
-                                        ElevatedButton(
-                                          onPressed: () =>
-                                              _changeStandingStatus(
-                                            order,
-                                            'active',
-                                          ),
-                                          child: const Text('Resume'),
-                                        ),
-                                      if (order.isActive || order.isPaused)
-                                        TextButton(
-                                          onPressed: () =>
-                                              _changeStandingStatus(
-                                            order,
-                                            'cancelled',
-                                          ),
-                                          child: const Text('Cancel'),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class MyWholesaleRequestsScreen extends StatefulWidget {
-  final bool embedded;
-  final String? initialRequestId;
-
-  const MyWholesaleRequestsScreen({
-    super.key,
-    this.embedded = false,
-    this.initialRequestId,
-  });
-
-  @override
-  State<MyWholesaleRequestsScreen> createState() =>
-      _MyWholesaleRequestsScreenState();
-}
-
-class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
-  int _refreshKey = 0;
-  int _orderLoadLimit = 50;
-
-  void _refreshOrders() {
-    if (!mounted) return;
-    setState(() => _refreshKey++);
-  }
-
-  void _loadMoreOrders() {
-    if (!mounted || _orderLoadLimit >= 1000) return;
-
-    setState(() {
-      _orderLoadLimit += 50;
-      if (_orderLoadLimit > 1000) {
-        _orderLoadLimit = 1000;
-      }
-    });
-  }
-
-  Future<void> _orderAgain(
-    BuildContext context,
-    WholesaleOrderRequest request,
-  ) async {
-    try {
-      final account = await fetchCurrentBusinessAccount();
-      if (account == null || !account.isApproved) {
-        throw Exception('An approved wholesale account is required.');
-      }
-
-      final saved = request.items
-          .map(
-            (item) => WholesaleSavedOrderItem(
-              id: item.id,
-              parentId: request.id,
-              productId: item.productId,
-              productName: item.productName,
-              quantity: item.quantity,
-              unit: item.unit,
-              unitPriceSnapshot: item.unitPrice,
-            ),
-          )
-          .toList();
-
-      final draft = await prepareWholesaleSavedBasket(saved);
-
-      if (!context.mounted) return;
-
-      if (draft.lines.isEmpty) {
-        throw Exception(
-          'None of the products from this order are currently available for wholesale ordering.',
-        );
-      }
-
-      if (draft.unavailableProducts.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Unavailable items were skipped: ${draft.unavailableProducts.join(', ')}',
-            ),
-          ),
-        );
-      }
-
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => WholesaleRequestReviewScreen(
-            account: account,
-            lines: draft.lines,
-            initialDispatchMethod: request.requestedDispatchMethod,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  Future<void> _saveTemplate(
-    BuildContext context,
-    WholesaleOrderRequest request,
-  ) async {
-    final controller = TextEditingController(
-      text: 'Repeat Order ${request.shortId}',
-    );
-
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Save as Repeat Order'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Template name',
-            hintText: 'e.g. Monday Restaurant Order',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (save != true) {
-      controller.dispose();
-      return;
-    }
-
-    try {
-      await saveWholesaleTemplateFromRequest(
-        request: request,
-        name: controller.text,
-      );
-
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Repeat-order template saved.')),
-      );
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    } finally {
-      controller.dispose();
-    }
-  }
-
-  String _shortDate(DateTime? value) {
-    if (value == null) return '';
-
-    const months = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    final date = value.toLocal();
-    return '${date.day} ${months[date.month - 1]}';
-  }
-
-  String _orderStatus(
-    WholesaleOrderRequest request,
-    WholesaleOrderJourney? journey,
-  ) {
-    if (journey != null) return journey.currentStageLabel;
-
-    switch (request.status.trim().toLowerCase()) {
-      case 'approved':
-      case 'fulfilled':
-        return 'Confirmed';
-      case 'quoted':
-        return 'Quote Ready';
-      case 'rejected':
-        return 'Needs Attention';
-      case 'cancelled':
-        return 'Cancelled';
-      case 'pending':
-      case 'submitted':
-        return 'Submitted';
-      default:
-        final clean = request.status.trim().replaceAll('_', ' ');
-        if (clean.isEmpty) return 'Submitted';
-        return clean
-            .split(' ')
-            .where((part) => part.isNotEmpty)
-            .map(
-              (part) =>
-                  '${part.substring(0, 1).toUpperCase()}${part.substring(1).toLowerCase()}',
-            )
-            .join(' ');
-    }
-  }
-
-  bool _isPastOrder(
-    WholesaleOrderRequest request,
-    WholesaleOrderJourney? journey,
-  ) {
-    if (journey?.isComplete == true) return true;
-
-    final status = request.status.trim().toLowerCase();
-    return status == 'cancelled' || status == 'rejected';
-  }
-
-  String _fulfilmentDateLabel(
-    WholesaleOrderRequest request,
-    WholesaleOrderJourney? journey,
-  ) {
-    final scheduled = _shortDate(journey?.scheduledFor);
-    final requested = _shortDate(request.requestedDate);
-    final ordered = _shortDate(request.createdAt);
-    final method = (journey?.isCollection == true ||
-            request.requestedDispatchMethod == 'business_collection')
-        ? 'Collection'
-        : 'Delivery';
-
-    if (scheduled.isNotEmpty) {
-      return '$method scheduled $scheduled';
-    }
-
-    if (requested.isNotEmpty) {
-      final window = request.requestedWindowLabel.trim();
-      return [
-        '$method requested $requested',
-        if (window.isNotEmpty) window,
-      ].join(' • ');
-    }
-
-    if (ordered.isNotEmpty) return 'Ordered $ordered';
-    return '';
-  }
-
-  String _orderAmountLabel(
-    WholesaleOrderRequest request,
-    WholesaleOrderJourney? journey,
-    WholesaleInvoice? invoice,
-  ) {
-    final finalTotal = invoice?.totalAmount ?? journey?.invoiceTotal ?? 0;
-    if (finalTotal > 0) return 'Final ${formatJmd(finalTotal)}';
-
-    final quoted = request.quotedTotal;
-    if (quoted != null) return 'Quoted ${formatJmd(quoted)}';
-    return 'Est. ${formatJmd(request.subtotalEstimate)}';
-  }
-
-  String _itemsPreview(WholesaleOrderRequest request) {
-    if (request.items.isEmpty) return 'Order items';
-
-    final first = request.items.first.productName.trim().isEmpty
-        ? 'Product'
-        : request.items.first.productName.trim();
-
-    final more = request.items.length - 1;
-    return more <= 0 ? first : '$first +$more more';
-  }
-
-  Future<void> _handleMoreAction(
-    BuildContext context,
-    String action,
-    WholesaleOrderRequest request,
-  ) async {
-    if (action == 'again') {
-      await _orderAgain(context, request);
-      return;
-    }
-    if (action == 'template') {
-      await _saveTemplate(context, request);
-    }
-  }
-
-  Future<void> _confirmReceived(
-    BuildContext context,
-    WholesaleOrderRequest request,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirm order received?'),
-        content: Text(
-          'Confirm that your business received Order #${request.shortId}. '
-          'Use this after the delivered items have been checked.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Not Yet'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Confirm Received'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await confirmWholesaleOrderReceived(request.id);
-      if (!mounted) return;
-      _refreshOrders();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Receipt confirmed. Thank you.'),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyAppError(error))),
-      );
-    }
-  }
-
-  Future<void> _showOrderDetails(
-    BuildContext context,
-    WholesaleOrderRequest request,
-    WholesaleOrderJourney? journey,
-    WholesaleInvoice? invoice,
-  ) async {
-    final status = _orderStatus(request, journey);
-    final dateLabel = _fulfilmentDateLabel(request, journey);
-    final finalTotal = invoice?.totalAmount ?? journey?.invoiceTotal ?? 0;
-    final amountDue = invoice?.amountDue ?? journey?.amountDue ?? 0;
-    final paidAmount = invoice?.paidAmount ??
-        (finalTotal > amountDue ? finalTotal - amountDue : 0);
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        final media = MediaQuery.of(sheetContext);
-
-        return SafeArea(
-          top: false,
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: media.size.height * 0.90,
-            ),
-            decoration: const BoxDecoration(
-              color: FarmColors.background,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: FarmColors.line,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (request.items.isNotEmpty)
-                            HpjProductThumb(
-                              productId: request.items.first.productId,
-                              productName: request.items.first.productName,
-                              size: 72,
-                              radius: 17,
-                            )
-                          else
-                            Container(
-                              width: 72,
-                              height: 72,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: FarmColors.primarySoft,
-                                borderRadius: BorderRadius.circular(17),
-                                border: Border.all(color: FarmColors.line),
-                              ),
-                              child: const Icon(
-                                Icons.inventory_2_outlined,
-                                color: FarmColors.primary,
-                              ),
-                            ),
-                          const SizedBox(width: 13),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Order #${request.shortId}',
-                                  style: const TextStyle(
-                                    color: FarmColors.ink,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 7),
-                                _WholesaleStatusChip(status: status),
-                                if (dateLabel.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    dateLabel,
-                                    style: const TextStyle(
-                                      color: FarmColors.mutedText,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        invoice != null
-                            ? 'Requested items'
-                            : request.items.length == 1
-                                ? '1 item'
-                                : '${request.items.length} items',
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 9),
-                      ...request.items.map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 9),
-                          child: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: FarmColors.line),
-                            ),
-                            child: Row(
-                              children: [
-                                HpjProductThumb(
-                                  productId: item.productId,
-                                  productName: item.productName,
-                                  size: 52,
-                                  radius: 12,
-                                ),
-                                const SizedBox(width: 11),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.productName,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: FarmColors.ink,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        '${item.quantityLabel} ${item.unit}',
-                                        style: const TextStyle(
-                                          color: FarmColors.mutedText,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  formatJmd(item.lineTotal),
-                                  style: const TextStyle(
-                                    color: FarmColors.ink,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(13),
-                        decoration: BoxDecoration(
-                          color: FarmColors.cardSoft,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: FarmColors.line),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (finalTotal > 0) ...[
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Final invoice total',
-                                      style: TextStyle(
-                                        color: FarmColors.mutedText,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    formatJmd(finalTotal),
-                                    style: const TextStyle(
-                                      color: FarmColors.ink,
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (paidAmount > 0) ...[
-                                const SizedBox(height: 7),
-                                Row(
-                                  children: [
-                                    const Expanded(
-                                      child: Text(
-                                        'Paid',
-                                        style: TextStyle(
-                                          color: FarmColors.mutedText,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                    Text(
-                                      formatJmd(paidAmount),
-                                      style: const TextStyle(
-                                        color: FarmColors.success,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              const Divider(height: 18),
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Balance due',
-                                      style: TextStyle(
-                                        color: FarmColors.ink,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    formatJmd(amountDue),
-                                    style: TextStyle(
-                                      color: amountDue > 0
-                                          ? FarmColors.warning
-                                          : FarmColors.success,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Final amount is based on the invoiced / packed quantities.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 9.5,
-                                  height: 1.3,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ] else ...[
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      request.quotedTotal != null
-                                          ? 'Quoted total'
-                                          : 'Estimated total',
-                                      style: const TextStyle(
-                                        color: FarmColors.mutedText,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    request.quotedTotal != null
-                                        ? formatJmd(request.quotedTotal!)
-                                        : formatJmd(request.subtotalEstimate),
-                                    style: const TextStyle(
-                                      color: FarmColors.ink,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (invoice != null && invoice.items.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Final invoiced quantities',
-                          style: TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 7),
-                        ...invoice.items.map(
-                          (item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 7),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${item.productName} • ${item.formattedQuantity}',
-                                    style: const TextStyle(
-                                      color: FarmColors.mutedText,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  item.formattedLineTotal,
-                                  style: const TextStyle(
-                                    color: FarmColors.ink,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (journey != null) ...[
-                        const SizedBox(height: 18),
-                        const Text(
-                          'Order progress',
-                          style: TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: FarmColors.line),
-                          ),
-                          child: _WholesaleJourneyTimeline(journey: journey),
-                        ),
-                      ],
-                      if (journey?.canConfirmReceipt == true) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: FarmColors.primarySoft,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: FarmColors.primary.withOpacity(0.22),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(
-                                    Icons.inventory_2_outlined,
-                                    color: FarmColors.primary,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Delivered by HPJ — confirm receipt',
-                                      style: TextStyle(
-                                        color: FarmColors.ink,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'After your business checks the delivery, confirm that it was received.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 10.5,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              if ((journey?.recipientName ?? '')
-                                  .trim()
-                                  .isNotEmpty) ...[
-                                const SizedBox(height: 5),
-                                Text(
-                                  'Delivered to ${(journey?.recipientName ?? '').trim()}',
-                                  style: const TextStyle(
-                                    color: FarmColors.ink,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 10),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: () async {
-                                    Navigator.of(sheetContext).pop();
-                                    await _confirmReceived(context, request);
-                                  },
-                                  icon: const Icon(
-                                    Icons.task_alt_rounded,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Confirm Received'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ] else if (journey?.businessReceivedAt != null) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: FarmColors.success.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(
-                              color: FarmColors.success.withOpacity(0.24),
-                            ),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                Icons.verified_outlined,
-                                color: FarmColors.success,
-                                size: 20,
-                              ),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Your business confirmed this order was received.',
-                                  style: TextStyle(
-                                    color: FarmColors.ink,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (journey != null &&
-                          (journey.invoiceNumber.isNotEmpty ||
-                              journey.amountDue > 0)) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: journey.amountDue > 0
-                                ? FarmColors.warning.withOpacity(0.08)
-                                : FarmColors.cardSoft,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: journey.amountDue > 0
-                                  ? FarmColors.warning.withOpacity(0.30)
-                                  : FarmColors.line,
-                            ),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                journey.amountDue > 0
-                                    ? Icons.payments_outlined
-                                    : Icons.receipt_long_outlined,
-                                color: journey.amountDue > 0
-                                    ? FarmColors.warning
-                                    : FarmColors.primary,
-                                size: 22,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  [
-                                    if (journey.invoiceNumber.isNotEmpty)
-                                      'Invoice ${journey.invoiceNumber}',
-                                    if (journey.amountDue > 0)
-                                      'Amount due ${formatJmd(journey.amountDue)}'
-                                    else if (journey.paymentStatus.isNotEmpty)
-                                      journey.paymentStatus
-                                          .replaceAll('_', ' '),
-                                  ].join(' • '),
-                                  style: const TextStyle(
-                                    color: FarmColors.ink,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (request.adminNotes.trim().isNotEmpty) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: FarmColors.line),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'HPJ note',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                request.adminNotes.trim(),
-                                style: const TextStyle(
-                                  color: FarmColors.ink,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    border: Border(
-                      top: BorderSide(color: FarmColors.line),
-                    ),
-                  ),
-                  child: SafeArea(
-                    top: false,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () async {
-                              Navigator.of(sheetContext).pop();
-                              await _saveTemplate(context, request);
-                            },
-                            icon: const Icon(
-                              Icons.bookmark_add_outlined,
-                              size: 17,
-                            ),
-                            label: const Text('Save Repeat'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              Navigator.of(sheetContext).pop();
-                              await _orderAgain(context, request);
-                            },
-                            icon: const Icon(
-                              Icons.replay_rounded,
-                              size: 17,
-                            ),
-                            label: const Text('Order Again'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _orderCard(
-    BuildContext context,
-    WholesaleOrderRequest request,
-    WholesaleOrderJourney? journey,
-    WholesaleInvoice? invoice,
-  ) {
-    final desktopWeb = HpjWebUi.isDesktop(context);
-    final status = _orderStatus(request, journey);
-    final dateLabel = _fulfilmentDateLabel(request, journey);
-    final hasAmountDue = (invoice?.amountDue ?? journey?.amountDue ?? 0) > 0;
-    final isPast = _isPastOrder(request, journey);
-    final needsReceipt = journey?.canConfirmReceipt == true;
-
-    return Padding(
-      padding: desktopWeb
-          ? EdgeInsets.zero
-          : const EdgeInsets.only(bottom: 12),
-      child: FarmCard(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (request.items.isNotEmpty)
-                      HpjProductThumb(
-                        productId: request.items.first.productId,
-                        productName: request.items.first.productName,
-                        size: 64,
-                        radius: 15,
-                      )
-                    else
-                      Container(
-                        width: 64,
-                        height: 64,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: FarmColors.primarySoft,
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: FarmColors.line),
-                        ),
-                        child: const Icon(
-                          Icons.inventory_2_outlined,
-                          color: FarmColors.primary,
-                        ),
-                      ),
-                    if (request.items.length > 1)
-                      Positioned(
-                        right: -7,
-                        bottom: -7,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: FarmColors.primary,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 2,
-                            ),
-                          ),
-                          child: Text(
-                            '+${request.items.length - 1}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Order #${request.shortId}',
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 15.5,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          PopupMenuButton<String>(
-                            padding: EdgeInsets.zero,
-                            tooltip: 'More order actions',
-                            onSelected: (action) => _handleMoreAction(
-                              context,
-                              action,
-                              request,
-                            ),
-                            itemBuilder: (_) => const [
-                              PopupMenuItem<String>(
-                                value: 'again',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.replay_rounded, size: 18),
-                                    SizedBox(width: 9),
-                                    Text('Order Again'),
-                                  ],
-                                ),
-                              ),
-                              PopupMenuItem<String>(
-                                value: 'template',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.bookmark_add_outlined,
-                                      size: 18,
-                                    ),
-                                    SizedBox(width: 9),
-                                    Text('Save Repeat Order'),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            icon: const Icon(
-                              Icons.more_horiz_rounded,
-                              color: FarmColors.mutedText,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      _WholesaleStatusChip(status: status),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _itemsPreview(request),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: FarmColors.ink,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              [
-                request.items.length == 1
-                    ? '1 item'
-                    : '${request.items.length} items',
-                _orderAmountLabel(request, journey, invoice),
-              ].join(' • '),
-              style: const TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (dateLabel.isNotEmpty) ...[
-              const SizedBox(height: 5),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.event_outlined,
-                    size: 15,
-                    color: FarmColors.primary,
-                  ),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      dateLabel,
-                      style: const TextStyle(
-                        color: FarmColors.primary,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            if (hasAmountDue) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 11,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: FarmColors.warning.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(13),
-                  border: Border.all(
-                    color: FarmColors.warning.withOpacity(0.30),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.payments_outlined,
-                      size: 18,
-                      color: FarmColors.warning,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Payment due ${formatJmd(invoice?.amountDue ?? journey!.amountDue)}',
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: needsReceipt
-                  ? ElevatedButton.icon(
-                      onPressed: () => _showOrderDetails(
-                        context,
-                        request,
-                        journey,
-                        invoice,
-                      ),
-                      icon: const Icon(
-                        Icons.task_alt_rounded,
-                        size: 18,
-                      ),
-                      label: const Text('Confirm Receipt'),
-                    )
-                  : isPast
-                      ? OutlinedButton.icon(
-                          onPressed: () => _showOrderDetails(
-                            context,
-                            request,
-                            journey,
-                            invoice,
-                          ),
-                          icon: const Icon(
-                            Icons.receipt_long_outlined,
-                            size: 18,
-                          ),
-                          label: const Text('View Order'),
-                        )
-                      : ElevatedButton.icon(
-                          onPressed: () => _showOrderDetails(
-                            context,
-                            request,
-                            journey,
-                            invoice,
-                          ),
-                          icon: const Icon(
-                            Icons.local_shipping_outlined,
-                            size: 18,
-                          ),
-                          label: const Text('Track Order'),
-                        ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final desktopWeb = HpjWebUi.isDesktop(context);
-
-    return Scaffold(
-      backgroundColor: FarmColors.background,
-      appBar: widget.embedded ? null : AppBar(title: const Text('Orders')),
-      body: FutureBuilder<List<Object>>(
-        key: ValueKey(_refreshKey),
-        future: Future.wait<Object>([
-          fetchMyWholesaleRequests(
-            limit: (widget.initialRequestId?.trim().isNotEmpty ?? false)
-                ? 500
-                : _orderLoadLimit + 1,
-          ),
-          fetchMyWholesaleOrderJourneys(),
-          fetchMyWholesaleInvoices(
-            includePaid: true,
-            limit: _orderLoadLimit < 150
-                ? 300
-                : _orderLoadLimit * 2,
-          ),
-        ]),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  friendlyAppError(snapshot.error!),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-
-          final data = snapshot.data;
-
-          final fetchedRequests = data == null
-              ? const <WholesaleOrderRequest>[]
-              : data[0] as List<WholesaleOrderRequest>;
-
-          final requestedRequestId =
-              widget.initialRequestId?.trim() ?? '';
-
-          final hasMoreOrders = requestedRequestId.isEmpty &&
-              fetchedRequests.length > _orderLoadLimit;
-
-          final allRequests = requestedRequestId.isEmpty
-              ? fetchedRequests
-                  .take(_orderLoadLimit)
-                  .toList(growable: false)
-              : fetchedRequests;
-
-          final focusedRequests = requestedRequestId.isEmpty
-              ? const <WholesaleOrderRequest>[]
-              : allRequests
-                  .where(
-                    (request) =>
-                        request.id.trim() == requestedRequestId,
-                  )
-                  .toList();
-
-          final exactRequestFound = focusedRequests.isNotEmpty;
-          final requests =
-              exactRequestFound ? focusedRequests : allRequests;
-
-          final journeys = data == null
-              ? const <WholesaleOrderJourney>[]
-              : data[1] as List<WholesaleOrderJourney>;
-
-          final journeyByRequest = <String, WholesaleOrderJourney>{
-            for (final journey in journeys) journey.requestId: journey,
-          };
-
-          final invoices = data == null
-              ? const <WholesaleInvoice>[]
-              : data[2] as List<WholesaleInvoice>;
-          final invoiceByRequest = <String, WholesaleInvoice>{};
-          for (final invoice in invoices) {
-            final requestId = invoice.requestId.trim();
-            if (requestId.isEmpty || invoice.isVoid) continue;
-            invoiceByRequest.putIfAbsent(requestId, () => invoice);
-          }
-
-          final ordered = List<WholesaleOrderRequest>.from(requests)
-            ..sort((a, b) {
-              final aPast = _isPastOrder(a, journeyByRequest[a.id]);
-              final bPast = _isPastOrder(b, journeyByRequest[b.id]);
-
-              if (aPast != bPast) return aPast ? 1 : -1;
-
-              final aDate =
-                  (a.updatedAt ?? a.createdAt ?? DateTime(2000)).toLocal();
-              final bDate =
-                  (b.updatedAt ?? b.createdAt ?? DateTime(2000)).toLocal();
-
-              return bDate.compareTo(aDate);
-            });
-
-          final current = ordered
-              .where(
-                (request) =>
-                    !_isPastOrder(request, journeyByRequest[request.id]),
-              )
-              .toList();
-
-          final past = ordered
-              .where(
-                (request) =>
-                    _isPastOrder(request, journeyByRequest[request.id]),
-              )
-              .toList();
-
-          return FarmPage(
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
-              children: [
-                const Header(
-                  title: 'Orders',
-                  subtitle:
-                      'Track delivery, final invoice totals and receipt confirmation.',
-                ),
-                if (requestedRequestId.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(11),
-                    decoration: BoxDecoration(
-                      color: exactRequestFound
-                          ? FarmColors.primarySoft
-                          : const Color(0xFFFFF7E8),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: exactRequestFound
-                            ? FarmColors.primary.withOpacity(0.20)
-                            : FarmColors.warning.withOpacity(0.28),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          exactRequestFound
-                              ? Icons.notifications_active_outlined
-                              : Icons.info_outline_rounded,
-                          size: 18,
-                          color: exactRequestFound
-                              ? FarmColors.primary
-                              : FarmColors.warning,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            exactRequestFound
-                                ? 'Opened from your notification. Showing the related order.'
-                                : 'That order is no longer available in this view. Showing your current orders instead.',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 10,
-                              height: 1.35,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                if (requests.isEmpty)
-                  const FarmEmptyState(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'No wholesale orders yet',
-                    message:
-                        'Start in Shop when your business is ready to place an order.',
-                  )
-                else ...[
-                  if (current.isNotEmpty) ...[
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Current orders',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '${current.length}',
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 9),
-                    if (desktopWeb)
-                      HpjWebResponsiveGrid(
-                        minItemWidth: 500,
-                        spacing: 16,
-                        runSpacing: 16,
-                        children: current
-                            .map(
-                              (request) => _orderCard(
-                                context,
-                                request,
-                                journeyByRequest[request.id],
-                                invoiceByRequest[request.id],
-                              ),
-                            )
-                            .toList(growable: false),
-                      )
-                    else
-                      ...current.map(
-                        (request) => _orderCard(
-                          context,
-                          request,
-                          journeyByRequest[request.id],
-                          invoiceByRequest[request.id],
-                        ),
-                      ),
-                  ],
-                  if (past.isNotEmpty) ...[
-                    if (current.isNotEmpty) const SizedBox(height: 7),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Past orders',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '${past.length}',
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 9),
-                    if (desktopWeb)
-                      HpjWebResponsiveGrid(
-                        minItemWidth: 500,
-                        spacing: 16,
-                        runSpacing: 16,
-                        children: past
-                            .map(
-                              (request) => _orderCard(
-                                context,
-                                request,
-                                journeyByRequest[request.id],
-                                invoiceByRequest[request.id],
-                              ),
-                            )
-                            .toList(growable: false),
-                      )
-                    else
-                      ...past.map(
-                        (request) => _orderCard(
-                          context,
-                          request,
-                          journeyByRequest[request.id],
-                          invoiceByRequest[request.id],
-                        ),
-                      ),
-                  ],
-                  if (hasMoreOrders) ...[
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _loadMoreOrders,
-                        icon: const Icon(
-                          Icons.expand_more_rounded,
-                          size: 18,
-                        ),
-                        label: const Text(
-                          'Load 50 More Orders',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      'Showing the ${allRequests.length} most recent wholesale orders.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 9.2,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ],
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _WholesaleJourneyTimeline extends StatelessWidget {
-  final WholesaleOrderJourney journey;
-
-  const _WholesaleJourneyTimeline({required this.journey});
-
-  String _timeLabel(DateTime? value) {
-    if (value == null) return '';
-
-    const months = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    final date = value.toLocal();
-    final hour = date.hour == 0
-        ? 12
-        : date.hour > 12
-            ? date.hour - 12
-            : date.hour;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final meridiem = date.hour >= 12 ? 'PM' : 'AM';
-
-    return '${date.day} ${months[date.month - 1]} • $hour:$minute $meridiem';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final stages = journey.stageLabels;
-    final current = journey.currentStageIndex;
-    final interrupted = journey.requestStatus == 'cancelled' ||
-        journey.requestStatus == 'rejected';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          journey.currentStageLabel,
-          style: TextStyle(
-            color: interrupted ? FarmColors.danger : FarmColors.primary,
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        if (journey.scheduledFor != null && !journey.isLogisticsComplete) ...[
-          const SizedBox(height: 3),
-          Text(
-            '${journey.isCollection ? 'Collection' : 'Delivery'} schedule • ${_timeLabel(journey.scheduledFor)}',
-            style: const TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-        const SizedBox(height: 9),
-        ...List.generate(stages.length, (index) {
-          final reached = !interrupted && index <= current;
-          final isCurrent = !interrupted && index == current;
-          final isLast = index == stages.length - 1;
-          final time = _timeLabel(journey.timestampForStage(index));
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 22,
-                child: Column(
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: reached ? FarmColors.green : FarmColors.cardSoft,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: reached ? FarmColors.green : FarmColors.line,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: reached
-                          ? const Icon(
-                              Icons.check,
-                              size: 10,
-                              color: Colors.white,
-                            )
-                          : null,
-                    ),
-                    if (!isLast)
-                      Container(
-                        width: 2,
-                        height: time.isEmpty ? 22 : 31,
-                        color: index < current
-                            ? FarmColors.green
-                            : FarmColors.line,
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        stages[index],
-                        style: TextStyle(
-                          color:
-                              isCurrent ? FarmColors.ink : FarmColors.mutedText,
-                          fontSize: 10.5,
-                          fontWeight:
-                              isCurrent ? FontWeight.w900 : FontWeight.w700,
-                        ),
-                      ),
-                      if (time.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          time,
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ] else if (isCurrent && journey.canConfirmReceipt) ...[
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Waiting for business confirmation',
-                          style: TextStyle(
-                            color: FarmColors.warning,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        }),
-      ],
-    );
-  }
-}
-
-class _WholesaleStatusChip extends StatelessWidget {
-  final String status;
-
-  const _WholesaleStatusChip({required this.status});
-
-  String _friendlyLabel(String clean) {
-    switch (clean) {
-      case 'approved':
-      case 'confirmed':
-      case 'fulfilled':
-        return 'Confirmed';
-      case 'quote_ready':
-      case 'quoted':
-        return 'Quote Ready';
-      case 'out_for_delivery':
-        return 'Out for Delivery';
-      case 'ready_for_collection':
-      case 'ready_for_pickup':
-        return 'Ready for Collection';
-      case 'ready_for_dispatch':
-        return 'Ready for Dispatch';
-      case 'delivery_scheduled':
-        return 'Delivery Scheduled';
-      case 'collection_scheduled':
-        return 'Collection Scheduled';
-      case 'needs_attention':
-      case 'rejected':
-        return 'Needs Attention';
-      default:
-        final spaced = clean.replaceAll('_', ' ').trim();
-        if (spaced.isEmpty) return 'Submitted';
-        return spaced
-            .split(' ')
-            .where((part) => part.isNotEmpty)
-            .map(
-              (part) =>
-                  '${part.substring(0, 1).toUpperCase()}${part.substring(1).toLowerCase()}',
-            )
-            .join(' ');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final clean = status.trim().toLowerCase().replaceAll(' ', '_');
-
-    final color = clean == 'fulfilled' ||
-            clean == 'approved' ||
-            clean == 'confirmed' ||
-            clean == 'delivered' ||
-            clean == 'collected'
-        ? FarmColors.success
-        : clean == 'rejected' ||
-                clean == 'cancelled' ||
-                clean == 'needs_attention'
-            ? FarmColors.danger
-            : clean == 'quoted' ||
-                    clean == 'quote_ready' ||
-                    clean == 'payment_due'
-                ? FarmColors.warning
-                : FarmColors.primary;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.22)),
-      ),
-      child: Text(
-        _friendlyLabel(clean),
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
 class _WholesaleProcurementSnapshot {
   final List<WholesaleDemandForecast> demands;
   final List<BusinessAccount> accounts;
@@ -26492,6 +10893,816 @@ class AdminWholesaleManagementTab extends StatefulWidget {
   @override
   State<AdminWholesaleManagementTab> createState() =>
       _AdminWholesaleManagementTabState();
+}
+
+class _PremiumProcurementNeedsHero extends StatelessWidget {
+  final int activeDemandCount;
+  final int openSourcingCount;
+  final int urgentCount;
+  final int thisWeekCount;
+  final int readyCount;
+
+  const _PremiumProcurementNeedsHero({
+    required this.activeDemandCount,
+    required this.openSourcingCount,
+    required this.urgentCount,
+    required this.thisWeekCount,
+    required this.readyCount,
+  });
+
+  Widget _metric({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.white.withOpacity(.16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              color: const Color(0xFFE8C768),
+              size: 17,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(.72),
+                fontSize: 8.6,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+            Color(0xFF4E8157),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.deepGreen.withOpacity(.14),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.account_tree_outlined,
+                color: Color(0xFFE8C768),
+                size: 22,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'PROCUREMENT COMMAND',
+                style: TextStyle(
+                  color: Color(0xFFCFE0CF),
+                  fontSize: 10.3,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .9,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Close every supply gap',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 21,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Combine usable warehouse stock, prior secured farmer supply and current verified farmer availability before committing more supply.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(.83),
+              fontSize: 10.6,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              _metric(
+                icon: Icons.warning_amber_rounded,
+                value: '$openSourcingCount',
+                label: 'Need sourcing',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.priority_high_rounded,
+                value: '$urgentCount',
+                label: 'Urgent',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.verified_outlined,
+                value: '$readyCount',
+                label: 'Covered / ready',
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 11,
+              vertical: 9,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.10),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: Colors.white.withOpacity(.14),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_month_outlined,
+                  color: Color(0xFFE8C768),
+                  size: 17,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    '$thisWeekCount open requirement${thisWeekCount == 1 ? '' : 's'} need supply within the next 7 days • $activeDemandCount active requirements loaded',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(.83),
+                      fontSize: 9.4,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumProcurementMovementHero extends StatelessWidget {
+  final String mode;
+  final int toCollect;
+  final int collected;
+  final int atWarehouse;
+  final int completed;
+  final int readyToSchedule;
+
+  const _PremiumProcurementMovementHero({
+    required this.mode,
+    required this.toCollect,
+    required this.collected,
+    required this.atWarehouse,
+    required this.completed,
+    required this.readyToSchedule,
+  });
+
+  Widget _metric({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.12),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: Colors.white.withOpacity(.16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              color: const Color(0xFFE8C768),
+              size: 17,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(.72),
+                fontSize: 8.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final collectionsOnly = mode == 'collections';
+    final receivingOnly = mode == 'receiving';
+
+    final eyebrow = collectionsOnly
+        ? 'FARMER COLLECTIONS'
+        : receivingOnly
+            ? 'WAREHOUSE RECEIVING'
+            : 'COLLECTIONS & RECEIVING';
+
+    final title = collectionsOnly
+        ? 'Move secured supply from farms'
+        : receivingOnly
+            ? 'Receive and inspect every lot'
+            : 'Track farm-to-warehouse movement';
+
+    final subtitle = collectionsOnly
+        ? 'Schedule confirmed farmer supply and track it until produce reaches HPJ.'
+        : receivingOnly
+            ? 'Receive collected produce, record accepted/rejected quantities, inspect quality and complete warehouse intake.'
+            : 'Follow reserved farmer supply from collection scheduling through final warehouse receiving.';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+            Color(0xFF4E8157),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.deepGreen.withOpacity(.14),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.warehouse_outlined,
+                color: Color(0xFFE8C768),
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  eyebrow,
+                  style: const TextStyle(
+                    color: Color(0xFFCFE0CF),
+                    fontSize: 10.2,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .8,
+                  ),
+                ),
+              ),
+              if (!receivingOnly && readyToSchedule > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(.11),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(.15),
+                    ),
+                  ),
+                  child: Text(
+                    '$readyToSchedule READY TO SCHEDULE',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 7.8,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: Colors.white.withOpacity(.82),
+              fontSize: 10.4,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              _metric(
+                icon: Icons.event_note_outlined,
+                value: '$toCollect',
+                label: 'To collect',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.local_shipping_outlined,
+                value: '$collected',
+                label: 'Collected',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.inventory_2_outlined,
+                value: '$atWarehouse',
+                label: 'At warehouse',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _metric(
+                icon: Icons.done_all_rounded,
+                value: '$completed',
+                label: 'Completed',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.schedule_outlined,
+                value: '$readyToSchedule',
+                label: 'Ready to schedule',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.route_outlined,
+                value: '${toCollect + collected + atWarehouse}',
+                label: 'In movement',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
+  final int approvedToCreate;
+  final int activeWarehouseOrders;
+  final int waiting;
+  final int preparing;
+  final int packing;
+  final int ready;
+
+  const _PremiumWebWholesaleFulfillmentHero({
+    required this.approvedToCreate,
+    required this.activeWarehouseOrders,
+    required this.waiting,
+    required this.preparing,
+    required this.packing,
+    required this.ready,
+  });
+
+  Widget _metric({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.12),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: Colors.white.withOpacity(.16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              color: const Color(0xFFE8C768),
+              size: 17,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(.72),
+                fontSize: 8.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+            Color(0xFF4E8157),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.deepGreen.withOpacity(.14),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.inventory_2_outlined,
+                color: Color(0xFFE8C768),
+                size: 22,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'WHOLESALE WAREHOUSE',
+                style: TextStyle(
+                  color: Color(0xFFCFE0CF),
+                  fontSize: 10.3,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .9,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Prepare every approved business order',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Move orders through warehouse-stock readiness, preparation, packing and final dispatch handoff.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(.83),
+              fontSize: 10.5,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              _metric(
+                icon: Icons.add_box_outlined,
+                value: '$approvedToCreate',
+                label: 'Ready to create',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.inventory_outlined,
+                value: '$waiting',
+                label: 'Waiting stock',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.restaurant_menu_outlined,
+                value: '$preparing',
+                label: 'Preparing',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _metric(
+                icon: Icons.inventory_2_outlined,
+                value: '$packing',
+                label: 'Packing',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.local_shipping_outlined,
+                value: '$ready',
+                label: 'Ready dispatch',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.hub_outlined,
+                value: '$activeWarehouseOrders',
+                label: 'Active warehouse',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
+  final int readyToDispatch;
+  final int planned;
+  final int assigned;
+  final int outForDelivery;
+  final int readyForPickup;
+  final int driverCount;
+  final VoidCallback onManageScheduling;
+
+  const _PremiumWebWholesaleDispatchHero({
+    required this.readyToDispatch,
+    required this.planned,
+    required this.assigned,
+    required this.outForDelivery,
+    required this.readyForPickup,
+    required this.driverCount,
+    required this.onManageScheduling,
+  });
+
+  Widget _metric({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.12),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: Colors.white.withOpacity(.16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              color: const Color(0xFFE8C768),
+              size: 17,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(.72),
+                fontSize: 8.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+            Color(0xFF4E8157),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.deepGreen.withOpacity(.14),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.local_shipping_outlined,
+                color: Color(0xFFE8C768),
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'DISPATCH CONTROL',
+                  style: TextStyle(
+                    color: Color(0xFFCFE0CF),
+                    fontSize: 10.3,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .9,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onManageScheduling,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(
+                    color: Colors.white.withOpacity(.30),
+                  ),
+                ),
+                icon: const Icon(
+                  Icons.schedule_outlined,
+                  size: 16,
+                ),
+                label: const Text(
+                  'Scheduling',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Schedule, assign and close every handoff',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Coordinate HPJ delivery and business collection from ready-for-dispatch through proof and completion.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(.83),
+              fontSize: 10.5,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              _metric(
+                icon: Icons.inventory_2_outlined,
+                value: '$readyToDispatch',
+                label: 'Ready dispatch',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.event_note_outlined,
+                value: '$planned',
+                label: 'Planned',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.person_pin_circle_outlined,
+                value: '$assigned',
+                label: 'Assigned',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _metric(
+                icon: Icons.local_shipping_outlined,
+                value: '$outForDelivery',
+                label: 'Out delivery',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.storefront_outlined,
+                value: '$readyForPickup',
+                label: 'Ready pickup',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon: Icons.badge_outlined,
+                value: '$driverCount',
+                label: 'Delivery staff',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AdminWholesaleManagementTabState
@@ -28517,7 +13728,7 @@ class _AdminWholesaleManagementTabState
                           ),
                           if (account.isApproved)
                             OutlinedButton.icon(
-                              icon: const Icon(Icons.credit_score_outlined),
+                              icon: const Icon(Icons.credit_card_outlined),
                               label: const Text('Credit Terms'),
                               onPressed: () =>
                                   _editBusinessCreditTerms(account),
@@ -28601,40 +13812,62 @@ class _AdminWholesaleManagementTabState
     );
   }
 
+
   Widget _requestsTab() {
     return FutureBuilder<List<WholesaleOrderRequest>>(
       future: requestsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+        if (snapshot.connectionState ==
+                ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
         }
 
-        final allRequests = snapshot.data ?? const <WholesaleOrderRequest>[];
-        final requestedStatus = widget.requestStatusFilter?.trim().toLowerCase();
-        final requestedId = widget.requestIdFilter?.trim() ?? '';
+        final allRequests =
+            snapshot.data ??
+            const <WholesaleOrderRequest>[];
 
-        final statusRequests = allRequests.where((request) {
+        final requestedStatus = widget
+            .requestStatusFilter
+            ?.trim()
+            .toLowerCase();
+
+        final requestedId =
+            widget.requestIdFilter?.trim() ?? '';
+
+        final statusRequests =
+            allRequests.where((request) {
           if (requestedStatus != null &&
               requestedStatus.isNotEmpty &&
-              request.status != requestedStatus) {
+              request.status !=
+                  requestedStatus) {
             return false;
           }
+
           return true;
         }).toList();
 
-        final focusedRequests = requestedId.isEmpty
-            ? const <WholesaleOrderRequest>[]
-            : allRequests
-                .where(
-                  (request) => request.id.trim() == requestedId,
-                )
-                .toList();
+        final focusedRequests =
+            requestedId.isEmpty
+                ? const <WholesaleOrderRequest>[]
+                : allRequests
+                    .where(
+                      (request) =>
+                          request.id.trim() ==
+                          requestedId,
+                    )
+                    .toList();
 
-        final exactRequestFound = focusedRequests.isNotEmpty;
+        final exactRequestFound =
+            focusedRequests.isNotEmpty;
 
-        final locallyFilteredRequests = statusRequests.where((request) {
+        final locallyFilteredRequests =
+            statusRequests.where((request) {
           if (_orderStatusFilter != 'all' &&
-              request.status != _orderStatusFilter) {
+              request.status !=
+                  _orderStatusFilter) {
             return false;
           }
 
@@ -28646,7 +13879,9 @@ class _AdminWholesaleManagementTabState
           }
 
           final accountName =
-              request.businessAccount?.displayName ?? request.businessName;
+              request.businessAccount
+                      ?.displayName ??
+                  request.businessName;
 
           return _opsSearchMatches(
             _orderSearchController.text,
@@ -28660,189 +13895,289 @@ class _AdminWholesaleManagementTabState
               request.deliveryParish,
               request.deliveryAddress,
               request.status,
-              ...request.items.map((item) => item.productName),
-              ...request.items.map((item) => item.unit),
+              ...request.items.map(
+                (item) => item.productName,
+              ),
+              ...request.items.map(
+                (item) => item.unit,
+              ),
             ],
           );
         }).toList();
 
-        locallyFilteredRequests.sort((a, b) {
-          final ad = a.createdAt ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          final bd = b.createdAt ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          return _orderSort == 'oldest'
-              ? ad.compareTo(bd)
-              : bd.compareTo(ad);
-        });
+        locallyFilteredRequests.sort(
+          (a, b) {
+            final ad = a.createdAt ??
+                DateTime
+                    .fromMillisecondsSinceEpoch(
+                  0,
+                );
+
+            final bd = b.createdAt ??
+                DateTime
+                    .fromMillisecondsSinceEpoch(
+                  0,
+                );
+
+            return _orderSort == 'oldest'
+                ? ad.compareTo(bd)
+                : bd.compareTo(ad);
+          },
+        );
 
         final requests = exactRequestFound
             ? focusedRequests
             : locallyFilteredRequests;
 
-        if (requests.isEmpty && requestedId.isEmpty) {
-          return Center(
-            child: Text(
-              requestedStatus == null || requestedStatus.isEmpty
-                  ? 'No wholesale orders yet.'
-                  : 'No wholesale orders in this view.',
-            ),
-          );
-        }
+        final pendingCount = allRequests
+            .where(
+              (request) =>
+                  request.status == 'pending',
+            )
+            .length;
+
+        final quotedCount = allRequests
+            .where(
+              (request) =>
+                  request.status == 'quoted',
+            )
+            .length;
+
+        final approvedCount = allRequests
+            .where(
+              (request) =>
+                  request.status == 'approved',
+            )
+            .length;
+
+        final fulfilledCount = allRequests
+            .where(
+              (request) =>
+                  request.status ==
+                  'fulfilled',
+            )
+            .length;
+
+        final activeEstimate = allRequests
+            .where(
+              (request) =>
+                  request.status != 'cancelled' &&
+                  request.status != 'rejected',
+            )
+            .fold<double>(
+              0,
+              (sum, request) =>
+                  sum +
+                  request.subtotalEstimate,
+            );
 
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
+            physics:
+                const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(
+              14,
+              14,
+              14,
+              110,
+            ),
             children: [
+              _PremiumAdminWholesaleOrdersHero(
+                totalOrders:
+                    allRequests.length,
+                pendingOrders:
+                    pendingCount,
+                quotedOrders:
+                    quotedCount,
+                approvedOrders:
+                    approvedCount,
+                fulfilledOrders:
+                    fulfilledCount,
+                activeEstimate:
+                    activeEstimate,
+                capped:
+                    allRequests.length >= 500,
+              ),
+
               if (requestedId.isNotEmpty) ...[
+                const SizedBox(height: 12),
                 _WholesaleAdminFocusNotice(
-                  found: exactRequestFound,
+                  found:
+                      exactRequestFound,
                   foundMessage:
                       'Opened from your notification. Showing the related wholesale order.',
                   missingMessage:
                       'That wholesale order is no longer available. Showing the current order list instead.',
                 ),
-                const SizedBox(height: 12),
               ],
+
+              const SizedBox(height: 16),
+
               if (requestedId.isEmpty) ...[
+                const Text(
+                  'Find & triage business orders',
+                  style: TextStyle(
+                    color:
+                        FarmColors.ink,
+                    fontSize: 17,
+                    fontWeight:
+                        FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'Search business, order number, product, parish or status, then update or prepare the quote.',
+                  style: TextStyle(
+                    color:
+                        FarmColors.mutedText,
+                    fontSize: 9.5,
+                    height: 1.3,
+                    fontWeight:
+                        FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+
                 _operationsFilterBar(
-                  controller: _orderSearchController,
+                  controller:
+                      _orderSearchController,
                   searchHint:
                       'Search business, order #, product, parish...',
-                  statusValue: _orderStatusFilter,
-                  statusOptions: const <String, String>{
-                    'all': 'All statuses',
-                    'pending': 'Pending',
-                    'quoted': 'Quote Ready',
-                    'approved': 'Confirmed',
-                    'fulfilled': 'Fulfilled',
-                    'rejected': 'Rejected',
-                    'cancelled': 'Cancelled',
+                  statusValue:
+                      _orderStatusFilter,
+                  statusOptions:
+                      const <String, String>{
+                    'all':
+                        'All statuses',
+                    'pending':
+                        'Pending',
+                    'quoted':
+                        'Quote Ready',
+                    'approved':
+                        'Confirmed',
+                    'fulfilled':
+                        'Fulfilled',
+                    'rejected':
+                        'Rejected',
+                    'cancelled':
+                        'Cancelled',
                   },
-                  dateValue: _orderDateFilter,
-                  sortValue: _orderSort,
-                  onSearch: (_) => setState(() {}),
-                  onStatus: (value) => setState(
-                    () => _orderStatusFilter = value,
+                  dateValue:
+                      _orderDateFilter,
+                  sortValue:
+                      _orderSort,
+                  onSearch: (_) =>
+                      setState(() {}),
+                  onStatus: (value) =>
+                      setState(
+                    () =>
+                        _orderStatusFilter =
+                            value,
                   ),
-                  onDate: (value) => setState(
-                    () => _orderDateFilter = value,
+                  onDate: (value) =>
+                      setState(
+                    () =>
+                        _orderDateFilter =
+                            value,
                   ),
-                  onSort: (value) => setState(
-                    () => _orderSort = value,
+                  onSort: (value) =>
+                      setState(
+                    () =>
+                        _orderSort =
+                            value,
                   ),
                   onClear: () {
-                    _orderSearchController.clear();
+                    _orderSearchController
+                        .clear();
+
                     setState(() {
-                      _orderStatusFilter = 'all';
-                      _orderDateFilter = 'all';
-                      _orderSort = 'newest';
+                      _orderStatusFilter =
+                          'all';
+                      _orderDateFilter =
+                          'all';
+                      _orderSort =
+                          'newest';
                     });
                   },
                 ),
+
                 _operationsResultCount(
                   count: requests.length,
                   singular: 'order',
-                  note: allRequests.length >= 500
+                  note: allRequests.length >=
+                          500
                       ? 'Filtering latest 500 loaded'
                       : null,
                 ),
+
                 const SizedBox(height: 10),
               ],
-              ...List<Widget>.generate(requests.length, (index) {
-              final request = requests[index];
-              final accountName =
-                  request.businessAccount?.displayName ?? request.businessName;
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: FarmCard(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '$accountName • #${request.shortId}',
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
+              if (requests.isEmpty)
+                const FarmEmptyState(
+                  icon:
+                      Icons.storefront_outlined,
+                  title:
+                      'No wholesale orders in this view',
+                  message:
+                      'Try another search, date or status filter.',
+                )
+              else
+                LayoutBuilder(
+                  builder:
+                      (context, constraints) {
+                    final useTwoColumns =
+                        constraints.maxWidth >=
+                            1000;
+
+                    const gap = 12.0;
+
+                    final width =
+                        useTwoColumns
+                            ? (constraints
+                                        .maxWidth -
+                                    gap) /
+                                2
+                            : constraints
+                                .maxWidth;
+
+                    return Wrap(
+                      spacing: gap,
+                      runSpacing: gap,
+                      children: requests.map(
+                        (request) {
+                          final accountName =
+                              request
+                                      .businessAccount
+                                      ?.displayName ??
+                                  request
+                                      .businessName;
+
+                          return SizedBox(
+                            width: width,
+                            child:
+                                _PremiumAdminWholesaleOrderCard(
+                              request:
+                                  request,
+                              accountName:
+                                  accountName,
+                              placedLabel:
+                                  _opsDateTimeLabel(
+                                request
+                                    .createdAt,
+                              ),
+                              onUpdate: () =>
+                                  _updateRequest(
+                                request,
                               ),
                             ),
-                          ),
-                          _WholesaleStatusChip(status: request.status),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.schedule_outlined,
-                            size: 15,
-                            color: FarmColors.mutedText,
-                          ),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            child: Text(
-                              'Placed ${_opsDateTimeLabel(request.createdAt)}',
-                              style: const TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        '${request.items.length} lines • Estimate ${formatJmd(request.subtotalEstimate)}',
-                        style: const TextStyle(
-                          color: FarmColors.mutedText,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${request.deliveryParish} • ${request.deliveryAddress}',
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (request.items.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        ...request.items.take(4).map(
-                              (line) => Padding(
-                                padding: const EdgeInsets.only(bottom: 3),
-                                child: Text(
-                                  '${line.productName}: ${line.quantityLabel} ${line.unit}',
-                                  style: const TextStyle(
-                                    color: FarmColors.mutedText,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
-                      ],
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.edit_note_outlined),
-                          label: const Text('Update / Quote Request'),
-                          onPressed: () => _updateRequest(request),
-                        ),
-                      ),
-                    ],
-                  ),
+                          );
+                        },
+                      ).toList(),
+                    );
+                  },
                 ),
-              );
-            }),
             ],
           ),
         );
@@ -33294,53 +18629,12 @@ class _AdminWholesaleManagementTabState
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
             children: [
-              FarmCard(
-                padding: const EdgeInsets.all(13),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: FarmColors.primary.withOpacity(.10),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.account_tree_outlined,
-                        color: FarmColors.primary,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '$openSourcingCount product${openSourcingCount == 1 ? '' : 's'} need sourcing',
-                            style: const TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '$urgentCount urgent • '
-                            '$thisWeekCount this week'
-                            '${readyCount > 0 ? ' • $readyCount ready' : ''}',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 9.4,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              _PremiumProcurementNeedsHero(
+                activeDemandCount: allActiveDemands.length,
+                openSourcingCount: openSourcingCount,
+                urgentCount: urgentCount,
+                thisWeekCount: thisWeekCount,
+                readyCount: readyCount,
               ),
               const SizedBox(height: 10),
               TextField(
@@ -34965,110 +20259,13 @@ class _AdminWholesaleManagementTabState
               100,
             ),
             children: [
-              // -----------------------------------------
-              // HEADER
-              // -----------------------------------------
-
-              FarmCard(
-                padding: const EdgeInsets.all(
-                  16,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: FarmColors.primarySoft,
-                        borderRadius: BorderRadius.circular(
-                          14,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.warehouse_outlined,
-                        color: FarmColors.primary,
-                      ),
-                    ),
-                    const SizedBox(
-                      width: 12,
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.receivingMode == 'collections'
-                                ? 'Farmer Collections'
-                                : widget.receivingMode == 'receiving'
-                                    ? 'Warehouse Receiving'
-                                    : 'Collections & Receiving',
-                            style: const TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(
-                            height: 3,
-                          ),
-                          Text(
-                            widget.receivingMode == 'collections'
-                                ? 'Schedule and track confirmed produce moving from farmers to HPJ.'
-                                : widget.receivingMode == 'receiving'
-                                    ? 'Receive, inspect and complete produce arriving at the warehouse.'
-                                    : 'Track reserved produce from farm collection through warehouse inspection.',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 11,
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              // -----------------------------------------
-              // STATS
-              // -----------------------------------------
-
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _demandStat(
-                      label: 'To Collect',
-                      value: awaitingCollection,
-                    ),
-                    const SizedBox(
-                      width: 8,
-                    ),
-                    _demandStat(
-                      label: 'Collected',
-                      value: collected,
-                    ),
-                    const SizedBox(
-                      width: 8,
-                    ),
-                    _demandStat(
-                      label: 'Warehouse',
-                      value: atWarehouse,
-                    ),
-                    const SizedBox(
-                      width: 8,
-                    ),
-                    _demandStat(
-                      label: 'Completed',
-                      value: completed,
-                    ),
-                  ],
-                ),
+              _PremiumProcurementMovementHero(
+                mode: widget.receivingMode,
+                toCollect: awaitingCollection,
+                collected: collected,
+                atWarehouse: atWarehouse,
+                completed: completed,
+                readyToSchedule: convertedAllocations.length,
               ),
 
               const SizedBox(
@@ -36194,103 +21391,110 @@ class _AdminWholesaleManagementTabState
               100,
             ),
             children: [
-              // ==========================================
-              // HEADER
-              // ==========================================
+              if (kIsWeb)
+                _PremiumWebWholesaleFulfillmentHero(
+                  approvedToCreate: readyToCreate.length,
+                  activeWarehouseOrders: allActiveFulfillments.length,
+                  waiting: waiting,
+                  preparing: preparing,
+                  packing: packing,
+                  ready: ready,
+                )
+              else ...[
+                // ==========================================
+                // NATIVE APP HEADER
+                // ==========================================
 
-              FarmCard(
-                padding: const EdgeInsets.all(
-                  16,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: FarmColors.primarySoft,
-                        borderRadius: BorderRadius.circular(
-                          14,
+                FarmCard(
+                  padding: const EdgeInsets.all(
+                    16,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: FarmColors.primarySoft,
+                          borderRadius: BorderRadius.circular(
+                            14,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.inventory_2_outlined,
+                          color: FarmColors.primary,
                         ),
                       ),
-                      child: const Icon(
-                        Icons.inventory_2_outlined,
-                        color: FarmColors.primary,
+                      const SizedBox(
+                        width: 12,
                       ),
-                    ),
-                    const SizedBox(
-                      width: 12,
-                    ),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Wholesale Fulfillment',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900,
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Wholesale Fulfillment',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                          ),
-                          SizedBox(
-                            height: 3,
-                          ),
-                          Text(
-                            'Prepare and pack approved business orders before dispatch.',
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 10.5,
-                              height: 1.3,
+                            SizedBox(
+                              height: 3,
                             ),
-                          ),
-                        ],
+                            Text(
+                              'Prepare and pack approved business orders before dispatch.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10.5,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
 
-              const SizedBox(
-                height: 12,
-              ),
-
-              // ==========================================
-              // SUMMARY
-              // ==========================================
-
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _demandStat(
-                      label: 'Waiting',
-                      value: waiting,
-                    ),
-                    const SizedBox(
-                      width: 8,
-                    ),
-                    _demandStat(
-                      label: 'Preparing',
-                      value: preparing,
-                    ),
-                    const SizedBox(
-                      width: 8,
-                    ),
-                    _demandStat(
-                      label: 'Packing',
-                      value: packing,
-                    ),
-                    const SizedBox(
-                      width: 8,
-                    ),
-                    _demandStat(
-                      label: 'Dispatch',
-                      value: ready,
-                    ),
-                  ],
+                const SizedBox(
+                  height: 12,
                 ),
-              ),
+
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _demandStat(
+                        label: 'Waiting',
+                        value: waiting,
+                      ),
+                      const SizedBox(
+                        width: 8,
+                      ),
+                      _demandStat(
+                        label: 'Preparing',
+                        value: preparing,
+                      ),
+                      const SizedBox(
+                        width: 8,
+                      ),
+                      _demandStat(
+                        label: 'Packing',
+                        value: packing,
+                      ),
+                      const SizedBox(
+                        width: 8,
+                      ),
+                      _demandStat(
+                        label: 'Dispatch',
+                        value: ready,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               const SizedBox(
                 height: 12,
@@ -37183,91 +22387,121 @@ class _AdminWholesaleManagementTabState
               100,
             ),
             children: [
-              FarmCard(
-                padding: const EdgeInsets.all(
-                  16,
-                ),
-                child: const Row(
-                  children: [
-                    Icon(
-                      Icons.local_shipping_outlined,
-                      color: FarmColors.primary,
-                      size: 30,
-                    ),
-                    SizedBox(
-                      width: 12,
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Wholesale Dispatch',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(
-                            height: 3,
-                          ),
-                          Text(
-                            'Schedule, assign and complete wholesale deliveries and collections.',
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 10.5,
-                            ),
-                          ),
-                        ],
+              if (kIsWeb)
+                _PremiumWebWholesaleDispatchHero(
+                  readyToDispatch: readyToDispatch.length,
+                  planned: visibleDispatches
+                      .where((item) => item.isPlanned)
+                      .length,
+                  assigned: visibleDispatches
+                      .where((item) => item.isAssigned)
+                      .length,
+                  outForDelivery: visibleDispatches
+                      .where((item) => item.isOutForDelivery)
+                      .length,
+                  readyForPickup: visibleDispatches
+                      .where((item) => item.isReadyForPickup)
+                      .length,
+                  driverCount: drivers.length,
+                  onManageScheduling: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            const WholesaleSchedulingAdminScreen(),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              FarmCard(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Scheduling & Capacity',
-                            style: TextStyle(
-                              color: FarmColors.ink,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(height: 3),
-                          Text(
-                            'Manage lead times, delivery windows, collection windows and blackout dates.',
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 10,
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
+                    );
+                  },
+                )
+              else ...[
+                FarmCard(
+                  padding: const EdgeInsets.all(
+                    16,
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.local_shipping_outlined,
+                        color: FarmColors.primary,
+                        size: 30,
                       ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                const WholesaleSchedulingAdminScreen(),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.schedule_outlined, size: 17),
-                      label: const Text('Manage'),
-                    ),
-                  ],
+                      SizedBox(
+                        width: 12,
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Wholesale Dispatch',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(
+                              height: 3,
+                            ),
+                            Text(
+                              'Schedule, assign and complete wholesale deliveries and collections.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 10),
+                FarmCard(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Scheduling & Capacity',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 3),
+                            Text(
+                              'Manage lead times, delivery windows, collection windows and blackout dates.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const WholesaleSchedulingAdminScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.schedule_outlined,
+                          size: 17,
+                        ),
+                        label: const Text('Manage'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               _operationsFilterBar(
                 controller: _dispatchSearchController,
@@ -41388,6 +26622,709 @@ class _AdminWholesaleManagementTabState
   }
 }
 
+class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
+  final int totalOrders;
+  final int pendingOrders;
+  final int quotedOrders;
+  final int approvedOrders;
+  final int fulfilledOrders;
+  final double activeEstimate;
+  final bool capped;
+
+  const _PremiumAdminWholesaleOrdersHero({
+    required this.totalOrders,
+    required this.pendingOrders,
+    required this.quotedOrders,
+    required this.approvedOrders,
+    required this.fulfilledOrders,
+    required this.activeEstimate,
+    required this.capped,
+  });
+
+  Widget _metric({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.12),
+          borderRadius:
+              BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.white.withOpacity(.16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              color:
+                  const Color(0xFFE8C768),
+              size: 17,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              value,
+              maxLines: 1,
+              overflow:
+                  TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight:
+                    FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow:
+                  TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white
+                    .withOpacity(.72),
+                fontSize: 8.6,
+                fontWeight:
+                    FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeCount =
+        pendingOrders +
+        quotedOrders +
+        approvedOrders;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius:
+            BorderRadius.circular(28),
+        gradient:
+            const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FarmColors.deepGreen,
+            FarmColors.green,
+            Color(0xFF4E8157),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.deepGreen
+                .withOpacity(.14),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 49,
+                height: 49,
+                alignment:
+                    Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white
+                      .withOpacity(.13),
+                  borderRadius:
+                      BorderRadius.circular(
+                    16,
+                  ),
+                  border: Border.all(
+                    color: Colors.white
+                        .withOpacity(.18),
+                  ),
+                ),
+                child: const Icon(
+                  Icons
+                      .storefront_outlined,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'WHOLESALE ORDERS',
+                      style: TextStyle(
+                        color: Color(
+                          0xFFCFE0CF,
+                        ),
+                        fontSize: 10.3,
+                        fontWeight:
+                            FontWeight.w900,
+                        letterSpacing: .9,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Business order desk',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight:
+                            FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white
+                      .withOpacity(.11),
+                  borderRadius:
+                      BorderRadius.circular(
+                    999,
+                  ),
+                  border: Border.all(
+                    color: Colors.white
+                        .withOpacity(.15),
+                  ),
+                ),
+                child: Text(
+                  '$activeCount ACTIVE',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8.2,
+                    fontWeight:
+                        FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          Text(
+            'Review business requirements, prepare the quote and move confirmed orders into procurement and fulfilment.',
+            style: TextStyle(
+              color:
+                  Colors.white.withOpacity(.83),
+              fontSize: 10.7,
+              height: 1.4,
+              fontWeight:
+                  FontWeight.w600,
+            ),
+          ),
+
+          const SizedBox(height: 15),
+
+          Row(
+            children: [
+              _metric(
+                icon:
+                    Icons.pending_actions_outlined,
+                value: '$pendingOrders',
+                label: 'Pending',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon:
+                    Icons.request_quote_outlined,
+                value: '$quotedOrders',
+                label: 'Quote ready',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon:
+                    Icons.verified_outlined,
+                value: '$approvedOrders',
+                label: 'Confirmed',
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          Row(
+            children: [
+              _metric(
+                icon:
+                    Icons.receipt_long_outlined,
+                value: capped
+                    ? '$totalOrders+'
+                    : '$totalOrders',
+                label: capped
+                    ? 'Latest loaded'
+                    : 'Loaded orders',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon:
+                    Icons.done_all_rounded,
+                value: '$fulfilledOrders',
+                label: 'Fulfilled',
+              ),
+              const SizedBox(width: 8),
+              _metric(
+                icon:
+                    Icons.payments_outlined,
+                value: formatJmd(
+                  activeEstimate,
+                ),
+                label: 'Active estimate',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
+  final WholesaleOrderRequest request;
+  final String accountName;
+  final String placedLabel;
+  final VoidCallback onUpdate;
+
+  const _PremiumAdminWholesaleOrderCard({
+    required this.request,
+    required this.accountName,
+    required this.placedLabel,
+    required this.onUpdate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final attention =
+        request.status == 'pending';
+
+    return FarmCard(
+      padding: EdgeInsets.zero,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius:
+              BorderRadius.circular(22),
+          border: Border.all(
+            color: attention
+                ? FarmColors.warning
+                    .withOpacity(.18)
+                : Colors.transparent,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.fromLTRB(
+                14,
+                13,
+                14,
+                12,
+              ),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8F8F5),
+                borderRadius:
+                    BorderRadius.vertical(
+                  top: Radius.circular(22),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment:
+                        Alignment.center,
+                    decoration:
+                        BoxDecoration(
+                      color: attention
+                          ? const Color(
+                              0xFFFFF8E9,
+                            )
+                          : FarmColors
+                              .primarySoft,
+                      borderRadius:
+                          BorderRadius
+                              .circular(13),
+                    ),
+                    child: Icon(
+                      Icons.business_outlined,
+                      color: attention
+                          ? FarmColors.warning
+                          : FarmColors
+                              .deepGreen,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment
+                              .start,
+                      children: [
+                        Text(
+                          accountName,
+                          maxLines: 1,
+                          overflow:
+                              TextOverflow
+                                  .ellipsis,
+                          style:
+                              const TextStyle(
+                            color:
+                                FarmColors.ink,
+                            fontSize: 14.5,
+                            fontWeight:
+                                FontWeight
+                                    .w900,
+                          ),
+                        ),
+                        const SizedBox(
+                          height: 3,
+                        ),
+                        Text(
+                          'Order #${request.shortId} • $placedLabel',
+                          maxLines: 1,
+                          overflow:
+                              TextOverflow
+                                  .ellipsis,
+                          style:
+                              const TextStyle(
+                            color: FarmColors
+                                .mutedText,
+                            fontSize: 9.2,
+                            fontWeight:
+                                FontWeight
+                                    .w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _WholesaleStatusChip(
+                    status: request.status,
+                  ),
+                ],
+              ),
+            ),
+
+            Padding(
+              padding:
+                  const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child:
+                            _PremiumWholesaleOrderMetric(
+                          label: 'LINES',
+                          value:
+                              '${request.items.length}',
+                          icon: Icons
+                              .inventory_2_outlined,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child:
+                            _PremiumWholesaleOrderMetric(
+                          label: 'ESTIMATE',
+                          value: formatJmd(
+                            request
+                                .subtotalEstimate,
+                          ),
+                          icon:
+                              Icons.payments_outlined,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child:
+                            _PremiumWholesaleOrderMetric(
+                          label: 'PARISH',
+                          value: request
+                              .deliveryParish,
+                          icon:
+                              Icons.map_outlined,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 11),
+
+                  Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.all(
+                      10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(
+                        0xFFF8F8F5,
+                      ),
+                      borderRadius:
+                          BorderRadius.circular(
+                        13,
+                      ),
+                      border: Border.all(
+                        color: FarmColors.line,
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons
+                              .location_on_outlined,
+                          color: FarmColors
+                              .deepGreen,
+                          size: 16,
+                        ),
+                        const SizedBox(
+                          width: 6,
+                        ),
+                        Expanded(
+                          child: Text(
+                            request
+                                .deliveryAddress,
+                            maxLines: 2,
+                            overflow:
+                                TextOverflow
+                                    .ellipsis,
+                            style:
+                                const TextStyle(
+                              color:
+                                  FarmColors.ink,
+                              fontSize: 9.2,
+                              height: 1.3,
+                              fontWeight:
+                                  FontWeight
+                                      .w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (request
+                      .items.isNotEmpty) ...[
+                    const SizedBox(height: 11),
+                    const Text(
+                      'Requested produce',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 11.5,
+                        fontWeight:
+                            FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ...request.items
+                        .take(4)
+                        .map(
+                          (line) => Padding(
+                            padding:
+                                const EdgeInsets
+                                    .only(
+                              bottom: 4,
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons
+                                      .eco_outlined,
+                                  color:
+                                      FarmColors
+                                          .green,
+                                  size: 14,
+                                ),
+                                const SizedBox(
+                                  width: 5,
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    line.productName,
+                                    maxLines: 1,
+                                    overflow:
+                                        TextOverflow
+                                            .ellipsis,
+                                    style:
+                                        const TextStyle(
+                                      color:
+                                          FarmColors
+                                              .ink,
+                                      fontSize:
+                                          9.2,
+                                      fontWeight:
+                                          FontWeight
+                                              .w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(
+                                  width: 8,
+                                ),
+                                Text(
+                                  '${line.quantityLabel} ${line.unit}',
+                                  style:
+                                      const TextStyle(
+                                    color:
+                                        FarmColors
+                                            .mutedText,
+                                    fontSize: 9,
+                                    fontWeight:
+                                        FontWeight
+                                            .w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    if (request.items.length >
+                        4)
+                      Text(
+                        '+${request.items.length - 4} more line${request.items.length - 4 == 1 ? '' : 's'}',
+                        style:
+                            const TextStyle(
+                          color: FarmColors
+                              .mutedText,
+                          fontSize: 8.7,
+                          fontWeight:
+                              FontWeight.w700,
+                        ),
+                      ),
+                  ],
+
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child:
+                        ElevatedButton.icon(
+                      icon: const Icon(
+                        Icons
+                            .edit_note_outlined,
+                        size: 18,
+                      ),
+                      label: Text(
+                        request.status ==
+                                'pending'
+                            ? 'Review / Prepare Quote'
+                            : 'Update Wholesale Order',
+                      ),
+                      onPressed: onUpdate,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PremiumWholesaleOrderMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _PremiumWholesaleOrderMetric({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F8F5),
+        borderRadius:
+            BorderRadius.circular(13),
+        border: Border.all(
+          color: FarmColors.line,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            color: FarmColors.deepGreen,
+            size: 15,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color:
+                  FarmColors.mutedText,
+              fontSize: 7.8,
+              fontWeight:
+                  FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 2,
+            overflow:
+                TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 9.3,
+              height: 1.2,
+              fontWeight:
+                  FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WholesaleFulfillmentShortageSheet
     extends StatefulWidget {
   final WholesaleFulfillmentItem item;
@@ -41949,18 +27886,23 @@ class _SupplyMatchMetric extends StatelessWidget {
 
 class OwnerWorkspaceAccessSnapshot {
   final String staffRole;
+  final bool adminAllowed;
   final FarmerProfile? farmerProfile;
   final BusinessAccount? businessAccount;
   final MarketplaceProgramSettings programSettings;
 
   const OwnerWorkspaceAccessSnapshot({
     required this.staffRole,
+    required this.adminAllowed,
     required this.farmerProfile,
     required this.businessAccount,
     required this.programSettings,
   });
 
   bool get isOwner => normalizeStaffRole(staffRole) == 'owner';
+
+  bool get hasStaffAccess =>
+      isStaffRoleActive(staffRole) || adminAllowed;
 
   bool get hasFarmerProfile => farmerProfile != null;
 
@@ -41973,12 +27915,19 @@ class OwnerWorkspaceAccessSnapshot {
 
 Future<OwnerWorkspaceAccessSnapshot> fetchOwnerWorkspaceAccessSnapshot() async {
   final staffRole = await fetchCurrentStaffRole();
+
+  // The visible workspace list follows the same DB authorization boundary as
+  // Admin. This also recognizes legacy admin_users email records.
+  final adminAllowed =
+      isStaffRoleActive(staffRole) || await isCurrentUserAdminFromDatabase();
+
   final farmerProfile = await fetchCurrentFarmerProfile();
   final programSettings = await fetchMarketplaceProgramSettings();
   final businessAccount = await fetchCurrentBusinessAccount();
 
   return OwnerWorkspaceAccessSnapshot(
     staffRole: staffRole,
+    adminAllowed: adminAllowed,
     farmerProfile: farmerProfile,
     businessAccount: businessAccount,
     programSettings: programSettings,
@@ -42820,25 +28769,36 @@ class _OwnerWorkspaceSwitcherScreenState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _WorkspaceTopBar(
-                                showCloseButton: widget.showCloseButton,
-                                onClose: _closeSwitcher,
-                                onSignOut: _signOut,
-                                onOpenTrust: () => _openUtility(
-                                  const TrustCenterScreen(),
-                                ),
-                                onOpenAbout: () => _openUtility(
-                                  const AboutHpjScreen(),
-                                ),
-                                onOpenSupport: () => _openUtility(
-                                  const SupportScreen(
-                                    initialSubject: 'Account help',
+                              if (hpjUseMobileAppPresentation(context))
+                                HpjPortalUtilityHeader(
+                                  currentPortal:
+                                      widget.currentWorkspace.trim().isEmpty
+                                          ? 'customer'
+                                          : widget.currentWorkspace,
+                                  includeInbox: true,
+                                  safeArea: false,
+                                  padding: EdgeInsets.zero,
+                                )
+                              else
+                                _WorkspaceTopBar(
+                                  showCloseButton: widget.showCloseButton,
+                                  onClose: _closeSwitcher,
+                                  onSignOut: _signOut,
+                                  onOpenTrust: () => _openUtility(
+                                    const TrustCenterScreen(),
+                                  ),
+                                  onOpenAbout: () => _openUtility(
+                                    const AboutHpjScreen(),
+                                  ),
+                                  onOpenSupport: () => _openUtility(
+                                    const SupportScreen(
+                                      initialSubject: 'Account help',
+                                    ),
+                                  ),
+                                  onOpenNotifications: () => _openUtility(
+                                    const NotificationsScreen(),
                                   ),
                                 ),
-                                onOpenNotifications: () => _openUtility(
-                                  const NotificationsScreen(),
-                                ),
-                              ),
                               const SizedBox(height: 28),
                               const Text(
                                 'Choose your workspace',
@@ -43739,7 +29699,9 @@ class _HpjFaqScreenState extends State<HpjFaqScreen> {
 
   Future<void> _refresh() async {
     final next = fetchPublishedHpjFaqItems();
-    setState(() => _future = next);
+    setState(() {
+      _future = next;
+    });
 
     try {
       await next;

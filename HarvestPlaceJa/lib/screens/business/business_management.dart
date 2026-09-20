@@ -84,11 +84,13 @@ PreferredSizeWidget _wholesaleAccessAppBar(
 class BusinessWholesaleHubScreen extends StatefulWidget {
   final int initialTab;
   final String? initialRecordId;
+  final bool bypassWorkspaceGate;
 
   const BusinessWholesaleHubScreen({
     super.key,
     this.initialTab = 0,
     this.initialRecordId,
+    this.bypassWorkspaceGate = false,
   });
 
   @override
@@ -181,13 +183,38 @@ class _BusinessWholesaleHubScreenState
         final account = data.account;
         final settings = data.settings;
 
-        if (account != null &&
-            account.isApproved &&
-            settings.wholesaleWorkspaceEnabled) {
-          return _WholesaleWorkspaceShell(
-            account: account,
-            initialIndex: widget.initialTab,
-            initialRecordId: widget.initialRecordId,
+        if (account != null && account.isApproved) {
+          final wholesaleMode = settings.wholesaleWorkspaceMode;
+          final workspaceLive = settings.wholesaleWorkspaceEnabled &&
+              hpjWorkspaceModeIsLive(wholesaleMode);
+
+          if (workspaceLive || widget.bypassWorkspaceGate) {
+            return _WholesaleWorkspaceShell(
+              account: account,
+              initialIndex: widget.initialTab,
+              initialRecordId: widget.initialRecordId,
+              bypassWorkspaceGate: widget.bypassWorkspaceGate,
+            );
+          }
+
+          return HpjWorkspaceAvailabilityScreen(
+            workspace: 'wholesale',
+            mode: wholesaleMode,
+            message: settings.wholesaleMaintenanceMessage,
+            returnNote: settings.wholesaleReturnNote,
+            currentPortal: 'wholesale',
+            onRefresh: _reload,
+            onOwnerBypass: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (_) => BusinessWholesaleHubScreen(
+                    initialTab: widget.initialTab,
+                    initialRecordId: widget.initialRecordId,
+                    bypassWorkspaceGate: true,
+                  ),
+                ),
+              );
+            },
           );
         }
 
@@ -262,11 +289,13 @@ class _WholesaleWorkspaceShell extends StatefulWidget {
   final BusinessAccount account;
   final int initialIndex;
   final String? initialRecordId;
+  final bool bypassWorkspaceGate;
 
   const _WholesaleWorkspaceShell({
     required this.account,
     this.initialIndex = 0,
     this.initialRecordId,
+    this.bypassWorkspaceGate = false,
   });
 
   @override
@@ -380,17 +409,23 @@ class _WholesaleWorkspaceShellState
       }
 
       final latest = access.businessAccount;
+      final isOwner = normalizeStaffRole(access.staffRole) == 'owner';
+      final settings = access.programSettings;
+      final workspaceLive = settings.wholesaleWorkspaceEnabled &&
+          hpjWorkspaceModeIsLive(settings.wholesaleWorkspaceMode);
       final active = latest != null &&
           latest.isApproved &&
-          access.programSettings.wholesaleWorkspaceEnabled;
+          (workspaceLive || (widget.bypassWorkspaceGate && isOwner));
 
       if (!active) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute<void>(
-              builder: (_) => const BusinessWholesaleHubScreen(
+              builder: (_) => BusinessWholesaleHubScreen(
                 initialTab: 0,
+                bypassWorkspaceGate:
+                    widget.bypassWorkspaceGate && isOwner,
               ),
             ),
             (route) => false,
@@ -1168,6 +1203,7 @@ class _WholesaleAccountWorkspacePage extends StatelessWidget {
               ),
 
               const SizedBox(height: 14),
+              const HpjInviteGrowthShortcut(audience: 'business'),
 
               _PremiumBusinessAccountStatusCard(
                 account: account,
@@ -1538,7 +1574,7 @@ class _HpjBusinessMobileHeaderCard extends StatelessWidget {
                             eyebrow,
                             style: TextStyle(
                               color: Colors.white.withOpacity(.70),
-                              fontSize: 9.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 1.05,
                             ),
@@ -1586,7 +1622,7 @@ class _HpjBusinessMobileHeaderCard extends StatelessWidget {
                               status!.trim(),
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 7.7,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: .25,
                               ),
@@ -1607,7 +1643,7 @@ class _HpjBusinessMobileHeaderCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Colors.white.withOpacity(.83),
-                        fontSize: 10.6,
+                        fontSize: 11.5,
                         height: 1.35,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1692,7 +1728,7 @@ class _HpjBusinessMobileHeaderCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(14),
                         ),
                         textStyle: const TextStyle(
-                          fontSize: 10.7,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -6372,7 +6408,7 @@ class _HpjBusinessMobileSectionTitle extends StatelessWidget {
                 subtitle,
                 style: const TextStyle(
                   color: FarmColors.mutedText,
-                  fontSize: 9.2,
+                  fontSize: 10.5,
                   height: 1.28,
                   fontWeight: FontWeight.w600,
                 ),
@@ -6389,7 +6425,7 @@ class _HpjBusinessMobileSectionTitle extends StatelessWidget {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               textStyle: const TextStyle(
-                fontSize: 9.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -6441,7 +6477,7 @@ class _HpjBusinessMobileGapList extends StatelessWidget {
                 'No current supply gaps. HPJ is aligned with your active plan.',
                 style: TextStyle(
                   color: Color(0xFF315541),
-                  fontSize: 9.5,
+                  fontSize: 11,
                   height: 1.35,
                   fontWeight: FontWeight.w700,
                 ),
@@ -6488,7 +6524,7 @@ class _HpjBusinessMobileGapList extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: FarmColors.ink,
-                              fontSize: 11.1,
+                              fontSize: 11.5,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -6499,7 +6535,7 @@ class _HpjBusinessMobileGapList extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: FarmColors.mutedText,
-                              fontSize: 8.5,
+                              fontSize: 10.5,
                               height: 1.25,
                               fontWeight: FontWeight.w600,
                             ),
@@ -6551,7 +6587,7 @@ class _HpjBusinessMobileFreshSupply extends StatelessWidget {
           'Fresh wholesale recommendations will appear as supply becomes available.',
           style: TextStyle(
             color: FarmColors.mutedText,
-            fontSize: 9.2,
+            fontSize: 10.5,
             height: 1.35,
             fontWeight: FontWeight.w600,
           ),
@@ -6646,7 +6682,7 @@ class _HpjBusinessMobileProductCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: FarmColors.ink,
-                        fontSize: 10.5,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -6657,7 +6693,7 @@ class _HpjBusinessMobileProductCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF0B6B43),
-                        fontSize: 8.8,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -6674,7 +6710,7 @@ class _HpjBusinessMobileProductCard extends StatelessWidget {
                         'View supply',
                         style: TextStyle(
                           color: Color(0xFF0B5B3D),
-                          fontSize: 8.5,
+                          fontSize: 10.5,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -6772,7 +6808,7 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: FarmColors.ink,
-                    fontSize: 8.3,
+                    fontSize: 10,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -6783,7 +6819,7 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: FarmColors.mutedText,
-                    fontSize: 7.3,
+                    fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -6860,7 +6896,7 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
             '$deliveriesToday due today • ${formatJmd(amountDue)} outstanding • 90d ${formatJmd(spend90)}',
             style: const TextStyle(
               color: FarmColors.mutedText,
-              fontSize: 8.2,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -9435,7 +9471,7 @@ class _HpjBusinessMobileActionTile extends StatelessWidget {
                   color: emphasized
                       ? Colors.white.withOpacity(.73)
                       : FarmColors.mutedText,
-                  fontSize: 8.5,
+                  fontSize: 10.5,
                   height: 1.28,
                   fontWeight: FontWeight.w600,
                 ),
@@ -20865,7 +20901,7 @@ class _WholesaleSupplierDiscoveryEntryCard extends StatelessWidget {
                       'Discover verified Jamaican farms and request supply through HPJ.',
                       style: TextStyle(
                         color: FarmColors.mutedText,
-                        fontSize: 10.5,
+                        fontSize: 11.5,
                         height: 1.3,
                         fontWeight: FontWeight.w600,
                       ),

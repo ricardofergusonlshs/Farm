@@ -1,3 +1,4 @@
+// HPJ WORKSPACE CONTROL CENTER — COMPILE FIX — 2026-09-16
 // HPJ PHASE 88 — WHOLESALE CORE + ADMIN OPERATIONS (BUSINESS UI EXTRACTED)
 // HPJ RC2K HOTFIX 003 VERIFIED REPLACEMENT — 2026-08-27
 // Compile repair base: Hotfix 002 + visible verification marker.
@@ -70,12 +71,53 @@ Color businessAccountStatusColor(String? value) {
 // Paste immediately above: class BusinessAccount
 // ================================================================
 
+String hpjNormalizeWorkspaceMode(
+  Object? value, {
+  String fallback = 'live',
+}) {
+  final clean = (value ?? '').toString().trim().toLowerCase();
+  const allowed = <String>{'live', 'read_only', 'maintenance', 'closed'};
+  return allowed.contains(clean) ? clean : fallback;
+}
+
+String hpjWorkspaceModeLabel(String mode) {
+  switch (hpjNormalizeWorkspaceMode(mode)) {
+    case 'read_only':
+      return 'Read-only';
+    case 'maintenance':
+      return 'Maintenance';
+    case 'closed':
+      return 'Closed';
+    case 'live':
+    default:
+      return 'Live';
+  }
+}
+
+bool hpjWorkspaceModeIsLive(String mode) =>
+    hpjNormalizeWorkspaceMode(mode) == 'live';
+
 class MarketplaceProgramSettings {
   final bool wholesaleApplicationsEnabled;
   final bool wholesaleWorkspaceEnabled;
   final bool farmerApplicationsEnabled;
   final bool farmerWorkspaceEnabled;
   final bool customerMarketplaceEnabled;
+  final bool farmerCommunityEnabled;
+  final bool farmerStoriesEnabled;
+
+  final String customerWorkspaceMode;
+  final String customerWebWorkspaceMode;
+  final String farmerWorkspaceMode;
+  final String wholesaleWorkspaceMode;
+
+  final String customerMaintenanceMessage;
+  final String customerReturnNote;
+  final String farmerMaintenanceMessage;
+  final String farmerReturnNote;
+  final String wholesaleMaintenanceMessage;
+  final String wholesaleReturnNote;
+
   final DateTime? updatedAt;
 
   const MarketplaceProgramSettings({
@@ -84,6 +126,18 @@ class MarketplaceProgramSettings {
     required this.farmerApplicationsEnabled,
     required this.farmerWorkspaceEnabled,
     required this.customerMarketplaceEnabled,
+    this.farmerCommunityEnabled = true,
+    this.farmerStoriesEnabled = true,
+    this.customerWorkspaceMode = 'live',
+    this.customerWebWorkspaceMode = 'live',
+    this.farmerWorkspaceMode = 'live',
+    this.wholesaleWorkspaceMode = 'live',
+    this.customerMaintenanceMessage = '',
+    this.customerReturnNote = '',
+    this.farmerMaintenanceMessage = '',
+    this.farmerReturnNote = '',
+    this.wholesaleMaintenanceMessage = '',
+    this.wholesaleReturnNote = '',
     this.updatedAt,
   });
 
@@ -92,23 +146,110 @@ class MarketplaceProgramSettings {
     wholesaleWorkspaceEnabled: true,
     farmerApplicationsEnabled: true,
     farmerWorkspaceEnabled: true,
-    // Launch mode: Farmer + Wholesale are live first.
     customerMarketplaceEnabled: false,
+    farmerCommunityEnabled: true,
+    farmerStoriesEnabled: true,
+    customerWorkspaceMode: 'closed',
+    customerWebWorkspaceMode: 'live',
+    farmerWorkspaceMode: 'live',
+    wholesaleWorkspaceMode: 'live',
   );
 
   factory MarketplaceProgramSettings.fromSupabase(
     Map<String, dynamic> data,
   ) {
+    final wholesaleEnabled = data['wholesale_workspace_enabled'] != false;
+    final farmerEnabled = data['farmer_workspace_enabled'] != false;
+    final customerEnabled = data['customer_marketplace_enabled'] == true;
+
     return MarketplaceProgramSettings(
       wholesaleApplicationsEnabled:
           data['wholesale_applications_enabled'] != false,
-      wholesaleWorkspaceEnabled: data['wholesale_workspace_enabled'] != false,
+      wholesaleWorkspaceEnabled: wholesaleEnabled,
       farmerApplicationsEnabled: data['farmer_applications_enabled'] != false,
-      farmerWorkspaceEnabled: data['farmer_workspace_enabled'] != false,
-      customerMarketplaceEnabled: data['customer_marketplace_enabled'] == true,
+      farmerWorkspaceEnabled: farmerEnabled,
+      customerMarketplaceEnabled: customerEnabled,
+      farmerCommunityEnabled: data['farmer_community_enabled'] != false,
+      farmerStoriesEnabled: data['farmer_stories_enabled'] != false,
+      customerWorkspaceMode: hpjNormalizeWorkspaceMode(
+        data['customer_workspace_mode'],
+        fallback: customerEnabled ? 'live' : 'closed',
+      ),
+      customerWebWorkspaceMode: hpjNormalizeWorkspaceMode(
+        data['customer_web_workspace_mode'],
+        fallback: 'live',
+      ),
+      farmerWorkspaceMode: hpjNormalizeWorkspaceMode(
+        data['farmer_workspace_mode'],
+        fallback: farmerEnabled ? 'live' : 'closed',
+      ),
+      wholesaleWorkspaceMode: hpjNormalizeWorkspaceMode(
+        data['wholesale_workspace_mode'],
+        fallback: wholesaleEnabled ? 'live' : 'closed',
+      ),
+      customerMaintenanceMessage:
+          (data['customer_maintenance_message'] ?? '').toString().trim(),
+      customerReturnNote:
+          (data['customer_return_note'] ?? '').toString().trim(),
+      farmerMaintenanceMessage:
+          (data['farmer_maintenance_message'] ?? '').toString().trim(),
+      farmerReturnNote:
+          (data['farmer_return_note'] ?? '').toString().trim(),
+      wholesaleMaintenanceMessage:
+          (data['wholesale_maintenance_message'] ?? '').toString().trim(),
+      wholesaleReturnNote:
+          (data['wholesale_return_note'] ?? '').toString().trim(),
       updatedAt: parseProductDate(data['updated_at']),
     );
   }
+
+  String workspaceMode(
+    String workspace, {
+    bool website = false,
+  }) {
+    switch (workspace.trim().toLowerCase()) {
+      case 'farmer':
+        return farmerWorkspaceMode;
+      case 'wholesale':
+      case 'business':
+        return wholesaleWorkspaceMode;
+      case 'customer':
+      default:
+        return website ? customerWebWorkspaceMode : customerWorkspaceMode;
+    }
+  }
+
+  String maintenanceMessage(String workspace) {
+    switch (workspace.trim().toLowerCase()) {
+      case 'farmer':
+        return farmerMaintenanceMessage;
+      case 'wholesale':
+      case 'business':
+        return wholesaleMaintenanceMessage;
+      case 'customer':
+      default:
+        return customerMaintenanceMessage;
+    }
+  }
+
+  String returnNote(String workspace) {
+    switch (workspace.trim().toLowerCase()) {
+      case 'farmer':
+        return farmerReturnNote;
+      case 'wholesale':
+      case 'business':
+        return wholesaleReturnNote;
+      case 'customer':
+      default:
+        return customerReturnNote;
+    }
+  }
+
+  bool isWorkspaceLive(
+    String workspace, {
+    bool website = false,
+  }) =>
+      hpjWorkspaceModeIsLive(workspaceMode(workspace, website: website));
 }
 
 Future<MarketplaceProgramSettings> fetchMarketplaceProgramSettings() async {
@@ -116,7 +257,14 @@ Future<MarketplaceProgramSettings> fetchMarketplaceProgramSettings() async {
     final response = await supabase
         .from('marketplace_program_settings')
         .select(
-          'wholesale_applications_enabled, wholesale_workspace_enabled, farmer_applications_enabled, farmer_workspace_enabled, customer_marketplace_enabled, updated_at',
+          'wholesale_applications_enabled, wholesale_workspace_enabled, '
+          'farmer_applications_enabled, farmer_workspace_enabled, '
+          'customer_marketplace_enabled, farmer_community_enabled, '
+          'farmer_stories_enabled, customer_workspace_mode, '
+          'customer_web_workspace_mode, farmer_workspace_mode, '
+          'wholesale_workspace_mode, customer_maintenance_message, '
+          'customer_return_note, farmer_maintenance_message, farmer_return_note, '
+          'wholesale_maintenance_message, wholesale_return_note, updated_at',
         )
         .eq('id', 'default')
         .maybeSingle();
@@ -127,16 +275,17 @@ Future<MarketplaceProgramSettings> fetchMarketplaceProgramSettings() async {
       Map<String, dynamic>.from(response as Map),
     );
   } catch (error) {
-    // Backward-compatible read while migration 008 is being applied.
     farmDebugLog(
-      'Customer marketplace launch flag unavailable. Using legacy programme settings safely: $error',
+      'Workspace Control Center fields unavailable. Using legacy programme settings safely: $error',
     );
 
     try {
       final legacyResponse = await supabase
           .from('marketplace_program_settings')
           .select(
-            'wholesale_applications_enabled, wholesale_workspace_enabled, farmer_applications_enabled, farmer_workspace_enabled, updated_at',
+            'wholesale_applications_enabled, wholesale_workspace_enabled, '
+            'farmer_applications_enabled, farmer_workspace_enabled, '
+            'customer_marketplace_enabled, updated_at',
           )
           .eq('id', 'default')
           .maybeSingle();
@@ -150,6 +299,106 @@ Future<MarketplaceProgramSettings> fetchMarketplaceProgramSettings() async {
       farmDebugLog('Program settings lookup skipped safely: $legacyError');
       return MarketplaceProgramSettings.fallback;
     }
+  }
+}
+
+Future<bool> hpjCurrentUserIsOwner() async {
+  try {
+    return normalizeStaffRole(await fetchCurrentStaffRole()) == 'owner';
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<bool> hpjWorkspaceOperationalAccessAllowed(
+  MarketplaceProgramSettings settings,
+  String workspace, {
+  bool website = false,
+}) async {
+  if (settings.isWorkspaceLive(workspace, website: website)) return true;
+  return hpjCurrentUserIsOwner();
+}
+
+Future<bool> hpjFarmerSocialFeatureVisibleToCurrentUser(
+  String feature,
+) async {
+  final settings = await fetchMarketplaceProgramSettings();
+  final clean = feature.trim().toLowerCase();
+
+  final enabled = clean == 'stories' || clean == 'story'
+      ? settings.farmerStoriesEnabled
+      : settings.farmerCommunityEnabled;
+
+  if (enabled) return true;
+  return hpjCurrentUserIsOwner();
+}
+
+class HpjFarmerSocialFeatureGate extends StatelessWidget {
+  final String feature;
+  final Widget child;
+  final bool compact;
+  final String? title;
+  final String? message;
+
+  const HpjFarmerSocialFeatureGate({
+    super.key,
+    required this.feature,
+    required this.child,
+    this.compact = true,
+    this.title,
+    this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: hpjFarmerSocialFeatureVisibleToCurrentUser(feature),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            snapshot.data == null) {
+          return compact
+              ? const SizedBox.shrink()
+              : const Scaffold(
+                  backgroundColor: FarmColors.background,
+                  body: Center(child: CircularProgressIndicator()),
+                );
+        }
+
+        if (snapshot.data == true) return child;
+        if (compact) return const SizedBox.shrink();
+
+        final isStories =
+            feature.trim().toLowerCase() == 'stories' ||
+            feature.trim().toLowerCase() == 'story';
+
+        return Scaffold(
+          backgroundColor: FarmColors.background,
+          appBar: AppBar(
+            title: Text(title ?? (isStories ? 'Farm Stories' : 'Community')),
+          ),
+          body: FarmPage(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 24, 18, 120),
+              children: [
+                FarmEmptyState(
+                  icon: isStories
+                      ? Icons.auto_stories_outlined
+                      : Icons.groups_2_outlined,
+                  title: title ??
+                      (isStories
+                          ? 'Farm Stories are temporarily hidden'
+                          : 'Farmer Community is temporarily hidden'),
+                  message: message ??
+                      (isStories
+                          ? 'HPJ is updating Farm Stories. Existing stories and history are preserved and will return when the feature is switched back on.'
+                          : 'HPJ is updating the Farmer Community experience. Existing community data is preserved and will return when the feature is switched back on.'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -175,16 +424,64 @@ Future<void> ownerUpdateMarketplaceProgramSettings({
   );
 }
 
-
 Future<void> ownerSetCustomerMarketplaceEnabled(bool enabled) async {
   final role = normalizeStaffRole(await fetchCurrentStaffRole());
   if (role != 'owner') {
-    throw Exception('Only the owner can change the customer marketplace launch status.');
+    throw Exception(
+      'Only the owner can change the customer marketplace launch status.',
+    );
   }
 
   await supabase.rpc(
     'owner_set_customer_marketplace_enabled',
     params: {'p_enabled': enabled},
+  );
+}
+
+Future<void> ownerUpdateWorkspaceControlCenter({
+  required String customerWorkspaceMode,
+  required String customerWebWorkspaceMode,
+  required String farmerWorkspaceMode,
+  required String wholesaleWorkspaceMode,
+  required bool farmerApplicationsEnabled,
+  required bool wholesaleApplicationsEnabled,
+  required bool farmerCommunityEnabled,
+  required bool farmerStoriesEnabled,
+  required String customerMaintenanceMessage,
+  required String customerReturnNote,
+  required String farmerMaintenanceMessage,
+  required String farmerReturnNote,
+  required String wholesaleMaintenanceMessage,
+  required String wholesaleReturnNote,
+}) async {
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (role != 'owner') {
+    throw Exception('Only the owner can change Workspace Control Center settings.');
+  }
+
+  final customerMode = hpjNormalizeWorkspaceMode(customerWorkspaceMode);
+  final customerWebMode = hpjNormalizeWorkspaceMode(customerWebWorkspaceMode);
+  final farmerMode = hpjNormalizeWorkspaceMode(farmerWorkspaceMode);
+  final wholesaleMode = hpjNormalizeWorkspaceMode(wholesaleWorkspaceMode);
+
+  await supabase.rpc(
+    'owner_update_workspace_control_center',
+    params: {
+      'p_customer_workspace_mode': customerMode,
+      'p_customer_web_workspace_mode': customerWebMode,
+      'p_farmer_workspace_mode': farmerMode,
+      'p_wholesale_workspace_mode': wholesaleMode,
+      'p_farmer_applications_enabled': farmerApplicationsEnabled,
+      'p_wholesale_applications_enabled': wholesaleApplicationsEnabled,
+      'p_farmer_community_enabled': farmerCommunityEnabled,
+      'p_farmer_stories_enabled': farmerStoriesEnabled,
+      'p_customer_maintenance_message': customerMaintenanceMessage.trim(),
+      'p_customer_return_note': customerReturnNote.trim(),
+      'p_farmer_maintenance_message': farmerMaintenanceMessage.trim(),
+      'p_farmer_return_note': farmerReturnNote.trim(),
+      'p_wholesale_maintenance_message': wholesaleMaintenanceMessage.trim(),
+      'p_wholesale_return_note': wholesaleReturnNote.trim(),
+    },
   );
 }
 
@@ -604,13 +901,32 @@ class OwnerMarketplaceProgramSettingsPanel extends StatefulWidget {
 
 class _OwnerMarketplaceProgramSettingsPanelState
     extends State<OwnerMarketplaceProgramSettingsPanel> {
+  static const List<String> _workspaceModes = <String>[
+    'live',
+    'read_only',
+    'maintenance',
+    'closed',
+  ];
+
   late Future<_OwnerProgramSettingsSnapshot> _future;
   bool saving = false;
+
   bool wholesaleApplicationsEnabled = true;
-  bool wholesaleWorkspaceEnabled = true;
   bool farmerApplicationsEnabled = true;
-  bool farmerWorkspaceEnabled = true;
-  bool customerMarketplaceEnabled = false;
+  bool farmerCommunityEnabled = true;
+  bool farmerStoriesEnabled = true;
+
+  String customerWorkspaceMode = 'live';
+  String customerWebWorkspaceMode = 'live';
+  String farmerWorkspaceMode = 'live';
+  String wholesaleWorkspaceMode = 'live';
+
+  final customerMessageController = TextEditingController();
+  final customerReturnController = TextEditingController();
+  final farmerMessageController = TextEditingController();
+  final farmerReturnController = TextEditingController();
+  final wholesaleMessageController = TextEditingController();
+  final wholesaleReturnController = TextEditingController();
 
   @override
   void initState() {
@@ -618,15 +934,39 @@ class _OwnerMarketplaceProgramSettingsPanelState
     _future = _load();
   }
 
+  @override
+  void dispose() {
+    customerMessageController.dispose();
+    customerReturnController.dispose();
+    farmerMessageController.dispose();
+    farmerReturnController.dispose();
+    wholesaleMessageController.dispose();
+    wholesaleReturnController.dispose();
+    super.dispose();
+  }
+
   Future<_OwnerProgramSettingsSnapshot> _load() async {
     final role = await fetchCurrentStaffRole();
     final settings = await fetchMarketplaceProgramSettings();
 
-    wholesaleApplicationsEnabled = settings.wholesaleApplicationsEnabled;
-    wholesaleWorkspaceEnabled = settings.wholesaleWorkspaceEnabled;
-    farmerApplicationsEnabled = settings.farmerApplicationsEnabled;
-    farmerWorkspaceEnabled = settings.farmerWorkspaceEnabled;
-    customerMarketplaceEnabled = settings.customerMarketplaceEnabled;
+    if (mounted) {
+      wholesaleApplicationsEnabled = settings.wholesaleApplicationsEnabled;
+      farmerApplicationsEnabled = settings.farmerApplicationsEnabled;
+      farmerCommunityEnabled = settings.farmerCommunityEnabled;
+      farmerStoriesEnabled = settings.farmerStoriesEnabled;
+
+      customerWorkspaceMode = settings.customerWorkspaceMode;
+      customerWebWorkspaceMode = settings.customerWebWorkspaceMode;
+      farmerWorkspaceMode = settings.farmerWorkspaceMode;
+      wholesaleWorkspaceMode = settings.wholesaleWorkspaceMode;
+
+      customerMessageController.text = settings.customerMaintenanceMessage;
+      customerReturnController.text = settings.customerReturnNote;
+      farmerMessageController.text = settings.farmerMaintenanceMessage;
+      farmerReturnController.text = settings.farmerReturnNote;
+      wholesaleMessageController.text = settings.wholesaleMaintenanceMessage;
+      wholesaleReturnController.text = settings.wholesaleReturnNote;
+    }
 
     return _OwnerProgramSettingsSnapshot(
       role: role,
@@ -636,27 +976,39 @@ class _OwnerMarketplaceProgramSettingsPanelState
 
   Future<void> _reload() async {
     final next = _load();
-    setState(() {
-      _future = next;
-    });
+    if (mounted) {
+      setState(() {
+        _future = next;
+      });
+    }
     await next;
+    if (mounted) setState(() {});
   }
 
   Future<void> _save() async {
     setState(() => saving = true);
 
     try {
-      await ownerUpdateMarketplaceProgramSettings(
-        wholesaleApplicationsEnabled: wholesaleApplicationsEnabled,
-        wholesaleWorkspaceEnabled: wholesaleWorkspaceEnabled,
+      await ownerUpdateWorkspaceControlCenter(
+        customerWorkspaceMode: customerWorkspaceMode,
+        customerWebWorkspaceMode: customerWebWorkspaceMode,
+        farmerWorkspaceMode: farmerWorkspaceMode,
+        wholesaleWorkspaceMode: wholesaleWorkspaceMode,
         farmerApplicationsEnabled: farmerApplicationsEnabled,
-        farmerWorkspaceEnabled: farmerWorkspaceEnabled,
+        wholesaleApplicationsEnabled: wholesaleApplicationsEnabled,
+        farmerCommunityEnabled: farmerCommunityEnabled,
+        farmerStoriesEnabled: farmerStoriesEnabled,
+        customerMaintenanceMessage: customerMessageController.text.trim(),
+        customerReturnNote: customerReturnController.text.trim(),
+        farmerMaintenanceMessage: farmerMessageController.text.trim(),
+        farmerReturnNote: farmerReturnController.text.trim(),
+        wholesaleMaintenanceMessage: wholesaleMessageController.text.trim(),
+        wholesaleReturnNote: wholesaleReturnController.text.trim(),
       );
-      await ownerSetCustomerMarketplaceEnabled(customerMarketplaceEnabled);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account-access settings saved.')),
+        const SnackBar(content: Text('Workspace Control Center saved.')),
       );
       await _reload();
     } catch (error) {
@@ -667,6 +1019,192 @@ class _OwnerMarketplaceProgramSettingsPanelState
     } finally {
       if (mounted) setState(() => saving = false);
     }
+  }
+
+  String _modeHelp(String mode) {
+    switch (hpjNormalizeWorkspaceMode(mode)) {
+      case 'read_only':
+        return 'Safe freeze: members see an update notice and operational changes are blocked.';
+      case 'maintenance':
+        return 'Temporarily block member access while you update or repair this workspace.';
+      case 'closed':
+        return 'Keep the workspace unavailable until you intentionally reopen it.';
+      case 'live':
+      default:
+        return 'Members with valid access can use this workspace normally.';
+    }
+  }
+
+  Color _modeColor(String mode) {
+    switch (hpjNormalizeWorkspaceMode(mode)) {
+      case 'maintenance':
+        return FarmColors.warning;
+      case 'closed':
+        return FarmColors.danger;
+      case 'read_only':
+        return const Color(0xFF5D6D67);
+      case 'live':
+      default:
+        return FarmColors.success;
+    }
+  }
+
+  Widget _modeDropdown({
+    required String value,
+    required ValueChanged<String> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: hpjNormalizeWorkspaceMode(value),
+      decoration: const InputDecoration(
+        labelText: 'Workspace status',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: _workspaceModes
+          .map(
+            (mode) => DropdownMenuItem<String>(
+              value: mode,
+              child: Text(
+                mode == 'read_only'
+                    ? 'Read-only / safe freeze'
+                    : hpjWorkspaceModeLabel(mode),
+              ),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: saving
+          ? null
+          : (next) {
+              if (next == null) return;
+              onChanged(next);
+            },
+    );
+  }
+
+  Widget _workspaceControlCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required String mode,
+    required ValueChanged<String> onModeChanged,
+    TextEditingController? messageController,
+    TextEditingController? returnController,
+    Widget? extra,
+  }) {
+    final normalized = hpjNormalizeWorkspaceMode(mode);
+    final modeColor = _modeColor(normalized);
+    final showMaintenanceCopy = normalized != 'live' &&
+        messageController != null &&
+        returnController != null;
+
+    return FarmCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: modeColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: modeColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.35,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: modeColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  hpjWorkspaceModeLabel(normalized),
+                  style: TextStyle(
+                    color: modeColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _modeDropdown(
+            value: normalized,
+            onChanged: onModeChanged,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _modeHelp(normalized),
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              height: 1.35,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (extra != null) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 4),
+            extra,
+          ],
+          if (showMaintenanceCopy) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: messageController,
+              enabled: !saving,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Message shown to users',
+                hintText: 'We are improving this workspace. Please check back shortly.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: returnController,
+              enabled: !saving,
+              decoration: const InputDecoration(
+                labelText: 'Expected back (optional)',
+                hintText: 'Example: Tomorrow at 6:00 AM',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -688,7 +1226,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
                 icon: Icons.lock_outline,
                 title: 'Owner access required',
                 message:
-                    'Only the owner can open or pause farmer and wholesale programmes.',
+                    'Only the owner can change HPJ workspace availability and application settings.',
               ),
             ],
           );
@@ -706,7 +1244,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Account Access',
+                      'Workspace Control Center',
                       style: TextStyle(
                         color: FarmColors.ink,
                         fontSize: 20,
@@ -715,7 +1253,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Control which HPJ workspaces are live. Farmer and Wholesale can launch first while Customer shows a polished Coming Soon page.',
+                      'Pause one part of HPJ for construction or updates without taking the other workspaces offline. Farmer and Business applications are controlled separately.',
                       style: TextStyle(
                         color: FarmColors.mutedText,
                         height: 1.4,
@@ -726,125 +1264,142 @@ class _OwnerMarketplaceProgramSettingsPanelState
                 ),
               ),
               const SizedBox(height: 12),
-              FarmCard(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  children: [
-                    SwitchListTile.adaptive(
-                      value: wholesaleApplicationsEnabled,
-                      title: const Text(
-                        'Accept wholesale applications',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      subtitle: const Text(
-                        'Allow customers without a business profile to apply.',
-                      ),
-                      onChanged: saving
-                          ? null
-                          : (value) {
-                              setState(() {
-                                wholesaleApplicationsEnabled = value;
-                              });
-                            },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile.adaptive(
-                      value: wholesaleWorkspaceEnabled,
-                      title: const Text(
-                        'Wholesale workspace available',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      subtitle: const Text(
-                        'Allow approved businesses to browse and submit bulk requests.',
-                      ),
-                      onChanged: saving
-                          ? null
-                          : (value) {
-                              setState(() {
-                                wholesaleWorkspaceEnabled = value;
-                              });
-                            },
-                    ),
-                  ],
-                ),
+              _workspaceControlCard(
+                title: 'Customer App',
+                subtitle: 'Native app and narrow mobile app presentation.',
+                icon: Icons.shopping_bag_outlined,
+                mode: customerWorkspaceMode,
+                onModeChanged: (value) =>
+                    setState(() => customerWorkspaceMode = value),
+                messageController: hpjNormalizeWorkspaceMode(
+                          customerWorkspaceMode,
+                        ) !=
+                        'live'
+                    ? customerMessageController
+                    : null,
+                returnController: hpjNormalizeWorkspaceMode(
+                          customerWorkspaceMode,
+                        ) !=
+                        'live'
+                    ? customerReturnController
+                    : null,
               ),
               const SizedBox(height: 12),
-              FarmCard(
-                padding: const EdgeInsets.all(8),
-                child: Column(
+              _workspaceControlCard(
+                title: 'Customer Website',
+                subtitle: 'Desktop/public Customer marketplace website.',
+                icon: Icons.language_rounded,
+                mode: customerWebWorkspaceMode,
+                onModeChanged: (value) =>
+                    setState(() => customerWebWorkspaceMode = value),
+                messageController: hpjNormalizeWorkspaceMode(
+                          customerWorkspaceMode,
+                        ) ==
+                        'live'
+                    ? customerMessageController
+                    : null,
+                returnController: hpjNormalizeWorkspaceMode(
+                          customerWorkspaceMode,
+                        ) ==
+                        'live'
+                    ? customerReturnController
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              _workspaceControlCard(
+                title: 'Farmer Workspace',
+                subtitle: 'Supply, demand, collections, payouts and farmer tools.',
+                icon: Icons.agriculture_outlined,
+                mode: farmerWorkspaceMode,
+                onModeChanged: (value) =>
+                    setState(() => farmerWorkspaceMode = value),
+                messageController: farmerMessageController,
+                returnController: farmerReturnController,
+                extra: Column(
                   children: [
                     SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
                       value: farmerApplicationsEnabled,
                       title: const Text(
-                        'Accept farmer applications',
+                        'Accept Farmer applications',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                       subtitle: const Text(
-                        'Allow customers without a farmer profile to apply.',
+                        'Can remain ON even while the Farmer workspace is under maintenance.',
                       ),
                       onChanged: saving
                           ? null
-                          : (value) {
-                              setState(() {
-                                farmerApplicationsEnabled = value;
-                              });
-                            },
+                          : (value) => setState(
+                                () => farmerApplicationsEnabled = value,
+                              ),
                     ),
                     const Divider(height: 1),
                     SwitchListTile.adaptive(
-                      value: farmerWorkspaceEnabled,
+                      contentPadding: EdgeInsets.zero,
+                      value: farmerCommunityEnabled,
                       title: const Text(
-                        'Farmer workspace available',
+                        'Farmer Community',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                       subtitle: const Text(
-                        'Allow existing farmer profiles to open the farmer workspace.',
+                        'Show the HPJ community surfaces that connect customers with farms, meals and produce.',
                       ),
                       onChanged: saving
                           ? null
-                          : (value) {
-                              setState(() {
-                                farmerWorkspaceEnabled = value;
-                              });
-                            },
+                          : (value) => setState(
+                                () => farmerCommunityEnabled = value,
+                              ),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: farmerStoriesEnabled,
+                      title: const Text(
+                        'Farm Stories',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      subtitle: const Text(
+                        'Allow Farm Stories to appear and allow farmers to open the Story tools.',
+                      ),
+                      onChanged: saving
+                          ? null
+                          : (value) => setState(
+                                () => farmerStoriesEnabled = value,
+                              ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
-              FarmCard(
-                padding: const EdgeInsets.all(8),
-                child: SwitchListTile.adaptive(
-                  value: customerMarketplaceEnabled,
+              _workspaceControlCard(
+                title: 'Business Workspace',
+                subtitle: 'Wholesale sourcing, planning, orders and business tools.',
+                icon: Icons.business_outlined,
+                mode: wholesaleWorkspaceMode,
+                onModeChanged: (value) =>
+                    setState(() => wholesaleWorkspaceMode = value),
+                messageController: wholesaleMessageController,
+                returnController: wholesaleReturnController,
+                extra: SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  value: wholesaleApplicationsEnabled,
                   title: const Text(
-                    'Customer marketplace live',
+                    'Accept Business applications',
                     style: TextStyle(fontWeight: FontWeight.w900),
                   ),
-                  subtitle: Text(
-                    customerMarketplaceEnabled
-                        ? 'Customers can open Shop, My Box and ordering.'
-                        : 'Customers see a Coming Soon launch page. Farmer and Wholesale remain active.',
-                  ),
-                  secondary: Icon(
-                    customerMarketplaceEnabled
-                        ? Icons.storefront_rounded
-                        : Icons.schedule_rounded,
-                    color: customerMarketplaceEnabled
-                        ? FarmColors.primary
-                        : FarmColors.mutedText,
+                  subtitle: const Text(
+                    'Can remain ON even while the Business workspace is under maintenance.',
                   ),
                   onChanged: saving
                       ? null
-                      : (value) {
-                          setState(() {
-                            customerMarketplaceEnabled = value;
-                          });
-                        },
+                      : (value) => setState(
+                          () => wholesaleApplicationsEnabled = value,
+                        ),
                 ),
               ),
               const SizedBox(height: 14),
               PrimaryFarmButton(
-                label: saving ? 'Saving...' : 'Save Access Settings',
+                label: saving ? 'Saving...' : 'Save Workspace Controls',
                 icon: Icons.save_outlined,
                 onPressed: saving ? null : _save,
               ),
@@ -858,7 +1413,7 @@ class _OwnerMarketplaceProgramSettingsPanelState
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Turning off Farmer or Wholesale access keeps profiles, approvals, orders and history stored. Turning off Customer only replaces shopping with the Coming Soon page; no customer code or data is deleted.',
+                        'Safety: Maintenance, Closed and Read-only / safe freeze block normal operational access but do not delete accounts, applications, orders or history. The Owner can still enter a frozen workspace for construction and testing.',
                         style: TextStyle(
                           color: FarmColors.mutedText,
                           height: 1.4,
@@ -9056,7 +9611,10 @@ Future<void> submitBusinessApplication({
 
 Future<List<WholesaleProduct>> fetchWholesaleCatalogue() async {
   final settings = await fetchMarketplaceProgramSettings();
-  if (!settings.wholesaleWorkspaceEnabled) {
+  if (!await hpjWorkspaceOperationalAccessAllowed(
+    settings,
+    'wholesale',
+  )) {
     throw Exception('Wholesale ordering is temporarily unavailable.');
   }
 
@@ -9469,7 +10027,10 @@ Future<String> submitWholesaleOrderRequest({
   if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
     throw const HpjPrivateMutationInterruptedException();
   }
-  if (!settings.wholesaleWorkspaceEnabled) {
+  if (!await hpjWorkspaceOperationalAccessAllowed(
+    settings,
+    'wholesale',
+  )) {
     throw Exception('Wholesale ordering is temporarily unavailable.');
   }
 
@@ -28531,7 +29092,7 @@ class _OwnerWorkspaceSwitcherScreenState
     return preference?.tabFor(workspace) ?? 0;
   }
 
-  void _openCustomer(bool marketplaceEnabled) {
+  void _openCustomer(bool _) {
     unawaited(() async {
       final tab = await _rememberedTab('customer');
 
@@ -28542,11 +29103,8 @@ class _OwnerWorkspaceSwitcherScreenState
 
       if (!mounted) return;
 
-      if (!marketplaceEnabled) {
-        _switchRoot(const CustomerMarketplaceComingSoonScreen());
-        return;
-      }
-
+      // MainNavigation owns the Workspace Control Center gate, including
+      // maintenance messaging and Owner bypass. Always route through it.
       final callback = widget.onShopTap;
       if (callback != null) {
         Navigator.of(context).pop();
@@ -28667,20 +29225,24 @@ class _OwnerWorkspaceSwitcherScreenState
 
             final hasStaffAccess = isStaffRoleActive(access.staffRole);
 
-            final customerEnabled =
-                access.programSettings.customerMarketplaceEnabled;
+            final settings = access.programSettings;
+            final customerEnabled = settings.isWorkspaceLive(
+              'customer',
+              website: kIsWeb,
+            );
+            final wholesaleEnabled =
+                settings.isWorkspaceLive('wholesale');
+            final farmerEnabled = settings.isWorkspaceLive('farmer');
 
             final customerCurrent =
                 customerEnabled && _isCurrent('customer');
 
-            final wholesaleCurrent =
-                access.isApprovedWholesale &&
-                access.programSettings.wholesaleWorkspaceEnabled &&
+            final wholesaleCurrent = access.isApprovedWholesale &&
+                wholesaleEnabled &&
                 _isCurrent('wholesale');
 
-            final farmerCurrent =
-                access.isApprovedFarmer &&
-                access.programSettings.farmerWorkspaceEnabled &&
+            final farmerCurrent = access.isApprovedFarmer &&
+                farmerEnabled &&
                 _isCurrent('farmer');
 
             final staffCurrent =
@@ -28705,8 +29267,9 @@ class _OwnerWorkspaceSwitcherScreenState
                   businessAccountStatusLabel(access.businessAccount!.status);
               wholesaleStatusColor =
                   businessAccountStatusColor(access.businessAccount!.status);
-            } else if (!access.programSettings.wholesaleWorkspaceEnabled) {
-              wholesaleStatus = 'Paused';
+            } else if (!wholesaleEnabled) {
+              wholesaleStatus =
+                  hpjWorkspaceModeLabel(settings.wholesaleWorkspaceMode);
               wholesaleStatusColor = const Color(0xFF78817D);
             }
 
@@ -28727,8 +29290,9 @@ class _OwnerWorkspaceSwitcherScreenState
             } else if (!access.isApprovedFarmer) {
               farmerStatus = access.farmerProfile!.statusLabel;
               farmerStatusColor = FarmColors.warning;
-            } else if (!access.programSettings.farmerWorkspaceEnabled) {
-              farmerStatus = 'Paused';
+            } else if (!farmerEnabled) {
+              farmerStatus =
+                  hpjWorkspaceModeLabel(settings.farmerWorkspaceMode);
               farmerStatusColor = const Color(0xFF78817D);
             }
 
@@ -28736,7 +29300,12 @@ class _OwnerWorkspaceSwitcherScreenState
                 ? 'Current'
                 : customerEnabled
                     ? ''
-                    : 'Coming Soon';
+                    : hpjWorkspaceModeLabel(
+                        settings.workspaceMode(
+                          'customer',
+                          website: kIsWeb,
+                        ),
+                      );
 
             final customerStatusColor = customerEnabled
                 ? forest

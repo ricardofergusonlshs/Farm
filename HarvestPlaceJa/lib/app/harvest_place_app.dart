@@ -1290,10 +1290,30 @@ class FamilyFarmApp extends StatelessWidget {
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        return Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) => _syncKeyboardStateSafely(),
-          child: child ?? const SizedBox.shrink(),
+        final media = MediaQuery.of(context);
+        final mobilePresentation = hpjUseMobileAppPresentation(context);
+        final systemTextScale = media.textScaler.scale(1.0);
+
+        // Native/mobile HPJ uses a slightly larger baseline so Farmer,
+        // Business, Staff and Customer screens remain easy to read on a phone.
+        // Desktop/tablet Web keeps the frozen website typography unchanged.
+        var appTextScale = systemTextScale;
+        if (mobilePresentation) {
+          appTextScale = systemTextScale * 1.12;
+          if (systemTextScale < 1.45 && appTextScale > 1.45) {
+            appTextScale = 1.45;
+          }
+        }
+
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: TextScaler.linear(appTextScale),
+          ),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) => _syncKeyboardStateSafely(),
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       theme: ThemeData(
@@ -1470,10 +1490,12 @@ class FamilyFarmApp extends StatelessWidget {
 
 class AuthGate extends StatefulWidget {
   final bool forceWorkspaceHome;
+  final bool forceWelcome;
 
   const AuthGate({
     super.key,
     this.forceWorkspaceHome = false,
+    this.forceWelcome = false,
   });
 
   @override
@@ -1516,6 +1538,17 @@ class _AuthGateState extends State<AuthGate> {
   void initState() {
     super.initState();
     _authUserId = supabase.auth.currentUser?.id.trim();
+
+    // A blocked Customer workspace can return to the public welcome page
+    // without signing out or immediately routing back to the blocked tab.
+    // Authentication callback flows still take precedence.
+    if (widget.forceWelcome &&
+        !AppConfig.hasPasswordRecoveryCallback &&
+        !AppConfig.hasEmailConfirmationCallback &&
+        !AppConfig.hasGoogleOAuthCallback) {
+      hasEnteredMarket = false;
+      shouldChooseWorkspace = false;
+    }
 
     if (shouldChooseWorkspace) {
       _workspaceAccessFuture = fetchOwnerWorkspaceAccessSnapshot();
@@ -2290,8 +2323,10 @@ class _PostLoginWorkspaceSelectorState
                     ? const Color(0xFF78817D)
                     : FarmColors.warning;
 
-            final customerEnabled =
-                settings.customerMarketplaceEnabled || kIsWeb;
+            final customerEnabled = settings.isWorkspaceLive(
+              'customer',
+              website: kIsWeb,
+            );
 
             return RefreshIndicator(
               onRefresh: _reload,
@@ -5640,256 +5675,687 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final desktopWeb = kIsWeb && media.size.width >= 1100;
-
-    if (desktopWeb) {
-      return _desktopPublicWebsite(context);
+  // HPJ Welcome MVP: the following widgets only affect the narrow welcome
+  // screen. The desktop storefront, workspace gates, auth and Admin-managed
+  // background remain exactly as they were.
+  Future<void> _welcomeOpenRole(String audience) async {
+    if (audience == 'customer') {
+      _browseMarketAction();
+      return;
     }
 
-    final compact = media.size.height < 760 || media.size.width < 355;
-    final veryCompact = media.size.height < 650;
-    final bottomInset = media.viewPadding.bottom;
+    if (kIsWeb) {
+      if (audience == 'farmer') {
+        await _openWebsiteFarmerSignup(context);
+      } else {
+        await _openWebsiteBusinessSignup(context);
+      }
+      return;
+    }
 
-    final horizontalPadding = compact ? 18.0 : 24.0;
-    final contentMaxWidth = compact ? 420.0 : 455.0;
+    if (isLoggedIn) {
+      _openUtility(
+        audience == 'farmer'
+            ? const FarmerAccessGate()
+            : const BusinessWholesaleHubScreen(),
+      );
+      return;
+    }
 
+    // Reuse the established audience-specific registration process. There is
+    // no second account and no new auth / database logic on this screen.
+    final authenticated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => LoginScreen(
+          returnToPrevious: true,
+          startInRegister: true,
+          initialRegistrationAudience: audience,
+          lockRegistrationAudience: true,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (authenticated == true || isLoggedIn) {
+      _openUtility(
+        audience == 'farmer'
+            ? const FarmerAccessGate()
+            : const BusinessWholesaleHubScreen(),
+      );
+    }
+  }
+
+  // HPJ WELCOME GLASS — scoped to the mobile landing screen only. The photo
+  // is still loaded from Admin -> Welcome Screen Background (with Hero fallback).
+  // A real blur and translucent color are used instead of opaque white panels.
+  Widget _welcomeGlassPanel({
+    required Widget child,
+    required Color tint,
+    double radius = 22,
+    double blur = 13,
+    EdgeInsetsGeometry? padding,
+    Color? borderColor,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          width: double.infinity,
+          padding: padding,
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: borderColor ?? Colors.white.withOpacity(.44),
+              width: 1.15,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  // Branded icons, not generated people/photos. The background is translucent
+  // and the existing Customer/Farmer/Business callbacks are preserved.
+  Widget _welcomeRoleCard({
+    required String label,
+    required String subtitle,
+    required IconData icon,
+    required Color tint,
+    required VoidCallback onTap,
+    required double scale,
+  }) {
+    final isFarmer = label == 'Farmer';
+    final isBusiness = label == 'Business';
+    final iconColor = isFarmer
+        ? const Color(0xFF456B35)
+        : isBusiness
+            ? const Color(0xFF23564D)
+            : _forest;
+
+    return Expanded(
+      child: Semantics(
+        button: true,
+        label: '$label: ${subtitle.replaceAll('\n', ' ')}',
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(17 * scale),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(17 * scale),
+            child: Container(
+              height: 98 * scale,
+              padding: EdgeInsets.symmetric(
+                horizontal: 3 * scale,
+                vertical: 5 * scale,
+              ),
+              decoration: BoxDecoration(
+                // tint is intentionally translucent: the Admin-managed photo
+                // stays visible through each of the three audience cards.
+                color: tint,
+                borderRadius: BorderRadius.circular(17 * scale),
+                border: Border.all(color: Colors.white.withOpacity(.67)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x18052216),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: iconColor, size: 24 * scale),
+                  SizedBox(height: 5 * scale),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _forest,
+                      fontSize: 13.6 * scale,
+                      height: 1.05,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 3 * scale),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: const Color(0xFF3E5648),
+                        fontSize: 10.3 * scale,
+                        height: 1.1,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _welcomeFooterLink({
+    required IconData icon,
+    required String label,
+    required Widget destination,
+    required double scale,
+  }) {
+    return Expanded(
+      child: Semantics(
+        button: true,
+        label: label,
+        child: InkWell(
+          onTap: () => _openUtility(destination),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 7 * scale, horizontal: 1),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: _forest, size: 21 * scale),
+                SizedBox(height: 4 * scale),
+                Text(
+                  label,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _forest,
+                    fontSize: 10.9 * scale,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _welcomeChooseWorkspace() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFFFFEF9),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC8D5CB),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 19),
+              const Text(
+                'Choose your workspace',
+                style: TextStyle(
+                  color: _forest,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'One HPJ account connects all your available workspaces.',
+                style: TextStyle(color: Color(0xFF68746C), fontSize: 12),
+              ),
+              const SizedBox(height: 18),
+              _welcomeWorkspaceChoice(
+                sheetContext: sheetContext,
+                icon: Icons.shopping_cart_outlined,
+                title: 'Customer',
+                subtitle: 'Shop fresh Jamaican produce',
+                audience: 'customer',
+              ),
+              _welcomeWorkspaceChoice(
+                sheetContext: sheetContext,
+                icon: Icons.eco_outlined,
+                title: 'Farmer',
+                subtitle: 'Supply HPJ or open your Farmer workspace',
+                audience: 'farmer',
+              ),
+              _welcomeWorkspaceChoice(
+                sheetContext: sheetContext,
+                icon: Icons.business_outlined,
+                title: 'Business',
+                subtitle: 'Apply for wholesale or open your Business workspace',
+                audience: 'business',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _welcomeWorkspaceChoice({
+    required BuildContext sheetContext,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String audience,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Material(
+        color: const Color(0xFFF4F8F0),
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(15),
+          onTap: () {
+            Navigator.of(sheetContext).pop();
+            if (mounted) unawaited(_welcomeOpenRole(audience));
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(13),
+            child: Row(
+              children: [
+                Icon(icon, color: _forest, size: 25),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: const TextStyle(
+                              color: _forest,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900)),
+                      Text(subtitle,
+                          style: const TextStyle(
+                              color: Color(0xFF637368), fontSize: 11)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: _forest),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Welcome MVP: a quiet, photo-first layout. Only this mobile landing widget
+  // changes; the desktop route and every navigation callback are preserved.
+  Widget _mvpMobileWelcome(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF06281C),
+      backgroundColor: const Color(0xFFDAE6D7),
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Always use the photograph selected in Admin -> Welcome Screen
+          // Background (and the established Home Hero fallback).
+          Positioned.fill(child: _landingBackground()),
           Positioned.fill(
-            child: _landingBackground(),
-          ),
-
-          // Preserve the photograph at the top and gradually darken only the
-          // lower half so buttons and footer stay readable on any Admin image.
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [
-                    0.00,
-                    0.22,
-                    0.43,
-                    0.62,
-                    0.78,
-                    1.00,
-                  ],
-                  colors: [
-                    Colors.black.withOpacity(0.03),
-                    Colors.black.withOpacity(0.05),
-                    const Color(0xFF06281C).withOpacity(0.16),
-                    const Color(0xFF06281C).withOpacity(0.44),
-                    const Color(0xFF041D14).withOpacity(0.72),
-                    const Color(0xFF03160F).withOpacity(0.93),
-                  ],
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0, .35, .68, 1],
+                    colors: [
+                      Colors.white.withOpacity(.74),
+                      Colors.white.withOpacity(.43),
+                      Colors.white.withOpacity(.12),
+                      const Color(0xFF153C2B).withOpacity(.24),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final availableHeight = constraints.maxHeight - bottomInset;
-
+                final scale =
+                    (constraints.maxHeight / 720).clamp(.80, 1.0).toDouble();
+                final width = constraints.maxWidth;
+                final side = width < 360 ? 15.0 : 20.0;
+                final inset = 10.0 * scale;
                 return SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    horizontalPadding,
-                    compact ? 18 : 24,
-                    horizontalPadding,
-                    10 + bottomInset,
-                  ),
+                  padding: EdgeInsets.fromLTRB(side, inset, side, inset),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: availableHeight - 24,
+                      minHeight: constraints.maxHeight > 2 * inset
+                          ? constraints.maxHeight - 2 * inset
+                          : 0,
                     ),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: contentMaxWidth,
-                        ),
+                        constraints: const BoxConstraints(maxWidth: 450),
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            SizedBox(
-                              height: veryCompact
-                                  ? 12
-                                  : compact
-                                      ? 24
-                                      : 34,
-                            ),
-                            _logoMedallion(
-                              compact: compact,
-                            ),
-                            SizedBox(
-                              height: compact ? 14 : 18,
-                            ),
-                            Text(
-                              'The Harvest Place Ja',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: compact ? 26 : 30,
-                                height: 1.02,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.9,
-                                shadows: const [
-                                  Shadow(
-                                    color: Color(0x66000000),
-                                    blurRadius: 8,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text.rich(
-                              const TextSpan(
-                                children: [
-                                  TextSpan(text: 'Fresh'),
-                                  TextSpan(
-                                    text: '  •  ',
-                                    style: TextStyle(
-                                      color: _gold,
-                                      fontWeight: FontWeight.w900,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 75 * scale,
+                                  height: 75 * scale,
+                                  padding: EdgeInsets.all(7 * scale),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withOpacity(.78),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(.9),
                                     ),
                                   ),
-                                  TextSpan(text: 'Local'),
-                                  TextSpan(
-                                    text: '  •  ',
-                                    style: TextStyle(
-                                      color: _gold,
-                                      fontWeight: FontWeight.w900,
+                                  child: Image.asset(
+                                    'lib/assets/images/logo.png',
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.eco_outlined,
+                                      color: _forest,
                                     ),
                                   ),
-                                  TextSpan(text: 'Jamaican'),
-                                ],
-                              ),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.95),
-                                fontSize: compact ? 13.5 : 14.5,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.05,
-                                shadows: const [
-                                  Shadow(
-                                    color: Color(0x55000000),
-                                    blurRadius: 5,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(
-                              height: veryCompact
-                                  ? 32
-                                  : compact
-                                      ? 46
-                                      : 70,
-                            ),
-                            Text(
-                              'Fresh Jamaican agriculture.\nOne connected marketplace.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: compact ? 24 : 28,
-                                height: 1.10,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.85,
-                                shadows: const [
-                                  Shadow(
-                                    color: Color(0x77000000),
-                                    blurRadius: 10,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(
-                              height: compact ? 12 : 15,
-                            ),
-                            Text(
-                              'Buy fresh produce, sell your harvest, or\nmanage wholesale purchasing.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.94),
-                                fontSize: compact ? 13.5 : 14.8,
-                                height: 1.35,
-                                fontWeight: FontWeight.w500,
-                                shadows: const [
-                                  Shadow(
-                                    color: Color(0x77000000),
-                                    blurRadius: 8,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(
-                              height: veryCompact
-                                  ? 28
-                                  : compact
-                                      ? 40
-                                      : 62,
-                            ),
-                            _workspaceButton(
-                              compact: compact,
-                            ),
-                            const SizedBox(height: 12),
-                            _createAccountButton(
-                              compact: compact,
-                            ),
-                            const SizedBox(height: 8),
-                            _signInLink(),
-                            SizedBox(
-                              height: compact ? 14 : 22,
-                            ),
-                            Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.fromLTRB(
-                                compact ? 8 : 12,
-                                compact ? 4 : 7,
-                                compact ? 8 : 12,
-                                compact ? 7 : 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color:
-                                    const Color(0xFF06281C).withOpacity(0.48),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.08),
                                 ),
+                                const Spacer(),
+                                Padding(
+                                  padding: EdgeInsets.only(top: 12 * scale),
+                                  child: Text(
+                                    'FRESH  •  LOCAL  •  JAMAICAN',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: _forest,
+                                      fontSize: (width < 350 ? 7.7 : 9) * scale,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: width < 350 ? .6 : 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 15 * scale),
+                            Text(
+                              'Good things\ngrow together.',
+                              textAlign: TextAlign.left,
+                              style: TextStyle(
+                                color: _forest,
+                                fontSize: (width < 350 ? 30 : 34) * scale,
+                                height: 1.04,
+                                letterSpacing: -1.15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 8 * scale),
+                            Text(
+                              'Fresh produce. Stronger farmers.\nA healthier Jamaica.',
+                              style: TextStyle(
+                                color: const Color(0xFF203F32),
+                                fontSize: 13.4 * scale,
+                                height: 1.3,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 18 * scale),
+                            // ONE quiet glass surface contains all entry actions.
+                            _welcomeGlassPanel(
+                              blur: 15,
+                              radius: 23 * scale,
+                              tint: const Color(0xFFF7F7EE).withOpacity(.67),
+                              borderColor: Colors.white.withOpacity(.91),
+                              padding: EdgeInsets.fromLTRB(
+                                12 * scale,
+                                12 * scale,
+                                12 * scale,
+                                8 * scale,
                               ),
                               child: Column(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  _utilityRow(),
-                                  Container(
-                                    height: 1,
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
+                                  SizedBox(
+                                    height: 49 * scale,
+                                    width: double.infinity,
+                                    child: FilledButton(
+                                      onPressed: _welcomeChooseWorkspace,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: _forest,
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 12 * scale,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16 * scale,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.grid_view_rounded,
+                                              size: 19 * scale),
+                                          Expanded(
+                                            child: Text(
+                                              'Choose Your Workspace',
+                                              maxLines: 1,
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 14.1 * scale,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                          ),
+                                          Icon(Icons.chevron_right_rounded,
+                                              size: 22 * scale),
+                                        ],
+                                      ),
                                     ),
-                                    color: Colors.white.withOpacity(0.15),
                                   ),
-                                  _legalRow(),
+                                  SizedBox(height: 8 * scale),
+                                  SizedBox(
+                                    height: 45 * scale,
+                                    width: double.infinity,
+                                    child: OutlinedButton(
+                                      onPressed: widget.onCreateAccount,
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: _forest,
+                                        backgroundColor:
+                                            Colors.white.withOpacity(.60),
+                                        side: BorderSide(
+                                          color: _forest.withOpacity(.72),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16 * scale,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Create an Account',
+                                        style: TextStyle(
+                                          fontSize: 14.2 * scale,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: widget.onEnterWorkspaces,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: _forest,
+                                      minimumSize: Size(0, 37 * scale),
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 4 * scale,
+                                      ),
+                                    ),
+                                    child: Text.rich(
+                                      const TextSpan(children: [
+                                        TextSpan(text: 'Already registered? '),
+                                        TextSpan(
+                                          text: 'Sign In',
+                                          style: TextStyle(
+                                            decoration:
+                                                TextDecoration.underline,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ]),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: _forest,
+                                        fontSize: 12.4 * scale,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                            if (kIsWeb) ...[
-                              const SizedBox(height: 14),
-                              _HpjJamaicanDinnerCampaign(
-                                onTap: () =>
-                                    _openWebsiteJamaicanDinner(context),
-                                compact: true,
+                            SizedBox(height: 13 * scale),
+                            Row(
+                              children: [
+                                _welcomeRoleCard(
+                                  label: 'Customer',
+                                  subtitle: 'Shop fresh\nproduce',
+                                  icon: Icons.shopping_basket_outlined,
+                                  tint:
+                                      const Color(0xFFF0F9EC).withOpacity(.61),
+                                  scale: scale,
+                                  onTap: () => unawaited(
+                                    _welcomeOpenRole('customer'),
+                                  ),
+                                ),
+                                SizedBox(width: 8 * scale),
+                                _welcomeRoleCard(
+                                  label: 'Farmer',
+                                  subtitle: 'Supply to HPJ',
+                                  icon: Icons.eco_outlined,
+                                  tint:
+                                      const Color(0xFFFFF7E8).withOpacity(.63),
+                                  scale: scale,
+                                  onTap: () => unawaited(
+                                    _welcomeOpenRole('farmer'),
+                                  ),
+                                ),
+                                SizedBox(width: 8 * scale),
+                                _welcomeRoleCard(
+                                  label: 'Business',
+                                  subtitle: 'Buy wholesale',
+                                  icon: Icons.storefront_outlined,
+                                  tint:
+                                      const Color(0xFFF0F8F1).withOpacity(.63),
+                                  scale: scale,
+                                  onTap: () => unawaited(
+                                    _welcomeOpenRole('business'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 13 * scale),
+                            // Footer remains completely functional, but it no
+                            // longer competes with the photo and primary CTA.
+                            _welcomeGlassPanel(
+                              tint: const Color(0xFFFFFCF1).withOpacity(.64),
+                              radius: 21 * scale,
+                              blur: 15,
+                              borderColor: Colors.white.withOpacity(.9),
+                              padding: EdgeInsets.fromLTRB(
+                                7 * scale,
+                                8 * scale,
+                                7 * scale,
+                                5 * scale,
                               ),
-                            ],
-                            SizedBox(
-                              height: compact ? 2 : 6,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(children: [
+                                    _welcomeFooterLink(
+                                      icon: Icons.info_outline_rounded,
+                                      label: 'About',
+                                      destination: const AboutHpjScreen(),
+                                      scale: scale,
+                                    ),
+                                    _welcomeFooterLink(
+                                      icon: Icons.shield_outlined,
+                                      label: 'Trust',
+                                      destination: const TrustCenterScreen(),
+                                      scale: scale,
+                                    ),
+                                    _welcomeFooterLink(
+                                      icon: Icons.support_agent_rounded,
+                                      label: 'Support',
+                                      destination: const SupportScreen(
+                                        initialSubject: 'Account help',
+                                      ),
+                                      scale: scale,
+                                    ),
+                                  ]),
+                                  Row(children: [
+                                    _welcomeFooterLink(
+                                      icon: Icons.description_outlined,
+                                      label: 'Terms',
+                                      destination: const TermsOfServiceScreen(),
+                                      scale: scale,
+                                    ),
+                                    _welcomeFooterLink(
+                                      icon: Icons.lock_outline_rounded,
+                                      label: 'Privacy',
+                                      destination: const PrivacyPolicyScreen(),
+                                      scale: scale,
+                                    ),
+                                    _welcomeFooterLink(
+                                      icon: Icons.currency_exchange_rounded,
+                                      label: 'Refunds',
+                                      destination: const RefundPolicyScreen(),
+                                      scale: scale,
+                                    ),
+                                    _welcomeFooterLink(
+                                      icon: Icons.help_outline_rounded,
+                                      label: 'FAQ',
+                                      destination: const HpjFaqScreen(),
+                                      scale: scale,
+                                    ),
+                                  ]),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: 8 * scale),
+                            Center(
+                              child: Text(
+                                '🇯🇲  GROWING A BRIGHTER JAMAICA',
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Color(0x880A281B),
+                                      blurRadius: 6,
+                                    ),
+                                  ],
+                                  fontSize: 9 * scale,
+                                  letterSpacing: 1.1,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -5903,6 +6369,36 @@ class _PublicLandingScreenState extends State<PublicLandingScreen> {
         ],
       ),
     );
+  }
+
+  Widget _welcomeHeroBenefit(IconData icon, String text, double scale) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, color: const Color(0xFFE7C978), size: 13 * scale),
+        SizedBox(width: 3 * scale),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withOpacity(.92),
+              fontSize: 8.4 * scale,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final desktopWeb = kIsWeb && media.size.width >= 1100;
+    if (desktopWeb) return _desktopPublicWebsite(context);
+    return _mvpMobileWelcome(context);
   }
 }
 
@@ -9738,6 +10234,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final businessNameController = TextEditingController();
   final businessPhoneController = TextEditingController();
   final businessParishController = TextEditingController();
+  // Create-account MVP only: optional profile fields (no phone OTP).
+  final signupPhoneController = TextEditingController();
+  final signupParishController = TextEditingController();
+  Future<String?>? _signupWelcomePhoto;
   final TurnstileController _captchaController = TurnstileController();
 
   bool loading = false;
@@ -9746,6 +10246,7 @@ class _LoginScreenState extends State<LoginScreen> {
   StreamSubscription<AuthState>? _googleAuthSubscription;
   String? _captchaToken;
   bool hidePassword = true;
+  bool _signupTermsAccepted = false;
   bool isRegister = false;
   String selectedRole = 'customer';
   String selectedCustomerAccountType = 'retail';
@@ -9826,6 +10327,8 @@ class _LoginScreenState extends State<LoginScreen> {
     businessNameController.dispose();
     businessPhoneController.dispose();
     businessParishController.dispose();
+    signupPhoneController.dispose();
+    signupParishController.dispose();
     _captchaController.dispose();
     super.dispose();
   }
@@ -10097,6 +10600,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final businessName = businessNameController.text.trim();
     final businessPhone = businessPhoneController.text.trim();
     final rawBusinessParish = businessParishController.text.trim();
+    final optionalPhone = signupPhoneController.text.trim();
+    final optionalParish = signupParishController.text.trim();
     String businessParish = rawBusinessParish;
 
     if (isBusinessRegistration && rawBusinessParish.isNotEmpty) {
@@ -10136,6 +10641,16 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (isRegister && !_signupTermsAccepted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Please accept the Terms and Privacy Policy to continue.'),
+        ),
+      );
+      return;
+    }
+
     if (AppConfig.turnstileConfigured &&
         (_captchaToken == null || _captchaToken!.trim().isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -10167,6 +10682,10 @@ class _LoginScreenState extends State<LoginScreen> {
             if (isBusinessRegistration) 'business_type': selectedBusinessType,
             if (isBusinessRegistration) 'business_phone': businessPhone,
             if (isBusinessRegistration) 'business_parish': businessParish,
+            if (!isBusinessRegistration && optionalPhone.isNotEmpty)
+              'phone': optionalPhone,
+            if (!isBusinessRegistration && optionalParish.isNotEmpty)
+              'parish': optionalParish,
           },
         );
 
@@ -10411,8 +10930,1284 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
+  // -------------------------------------------------------------------------
+  // CREATE ACCOUNT MVP. Only registration uses this screen. Existing sign-in,
+  // Google OAuth, Supabase registration, approvals and workspace gates stay as-is.
+  // -------------------------------------------------------------------------
+  void _signupOpenPolicy(Widget page) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => page),
+    );
+  }
+
+  void _signupGoToSignIn() {
+    if (loading || googleLoading) return;
+    setState(() {
+      isRegister = false;
+      hidePassword = true;
+      _captchaToken = null;
+    });
+    if (AppConfig.turnstileConfigured) {
+      _captchaController.refreshToken().catchError((error) {
+        farmDebugLog('Turnstile refresh failed: $error');
+      });
+    }
+  }
+
+  Widget _signupRoleCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color tint,
+    required bool selected,
+    required VoidCallback? onTap,
+  }) {
+    const forest = Color(0xFF0A5037);
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '$title account',
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(17),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            height: 121,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+            decoration: BoxDecoration(
+              color: tint,
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(
+                color: selected ? forest : const Color(0xFFE6E4DC),
+                width: selected ? 1.7 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: forest.withOpacity(.09),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      )
+                    ]
+                  : null,
+            ),
+            child: Stack(
+              children: [
+                if (selected)
+                  const Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Icon(Icons.check_circle_rounded,
+                        color: forest, size: 17),
+                  ),
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, color: forest, size: 29),
+                      const SizedBox(height: 6),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF153D30),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12.8,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF59645F),
+                          fontSize: 10,
+                          height: 1.16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _signupFieldDecoration(String hint, IconData icon,
+      {Widget? suffix}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFF69766F), fontSize: 14),
+      prefixIcon: Icon(icon, color: const Color(0xFF315A48), size: 21),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 15),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(15),
+        borderSide: const BorderSide(color: Color(0xFFD8E4D9)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(15),
+        borderSide: const BorderSide(color: Color(0xFF0B5A3E), width: 1.6),
+      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+    );
+  }
+
+  Widget _signupMvpBackground() {
+    _signupWelcomePhoto ??= fetchPublicWelcomeBackgroundUrl();
+    return FutureBuilder<String?>(
+      future: _signupWelcomePhoto,
+      builder: (context, snapshot) {
+        final imageUrl = cleanHostedImageUrl(snapshot.data);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFDDEADB), Color(0xFFFFFCF7)],
+                ),
+              ),
+            ),
+            if (imageUrl != null && imageUrl.isNotEmpty)
+              Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.0, .40, .78, 1.0],
+                  colors: [
+                    Color(0x4DFFFFFF),
+                    Color(0xB8FFFCF7),
+                    Color(0xF5FFFCF7),
+                    Color(0xFFFFFCF7),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _signupMvp(BuildContext context) {
+    const forest = Color(0xFF0A5037);
+    final farmer = selectedRole == 'farmer';
+    final business = isBusinessRegistration;
+    final roleLocked = widget.lockRegistrationAudience;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 390;
+    final horizontal = width >= 740 ? 32.0 : 15.0;
+
+    Widget spaced(Widget child) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: child,
+        );
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFFCF7),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            physics: const BouncingScrollPhysics(),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 620),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 26),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        height: compact ? 229 : 250,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(child: _signupMvpBackground()),
+                            Align(
+                              alignment: Alignment.topLeft,
+                              child: IconButton(
+                                tooltip: 'Back',
+                                onPressed: () {
+                                  if (Navigator.of(context).canPop()) {
+                                    Navigator.of(context).pop();
+                                  } else {
+                                    _signupGoToSignIn();
+                                  }
+                                },
+                                icon: const Icon(Icons.arrow_back_rounded,
+                                    color: forest),
+                              ),
+                            ),
+                            Align(
+                              alignment: Alignment.bottomCenter,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(10, 12, 10, 10),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      width: compact ? 78 : 88,
+                                      height: compact ? 78 : 88,
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: forest.withOpacity(.10),
+                                            blurRadius: 15,
+                                            offset: const Offset(0, 5),
+                                          )
+                                        ],
+                                      ),
+                                      child: Image.asset(
+                                        'lib/assets/images/logo.png',
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(Icons.eco_rounded,
+                                                color: forest, size: 40),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Create an Account',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: forest,
+                                        fontSize: compact ? 25 : 29,
+                                        height: 1.08,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: -.7,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 7),
+                                    const Text(
+                                      'Join HPJ and be part of a fresher,\nstronger Jamaica.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Color(0xFF435A52),
+                                        fontSize: 13,
+                                        height: 1.35,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: EdgeInsets.all(compact ? 13 : 17),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(26),
+                          border: Border.all(color: const Color(0xFFE5E7DE)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: forest.withOpacity(.055),
+                              blurRadius: 23,
+                              offset: const Offset(0, 9),
+                            )
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text('Account type',
+                                style: TextStyle(
+                                  color: forest,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                )),
+                            const SizedBox(height: 12),
+                            if (roleLocked)
+                              Container(
+                                padding: const EdgeInsets.all(13),
+                                decoration: BoxDecoration(
+                                  color: farmer
+                                      ? const Color(0xFFFFF8EB)
+                                      : const Color(0xFFEAF7F0),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                        farmer
+                                            ? Icons.spa_outlined
+                                            : Icons.business_outlined,
+                                        color: forest),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                        farmer
+                                            ? 'Farmer account'
+                                            : 'Business account',
+                                        style: const TextStyle(
+                                            color: forest,
+                                            fontWeight: FontWeight.w800)),
+                                    const Spacer(),
+                                    const Icon(Icons.check_circle_rounded,
+                                        color: forest),
+                                  ],
+                                ),
+                              )
+                            else
+                              Row(
+                                children: [
+                                  _signupRoleCard(
+                                    title: 'Customer',
+                                    subtitle: 'Shop fresh\nproduce',
+                                    icon: Icons.shopping_basket_outlined,
+                                    tint: const Color(0xFFF0F9F0),
+                                    selected: !farmer && !business,
+                                    onTap: loading
+                                        ? null
+                                        : _usePersonalRegistration,
+                                  ),
+                                  const SizedBox(width: 7),
+                                  _signupRoleCard(
+                                    title: 'Farmer',
+                                    subtitle: 'Supply to HPJ',
+                                    icon: Icons.spa_outlined,
+                                    tint: const Color(0xFFFFF8EC),
+                                    selected: farmer,
+                                    onTap:
+                                        loading ? null : _useFarmerRegistration,
+                                  ),
+                                  const SizedBox(width: 7),
+                                  _signupRoleCard(
+                                    title: 'Business',
+                                    subtitle: 'Buy wholesale',
+                                    icon: Icons.business_outlined,
+                                    tint: const Color(0xFFEDF9F5),
+                                    selected: business,
+                                    onTap: loading
+                                        ? null
+                                        : _useBusinessRegistration,
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(height: 18),
+                            spaced(TextField(
+                              controller: fullNameController,
+                              textCapitalization: TextCapitalization.words,
+                              autofillHints: const [AutofillHints.name],
+                              textInputAction: TextInputAction.next,
+                              decoration: _signupFieldDecoration(
+                                  business ? 'Contact person *' : 'Full name *',
+                                  Icons.person_outline_rounded),
+                            )),
+                            if (business) ...[
+                              spaced(TextField(
+                                controller: businessNameController,
+                                textCapitalization: TextCapitalization.words,
+                                textInputAction: TextInputAction.next,
+                                decoration: _signupFieldDecoration(
+                                    'Business name *',
+                                    Icons.storefront_outlined),
+                              )),
+                              spaced(DropdownButtonFormField<String>(
+                                value: selectedBusinessType,
+                                isExpanded: true,
+                                decoration: _signupFieldDecoration(
+                                    'Business type', Icons.category_outlined),
+                                items: _businessTypes
+                                    .map((type) => DropdownMenuItem<String>(
+                                          value: type,
+                                          child: Text(type,
+                                              overflow: TextOverflow.ellipsis),
+                                        ))
+                                    .toList(),
+                                onChanged: loading
+                                    ? null
+                                    : (type) {
+                                        if (type != null) {
+                                          setState(() =>
+                                              selectedBusinessType = type);
+                                        }
+                                      },
+                              )),
+                            ],
+                            spaced(TextField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [AutofillHints.email],
+                              textInputAction: TextInputAction.next,
+                              decoration: _signupFieldDecoration(
+                                  'Email address *',
+                                  Icons.mail_outline_rounded),
+                            )),
+                            spaced(TextField(
+                              controller: passwordController,
+                              obscureText: hidePassword,
+                              autofillHints: const [AutofillHints.newPassword],
+                              textInputAction: TextInputAction.next,
+                              decoration: _signupFieldDecoration(
+                                'Password *',
+                                Icons.lock_outline_rounded,
+                                suffix: IconButton(
+                                  tooltip: hidePassword
+                                      ? 'Show password'
+                                      : 'Hide password',
+                                  icon: Icon(hidePassword
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined),
+                                  onPressed: () => setState(
+                                      () => hidePassword = !hidePassword),
+                                ),
+                              ),
+                            )),
+                            if (business) ...[
+                              spaced(TextField(
+                                controller: businessPhoneController,
+                                keyboardType: TextInputType.phone,
+                                autofillHints: const [
+                                  AutofillHints.telephoneNumber
+                                ],
+                                textInputAction: TextInputAction.next,
+                                decoration: _signupFieldDecoration(
+                                    'Business phone *', Icons.phone_outlined),
+                              )),
+                              spaced(JamaicaParishDropdown(
+                                controller: businessParishController,
+                                label: 'Business parish *',
+                                enabled: !loading,
+                                prefixIcon: Icons.place_outlined,
+                              )),
+                            ] else ...[
+                              spaced(TextField(
+                                controller: signupPhoneController,
+                                keyboardType: TextInputType.phone,
+                                autofillHints: const [
+                                  AutofillHints.telephoneNumber
+                                ],
+                                textInputAction: TextInputAction.next,
+                                decoration: _signupFieldDecoration(
+                                    'Phone number (optional)',
+                                    Icons.phone_outlined),
+                              )),
+                              spaced(JamaicaParishDropdown(
+                                controller: signupParishController,
+                                label: 'Parish (optional)',
+                                enabled: !loading,
+                                prefixIcon: Icons.place_outlined,
+                              )),
+                            ],
+                            if (farmer || business) ...[
+                              const SizedBox(height: 2),
+                              _PremiumAuthInfoPanel(
+                                icon: farmer
+                                    ? Icons.agriculture_outlined
+                                    : Icons.verified_outlined,
+                                text: farmer
+                                    ? 'After creating your account, continue to the farmer application. Approval is required for Farmer tools.'
+                                    : 'Business access and wholesale pricing are activated after approval.',
+                                gold: business,
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Checkbox(
+                                  value: _signupTermsAccepted,
+                                  activeColor: forest,
+                                  onChanged: loading
+                                      ? null
+                                      : (value) => setState(() =>
+                                          _signupTermsAccepted =
+                                              value ?? false),
+                                ),
+                                Expanded(
+                                  child: Wrap(
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: 2,
+                                    runSpacing: 0,
+                                    children: [
+                                      const Text('I agree to the',
+                                          style: TextStyle(fontSize: 12.4)),
+                                      TextButton(
+                                        onPressed: () => _signupOpenPolicy(
+                                            const TermsOfServiceScreen()),
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 3),
+                                          minimumSize: const Size(0, 32),
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: const Text('Terms',
+                                            style: TextStyle(
+                                                fontSize: 12.4,
+                                                decoration:
+                                                    TextDecoration.underline)),
+                                      ),
+                                      const Text('and',
+                                          style: TextStyle(fontSize: 12.4)),
+                                      TextButton(
+                                        onPressed: () => _signupOpenPolicy(
+                                            const PrivacyPolicyScreen()),
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 3),
+                                          minimumSize: const Size(0, 32),
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: const Text('Privacy Policy',
+                                            style: TextStyle(
+                                                fontSize: 12.4,
+                                                decoration:
+                                                    TextDecoration.underline)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (AppConfig.turnstileConfigured) ...[
+                              const SizedBox(height: 9),
+                              _HpjTurnstilePanel(
+                                controller: _captchaController,
+                                action: 'hpj_auth',
+                                onTokenChanged: (token) {
+                                  if (mounted) {
+                                    setState(() => _captchaToken = token);
+                                  }
+                                },
+                              ),
+                            ],
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              height: 54,
+                              child: FilledButton(
+                                onPressed: loading ||
+                                        googleLoading ||
+                                        !_signupTermsAccepted ||
+                                        (AppConfig.turnstileConfigured &&
+                                            (_captchaToken == null ||
+                                                _captchaToken!.isEmpty))
+                                    ? null
+                                    : submit,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: forest,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(17)),
+                                ),
+                                child: loading
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Text(
+                                        business
+                                            ? 'Create Business Account  →'
+                                            : farmer
+                                                ? 'Create Farmer Account  →'
+                                                : 'Create Account  →',
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                        )),
+                              ),
+                            ),
+                            const SizedBox(height: 15),
+                            const _PremiumAuthDivider(label: 'OR'),
+                            const SizedBox(height: 13),
+                            SizedBox(
+                              height: 51,
+                              child: OutlinedButton(
+                                onPressed: loading ||
+                                        googleLoading ||
+                                        !_signupTermsAccepted
+                                    ? null
+                                    : _continueWithGoogle,
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: forest,
+                                  side: const BorderSide(
+                                      color: Color(0xFFC3D0C8)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(17)),
+                                ),
+                                child: googleLoading
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : const Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          _GoogleLetterMark(),
+                                          SizedBox(width: 10),
+                                          Flexible(
+                                              child: Text(
+                                                  'Continue with Google',
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700))),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                            if (farmer || business) ...[
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Google signs you in with one HPJ account. Farmer and Business approval is requested separately.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: Color(0xFF6B7770),
+                                    fontSize: 10.2,
+                                    height: 1.3),
+                              ),
+                            ],
+                            _signupTutorialAction(),
+                            const SizedBox(height: 10),
+                            Center(
+                              child: TextButton(
+                                onPressed: _signupGoToSignIn,
+                                child: const Text(
+                                    'Already have an account? Sign In',
+                                    style: TextStyle(
+                                      color: forest,
+                                      fontWeight: FontWeight.w800,
+                                    )),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Uses the already Admin-managed Welcome Screen Background. The image can
+  // be replaced in Admin without changing code. No new table or policy needed.
+  Widget _signInGlassBackground() {
+    _signupWelcomePhoto ??= fetchPublicWelcomeBackgroundUrl();
+    return FutureBuilder<String?>(
+      future: _signupWelcomePhoto,
+      builder: (context, snapshot) {
+        final imageUrl = cleanHostedImageUrl(snapshot.data);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFCADFCD), Color(0xFF2E6443)],
+                ),
+              ),
+            ),
+            if (imageUrl != null && imageUrl.isNotEmpty)
+              Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                alignment: const Alignment(0.08, 0),
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0, .35, .75, 1],
+                  colors: [
+                    Colors.white.withOpacity(.21),
+                    const Color(0xFF193F28).withOpacity(.08),
+                    const Color(0xFF0A3721).withOpacity(.24),
+                    const Color(0xFF081F17).withOpacity(.48),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _signInGlassPanel({
+    required Widget child,
+    required Color tint,
+    double radius = 24,
+    EdgeInsetsGeometry? padding,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          width: double.infinity,
+          padding: padding,
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: Colors.white.withOpacity(.77),
+              width: 1.15,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _signInGlassInput(String hint, IconData icon,
+      {Widget? suffix}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFF637068), fontSize: 14),
+      prefixIcon: Icon(icon, color: const Color(0xFF214B39), size: 20),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white.withOpacity(.61),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.white.withOpacity(.94)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFF0A5037), width: 1.7),
+      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+    );
+  }
+
+  void _signInGoToCreateAccount() {
+    if (loading || googleLoading) return;
+    setState(() {
+      isRegister = true;
+      hidePassword = true;
+      _captchaToken = null;
+      pendingConfirmationEmail = null;
+      final audience = widget.initialRegistrationAudience.trim().toLowerCase();
+      if (widget.lockRegistrationAudience && audience == 'farmer') {
+        selectedRole = 'farmer';
+        selectedCustomerAccountType = 'retail';
+      } else if (widget.lockRegistrationAudience && audience == 'business') {
+        selectedRole = 'customer';
+        selectedCustomerAccountType = 'business';
+      } else {
+        selectedRole = 'customer';
+        selectedCustomerAccountType = 'retail';
+      }
+      _signupTutorialFuture = fetchPublishedHelpTutorial(
+        placement: 'signup',
+        audience: 'all',
+      );
+    });
+    if (AppConfig.turnstileConfigured) {
+      _captchaController.refreshToken().catchError((error) {
+        farmDebugLog('Turnstile refresh failed: $error');
+      });
+    }
+  }
+
+  void _signInGoBack() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else if (kIsWeb) {
+      openHpjWebsiteHome(context);
+    } else {
+      navigator.pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(builder: (_) => const AuthGate()),
+        (_) => false,
+      );
+    }
+  }
+
+  Widget _mvpGlassMobileSignIn(BuildContext context) {
+    const forest = Color(0xFF083D2A);
+    return Scaffold(
+      backgroundColor: forest,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(child: _signInGlassBackground()),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final scale =
+                    (constraints.maxHeight / 720).clamp(.82, 1.0).toDouble();
+                final side = constraints.maxWidth < 360 ? 15.0 : 20.0;
+                return SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  physics: const BouncingScrollPhysics(),
+                  padding:
+                      EdgeInsets.fromLTRB(side, 9 * scale, side, 22 * scale),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 450),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Material(
+                                color: Colors.white.withOpacity(.77),
+                                shape: const CircleBorder(),
+                                child: IconButton(
+                                  tooltip: 'Back to Welcome',
+                                  onPressed: _signInGoBack,
+                                  icon: const Icon(Icons.arrow_back_rounded,
+                                      color: forest),
+                                ),
+                              ),
+                              SizedBox(width: 10 * scale),
+                              Text(
+                                'Sign in',
+                                style: TextStyle(
+                                  color: forest,
+                                  fontSize: 21 * scale,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 16 * scale),
+                          _signInGlassPanel(
+                            tint: const Color(0xFF093D2B).withOpacity(.68),
+                            radius: 24 * scale,
+                            padding: EdgeInsets.fromLTRB(
+                              17 * scale,
+                              17 * scale,
+                              17 * scale,
+                              14 * scale,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '—  THE HARVEST PLACE JA',
+                                  style: TextStyle(
+                                    color: const Color(0xFFF3D68C),
+                                    fontSize: 10.3 * scale,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: .9,
+                                  ),
+                                ),
+                                SizedBox(height: 8 * scale),
+                                Text(
+                                  'Welcome back to HPJ.',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24 * scale,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.08,
+                                  ),
+                                ),
+                                SizedBox(height: 6 * scale),
+                                Text(
+                                  'Fresh produce, farmer supply and business '
+                                  'purchasing in one trusted marketplace.',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(.94),
+                                    fontSize: 12.2 * scale,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                SizedBox(height: 12 * scale),
+                                Container(
+                                  height: 1,
+                                  color: Colors.white.withOpacity(.27),
+                                ),
+                                SizedBox(height: 10 * scale),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.eco_outlined,
+                                              size: 15 * scale,
+                                              color: const Color(0xFFF2D487)),
+                                          SizedBox(width: 3 * scale),
+                                          Flexible(
+                                            child: Text(
+                                              'Fresh produce',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 9 * scale,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.groups_outlined,
+                                              size: 15 * scale,
+                                              color: const Color(0xFFF2D487)),
+                                          SizedBox(width: 3 * scale),
+                                          Flexible(
+                                            child: Text(
+                                              'Local farmers',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 9 * scale,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.storefront_outlined,
+                                              size: 15 * scale,
+                                              color: const Color(0xFFF2D487)),
+                                          SizedBox(width: 3 * scale),
+                                          Flexible(
+                                            child: Text(
+                                              'Wholesale',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 9 * scale,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: 12 * scale),
+                          _signInGlassPanel(
+                            tint: const Color(0xFFF4F3DD).withOpacity(.72),
+                            radius: 23 * scale,
+                            padding: EdgeInsets.fromLTRB(
+                              14 * scale,
+                              15 * scale,
+                              14 * scale,
+                              14 * scale,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  height: 47 * scale,
+                                  child: OutlinedButton(
+                                    onPressed: loading || googleLoading
+                                        ? null
+                                        : _continueWithGoogle,
+                                    style: OutlinedButton.styleFrom(
+                                      backgroundColor:
+                                          Colors.white.withOpacity(.89),
+                                      foregroundColor: forest,
+                                      side: BorderSide(
+                                        color: Colors.white.withOpacity(.98),
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                    child: googleLoading
+                                        ? const Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              SizedBox(
+                                                width: 17,
+                                                height: 17,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              ),
+                                              SizedBox(width: 9),
+                                              Text('Opening Google...'),
+                                            ],
+                                          )
+                                        : Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              const _GoogleLetterMark(),
+                                              const SizedBox(width: 9),
+                                              const Flexible(
+                                                child: Text(
+                                                  'Continue with Google',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (_needsExternalFlutLabGoogleLaunch)
+                                                const Padding(
+                                                  padding:
+                                                      EdgeInsets.only(left: 6),
+                                                  child: Icon(
+                                                    Icons.open_in_new_rounded,
+                                                    size: 14,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                  ),
+                                ),
+                                if (_needsExternalFlutLabGoogleLaunch) ...[
+                                  SizedBox(height: 5 * scale),
+                                  Text(
+                                    'Google opens securely in a browser tab.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: const Color(0xFF4D5A4F),
+                                      fontSize: 10 * scale,
+                                    ),
+                                  ),
+                                ],
+                                SizedBox(height: 13 * scale),
+                                const _PremiumAuthDivider(
+                                    label: 'or continue with email'),
+                                SizedBox(height: 13 * scale),
+                                TextField(
+                                  controller: emailController,
+                                  keyboardType: TextInputType.emailAddress,
+                                  autofillHints: const [AutofillHints.email],
+                                  textInputAction: TextInputAction.next,
+                                  decoration: _signInGlassInput(
+                                    'Email address',
+                                    Icons.mail_outline_rounded,
+                                  ),
+                                ),
+                                SizedBox(height: 10 * scale),
+                                TextField(
+                                  controller: passwordController,
+                                  obscureText: hidePassword,
+                                  autofillHints: const [AutofillHints.password],
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: loading ? null : (_) => submit(),
+                                  decoration: _signInGlassInput(
+                                    'Password',
+                                    Icons.lock_outline_rounded,
+                                    suffix: IconButton(
+                                      tooltip: hidePassword
+                                          ? 'Show password'
+                                          : 'Hide password',
+                                      onPressed: () => setState(
+                                          () => hidePassword = !hidePassword),
+                                      icon: Icon(
+                                        hidePassword
+                                            ? Icons.visibility_outlined
+                                            : Icons.visibility_off_outlined,
+                                        color: forest,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (AppConfig.turnstileConfigured) ...[
+                                  SizedBox(height: 10 * scale),
+                                  _HpjTurnstilePanel(
+                                    controller: _captchaController,
+                                    action: 'hpj_auth',
+                                    onTokenChanged: (token) {
+                                      if (!mounted) return;
+                                      setState(() => _captchaToken = token);
+                                    },
+                                  ),
+                                ],
+                                if (pendingConfirmationEmail != null) ...[
+                                  SizedBox(height: 11 * scale),
+                                  Text(
+                                    'Confirm your email: '
+                                    '${pendingConfirmationEmail!}',
+                                    style: const TextStyle(
+                                      color: forest,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: resendingConfirmation
+                                        ? null
+                                        : _resendConfirmationEmail,
+                                    icon: const Icon(Icons.refresh_rounded,
+                                        size: 17),
+                                    label: Text(resendingConfirmation
+                                        ? 'Sending...'
+                                        : 'Resend confirmation email'),
+                                  ),
+                                ],
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: loading
+                                        ? null
+                                        : () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute<void>(
+                                                builder: (_) =>
+                                                    ForgotPasswordScreen(
+                                                  initialEmail: emailController
+                                                      .text
+                                                      .trim(),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                    child: const Text(
+                                      'Forgot Password?',
+                                      style: TextStyle(
+                                        color: forest,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: 3 * scale),
+                                SizedBox(
+                                  height: 49 * scale,
+                                  child: FilledButton(
+                                    onPressed: loading ||
+                                            (AppConfig.turnstileConfigured &&
+                                                (_captchaToken == null ||
+                                                    _captchaToken!.isEmpty))
+                                        ? null
+                                        : submit,
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: forest,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      loading ? 'Please wait...' : 'Sign in',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: 4 * scale),
+                                TextButton(
+                                  onPressed: loading || googleLoading
+                                      ? null
+                                      : _signInGoToCreateAccount,
+                                  child: const Text.rich(
+                                    TextSpan(children: [
+                                      TextSpan(text: 'New to HPJ? '),
+                                      TextSpan(
+                                        text: 'Create account',
+                                        style: TextStyle(
+                                          decoration: TextDecoration.underline,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ]),
+                                    style: TextStyle(color: forest),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: 10 * scale),
+                          Text(
+                            'FRESH ROOTS  •  BRIGHTER TOMORROWS',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9 * scale,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.6,
+                              shadows: const [
+                                Shadow(
+                                  color: Color(0xA0082417),
+                                  blurRadius: 5,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (isRegister) return _signupMvp(context);
+    if (MediaQuery.sizeOf(context).width < 700) {
+      return _mvpGlassMobileSignIn(context);
+    }
+
     final isFarmerRegistration = isRegister && selectedRole == 'farmer';
     final isPersonalRegistration =
         isRegister && !isBusinessRegistration && !isFarmerRegistration;
@@ -12502,6 +14297,69 @@ String _hpjMobileCompactName(String value) {
   return clean.split(' ').first;
 }
 
+String _hpjMobileAccountAvatarUrl() {
+  final metadata =
+      supabase.auth.currentUser?.userMetadata ?? const <String, dynamic>{};
+
+  for (final key in const <String>[
+    'avatar_url',
+    'picture',
+    'photo_url',
+    'profile_photo_url',
+  ]) {
+    final value = metadata[key]?.toString().trim() ?? '';
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+Widget _hpjMobileAccountAvatar({
+  required String initial,
+  required double radius,
+}) {
+  final imageUrl = _hpjMobileAccountAvatarUrl();
+  final diameter = radius * 2;
+
+  if (imageUrl.isNotEmpty) {
+    return ClipOval(
+      child: Image.network(
+        imageUrl,
+        width: diameter,
+        height: diameter,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => CircleAvatar(
+          radius: radius,
+          backgroundColor: FarmColors.primarySoft,
+          child: Text(
+            initial,
+            style: TextStyle(
+              color: FarmColors.deepGreen,
+              fontSize: radius * .72,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  return CircleAvatar(
+    radius: radius,
+    backgroundColor: FarmColors.primarySoft,
+    child: Text(
+      initial,
+      style: TextStyle(
+        color: FarmColors.deepGreen,
+        fontSize: radius * .72,
+        fontWeight: FontWeight.w900,
+      ),
+    ),
+  );
+}
+
 Future<void> _openHpjMobilePortalRoot(
   BuildContext context, {
   required String portal,
@@ -12509,23 +14367,74 @@ Future<void> _openHpjMobilePortalRoot(
   if (!context.mounted) return;
 
   final normalized = _hpjMobilePortalKey(portal);
+  OwnerWorkspaceAccessSnapshot? access;
+
+  if (normalized != 'staff') {
+    try {
+      access = await fetchOwnerWorkspaceAccessSnapshot();
+    } catch (error) {
+      farmDebugLog('Workspace access check failed before portal open: $error');
+    }
+  }
+
+  if (!context.mounted) return;
+
+  final settings =
+      access?.programSettings ?? MarketplaceProgramSettings.fallback;
+  final ownerBypass = normalizeStaffRole(access?.staffRole ?? '') == 'owner';
   Widget destination;
 
   switch (normalized) {
     case 'farmer':
-      destination = const HpjManagedWelcomeGate(
-        audience: 'farmer',
-        child: FarmerAccessGate(),
-      );
+      final approved = access?.isApprovedFarmer == true;
+      final mode = settings.farmerWorkspaceMode;
+      if (approved && !hpjWorkspaceModeIsLive(mode) && !ownerBypass) {
+        destination = HpjWorkspaceAvailabilityScreen(
+          workspace: 'farmer',
+          mode: mode,
+          message: settings.farmerMaintenanceMessage,
+          returnNote: settings.farmerReturnNote,
+          currentPortal: 'farmer',
+          onRefresh: () => unawaited(
+            _openHpjMobilePortalRoot(context, portal: 'farmer'),
+          ),
+        );
+      } else {
+        destination = HpjManagedWelcomeGate(
+          audience: 'farmer',
+          child: FarmerAccessGate(
+            bypassWorkspaceGate: ownerBypass && !hpjWorkspaceModeIsLive(mode),
+          ),
+        );
+      }
       unawaited(saveHpjNavigationPreference(workspace: 'farmer', tab: 0));
       break;
+
     case 'wholesale':
-      destination = const HpjManagedWelcomeGate(
-        audience: 'business',
-        child: BusinessWholesaleHubScreen(),
-      );
+      final approved = access?.isApprovedWholesale == true;
+      final mode = settings.wholesaleWorkspaceMode;
+      if (approved && !hpjWorkspaceModeIsLive(mode) && !ownerBypass) {
+        destination = HpjWorkspaceAvailabilityScreen(
+          workspace: 'wholesale',
+          mode: mode,
+          message: settings.wholesaleMaintenanceMessage,
+          returnNote: settings.wholesaleReturnNote,
+          currentPortal: 'wholesale',
+          onRefresh: () => unawaited(
+            _openHpjMobilePortalRoot(context, portal: 'wholesale'),
+          ),
+        );
+      } else {
+        destination = HpjManagedWelcomeGate(
+          audience: 'business',
+          child: BusinessWholesaleHubScreen(
+            bypassWorkspaceGate: ownerBypass && !hpjWorkspaceModeIsLive(mode),
+          ),
+        );
+      }
       unawaited(saveHpjNavigationPreference(workspace: 'wholesale', tab: 0));
       break;
+
     case 'staff':
       try {
         await requireAdminAccess();
@@ -12538,12 +14447,29 @@ Future<void> _openHpjMobilePortalRoot(
       }
       destination = const AdminDashboardScreen();
       break;
+
     case 'customer':
     default:
-      destination = const HpjManagedWelcomeGate(
-        audience: 'customer',
-        child: MainNavigation(),
-      );
+      final mode = settings.customerWorkspaceMode;
+      if (!hpjWorkspaceModeIsLive(mode) && !ownerBypass) {
+        destination = HpjWorkspaceAvailabilityScreen(
+          workspace: 'customer',
+          mode: mode,
+          message: settings.customerMaintenanceMessage,
+          returnNote: settings.customerReturnNote,
+          currentPortal: 'customer',
+          onRefresh: () => unawaited(
+            _openHpjMobilePortalRoot(context, portal: 'customer'),
+          ),
+        );
+      } else {
+        destination = HpjManagedWelcomeGate(
+          audience: 'customer',
+          child: MainNavigation(
+            bypassWorkspaceGate: ownerBypass && !hpjWorkspaceModeIsLive(mode),
+          ),
+        );
+      }
       unawaited(saveHpjNavigationPreference(workspace: 'customer', tab: 0));
       break;
   }
@@ -12551,6 +14477,55 @@ Future<void> _openHpjMobilePortalRoot(
   if (!context.mounted) return;
   Navigator.of(context).pushAndRemoveUntil(
     MaterialPageRoute<void>(builder: (_) => destination),
+    (route) => false,
+  );
+}
+
+/// Customer-brand navigation used by tappable HPJ logos in the app.
+/// If the logo is tapped inside MainNavigation, return to the existing Home
+/// tab without rebuilding the whole app. From a pushed Customer screen, reset
+/// cleanly to the Customer Home root.
+void openHpjCustomerHomeFromLogo(BuildContext context) {
+  final navigationState =
+      context.findAncestorStateOfType<_MainNavigationState>();
+
+  if (navigationState != null) {
+    if (hpjUseMobileAppPresentation(context)) {
+      navigationState._selectMobileCustomerTab(0);
+    } else {
+      navigationState._selectCustomerTab(0);
+    }
+    return;
+  }
+
+  unawaited(
+    saveHpjNavigationPreference(
+      workspace: 'customer',
+      tab: 0,
+    ),
+  );
+
+  Navigator.of(context).pushAndRemoveUntil(
+    MaterialPageRoute<void>(
+      builder: (_) => const HpjManagedWelcomeGate(
+        audience: 'customer',
+        child: MainNavigation(initialIndex: 0),
+      ),
+    ),
+    (route) => false,
+  );
+}
+
+// HPJ ACCOUNT NAVIGATION — return to the Admin-managed Welcome page.
+// This is navigation only: no sign-out, account switch, or settings mutation.
+void openHpjWelcomeFromWorkspace(BuildContext context) {
+  // The Customer cart is already stored on changes. Persist it once more
+  // before replacing the navigation root so a return to Shop restores it.
+  context.findAncestorStateOfType<_MainNavigationState>()?.persistCart();
+  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => const AuthGate(forceWelcome: true),
+    ),
     (route) => false,
   );
 }
@@ -12728,10 +14703,8 @@ Future<void> showHpjMobileAccountPortalSheet(
             final staffRole = normalizeStaffRole(access?.staffRole ?? '');
             final hasStaff = access?.hasStaffAccess == true;
 
-            final farmerApproved = farmer?.isApproved == true &&
-                (settings?.farmerWorkspaceEnabled ?? false);
-            final businessApproved = business?.isApproved == true &&
-                (settings?.wholesaleWorkspaceEnabled ?? false);
+            final farmerApproved = farmer?.isApproved == true;
+            final businessApproved = business?.isApproved == true;
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
@@ -12756,17 +14729,9 @@ Future<void> showHpjMobileAccountPortalSheet(
 
                     return Row(
                       children: [
-                        CircleAvatar(
+                        _hpjMobileAccountAvatar(
+                          initial: initial,
                           radius: 26,
-                          backgroundColor: FarmColors.primarySoft,
-                          child: Text(
-                            initial,
-                            style: const TextStyle(
-                              color: FarmColors.deepGreen,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -12803,7 +14768,7 @@ Future<void> showHpjMobileAccountPortalSheet(
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'YOUR HPJ ACCESS',
+                  'YOUR LOGINS',
                   style: TextStyle(
                     color: FarmColors.mutedText,
                     fontSize: 9.4,
@@ -12815,24 +14780,26 @@ Future<void> showHpjMobileAccountPortalSheet(
                 _HpjMobilePortalRow(
                   icon: Icons.shopping_bag_outlined,
                   title: 'Shop HPJ',
-                  subtitle: 'Fresh produce, My Box, orders and Meal Pulse',
+                  subtitle: 'Shopping, My Box, orders and Meal Pulse',
                   current: current == 'customer',
                   enabled: true,
                   onTap: current == 'customer'
                       ? () => Navigator.of(sheetContext).pop()
                       : () => openPortal('customer'),
                 ),
-                if (farmer != null) ...[
+                if (farmer != null ||
+                    settings?.farmerApplicationsEnabled == true) ...[
                   const SizedBox(height: 4),
                   _HpjMobilePortalRow(
                     icon: Icons.agriculture_outlined,
-                    title:
-                        farmerApproved ? 'Farmer Portal' : 'Farmer Application',
+                    title: farmerApproved ? 'Farmer' : 'Farmer Application',
                     subtitle: farmerApproved
-                        ? (farmer.farmName.trim().isEmpty
+                        ? (farmer!.farmName.trim().isEmpty
                             ? 'Supply, demand, collections and farm tools'
                             : farmer.farmName.trim())
-                        : '${farmer.statusLabel} • Review your application',
+                        : farmer == null
+                            ? 'Apply to supply produce to HPJ'
+                            : '${farmer.statusLabel} • Review your application',
                     current: current == 'farmer',
                     enabled: true,
                     onTap: current == 'farmer'
@@ -12840,16 +14807,18 @@ Future<void> showHpjMobileAccountPortalSheet(
                         : () => openPortal('farmer'),
                   ),
                 ],
-                if (business != null) ...[
+                if (business != null ||
+                    settings?.wholesaleApplicationsEnabled == true) ...[
                   const SizedBox(height: 4),
                   _HpjMobilePortalRow(
                     icon: Icons.business_outlined,
-                    title: businessApproved
-                        ? 'Business Portal'
-                        : 'Business Application',
+                    title:
+                        businessApproved ? 'Business' : 'Business Application',
                     subtitle: businessApproved
                         ? 'Wholesale sourcing, planning and orders'
-                        : '${businessAccountStatusLabel(business.status)} • Review your application',
+                        : business == null
+                            ? 'Apply for wholesale business access'
+                            : '${businessAccountStatusLabel(business.status)} • Review your application',
                     current: current == 'wholesale',
                     enabled: true,
                     onTap: current == 'wholesale'
@@ -12862,8 +14831,8 @@ Future<void> showHpjMobileAccountPortalSheet(
                   _HpjMobilePortalRow(
                     icon: Icons.admin_panel_settings_outlined,
                     title: staffRole == 'owner' || staffRole == 'manager'
-                        ? 'Admin Console'
-                        : 'Staff Portal',
+                        ? 'Admin'
+                        : 'Staff',
                     subtitle: staffRole.isEmpty
                         ? 'HPJ operations'
                         : staffRoleDisplayLabel(staffRole),
@@ -12889,7 +14858,7 @@ Future<void> showHpjMobileAccountPortalSheet(
                     color: FarmColors.deepGreen,
                   ),
                   title: const Text(
-                    'Account & Settings',
+                    'Account settings',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded),
@@ -12903,6 +14872,24 @@ Future<void> showHpjMobileAccountPortalSheet(
                         ),
                       );
                     });
+                  },
+                ),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  leading: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: FarmColors.deepGreen,
+                  ),
+                  title: const Text(
+                    'Back to Welcome',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle:
+                      const Text('Choose a workspace without signing out.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    openHpjWelcomeFromWorkspace(parentContext);
                   },
                 ),
                 ListTile(
@@ -12980,17 +14967,9 @@ class HpjMobileAccountPortalButton extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircleAvatar(
+                    _hpjMobileAccountAvatar(
+                      initial: initial,
                       radius: 15,
-                      backgroundColor: FarmColors.primarySoft,
-                      child: Text(
-                        initial,
-                        style: const TextStyle(
-                          color: FarmColors.deepGreen,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
                     ),
                     if (!compact) ...[
                       const SizedBox(width: 7),
@@ -13091,7 +15070,7 @@ class HpjMobilePortalAccessCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         const Text(
-                          'Account and your HPJ access',
+                          'Account • profile, settings and other logins',
                           style: TextStyle(
                             color: FarmColors.mutedText,
                             fontSize: 9.2,
@@ -13525,10 +15504,8 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
     final settings = access?.programSettings;
     final staffRole = normalizeStaffRole(access?.staffRole ?? '');
     final hasStaff = access?.hasStaffAccess == true;
-    final farmerApproved = farmer?.isApproved == true &&
-        (settings?.farmerWorkspaceEnabled ?? false);
-    final businessApproved = business?.isApproved == true &&
-        (settings?.wholesaleWorkspaceEnabled ?? false);
+    final farmerApproved = farmer?.isApproved == true;
+    final businessApproved = business?.isApproved == true;
 
     return PopupMenuButton<String>(
       tooltip: '',
@@ -13736,23 +15713,33 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
       color: FarmColors.background,
       child: Row(
         children: [
-          SizedBox(
-            width: 82,
-            height: 36,
-            child: Image.asset(
-              'lib/assets/images/logo.png',
-              fit: BoxFit.contain,
-              alignment: Alignment.centerLeft,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (_, __, ___) => const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'HPJ',
-                  style: TextStyle(
-                    color: FarmColors.deepGreen,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -.4,
+          Tooltip(
+            message: 'Home',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => openHpjCustomerHomeFromLogo(context),
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 82,
+                  height: 36,
+                  child: Image.asset(
+                    'lib/assets/images/logo.png',
+                    fit: BoxFit.contain,
+                    alignment: Alignment.centerLeft,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, __, ___) => const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'HPJ',
+                        style: TextStyle(
+                          color: FarmColors.deepGreen,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -.4,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -13927,12 +15914,234 @@ PreferredSizeWidget hpjPortalUtilityAppBar({
   );
 }
 
+class HpjWorkspaceAvailabilityScreen extends StatelessWidget {
+  final String workspace;
+  final String mode;
+  final String message;
+  final String returnNote;
+  final String currentPortal;
+  final VoidCallback? onOwnerBypass;
+  final VoidCallback? onRefresh;
+
+  const HpjWorkspaceAvailabilityScreen({
+    super.key,
+    required this.workspace,
+    required this.mode,
+    required this.message,
+    required this.returnNote,
+    required this.currentPortal,
+    this.onOwnerBypass,
+    this.onRefresh,
+  });
+
+  String get _workspaceLabel {
+    switch (workspace.trim().toLowerCase()) {
+      case 'farmer':
+        return 'Farmer Workspace';
+      case 'wholesale':
+      case 'business':
+        return 'Business Workspace';
+      case 'customer_web':
+        return 'Customer Website';
+      case 'customer':
+      default:
+        return 'Customer Workspace';
+    }
+  }
+
+  String get _title {
+    switch (hpjNormalizeWorkspaceMode(mode)) {
+      case 'read_only':
+        return '$_workspaceLabel is in safe update mode';
+      case 'closed':
+        return '$_workspaceLabel is temporarily closed';
+      case 'maintenance':
+      default:
+        return '$_workspaceLabel is getting an upgrade';
+    }
+  }
+
+  String get _defaultMessage {
+    switch (hpjNormalizeWorkspaceMode(mode)) {
+      case 'read_only':
+        return 'We are protecting this workspace while updates are being made. Operational changes are temporarily paused and your existing information remains safe.';
+      case 'closed':
+        return 'This workspace is temporarily unavailable. Your account, history and saved information remain safe.';
+      case 'maintenance':
+      default:
+        return 'We are improving this workspace. Your account and information are safe. Please check back shortly.';
+    }
+  }
+
+  IconData get _icon {
+    switch (hpjNormalizeWorkspaceMode(mode)) {
+      case 'read_only':
+        return Icons.visibility_outlined;
+      case 'closed':
+        return Icons.lock_clock_outlined;
+      case 'maintenance':
+      default:
+        return Icons.construction_rounded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanMessage =
+        message.trim().isEmpty ? _defaultMessage : message.trim();
+    final cleanReturn = returnNote.trim();
+
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: hpjUseMobileAppPresentation(context)
+          ? hpjPortalUtilityAppBar(
+              currentPortal: currentPortal,
+              includeInbox: true,
+            )
+          : AppBar(
+              title: Text(_workspaceLabel),
+              backgroundColor: FarmColors.background,
+              surfaceTintColor: Colors.transparent,
+            ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 36),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: FarmCard(
+                padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Icon(_icon, color: FarmColors.primary, size: 27),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      _title,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 22,
+                        height: 1.08,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    Text(
+                      cleanMessage,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        height: 1.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (cleanReturn.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        decoration: BoxDecoration(
+                          color: FarmColors.cardSoft,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: Text(
+                          'Expected back: $cleanReturn',
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: onRefresh ??
+                            () {
+                              Navigator.of(context).pushReplacement(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const AuthGate(),
+                                ),
+                              );
+                            },
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Refresh status'),
+                      ),
+                    ),
+                    if (workspace.trim().toLowerCase() == 'customer' ||
+                        workspace.trim().toLowerCase() == 'customer_web') ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            Navigator.of(context, rootNavigator: true)
+                                .pushAndRemoveUntil<void>(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const AuthGate(
+                                  forceWelcome: true,
+                                ),
+                              ),
+                              (route) => false,
+                            );
+                          },
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          label: const Text('Back to Welcome'),
+                        ),
+                      ),
+                    ],
+                    if (onOwnerBypass != null) ...[
+                      const SizedBox(height: 8),
+                      FutureBuilder<bool>(
+                        future: hpjCurrentUserIsOwner(),
+                        builder: (context, snapshot) {
+                          if (snapshot.data != true) {
+                            return const SizedBox.shrink();
+                          }
+                          return SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: onOwnerBypass,
+                              icon: const Icon(
+                                Icons.admin_panel_settings_outlined,
+                              ),
+                              label: const Text('Enter as Owner'),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class MainNavigation extends StatefulWidget {
   final int initialIndex;
+  final bool bypassWorkspaceGate;
 
   const MainNavigation({
     super.key,
     this.initialIndex = 0,
+    this.bypassWorkspaceGate = false,
   });
 
   @override
@@ -15103,14 +17312,39 @@ class _MainNavigationState extends State<MainNavigation>
 
         final settings = snapshot.data ?? MarketplaceProgramSettings.fallback;
 
-        // Website launch policy:
-        // Customer shopping is live on Flutter Web even while the native app
-        // can remain behind the customerMarketplaceEnabled rollout flag.
+        final mobilePresentation = hpjUseMobileAppPresentation(context);
+        final websiteWorkspace = kIsWeb && !mobilePresentation;
+        final customerMode = settings.workspaceMode(
+          'customer',
+          website: websiteWorkspace,
+        );
         final customerMarketplaceAvailable =
-            settings.customerMarketplaceEnabled || kIsWeb;
+            widget.bypassWorkspaceGate || hpjWorkspaceModeIsLive(customerMode);
 
         if (!customerMarketplaceAvailable) {
-          return const CustomerMarketplaceComingSoonScreen();
+          return HpjWorkspaceAvailabilityScreen(
+            workspace: websiteWorkspace ? 'customer_web' : 'customer',
+            mode: customerMode,
+            message: settings.customerMaintenanceMessage,
+            returnNote: settings.customerReturnNote,
+            currentPortal: 'customer',
+            onOwnerBypass: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (_) => MainNavigation(
+                    initialIndex: safeSelectedIndex,
+                    bypassWorkspaceGate: true,
+                  ),
+                ),
+              );
+            },
+            onRefresh: () {
+              setState(() {
+                customerMarketplaceSettingsFuture =
+                    fetchMarketplaceProgramSettings();
+              });
+            },
+          );
         }
 
         final desktopStorefrontWeb =

@@ -11,34 +11,59 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Supabase
+  # =====================================================
+  # SUPABASE
+  # =====================================================
   supabase_flutter: ^2.5.6
 
-  # Firebase
+  # =====================================================
+  # FIREBASE / PUSH NOTIFICATIONS
+  # =====================================================
   firebase_core: ^4.12.1
   firebase_messaging: ^16.4.3
 
-  # Foreground Android notifications
+  # =====================================================
+  # FOREGROUND ANDROID NOTIFICATIONS
+  # =====================================================
   flutter_local_notifications: 19.5.0
 
-  # App features
+  # =====================================================
+  # APP FEATURES
+  # =====================================================
   app_links: ^6.4.1
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
 
-  # Fresh Reels
+  # =====================================================
+  # WHATSAPP IMAGE SHARING / HPJ ADVERTISING
+  #
+  # Pinned for the HPJ Flutter 3.32 configuration.
+  # =====================================================
+  share_plus: 11.1.0
+
+  # =====================================================
+  # FRESH REELS
+  #
   # Pinned for FlutLab / Flutter 3.32 compatibility.
+  # =====================================================
   video_player: 2.9.5
 
-  # Smart local preferences / resume memory
+  # =====================================================
+  # SMART LOCAL PREFERENCES / RESUME MEMORY
+  # =====================================================
   shared_preferences: ^2.3.5
 
-  # Cloudflare Turnstile CAPTCHA
+  # =====================================================
+  # CLOUDFLARE TURNSTILE CAPTCHA
+  # =====================================================
   cloudflare_turnstile: ^3.8.1
 
-  # PDF receipt and order slip printing/sharing
+  # =====================================================
+  # PDF RECEIPT / ORDER SLIP PRINTING
+  # =====================================================
   pdf: ^3.11.0
   printing: ^5.14.0
+
 
 # =====================================================
 # FLUTLAB / FLUTTER 3.32 COMPATIBILITY
@@ -49,6 +74,10 @@ dependencies:
 dependency_overrides:
   firebase_core_web: 3.10.0
 
+
+# =====================================================
+# DEVELOPMENT DEPENDENCIES
+# =====================================================
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -56,16 +85,27 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.4
 
+
+# =====================================================
+# FLUTTER
+# =====================================================
 flutter:
   uses-material-design: true
 
   assets:
     - lib/assets/images/
 
+
+# =====================================================
+# HPJ ANDROID LAUNCHER ICON
+# =====================================================
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
+
   image_path: "lib/assets/images/logo.png"
+
   adaptive_icon_background: "#F4F9F2"
   adaptive_icon_foreground: "lib/assets/images/logo.png"
+
   min_sdk_android: 21

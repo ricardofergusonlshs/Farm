@@ -8,6 +8,10 @@
 // Includes Phase 93 Harvest Drop + Phase 94 Farm-to-Box Passport
 // HPJ PHASE 92 — HARVEST JOURNEY + RESCUE HARVEST
 part of harvest_place_app;
+// HPJ SUPER MVP MERGE — 2026-09-16
+// First source is canonical for Home appearance, navigation and existing features.
+// Second source contributes larger two-across no-price Home cards, quick-add and
+// a fixed Home search; native-only changes do not alter desktop website/Shop.
 // HPJ NAVIGATION AUDIT FIX — PRODUCT DETAIL + POST-CHECKOUT BACK ROUTES — 2026-09-13
 // HPJ MERGED MVP NETWORK + FULFILMENT + RESILIENCE UPGRADE — 2026-09-13
 // HPJ CUSTOMER HOME — COMPACT HERO CARD HEIGHT — 2026-09-13
@@ -12112,6 +12116,288 @@ class _HpjRescueReserveSheetState extends State<_HpjRescueReserveSheet> {
   }
 }
 
+
+
+// HPJ SHARE & PROMOTE — campaign, file sharing and OS save-sheet fallback.
+// Requires `import 'package:share_plus/share_plus.dart';` in harvest_place_app.dart.
+const String hpjSharePlayUrl =
+    'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp';
+
+class HpjShareCampaign {
+  final String headline;
+  final String caption;
+  final String imageUrl;
+  final String destinationUrl;
+  final bool enabled;
+
+  const HpjShareCampaign({
+    required this.headline,
+    required this.caption,
+    required this.imageUrl,
+    required this.destinationUrl,
+    required this.enabled,
+  });
+
+  static const fallback = HpjShareCampaign(
+    headline: 'Fresh • Local • Jamaican',
+    caption: 'Discover fresh Jamaican produce and the people growing it on The Harvest Place Ja.',
+    imageUrl: '',
+    destinationUrl: hpjSharePlayUrl,
+    enabled: true,
+  );
+
+  factory HpjShareCampaign.fromRow(Map<String, dynamic> row) =>
+      HpjShareCampaign(
+        headline: (row['headline'] ?? '').toString().trim(),
+        caption: (row['caption'] ?? '').toString().trim(),
+        imageUrl: (row['image_url'] ?? '').toString().trim(),
+        destinationUrl: (row['destination_url'] ?? hpjSharePlayUrl)
+            .toString().trim(),
+        enabled: row['is_enabled'] == true,
+      );
+}
+
+Future<HpjShareCampaign?> hpjFetchShareCampaign({bool includeDraft = false}) async {
+  try {
+    var query = supabase.from('hpj_share_campaigns').select(
+        'headline,caption,image_url,destination_url,is_enabled');
+    if (!includeDraft) query = query.eq('is_enabled', true);
+    final row = await query.eq('id', 'default').maybeSingle();
+    return row == null ? null : HpjShareCampaign.fromRow(row);
+  } catch (error) {
+    // Before the migration, customers can still share HPJ's bundled logo.
+    farmDebugLog('HPJ share campaign unavailable: $error');
+    return null;
+  }
+}
+
+String hpjShareSafeDestination(String candidate) {
+  final parsed = Uri.tryParse(candidate.trim());
+  return parsed != null && parsed.scheme == 'https' && parsed.host.isNotEmpty
+      ? parsed.toString()
+      : hpjSharePlayUrl;
+}
+
+String hpjShareCaption({
+  required String caption,
+  String? destinationUrl,
+}) {
+  final text = caption.trim();
+  final url = hpjShareSafeDestination(destinationUrl ?? hpjSharePlayUrl);
+  return '${text.isEmpty ? 'Discover The Harvest Place Ja — Fresh • Local • Jamaican.' : text}\n\n$url';
+}
+
+String hpjShareMime(String url) {
+  final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+  if (path.endsWith('.png')) return 'image/png';
+  if (path.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+String hpjShareExt(String mime) => mime == 'image/png'
+    ? 'png'
+    : mime == 'image/webp' ? 'webp' : 'jpg';
+
+Future<XFile> hpjPrepareSharePhoto(String? imageUrl, String fileStem) async {
+  final safeUrl = cleanHostedImageUrl(imageUrl);
+  if (safeUrl != null) {
+    try {
+      // Absolute URL resolution works with NetworkAssetBundle on web and mobile.
+      final bytes = await NetworkAssetBundle(Uri.parse(safeUrl)).load(safeUrl);
+      if (bytes.lengthInBytes > 0 && bytes.lengthInBytes <= 12 * 1024 * 1024) {
+        final mime = hpjShareMime(safeUrl);
+        return XFile.fromData(
+          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+          mimeType: mime,
+          name: '$fileStem.${hpjShareExt(mime)}',
+        );
+      }
+    } catch (error) {
+      farmDebugLog('Share image download unavailable; using HPJ logo: $error');
+    }
+  }
+  final logo = await rootBundle.load('lib/assets/images/logo.png');
+  return XFile.fromData(
+    logo.buffer.asUint8List(logo.offsetInBytes, logo.lengthInBytes),
+    mimeType: 'image/png',
+    name: '$fileStem.png',
+  );
+}
+
+Rect? hpjShareOrigin(BuildContext context) {
+  final box = context.findRenderObject() as RenderBox?;
+  if (box != null && box.hasSize) {
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+  final overlay = Overlay.maybeOf(context);
+  final overlayBox = overlay?.context.findRenderObject() as RenderBox?;
+  if (overlayBox != null && overlayBox.hasSize) {
+    return overlayBox.localToGlobal(Offset.zero) & overlayBox.size;
+  }
+  return null;
+}
+
+Future<void> hpjShareImage(BuildContext context, {
+  required String caption,
+  String? imageUrl,
+  String? destinationUrl,
+  String fileStem = 'hpj-promotion',
+  bool imageOnly = false,
+}) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final origin = hpjShareOrigin(context);
+  try {
+    final photo = await hpjPrepareSharePhoto(imageUrl, fileStem);
+    await SharePlus.instance.share(ShareParams(
+      files: <XFile>[photo],
+      fileNameOverrides: <String>[photo.name],
+      text: imageOnly ? null : hpjShareCaption(
+        caption: caption, destinationUrl: destinationUrl),
+      title: 'The Harvest Place Ja',
+      sharePositionOrigin: origin,
+      downloadFallbackEnabled: true,
+    ));
+  } catch (error) {
+    if (imageOnly) {
+      messenger?.showSnackBar(SnackBar(
+        content: Text('Image could not be saved through the share sheet: $error'),
+      ));
+      return;
+    }
+    // Never discard the marketing link if remote image or native file sharing fails.
+    try {
+      await SharePlus.instance.share(ShareParams(
+        text: hpjShareCaption(caption: caption, destinationUrl: destinationUrl),
+        title: 'The Harvest Place Ja',
+        sharePositionOrigin: origin,
+      ));
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(
+        text: hpjShareCaption(caption: caption, destinationUrl: destinationUrl),
+      ));
+      messenger?.showSnackBar(const SnackBar(
+        content: Text('Sharing is unavailable. Promotion text and link copied.'),
+      ));
+    }
+  }
+}
+
+Future<void> hpjShareProduct(BuildContext context, Product product) =>
+    hpjShareImage(context,
+      caption: '${product.name} — fresh Jamaican produce on The Harvest Place Ja.',
+      imageUrl: product.imageUrl,
+      fileStem: 'hpj-product',
+    );
+
+Future<void> hpjShareFarm(BuildContext context, FarmPublicProfileRecord farm) =>
+    hpjShareImage(context,
+      caption: 'Meet ${farm.publicName}, a Jamaican farm on The Harvest Place Ja.',
+      imageUrl: cleanHostedImageUrl(farm.coverImageUrl) ?? farm.logoImageUrl,
+      fileStem: 'hpj-farm',
+    );
+
+class HpjSharePromoteScreen extends StatefulWidget {
+  const HpjSharePromoteScreen({super.key});
+  @override
+  State<HpjSharePromoteScreen> createState() => _HpjSharePromoteScreenState();
+}
+
+class _HpjSharePromoteScreenState extends State<HpjSharePromoteScreen> {
+  late Future<HpjShareCampaign?> _future;
+  @override
+  void initState() {
+    super.initState();
+    _future = hpjFetchShareCampaign();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: FarmColors.background,
+    appBar: AppBar(title: const Text('Share & Promote HPJ')),
+    body: FutureBuilder<HpjShareCampaign?>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        // A disabled campaign never appears in the public share menu.
+        final campaign = snapshot.data ?? HpjShareCampaign.fallback;
+        final image = cleanHostedImageUrl(campaign.imageUrl);
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 100),
+          children: [
+            Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: FarmColors.line),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                AspectRatio(
+                  aspectRatio: 1.3,
+                  child: image == null
+                      ? Center(child: Image.asset('lib/assets/images/logo.png',
+                          fit: BoxFit.contain, width: 220))
+                      : Image.network(image, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Image.asset('lib/assets/images/logo.png', width: 220))),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(campaign.headline, style: const TextStyle(
+                      fontSize: 23, fontWeight: FontWeight.w900,
+                      color: FarmColors.deepGreen)),
+                    const SizedBox(height: 8),
+                    Text(campaign.caption, style: const TextStyle(height: 1.4)),
+                    const SizedBox(height: 18),
+                    SizedBox(width: double.infinity, child: FilledButton.icon(
+                      onPressed: () => hpjShareImage(context,
+                        caption: campaign.caption,
+                        destinationUrl: campaign.destinationUrl,
+                        imageUrl: campaign.imageUrl,
+                      ),
+                      icon: const Icon(Icons.share_rounded),
+                      label: const Text('Share to WhatsApp or another app'),
+                    )),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                      onPressed: () => hpjShareImage(context,
+                        caption: campaign.caption,
+                        destinationUrl: campaign.destinationUrl,
+                        imageUrl: campaign.imageUrl,
+                        imageOnly: true,
+                      ),
+                      icon: const Icon(Icons.save_alt_rounded),
+                      label: const Text('Save image / Save to Files'),
+                    )),
+                    TextButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: hpjShareCaption(
+                          caption: campaign.caption,
+                          destinationUrl: campaign.destinationUrl,
+                        )));
+                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Promotion text and link copied.')));
+                      },
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('Copy caption and link'),
+                    ),
+                  ]),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            const Text('Choose WhatsApp in your phone’s share sheet, then select a contact, group or Status if offered. Image and caption handling varies by app. Save Image opens the device save/share choices; on supported browsers it downloads the file.',
+                style: TextStyle(color: FarmColors.mutedText, height: 1.4)),
+          ],
+        );
+      },
+    ),
+  );
+}
+
 class AccountScreen extends StatelessWidget {
   final List<Product> favoriteProducts;
   final List<Product> recentlyViewedProducts;
@@ -12527,6 +12813,12 @@ class AccountScreen extends StatelessWidget {
                             subtitle: 'Shop by nutrient',
                             onTap: () => _openNutritionPicker(context),
                           ),
+                        AccountActionItem(
+                          icon: Icons.ios_share_rounded,
+                          title: 'Share & Promote',
+                          subtitle: 'WhatsApp • image • link',
+                          onTap: () => _open(context, const HpjSharePromoteScreen()),
+                        ),
                         AccountActionItem(
                           icon: Icons.notifications_none_rounded,
                           title: 'Notifications',
@@ -18040,6 +18332,16 @@ class _HpjMobileTopUtilityBar extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              IconButton(
+                tooltip: 'Share & Promote HPJ',
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const HpjSharePromoteScreen(),
+                  ),
+                ),
+                icon: const Icon(Icons.ios_share_rounded,
+                    color: FarmColors.deepGreen, size: 20),
+              ),
               _HpjCustomerHeaderActions(
                 parish: parish,
                 firstName: firstName,
@@ -22073,6 +22375,24 @@ class _PremiumWebCustomerHomeHero extends StatelessWidget {
   }
 }
 
+// Customer Home uses the saved Admin switches directly, without the
+// Owner-preview exception used by Farmer Social Feature Gate. OFF means the
+// customer Home section is hidden for everyone, including Owner preview.
+class _HpjCustomerHomeSocialVisibility {
+  final bool showStories;
+  final bool showCommunity;
+
+  const _HpjCustomerHomeSocialVisibility({
+    required this.showStories,
+    required this.showCommunity,
+  });
+
+  static const hidden = _HpjCustomerHomeSocialVisibility(
+    showStories: false,
+    showCommunity: false,
+  );
+}
+
 class HomeScreen extends StatefulWidget {
   final VoidCallback onShopTap;
   final ValueChanged<String> onCategoryTap;
@@ -22173,6 +22493,10 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<FarmOrder>> homeOrdersFuture;
   late Future<HpjSponsorCampaign?> sponsoredCampaignFuture;
   late Future<List<FarmPublicProfileRecord>> socialFarmsFuture;
+  // Never assume that Admin social switches are ON while loading.
+  _HpjCustomerHomeSocialVisibility _homeSocialVisibility =
+      _HpjCustomerHomeSocialVisibility.hidden;
+  int _homeSocialVisibilityRequest = 0;
   List<Product> cachedHomeProducts = const <Product>[];
   List<Product> homeRecentlyViewedProducts = const <Product>[];
   final TextEditingController homeSearchController = TextEditingController();
@@ -22206,6 +22530,7 @@ class _HomeScreenState extends State<HomeScreen> {
     homeOrdersFuture = fetchOrders();
     sponsoredCampaignFuture = fetchActiveCustomerHomeSponsor();
     socialFarmsFuture = fetchPublishedFarmPublicProfiles(limit: 12);
+    unawaited(_reloadCustomerHomeSocialVisibility());
     unawaited(_loadHomeRecentlyViewed());
     unawaited(_loadUserPreferences());
     customerProfileFuture = fetchCurrentCustomerProfile();
@@ -22226,6 +22551,37 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+
+  // Read the same persisted flags used by Admin -> Workspace Control Center.
+  // This direct read deliberately does not call
+  // hpjFarmerSocialFeatureVisibleToCurrentUser(), which allows Owner preview
+  // even while OFF. Here the Home must reflect the actual saved switch state.
+  Future<void> _reloadCustomerHomeSocialVisibility() async {
+    final request = ++_homeSocialVisibilityRequest;
+    _HpjCustomerHomeSocialVisibility next =
+        _HpjCustomerHomeSocialVisibility.hidden;
+    try {
+      final row = await supabase
+          .from('marketplace_program_settings')
+          .select('farmer_stories_enabled, farmer_community_enabled')
+          .eq('id', 'default')
+          .maybeSingle();
+
+      // Missing settings or inaccessible controls: hide the social previews
+      // instead of displaying content that an Admin may have disabled.
+      if (row != null) {
+        next = _HpjCustomerHomeSocialVisibility(
+          showStories: row['farmer_stories_enabled'] == true,
+          showCommunity: row['farmer_community_enabled'] == true,
+        );
+      }
+    } catch (error) {
+      farmDebugLog('Customer Home social visibility unavailable: $error');
+    }
+
+    if (!mounted || request != _homeSocialVisibilityRequest) return;
+    setState(() => _homeSocialVisibility = next);
+  }
 
   void _applySharedCustomerParishPreference() {
     final next = _hpjCanonicalCustomerParish(
@@ -22453,7 +22809,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
 
-    return rows.take(8).toList(growable: false);
+    // Keep more nearby items available for horizontal swiping.
+    return rows.take(20).toList(growable: false);
   }
 
   Future<void> _loadMobileReferenceSocialState() async {
@@ -23195,6 +23552,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               return InkWell(
                 borderRadius: BorderRadius.circular(999),
+                onLongPress: () => hpjShareFarm(context, farm),
                 onTap: () => unawaited(
                   _openReferenceFarmStories(
                     farms: farms,
@@ -23373,103 +23731,225 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Native Home only: preserve the existing HPJ image-first card design,
+  // origin/availability badges and product navigation. Price stays in Shop.
+  // On a phone, two larger cards fit across each swipeable product shelf.
   Widget _premiumMiniProductRail({
     required List<Product> products,
     int maxItems = 8,
+    bool showQuickAdd = false,
+    // Nearby only: a final Shop card makes the shelf swipeable even when
+    // exactly two local products are currently available.
+    VoidCallback? onBrowseAll,
   }) {
     final rows = products.take(maxItems).toList(growable: false);
     if (rows.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 138,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(right: 4),
-        itemCount: rows.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 9),
-        itemBuilder: (context, index) {
-          final product = rows[index];
+      height: 222,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : MediaQuery.sizeOf(context).width - 28;
+          final cardWidth = ((availableWidth - 10) / 2)
+              .clamp(146.0, 230.0)
+              .toDouble();
 
-          return SizedBox(
-            width: 124,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () => unawaited(openProduct(product)),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFFEFB),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE0E6DD)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        height: 101,
-                        width: double.infinity,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Container(
-                                color: const Color(0xFFF3F6F0),
-                                child: Center(
-                                  child: ProductVisual(
-                                    product: product,
-                                    size: 94,
-                                    showOrganicBadge: false,
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                left: 5,
-                                bottom: (product.isLowStock ||
-                                        product.isOutOfStock)
-                                    ? 30
-                                    : 5,
-                                child: ProductOriginBadge(
-                                  product: product,
-                                  compact: true,
-                                  includeIcon: false,
-                                ),
-                              ),
-                              if (product.isLowStock || product.isOutOfStock)
-                                Positioned(
-                                  left: 5,
-                                  bottom: 5,
-                                  child: ProductAvailabilityChip(
-                                    product: product,
-                                    compact: true,
-                                  ),
-                                ),
-                            ],
+          return ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.only(right: 4),
+            itemCount: rows.length + (onBrowseAll == null ? 0 : 1),
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              if (index == rows.length) {
+                // Swipe-to-shop uses the existing Shop navigation; no new
+                // checkout, price display, or search behaviour is introduced.
+                return SizedBox(
+                  width: cardWidth,
+                  child: Material(
+                    color: const Color(0xFFEAF4E9),
+                    borderRadius: BorderRadius.circular(19),
+                    child: InkWell(
+                      onTap: onBrowseAll,
+                      borderRadius: BorderRadius.circular(19),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(19),
+                          border: Border.all(
+                            color: const Color(0xFFD6E6D5),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        product.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 9.4,
-                          fontWeight: FontWeight.w900,
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 25,
+                              backgroundColor: FarmColors.green,
+                              child: Icon(
+                                Icons.arrow_forward_rounded,
+                                color: Colors.white,
+                                size: 25,
+                              ),
+                            ),
+                            SizedBox(height: 13),
+                            Text(
+                              'Explore more nearby',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: FarmColors.deepGreen,
+                                fontSize: 14,
+                                height: 1.15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 5),
+                            Text(
+                              'Shop fresh local produce',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
+                  ),
+                );
+              }
+              final product = rows[index];
+              final showStock = product.isLowStock || product.isOutOfStock;
+
+              return SizedBox(
+                width: cardWidth,
+                child: Material(
+                  color: const Color(0xFFFFFEFB),
+                  borderRadius: BorderRadius.circular(19),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(19),
+                    onTap: () => unawaited(openProduct(product)),
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFEFB),
+                        borderRadius: BorderRadius.circular(19),
+                        border: Border.all(color: const Color(0xFFE0E6DD)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    ColoredBox(
+                                      color: const Color(0xFFF3F6F0),
+                                      child: Center(
+                                        child: ProductVisual(
+                                          product: product,
+                                          size: cardWidth - 15,
+                                          showOrganicBadge: false,
+                                        ),
+                                      ),
+                                    ),
+                                    // Local sits above the stock chip, matching
+                                    // the original screenshot without overlap.
+                                    Positioned(
+                                      left: 6,
+                                      bottom: showStock ? 39 : 6,
+                                      child: ProductOriginBadge(
+                                        product: product,
+                                        compact: true,
+                                        includeIcon: false,
+                                      ),
+                                    ),
+                                    if (showStock)
+                                      Positioned(
+                                        left: 6,
+                                        bottom: 6,
+                                        child: ProductAvailabilityChip(
+                                          product: product,
+                                          compact: true,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          SizedBox(
+                            height: 31,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    product.name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 12.5,
+                                      height: 1.08,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                if (showQuickAdd && product.canAddToCart) ...[
+                                  const SizedBox(width: 5),
+                                  Material(
+                                    color: FarmColors.green,
+                                    shape: const CircleBorder(),
+                                    child: InkWell(
+                                      customBorder: const CircleBorder(),
+                                      onTap: () => _addProductToCart(product),
+                                      child: const SizedBox(
+                                        width: 31,
+                                        height: 31,
+                                        child: Icon(
+                                          Icons.add_rounded,
+                                          color: Colors.white,
+                                          size: 19,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),
+    );
+  }
+
+  // Buy Again / In Season / Continue Shopping / Favorites use the SAME
+  // premium photo card as Nearby, while retaining their existing quick-add.
+  Widget _premiumCompactProductRail({
+    required List<Product> products,
+    int maxItems = 8,
+  }) {
+    return _premiumMiniProductRail(
+      products: products,
+      maxItems: maxItems,
+      showQuickAdd: true,
     );
   }
 
@@ -23536,7 +24016,10 @@ class _HomeScreenState extends State<HomeScreen> {
         .take(8)
         .toList(growable: false);
 
-    return RefreshIndicator(
+    // Keep the approved mobile Home layout; pin search below the shared header.
+    return Stack(
+      children: [
+        RefreshIndicator(
       onRefresh: () async {
         await refreshHomeProducts();
         await _loadMobileReferenceSocialState();
@@ -23558,10 +24041,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 112),
+                padding: const EdgeInsets.fromLTRB(14, 91, 14, 112),
                 children: [
-                  _eliteHomeSearchEntry(products),
-                  const SizedBox(height: 12),
                   PersonalizedHomeHeader(
                     profileFuture: customerProfileFuture,
                     loyaltyFuture: loyaltySummaryFuture,
@@ -23580,7 +24061,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     onShopTap: widget.onShopTap,
                     onDealsTap: _showDealsOnHome,
                     showMealIdeas: userPreferences.showMealIdeas,
-                    showFarmStories: userPreferences.showFarmStories,
+                    showFarmStories: userPreferences.showFarmStories &&
+                        _homeSocialVisibility.showStories,
                   ),
                   const SizedBox(height: 6),
                   FutureBuilder<List<FarmOrder>>(
@@ -23593,26 +24075,30 @@ class _HomeScreenState extends State<HomeScreen> {
                       return _premiumContinueOrderRow(activeOrder);
                     },
                   ),
-                  const SizedBox(height: 12),
-                  _premiumFarmStoriesAndFollowFresh(
-                    farms: prioritizedFarms,
-                    products: products,
-                  ),
-                  const SizedBox(height: 12),
-                  _HpjCommunityHomeFeed(
-                    farms: prioritizedFarms,
-                    products: products,
-                    followedFarmIds: _mobileFollowedFarmIds,
-                    onOpenFarm: _openReferenceFarm,
-                    onOpenReels: _openFreshReels,
-                    onOpenProduct: _openReferenceProduct,
-                    onAddProduct: _addProductToCart,
-                    maxCards: 1,
-                    homePreview: true,
-                    onOpenCommunity: () => unawaited(
-                      _openReferenceCommunity(),
+                  if (_homeSocialVisibility.showStories) ...[
+                    const SizedBox(height: 12),
+                    _premiumFarmStoriesAndFollowFresh(
+                      farms: prioritizedFarms,
+                      products: products,
                     ),
-                  ),
+                  ],
+                  if (_homeSocialVisibility.showCommunity) ...[
+                    const SizedBox(height: 12),
+                    _HpjCommunityHomeFeed(
+                      farms: prioritizedFarms,
+                      products: products,
+                      followedFarmIds: _mobileFollowedFarmIds,
+                      onOpenFarm: _openReferenceFarm,
+                      onOpenReels: _openFreshReels,
+                      onOpenProduct: _openReferenceProduct,
+                      onAddProduct: _addProductToCart,
+                      maxCards: 1,
+                      homePreview: true,
+                      onOpenCommunity: () => unawaited(
+                        _openReferenceCommunity(),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   _premiumHomeSectionHeader(
                     title: 'Shop by Category',
@@ -23648,9 +24134,33 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.near_me_outlined,
                   ),
                   const SizedBox(height: 6),
-                  if (nearbyProducts.isNotEmpty)
-                    _premiumMiniProductRail(products: nearbyProducts)
-                  else
+                  if (nearbyProducts.isNotEmpty) ...[
+                    _premiumMiniProductRail(
+                      products: nearbyProducts,
+                      maxItems: 20,
+                      onBrowseAll: widget.onShopTap,
+                    ),
+                    const SizedBox(height: 5),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Icon(
+                          Icons.swipe_left_rounded,
+                          color: FarmColors.green,
+                          size: 14,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Swipe left to explore',
+                          style: TextStyle(
+                            color: FarmColors.green,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else
                     _premiumEmptyHomeStrip(
                       icon: Icons.location_on_outlined,
                       message: _homeNearAreaReady
@@ -23670,7 +24180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 6),
                   if (buyAgainProducts.isNotEmpty)
-                    _premiumMiniProductRail(products: buyAgainProducts)
+                    _premiumCompactProductRail(products: buyAgainProducts)
                   else
                     _premiumEmptyHomeStrip(
                       icon: Icons.shopping_bag_outlined,
@@ -23689,9 +24199,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 6),
                   if (inSeasonProducts.isNotEmpty)
-                    _premiumMiniProductRail(products: inSeasonProducts)
+                    _premiumCompactProductRail(products: inSeasonProducts)
                   else
-                    _premiumMiniProductRail(products: freshProducts),
+                    _premiumCompactProductRail(products: freshProducts),
 
                   const SizedBox(height: 12),
                   _premiumHomeSectionHeader(
@@ -23703,7 +24213,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 6),
                   if (recentlyViewedProducts.isNotEmpty)
-                    _premiumMiniProductRail(products: recentlyViewedProducts)
+                    _premiumCompactProductRail(products: recentlyViewedProducts)
                   else
                     _premiumEmptyHomeStrip(
                       icon: Icons.history_rounded,
@@ -23731,7 +24241,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.favorite_border_rounded,
                     ),
                     const SizedBox(height: 6),
-                    _premiumMiniProductRail(products: favoriteProducts),
+                    _premiumCompactProductRail(products: favoriteProducts),
                   ],
 
                   const SizedBox(height: 12),
@@ -23785,6 +24295,19 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            // Opaque surface prevents images scrolling beneath the search.
+            color: FarmColors.background,
+            padding: const EdgeInsets.fromLTRB(14, 9, 14, 11),
+            child: _eliteHomeSearchEntry(products),
+          ),
+        ),
+      ],
     );
   }
 
@@ -23911,6 +24434,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await Future.wait<void>([
       _loadHomeRecentlyViewed(),
       _loadUserPreferences(),
+      _reloadCustomerHomeSocialVisibility(),
       if (hpjUseMobileAppPresentation(context))
         _loadMobileReferenceSocialState(),
       if (hpjUseMobileAppPresentation(context))
@@ -30555,9 +31079,17 @@ class HpjFarmStoriesScreen extends StatelessWidget {
                                         ],
                                       ),
                                     ),
-                                    const Icon(
-                                      Icons.more_horiz_rounded,
-                                      color: FarmColors.mutedText,
+                                    IconButton(
+                                      tooltip: 'Share this farm story image',
+                                      icon: const Icon(Icons.ios_share_rounded,
+                                          color: FarmColors.green, size: 19),
+                                      onPressed: () => hpjShareImage(context,
+                                        caption: story.caption.trim().isEmpty
+                                            ? 'A fresh update from ${story.farmName} on The Harvest Place Ja.'
+                                            : '${story.farmName}: ${story.caption}',
+                                        imageUrl: story.imageUrl,
+                                        fileStem: 'hpj-farm-story',
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -33345,14 +33877,19 @@ class _HpjCommunityHomeFeedState extends State<_HpjCommunityHomeFeed> {
                 ),
               if (!widget.homePreview) ...[
                 const SizedBox(height: 10),
-                Row(
+                // Both actions were previously forced into a single Row. On a
+                // narrow phone, their minimum widths exceeded the 337px feed.
+                // Wrap keeps both actions available without a RenderFlex overflow.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.spaceBetween,
                   children: [
                     TextButton.icon(
                       onPressed: () => _openMealPulse(composer: true),
                       icon: const Icon(Icons.add_a_photo_outlined, size: 16),
                       label: const Text('Share today’s meal'),
                     ),
-                    const Spacer(),
                     TextButton.icon(
                       onPressed: () => _openMealPulse(),
                       icon: const Icon(Icons.arrow_forward_rounded, size: 15),
@@ -53844,6 +54381,11 @@ class ProductDetailScreen extends StatelessWidget {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Share product image',
+            onPressed: () => hpjShareProduct(context, product),
+            icon: const Icon(Icons.ios_share_rounded),
+          ),
           if (onViewMyBox != null)
             Padding(
               padding: const EdgeInsets.only(right: 8),

@@ -383,15 +383,19 @@ class FarmerPartnerToolsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          _tool(
-            context: context,
-            icon: Icons.auto_stories_outlined,
-            title: 'Farm Stories',
-            subtitle:
-                'Post a quick planting, growing or harvest update for customers. Stories stay live for 24 hours.',
-            onTap: () => _open(
-              context,
-              HpjFarmerStoriesScreen(profile: profile),
+          HpjFarmerSocialFeatureGate(
+            feature: 'stories',
+            compact: true,
+            child: _tool(
+              context: context,
+              icon: Icons.auto_stories_outlined,
+              title: 'Farm Stories',
+              subtitle:
+                  'Post a quick planting, growing or harvest update for customers. Stories stay live for 24 hours.',
+              onTap: () => _open(
+                context,
+                HpjFarmerStoriesScreen(profile: profile),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -669,6 +673,18 @@ class _HpjFarmerStoriesScreenState extends State<HpjFarmerStoriesScreen> {
   }
 
   Future<void> _postStory() async {
+    final featureVisible =
+        await hpjFarmerSocialFeatureVisibleToCurrentUser('stories');
+    if (!featureVisible) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Farm Stories are temporarily unavailable.'),
+        ),
+      );
+      return;
+    }
+
     if (!widget.profile.isApproved) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('HPJ approval is required before posting Farm Stories.')),
@@ -724,7 +740,11 @@ class _HpjFarmerStoriesScreenState extends State<HpjFarmerStoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return HpjFarmerSocialFeatureGate(
+      feature: 'stories',
+      compact: false,
+      title: 'Farm Stories',
+      child: Scaffold(
       backgroundColor: FarmColors.background,
       appBar: AppBar(
         title: const Text('Farm Stories'),
@@ -987,6 +1007,7 @@ class _HpjFarmerStoriesScreenState extends State<HpjFarmerStoriesScreen> {
             );
           },
         ),
+      ),
       ),
     );
   }
@@ -4651,7 +4672,7 @@ class _EliteFarmerDemandHeroSurface extends StatelessWidget {
               child: desktopWeb ? _background(coverUrl) : _background(null),
             ),
             Padding(
-              padding: EdgeInsets.all(desktopWeb ? 24 : 20),
+              padding: EdgeInsets.all(desktopWeb ? 24 : 16),
               child: child,
             ),
           ],
@@ -4690,18 +4711,20 @@ class _EliteFarmerDemandHeroMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = hpjUseMobileAppPresentation(context);
+
     return Container(
       constraints: BoxConstraints(
         minWidth: minWidth,
-        minHeight: helper == null ? 76 : 86,
+        minHeight: compact ? 72 : (helper == null ? 76 : 86),
       ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 15,
-        vertical: 13,
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 15,
+        vertical: compact ? 10 : 13,
       ),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.095),
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(compact ? 14 : 17),
         border: Border.all(
           color: Colors.white.withOpacity(.23),
         ),
@@ -4710,20 +4733,20 @@ class _EliteFarmerDemandHeroMetric extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 43,
-            height: 43,
+            width: compact ? 34 : 43,
+            height: compact ? 34 : 43,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: accent.withOpacity(.14),
-              borderRadius: BorderRadius.circular(13),
+              borderRadius: BorderRadius.circular(compact ? 10 : 13),
             ),
             child: Icon(
               icon,
-              size: 23,
+              size: compact ? 18 : 23,
               color: accent,
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: compact ? 8 : 12),
           Flexible(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -4733,36 +4756,36 @@ class _EliteFarmerDemandHeroMetric extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 19,
+                    fontSize: compact ? 16 : 19,
                     height: 1,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -.2,
                   ),
                 ),
-                const SizedBox(height: 5),
+                SizedBox(height: compact ? 3 : 5),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white.withOpacity(.93),
-                    fontSize: 10.2,
+                    fontSize: compact ? 9.1 : 10.2,
                     height: 1.1,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 if (helper != null && helper!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     helper!,
-                    maxLines: 1,
+                    maxLines: compact ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white.withOpacity(.66),
-                      fontSize: 8.5,
-                      height: 1.1,
+                      fontSize: compact ? 7.3 : 8.5,
+                      height: 1.08,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -4891,38 +4914,58 @@ class _PremiumFarmerDemandHero extends StatelessWidget {
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 980;
 
+          final metricWidth = wide
+              ? 168.0
+              : ((constraints.maxWidth - 10) / 2).clamp(112.0, 160.0);
+
+          Widget metric({
+            required IconData icon,
+            required String value,
+            required String label,
+            required String helper,
+            Color accent = const Color(0xFFFFC84D),
+          }) {
+            return SizedBox(
+              width: metricWidth,
+              child: _EliteFarmerDemandHeroMetric(
+                icon: icon,
+                value: value,
+                label: label,
+                helper: helper,
+                accent: accent,
+                minWidth: 0,
+              ),
+            );
+          }
+
           final metrics = Wrap(
             spacing: 10,
             runSpacing: 10,
             children: [
-              _EliteFarmerDemandHeroMetric(
+              metric(
                 icon: Icons.receipt_long_outlined,
                 value: '$signalCount',
                 label: 'Signals',
                 helper: 'Visible market needs',
-                minWidth: wide ? 168 : 148,
               ),
-              _EliteFarmerDemandHeroMetric(
+              metric(
                 icon: Icons.track_changes_rounded,
                 value: '$opportunityCount',
                 label: 'Open gaps',
                 helper: 'Supply still needed',
-                minWidth: wide ? 168 : 148,
               ),
-              _EliteFarmerDemandHeroMetric(
+              metric(
                 icon: Icons.local_fire_department_outlined,
                 value: '$urgentCount',
                 label: 'Priority',
                 helper: 'Needs attention',
-                minWidth: wide ? 168 : 148,
               ),
-              _EliteFarmerDemandHeroMetric(
+              metric(
                 icon: Icons.eco_outlined,
                 value: '$coveredCount',
                 label: 'Covered',
                 helper: 'Matched by supply',
                 accent: const Color(0xFF9DE27C),
-                minWidth: wide ? 168 : 148,
               ),
             ],
           );
@@ -4944,7 +4987,7 @@ class _PremiumFarmerDemandHero extends StatelessWidget {
                 'See what the market needs',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: wide ? 35 : 25,
+                  fontSize: wide ? 35 : 22,
                   height: 1,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -.9,
@@ -4955,8 +4998,8 @@ class _PremiumFarmerDemandHero extends StatelessWidget {
                 '$farm • Use visible HPJ demand to decide what supply to report next.',
                 style: TextStyle(
                   color: Colors.white.withOpacity(.90),
-                  fontSize: 11.8,
-                  height: 1.38,
+                  fontSize: wide ? 11.8 : 10.4,
+                  height: 1.34,
                   fontWeight: FontWeight.w600,
                 ),
               ),

@@ -33,9 +33,12 @@ part 'models/models.dart';
 part 'services/services.dart';
 part 'services/push_notification_service.dart';
 part 'screens/customer/customer_screens.dart';
+part 'screens/customer/customer_screens_part2.dart';
+
 part 'screens/settings/user_preferences.dart';
 part 'screens/reels/fresh_reels.dart';
 part 'screens/admin/admin_screens.dart';
+part 'screens/marketing/share_and_promote.dart';
 part 'screens/marketing/invite_and_grow.dart';
 part 'screens/admin/driver_delivery_management.dart';
 part 'screens/farmer/farmer_partner_tools.dart';

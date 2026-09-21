@@ -1,4 +1,5 @@
 part of harvest_place_app;
+// HPJ WEBSITE HOME — desktop rail logo opens public homepage
 
 class EliteGreenHeroCard extends StatelessWidget {
   final String eyebrow;
@@ -2177,7 +2178,7 @@ class _HpjDesktopWorkspaceRail extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
             child: Tooltip(
-              message: 'Go to $workspaceLabel Home',
+              message: 'HPJ Website Home',
               child: Material(
                 color: Colors.transparent,
                 borderRadius: BorderRadius.circular(18),
@@ -2185,11 +2186,7 @@ class _HpjDesktopWorkspaceRail extends StatelessWidget {
                   borderRadius: BorderRadius.circular(18),
                   hoverColor: HpjWebUi.hover,
                   mouseCursor: SystemMouseCursors.click,
-                  onTap: () {
-                    if (selectedIndex != 0) {
-                      onSelected(0);
-                    }
-                  },
+                  onTap: () => openHpjWebsiteHome(context),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
                     child: Row(
@@ -3392,6 +3389,20 @@ const List<VeganIngredient> veganIngredients = [
     keywords: ['fruit', 'fruits', 'apple', 'smoothie'],
   ),
 ];
+
+// Hidden from navigation pending future recipe/content strategy.
+class VeganIngredientBookScreen extends StatefulWidget {
+  final VoidCallback onShopTap;
+
+  const VeganIngredientBookScreen({
+    super.key,
+    required this.onShopTap,
+  });
+
+  @override
+  State<VeganIngredientBookScreen> createState() =>
+      _VeganIngredientBookScreenState();
+}
 
 class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
   final searchController = TextEditingController();
@@ -8684,6 +8695,124 @@ class RecommendedForYouDetailSection extends StatelessWidget {
               },
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _HomeProductName extends StatelessWidget {
+  final Product product;
+  final bool compact;
+
+  const _HomeProductName({
+    required this.product,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth <= 0
+            ? (compact ? 138.0 : 150.0)
+            : constraints.maxWidth;
+        final scale = (availableWidth / (compact ? 138.0 : 150.0))
+            .clamp(0.92, 1.05)
+            .toDouble();
+        final fontSize = (compact ? 13.2 : 13.8) * scale;
+
+        return Text(
+          product.name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: fontSize,
+            height: 1.08,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.08,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HomePricePanel extends StatelessWidget {
+  final Product product;
+  final bool compact;
+
+  const _HomePricePanel({
+    required this.product,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth <= 0
+            ? (compact ? 138.0 : 150.0)
+            : constraints.maxWidth;
+        final scale = (availableWidth / (compact ? 138.0 : 150.0))
+            .clamp(0.90, 1.05)
+            .toDouble();
+        final priceFontSize = (compact ? 13.6 : 14.2) * scale;
+        final originalFontSize = (compact ? 9.8 : 10.4) * scale;
+        final priceColor =
+            product.isOutOfStock ? FarmColors.mutedText : FarmColors.green;
+
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 9,
+            vertical: compact ? 5 : 7,
+          ),
+          decoration: BoxDecoration(
+            color: product.isOutOfStock
+                ? FarmColors.cardSoft
+                : FarmColors.lightGreen,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: product.isOutOfStock
+                  ? FarmColors.line.withOpacity(0.85)
+                  : FarmColors.green.withOpacity(0.10),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                product.formattedEffectivePrice,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: priceColor,
+                  fontSize: priceFontSize,
+                  height: 1.0,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.15,
+                ),
+              ),
+              if (product.hasActiveDiscount && !product.isOutOfStock) ...[
+                const SizedBox(height: 2),
+                Text(
+                  product.formattedOriginalPrice,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: originalFontSize,
+                    height: 1.0,
+                    fontWeight: FontWeight.w700,
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+              ],
+            ],
+          ),
         );
       },
     );

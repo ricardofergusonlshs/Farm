@@ -36,13 +36,15 @@ dependencies:
 
   # =====================================================
   # WHATSAPP IMAGE SHARING / HPJ ADVERTISING
-  # Flutter 3.32 configuration
+  #
+  # Pinned for the HPJ Flutter 3.32 configuration.
   # =====================================================
   share_plus: 11.1.0
 
   # =====================================================
   # FRESH REELS
-  # Flutter 3.32 compatibility
+  #
+  # Pinned for FlutLab / Flutter 3.32 compatibility.
   # =====================================================
   video_player: 2.9.5
 
@@ -57,16 +59,21 @@ dependencies:
   cloudflare_turnstile: ^3.8.1
 
   # =====================================================
-  # PDF RECEIPTS / ORDER SLIP PRINTING
+  # PDF RECEIPT / ORDER SLIP PRINTING
   # =====================================================
   pdf: ^3.11.0
   printing: ^5.14.0
 
+
 # =====================================================
 # FLUTLAB / FLUTTER 3.32 COMPATIBILITY
+#
+# Keep this override while FlutLab requires it.
+# Remove only after testing a newer Flutter environment.
 # =====================================================
 dependency_overrides:
   firebase_core_web: 3.10.0
+
 
 # =====================================================
 # DEVELOPMENT DEPENDENCIES
@@ -78,6 +85,7 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.4
 
+
 # =====================================================
 # FLUTTER
 # =====================================================
@@ -86,6 +94,7 @@ flutter:
 
   assets:
     - lib/assets/images/
+
 
 # =====================================================
 # HPJ ANDROID LAUNCHER ICON

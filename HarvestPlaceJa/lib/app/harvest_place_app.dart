@@ -17160,6 +17160,7 @@ class _MainNavigationState extends State<MainNavigation>
 
           setState(() {
             cart.clear();
+            myBoxRefreshVersion++;
           });
 
           persistCart();

@@ -3404,6 +3404,7 @@ class VeganIngredientBookScreen extends StatefulWidget {
       _VeganIngredientBookScreenState();
 }
 
+
 class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
   final searchController = TextEditingController();
   String selectedCategory = 'All';

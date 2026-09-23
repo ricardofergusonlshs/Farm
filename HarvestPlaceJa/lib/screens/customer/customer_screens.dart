@@ -21742,6 +21742,7 @@ bool _isSafeSponsorExternalUrl(String value) {
 
 Future<HpjSponsorCampaign?> fetchActiveCustomerHomeSponsor() async {
   try {
+    final nowUtc = DateTime.now().toUtc().toIso8601String();
     final response = await supabase
         .from('hpj_sponsor_campaigns')
         .select(
@@ -21750,6 +21751,12 @@ Future<HpjSponsorCampaign?> fetchActiveCustomerHomeSponsor() async {
         .eq('placement', 'customer_home')
         .eq('is_published', true)
         .eq('is_archived', false)
+        // Filter date eligibility BEFORE limiting ranked results. Otherwise
+        // ten expired/future high-priority sponsors can hide a live campaign.
+        .or('and(starts_at.is.null,ends_at.is.null),'
+            'and(starts_at.is.null,ends_at.gte.$nowUtc),'
+            'and(starts_at.lte.$nowUtc,ends_at.is.null),'
+            'and(starts_at.lte.$nowUtc,ends_at.gte.$nowUtc)')
         .order('priority', ascending: true)
         .order('updated_at', ascending: false)
         .limit(10);

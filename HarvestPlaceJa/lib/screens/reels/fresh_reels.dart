@@ -102,7 +102,6 @@ Set<String> _defaultPlacementsForReel(HpjFreshReel reel) {
   return placements;
 }
 
-
 class _FreshReelPlacementSelector extends StatelessWidget {
   final Set<String> selected;
   final bool enabled;
@@ -160,9 +159,8 @@ class _FreshReelPlacementSelector extends StatelessWidget {
                   color: isSelected ? FarmColors.green : FarmColors.mutedText,
                 ),
                 label: Text(freshReelPlacementLabel(placement)),
-                onSelected: enabled
-                    ? (value) => onChanged(placement, value)
-                    : null,
+                onSelected:
+                    enabled ? (value) => onChanged(placement, value) : null,
               );
             }).toList(),
           ),
@@ -243,7 +241,6 @@ Future<Set<String>?> showFreshReelPlacementDialog(
     },
   );
 }
-
 
 class HpjFreshReel {
   final String id;
@@ -481,7 +478,8 @@ Future<List<HpjFreshReel>> fetchPublishedFreshReels({
         .where((reel) => reel.videoUrl.isNotEmpty)
         .where((reel) => _freshReelMatchesPreferences(reel, preferences))
         .where(
-          (reel) => cleanPlacement.isEmpty ||
+          (reel) =>
+              cleanPlacement.isEmpty ||
               reel.placements.contains(cleanPlacement),
         )
         .take(limit)
@@ -490,7 +488,9 @@ Future<List<HpjFreshReel>> fetchPublishedFreshReels({
     return reels;
   } catch (error) {
     farmDebugLog('Published Fresh Reels unavailable: $error');
-    return const <HpjFreshReel>[];
+    // Do not misrepresent an unavailable database, relation, or permission
+    // error as a genuinely empty feed. The viewer will show a retry prompt.
+    rethrow;
   }
 }
 
@@ -616,7 +616,8 @@ Future<void> submitFarmerFreshReel({
   final user = supabase.auth.currentUser;
   if (user == null) throw Exception('Please sign in again.');
   if (!profile.isApproved) {
-    throw Exception('Farmer verification must be approved before submitting reels.');
+    throw Exception(
+        'Farmer verification must be approved before submitting reels.');
   }
 
   final cleanTitle = title.trim();
@@ -627,7 +628,8 @@ Future<void> submitFarmerFreshReel({
   final bytes = await video.readAsBytes();
   if (bytes.isEmpty) throw Exception('The selected video is empty.');
   if (bytes.length > _freshReelMaxBytes) {
-    throw Exception('Keep Fresh Reels under 30 MB. Shorter videos upload faster.');
+    throw Exception(
+        'Keep Fresh Reels under 30 MB. Shorter videos upload faster.');
   }
 
   final fileName = _safeFreshReelFileName(video.name);
@@ -713,9 +715,8 @@ Future<void> submitAdminFreshReel({
 
   final videoUrl = supabase.storage.from(_freshReelsBucket).getPublicUrl(path);
 
-  final cleanPlacements = placements
-      .where(_freshReelPlacementOrder.contains)
-      .toSet();
+  final cleanPlacements =
+      placements.where(_freshReelPlacementOrder.contains).toSet();
   if (cleanPlacements.isEmpty) {
     try {
       await supabase.storage.from(_freshReelsBucket).remove([path]);
@@ -774,7 +775,6 @@ Future<void> submitAdminFreshReel({
   }
 }
 
-
 Future<void> setFreshReelPlacements({
   required String reelId,
   required Set<String> placements,
@@ -820,9 +820,8 @@ Future<void> moderateFreshReel({
 
   final payload = <String, dynamic>{
     'status': cleanStatus,
-    'moderation_note': moderationNote.trim().isEmpty
-        ? null
-        : moderationNote.trim(),
+    'moderation_note':
+        moderationNote.trim().isEmpty ? null : moderationNote.trim(),
     'moderated_by': user?.id,
     'moderated_at': DateTime.now().toIso8601String(),
     'updated_at': DateTime.now().toIso8601String(),
@@ -845,7 +844,6 @@ Future<void> setFreshReelFeatured({
   }).eq('id', reelId);
 }
 
-
 class FreshReelFeedPreviewCard extends StatefulWidget {
   final UserExperiencePreferences preferences;
   final String audience;
@@ -867,8 +865,7 @@ class FreshReelFeedPreviewCard extends StatefulWidget {
       _FreshReelFeedPreviewCardState();
 }
 
-class _FreshReelFeedPreviewCardState
-    extends State<FreshReelFeedPreviewCard> {
+class _FreshReelFeedPreviewCardState extends State<FreshReelFeedPreviewCard> {
   late Future<List<HpjFreshReel>> _future;
 
   @override
@@ -937,6 +934,15 @@ class _FreshReelFeedPreviewCardState
     return FutureBuilder<List<HpjFreshReel>>(
       future: _future,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _HpjInlineRetryState(
+            title: 'Fresh Reels unavailable',
+            message: 'Videos could not be loaded. Tap Retry to check again.',
+            onRetry: () {
+              if (mounted) setState(() => _future = _load());
+            },
+          );
+        }
         final reels = snapshot.data ?? const <HpjFreshReel>[];
         if (snapshot.connectionState == ConnectionState.waiting ||
             reels.isEmpty) {
@@ -981,11 +987,9 @@ class _FreshReelInlineFeedPostState extends State<_FreshReelInlineFeedPost> {
   bool _videoReady = false;
   int _prepareGeneration = 0;
 
-  bool get _dataSaver =>
-      widget.preferences.feedImageMode == 'data_saver';
+  bool get _dataSaver => widget.preferences.feedImageMode == 'data_saver';
 
-  bool get _autoplay =>
-      widget.preferences.reelsAutoplay && !_dataSaver;
+  bool get _autoplay => widget.preferences.reelsAutoplay && !_dataSaver;
 
   @override
   void initState() {
@@ -1446,6 +1450,13 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
               );
             }
 
+            if (snapshot.hasError) {
+              return _FreshReelsEmptyState(
+                onRefresh: _refresh,
+                message: 'Could not load videos. Check your connection and '
+                    'the Fresh Reels database setup, then try again.',
+              );
+            }
             final reels = snapshot.data ?? const <HpjFreshReel>[];
             if (reels.isEmpty) {
               return _FreshReelsEmptyState(onRefresh: _refresh);
@@ -1501,7 +1512,9 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
                             color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.w900,
-                            shadows: [Shadow(blurRadius: 8, color: Colors.black54)],
+                            shadows: [
+                              Shadow(blurRadius: 8, color: Colors.black54)
+                            ],
                           ),
                         ),
                         Text(
@@ -1527,8 +1540,9 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
 
 class _FreshReelsEmptyState extends StatelessWidget {
   final Future<void> Function() onRefresh;
+  final String? message;
 
-  const _FreshReelsEmptyState({required this.onRefresh});
+  const _FreshReelsEmptyState({required this.onRefresh, this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -1556,10 +1570,11 @@ class _FreshReelsEmptyState extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Approved farm, harvest and recipe videos will appear here.',
+              Text(
+                message ??
+                    'Approved farm, harvest and recipe videos will appear here.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white70,
                   height: 1.4,
                   fontWeight: FontWeight.w600,
@@ -1648,6 +1663,10 @@ class _FreshReelPageState extends State<_FreshReelPage> {
         Uri.parse(widget.reel.videoUrl),
       );
       await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
       await controller.setLooping(true);
       await controller.setVolume(widget.muted ? 0 : 1);
       _controller = controller;
@@ -1690,13 +1709,16 @@ class _FreshReelPageState extends State<_FreshReelPage> {
       widget.onReelChanged(
         widget.reel.copyWith(
           likedByCurrentUser: next,
-          likeCount: (widget.reel.likeCount + (next ? 1 : -1)).clamp(0, 999999).toInt(),
+          likeCount: (widget.reel.likeCount + (next ? 1 : -1))
+              .clamp(0, 999999)
+              .toInt(),
         ),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
       );
     } finally {
       if (mounted) setState(() => _busyLike = false);
@@ -1708,7 +1730,8 @@ class _FreshReelPageState extends State<_FreshReelPage> {
       ..writeln(widget.reel.title)
       ..writeln(widget.reel.creatorLabel)
       ..writeln()
-      ..write('Watch fresh Jamaican farm content on ${AppConfig.appName}: ${AppConfig.shareableAppLink}');
+      ..write(
+          'Watch fresh Jamaican farm content on ${AppConfig.appName}: ${AppConfig.shareableAppLink}');
     await Clipboard.setData(ClipboardData(text: message.toString()));
     unawaited(recordFreshReelShare(widget.reel.id));
     widget.onReelChanged(
@@ -1755,7 +1778,9 @@ class _FreshReelPageState extends State<_FreshReelPage> {
           Container(color: Colors.black),
           if (_loading)
             const Center(child: CircularProgressIndicator(color: Colors.white))
-          else if (_videoFailed || controller == null || !controller.value.isInitialized)
+          else if (_videoFailed ||
+              controller == null ||
+              !controller.value.isInitialized)
             _ReelVideoFallback(reel: widget.reel)
           else
             SizedBox.expand(
@@ -1775,7 +1800,11 @@ class _FreshReelPageState extends State<_FreshReelPage> {
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Colors.transparent, Colors.transparent, Colors.black87],
+                colors: [
+                  Colors.transparent,
+                  Colors.transparent,
+                  Colors.black87
+                ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 stops: [0.0, 0.55, 1.0],
@@ -1824,7 +1853,8 @@ class _FreshReelPageState extends State<_FreshReelPage> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 5),
                       decoration: BoxDecoration(
                         color: FarmColors.green.withOpacity(0.92),
                         borderRadius: BorderRadius.circular(999),
@@ -1841,7 +1871,8 @@ class _FreshReelPageState extends State<_FreshReelPage> {
                     if (widget.reel.isFeatured) ...[
                       const SizedBox(width: 7),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 5),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.16),
                           borderRadius: BorderRadius.circular(999),
@@ -1952,7 +1983,8 @@ class _ReelVideoFallback extends StatelessWidget {
         ),
       ),
       child: const Center(
-        child: Icon(Icons.videocam_off_outlined, color: Colors.white70, size: 58),
+        child:
+            Icon(Icons.videocam_off_outlined, color: Colors.white70, size: 58),
       ),
     );
   }
@@ -2060,7 +2092,8 @@ class _ReelProductBar extends StatelessWidget {
         color: Colors.white.withOpacity(0.96),
         borderRadius: BorderRadius.circular(18),
         boxShadow: const [
-          BoxShadow(color: Colors.black26, blurRadius: 18, offset: Offset(0, 8)),
+          BoxShadow(
+              color: Colors.black26, blurRadius: 18, offset: Offset(0, 8)),
         ],
       ),
       child: Row(
@@ -2149,7 +2182,8 @@ class _FarmerFreshReelsHubScreenState extends State<FarmerFreshReelsHubScreen> {
   Future<void> _submit() async {
     final submitted = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => FarmerFreshReelSubmissionScreen(profile: widget.profile),
+        builder: (_) =>
+            FarmerFreshReelSubmissionScreen(profile: widget.profile),
       ),
     );
     if (submitted == true && mounted) _reload();
@@ -2185,7 +2219,8 @@ class _FarmerFreshReelsHubScreenState extends State<FarmerFreshReelsHubScreen> {
           future: _future,
           builder: (context, snapshot) {
             final reels = snapshot.data ?? const <HpjFreshReel>[];
-            if (snapshot.connectionState == ConnectionState.waiting && reels.isEmpty) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                reels.isEmpty) {
               return const Center(child: CircularProgressIndicator());
             }
 
@@ -2265,7 +2300,8 @@ class _FarmerReelStatusCard extends StatelessWidget {
                   color: _statusColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(Icons.play_circle_outline_rounded, color: _statusColor),
+                child: Icon(Icons.play_circle_outline_rounded,
+                    color: _statusColor),
               ),
               const SizedBox(width: 11),
               Expanded(
@@ -2297,7 +2333,8 @@ class _FarmerReelStatusCard extends StatelessWidget {
                 tooltip: 'Preview',
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => FreshReelModerationPreviewScreen(reel: reel),
+                    builder: (_) =>
+                        FreshReelModerationPreviewScreen(reel: reel),
                   ),
                 ),
                 icon: const Icon(Icons.visibility_outlined),
@@ -2351,9 +2388,15 @@ class _FarmerReelStatusCard extends StatelessWidget {
             Wrap(
               spacing: 12,
               children: [
-                Text('${reel.viewCount} views', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-                Text('${reel.likeCount} likes', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-                Text('${reel.shareCount} shares', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+                Text('${reel.viewCount} views',
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w700)),
+                Text('${reel.likeCount} likes',
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w700)),
+                Text('${reel.shareCount} shares',
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w700)),
               ],
             ),
           ],
@@ -2437,7 +2480,8 @@ class _FarmerFreshReelSubmissionScreenState
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -2461,7 +2505,8 @@ class _FarmerFreshReelSubmissionScreenState
         children: [
           const Header(
             title: 'Show what is fresh',
-            subtitle: '15–60 seconds • vertical works best • HPJ reviews before publishing',
+            subtitle:
+                '15–60 seconds • vertical works best • HPJ reviews before publishing',
           ),
           const SizedBox(height: 14),
           FarmCard(
@@ -2515,11 +2560,15 @@ class _FarmerFreshReelSubmissionScreenState
             value: _reelType,
             decoration: const InputDecoration(labelText: 'Reel type'),
             items: const [
-              DropdownMenuItem(value: 'farm_update', child: Text('Farm update')),
+              DropdownMenuItem(
+                  value: 'farm_update', child: Text('Farm update')),
               DropdownMenuItem(value: 'harvest', child: Text('Harvest')),
-              DropdownMenuItem(value: 'new_arrival', child: Text('New arrival')),
-              DropdownMenuItem(value: 'behind_the_scenes', child: Text('Behind the scenes')),
-              DropdownMenuItem(value: 'recipe', child: Text('Recipe / preparation')),
+              DropdownMenuItem(
+                  value: 'new_arrival', child: Text('New arrival')),
+              DropdownMenuItem(
+                  value: 'behind_the_scenes', child: Text('Behind the scenes')),
+              DropdownMenuItem(
+                  value: 'recipe', child: Text('Recipe / preparation')),
             ],
             onChanged: _submitting
                 ? null
@@ -2534,14 +2583,17 @@ class _FarmerFreshReelSubmissionScreenState
                 value: _linkedProductId,
                 decoration: const InputDecoration(
                   labelText: 'Linked produce (optional)',
-                  helperText: 'Customers can add linked produce to My Box from the reel.',
+                  helperText:
+                      'Customers can add linked produce to My Box from the reel.',
                 ),
                 items: [
-                  const DropdownMenuItem(value: '', child: Text('No linked product')),
+                  const DropdownMenuItem(
+                      value: '', child: Text('No linked product')),
                   ...products.map(
                     (product) => DropdownMenuItem(
                       value: product.id,
-                      child: Text(product.name, overflow: TextOverflow.ellipsis),
+                      child:
+                          Text(product.name, overflow: TextOverflow.ellipsis),
                     ),
                   ),
                 ],
@@ -2558,7 +2610,8 @@ class _FarmerFreshReelSubmissionScreenState
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.send_rounded),
             label: Text(_submitting ? 'Uploading...' : 'Submit for review'),
@@ -2730,13 +2783,16 @@ class _AdminFreshReelSubmissionScreenState
             decoration: const InputDecoration(labelText: 'Reel type'),
             items: const [
               DropdownMenuItem(value: 'hpj_update', child: Text('HPJ update')),
-              DropdownMenuItem(value: 'new_arrival', child: Text('New arrival')),
+              DropdownMenuItem(
+                  value: 'new_arrival', child: Text('New arrival')),
               DropdownMenuItem(value: 'recipe', child: Text('Recipe')),
               DropdownMenuItem(value: 'nutrition', child: Text('Nutrition')),
-              DropdownMenuItem(value: 'behind_the_scenes', child: Text('Behind the scenes')),
+              DropdownMenuItem(
+                  value: 'behind_the_scenes', child: Text('Behind the scenes')),
               DropdownMenuItem(value: 'promotion', child: Text('Promotion')),
               DropdownMenuItem(value: 'harvest', child: Text('Harvest')),
-              DropdownMenuItem(value: 'farm_update', child: Text('Farm update')),
+              DropdownMenuItem(
+                  value: 'farm_update', child: Text('Farm update')),
             ],
             onChanged: _submitting
                 ? null
@@ -2787,8 +2843,7 @@ class _AdminFreshReelSubmissionScreenState
                 ],
                 onChanged: _submitting
                     ? null
-                    : (value) =>
-                        setState(() => _linkedProductId = value ?? ''),
+                    : (value) => setState(() => _linkedProductId = value ?? ''),
               );
             },
           ),
@@ -2857,7 +2912,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
       ),
     );
     if (created == true && mounted) {
-      widget.onChanged();
+      // Refresh this queue without recreating the parent Admin shell.
       _reload();
     }
   }
@@ -2894,7 +2949,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
         status: status,
         moderationNote: note,
       );
-      widget.onChanged();
+      // Refresh this queue without recreating the parent Admin shell.
       _reload();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2927,7 +2982,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
         reelId: reel.id,
         placements: next,
       );
-      widget.onChanged();
+      // Refresh this queue without recreating the parent Admin shell.
       _reload();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2978,7 +3033,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
         reelId: reel.id,
         isFeatured: !reel.isFeatured,
       );
-      widget.onChanged();
+      // Refresh this queue without recreating the parent Admin shell.
       _reload();
     } catch (error) {
       if (!mounted) return;
@@ -3020,32 +3075,54 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: ['all', 'pending', 'published', 'rejected', 'archived']
-                    .map(
-                      (status) => ChoiceChip(
-                        label: Text(status == 'all'
-                            ? 'All'
-                            : '${status[0].toUpperCase()}${status.substring(1)}'),
-                        selected: _status == status,
-                        onSelected: (_) {
-                          setState(() {
-                            _status = status;
-                            _future = fetchAdminFreshReels(status: status);
-                          });
-                        },
-                      ),
-                    )
-                    .toList(),
+                children:
+                    ['all', 'pending', 'published', 'rejected', 'archived']
+                        .map(
+                          (status) => ChoiceChip(
+                            label: Text(status == 'all'
+                                ? 'All'
+                                : '${status[0].toUpperCase()}${status.substring(1)}'),
+                            selected: _status == status,
+                            onSelected: (_) {
+                              setState(() {
+                                _status = status;
+                                _future = fetchAdminFreshReels(status: status);
+                              });
+                            },
+                          ),
+                        )
+                        .toList(),
               ),
               const SizedBox(height: 14),
-              if (snapshot.connectionState == ConnectionState.waiting && reels.isEmpty)
-                const Center(child: Padding(
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  reels.isEmpty)
+                const Center(
+                    child: Padding(
                   padding: EdgeInsets.all(28),
                   child: CircularProgressIndicator(),
                 ))
+              else if (snapshot.hasError)
+                FarmCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Could not load reels. Check the database setup and permissions.',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _reload,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
               else if (reels.isEmpty)
                 const FarmCard(
-                  child: Text('No reels in this queue.', style: TextStyle(fontWeight: FontWeight.w800)),
+                  child: Text('No reels in this queue.',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
                 )
               else
                 ...reels.map(
@@ -3102,7 +3179,8 @@ class _AdminFreshReelCard extends StatelessWidget {
                   color: FarmColors.primarySoft,
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: const Icon(Icons.play_circle_outline_rounded, color: FarmColors.green),
+                child: const Icon(Icons.play_circle_outline_rounded,
+                    color: FarmColors.green),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -3142,7 +3220,8 @@ class _AdminFreshReelCard extends StatelessWidget {
                 tooltip: 'Preview reel',
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => FreshReelModerationPreviewScreen(reel: reel),
+                    builder: (_) =>
+                        FreshReelModerationPreviewScreen(reel: reel),
                   ),
                 ),
                 icon: const Icon(Icons.visibility_outlined),
@@ -3230,7 +3309,8 @@ class _AdminFreshReelCard extends StatelessWidget {
               if (reel.status != 'published')
                 ElevatedButton.icon(
                   onPressed: onPublish,
-                  icon: const Icon(Icons.check_circle_outline_rounded, size: 17),
+                  icon:
+                      const Icon(Icons.check_circle_outline_rounded, size: 17),
                   label: const Text('Publish'),
                 ),
               if (reel.status != 'rejected')
@@ -3242,7 +3322,11 @@ class _AdminFreshReelCard extends StatelessWidget {
               if (reel.status == 'published')
                 OutlinedButton.icon(
                   onPressed: onFeature,
-                  icon: Icon(reel.isFeatured ? Icons.star_rounded : Icons.star_border_rounded, size: 17),
+                  icon: Icon(
+                      reel.isFeatured
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      size: 17),
                   label: Text(reel.isFeatured ? 'Unfeature' : 'Feature'),
                 ),
               if (reel.status != 'archived')
@@ -3285,7 +3369,8 @@ class _FreshReelModerationPreviewScreenState
 
   Future<void> _load() async {
     try {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(widget.reel.videoUrl));
+      final controller =
+          VideoPlayerController.networkUrl(Uri.parse(widget.reel.videoUrl));
       await controller.initialize();
       await controller.setLooping(true);
       await controller.play();
@@ -3314,31 +3399,38 @@ class _FreshReelModerationPreviewScreenState
           onPressed: () => Navigator.of(context).maybePop(),
           icon: const Icon(Icons.arrow_back_rounded),
         ),
-        title: Text(widget.reel.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(widget.reel.title,
+            maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
       body: Center(
         child: _failed
-            ? const Text('Video preview unavailable.', style: TextStyle(color: Colors.white))
+            ? const Text('Video preview unavailable.',
+                style: TextStyle(color: Colors.white))
             : controller == null || !controller.value.isInitialized
                 ? const CircularProgressIndicator(color: Colors.white)
                 : AspectRatio(
-                    aspectRatio: controller.value.aspectRatio == 0 ? 9 / 16 : controller.value.aspectRatio,
+                    aspectRatio: controller.value.aspectRatio == 0
+                        ? 9 / 16
+                        : controller.value.aspectRatio,
                     child: VideoPlayer(controller),
                   ),
       ),
-      floatingActionButton: controller == null || !controller.value.isInitialized
-          ? null
-          : FloatingActionButton(
-              onPressed: () async {
-                if (controller.value.isPlaying) {
-                  await controller.pause();
-                } else {
-                  await controller.play();
-                }
-                if (mounted) setState(() {});
-              },
-              child: Icon(controller.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
-            ),
+      floatingActionButton:
+          controller == null || !controller.value.isInitialized
+              ? null
+              : FloatingActionButton(
+                  onPressed: () async {
+                    if (controller.value.isPlaying) {
+                      await controller.pause();
+                    } else {
+                      await controller.play();
+                    }
+                    if (mounted) setState(() {});
+                  },
+                  child: Icon(controller.value.isPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded),
+                ),
     );
   }
 }

@@ -61,7 +61,7 @@ class HpjInviteTemplate {
     headline: (row['headline'] ?? '').toString(),
     body: (row['message_template'] ?? '').toString(),
     imageUrl: (row['image_url'] ?? '').toString(),
-    destinationUrl: (row['destination_url'] ?? hpjSharePlayUrl).toString(),
+    destinationUrl: (row['destination_url'] ?? hpjWebsiteUrl).toString(),
     enabled: row['is_enabled'] == true,
   );
 }
@@ -231,7 +231,7 @@ class _HpjInviteGrowScreenState extends State<HpjInviteGrowScreen> {
   }
 
   String get _destination {
-    final raw = _template?.destinationUrl ?? hpjSharePlayUrl;
+    final raw = _template?.destinationUrl ?? hpjWebsiteUrl;
     return hpjShareSafeDestination(raw);
   }
 
@@ -711,7 +711,7 @@ class _HpjInviteTemplateEditorState extends State<HpjInviteTemplateEditor> {
       _headline.text=item?.headline ?? '';
       _body.text=(item?.body ?? '').replaceAll(r'\n','\n');
       _image.text=item?.imageUrl ?? '';
-      _link.text=item?.destinationUrl ?? hpjSharePlayUrl;
+      _link.text=hpjShareSafeDestination(item?.destinationUrl);
       _enabled=item?.enabled ?? false;
     });
   }

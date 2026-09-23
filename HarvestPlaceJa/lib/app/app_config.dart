@@ -57,10 +57,9 @@ class AppConfig {
         uri.host.trim().isNotEmpty;
   }
 
-  // Set this after deployment to your public app link.
-  // Leave empty if the current app URL should be used for invite links.
-  static const publicShareUrl =
-      'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp';
+  // The public website is the primary destination for referrals and shares.
+  // Keep Android Play Store downloads separate from web invitations.
+  static const publicShareUrl = 'https://harvestplaceja.com';
   static const supabaseUrl = 'https://zvgvvsgjzfygbsqwawoh.supabase.co';
   static const supabaseAnonKey =
       'sb_publishable_fBvBBFqJMlIOm1I3d5Oy-w_AbBGuJKH';

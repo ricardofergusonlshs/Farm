@@ -61,7 +61,7 @@ class HpjInviteTemplate {
     headline: (row['headline'] ?? '').toString(),
     body: (row['message_template'] ?? '').toString(),
     imageUrl: (row['image_url'] ?? '').toString(),
-    destinationUrl: (row['destination_url'] ?? hpjWebsiteUrl).toString(),
+    destinationUrl: (row['destination_url'] ?? hpjSharePlayUrl).toString(),
     enabled: row['is_enabled'] == true,
   );
 }
@@ -231,7 +231,7 @@ class _HpjInviteGrowScreenState extends State<HpjInviteGrowScreen> {
   }
 
   String get _destination {
-    final raw = _template?.destinationUrl ?? hpjWebsiteUrl;
+    final raw = _template?.destinationUrl ?? hpjSharePlayUrl;
     return hpjShareSafeDestination(raw);
   }
 
@@ -410,9 +410,11 @@ class _HpjInviteGrowScreenState extends State<HpjInviteGrowScreen> {
         final data = await captured.toByteData(format: ImageByteFormat.png);
         captured.dispose();
         if (data == null) throw StateError('Flyer could not be rendered');
-        imageFile = XFile.fromData(
-          data.buffer.asUint8List(data.offsetInBytes,data.lengthInBytes),
-          mimeType: 'image/png', name: 'hpj-${_audience}-invitation.png');
+        imageFile = await hpj_share_files.hpjImageShareFile(
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+          mimeType: 'image/png',
+          fileName: 'hpj-${_audience}-invitation.png',
+        );
       } catch (error) {
         farmDebugLog('Named invitation rendering unavailable, sharing campaign artwork: $error');
         final image = _template?.imageUrl.isNotEmpty == true
@@ -711,7 +713,7 @@ class _HpjInviteTemplateEditorState extends State<HpjInviteTemplateEditor> {
       _headline.text=item?.headline ?? '';
       _body.text=(item?.body ?? '').replaceAll(r'\n','\n');
       _image.text=item?.imageUrl ?? '';
-      _link.text=hpjShareSafeDestination(item?.destinationUrl);
+      _link.text=item?.destinationUrl ?? hpjSharePlayUrl;
       _enabled=item?.enabled ?? false;
     });
   }

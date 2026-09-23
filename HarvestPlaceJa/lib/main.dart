@@ -25,6 +25,7 @@ import 'package:video_player/video_player.dart';
 import 'browser_notifications.dart' as browser_notifications;
 import 'product_image_picker.dart';
 import 'share_launcher.dart';
+import 'share_photo_files.dart' as hpj_share_files;
 
 part 'app/app_config.dart';
 part 'app/harvest_place_app.dart';

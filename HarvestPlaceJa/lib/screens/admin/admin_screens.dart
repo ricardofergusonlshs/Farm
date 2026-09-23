@@ -36955,12 +36955,21 @@ Future<void> saveAdminSponsorCampaign({
   final cleanId = id?.trim() ?? '';
   if (cleanId.isEmpty) {
     payload['created_by'] = userId;
-    await supabase.from('hpj_sponsor_campaigns').insert(payload);
-  } else {
     await supabase
         .from('hpj_sponsor_campaigns')
+        .insert(payload)
+        .select('id')
+        .single();
+  } else {
+    final saved = await supabase
+        .from('hpj_sponsor_campaigns')
         .update(payload)
-        .eq('id', cleanId);
+        .eq('id', cleanId)
+        .select('id')
+        .maybeSingle();
+    if (saved == null) {
+      throw Exception('Sponsor changes were not saved. Check permissions and retry.');
+    }
   }
 }
 
@@ -39136,7 +39145,9 @@ class _AdminSponsorsTabState extends State<AdminSponsorsTab> {
 
     final saved = await showDialog<bool>(
       context: context,
-      barrierDismissible: !saving && !uploadingLogo && !uploadingImage,
+      // The initial value of barrierDismissible is not reactive to upload state.
+      // Keep the editor open while the browser's native image picker runs.
+      barrierDismissible: false,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
@@ -41834,6 +41845,63 @@ class _AdminDesktopWebsiteConsole extends StatelessWidget {
   }
 }
 
+// The selected Admin section lives in AdminDashboardScreen, not in the
+// disposable DefaultTabController. Observe changes without rebuilding the
+// parent (which would recreate all Admin tab contents during an edit).
+class _AdminTabSelectionWatcher extends StatefulWidget {
+  final TabController controller;
+  final ValueChanged<int> onSelected;
+  final Widget child;
+
+  const _AdminTabSelectionWatcher({
+    required this.controller,
+    required this.onSelected,
+    required this.child,
+  });
+
+  @override
+  State<_AdminTabSelectionWatcher> createState() =>
+      _AdminTabSelectionWatcherState();
+}
+
+class _AdminTabSelectionWatcherState
+    extends State<_AdminTabSelectionWatcher> {
+  int? _lastIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastIndex = widget.controller.index;
+    widget.controller.addListener(_onTabChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AdminTabSelectionWatcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onTabChanged);
+      _lastIndex = widget.controller.index;
+      widget.controller.addListener(_onTabChanged);
+    }
+  }
+
+  void _onTabChanged() {
+    final index = widget.controller.index;
+    if (!mounted || index == _lastIndex) return;
+    _lastIndex = index;
+    widget.onSelected(index);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _AdminBottomNavigationShell
     extends StatelessWidget {
   final String staffRole;
@@ -41843,6 +41911,7 @@ class _AdminBottomNavigationShell
   final VoidCallback onRefresh;
   final VoidCallback onExit;
   final _AdminNavigationIntent? initialIntent;
+  final ValueChanged<String> onSectionChanged;
 
   const _AdminBottomNavigationShell({
     required this.staffRole,
@@ -41851,6 +41920,7 @@ class _AdminBottomNavigationShell
     required this.refreshKey,
     required this.onRefresh,
     required this.onExit,
+    required this.onSectionChanged,
     this.initialIntent,
   });
 
@@ -42072,7 +42142,14 @@ class _AdminBottomNavigationShell
           final controller =
               DefaultTabController.of(context);
 
-          return AnimatedBuilder(
+          return _AdminTabSelectionWatcher(
+            controller: controller,
+            onSelected: (index) {
+              if (index >= 0 && index < tabs.length) {
+                onSectionChanged(tabs[index].tab.text ?? 'Dashboard');
+              }
+            },
+            child: AnimatedBuilder(
             animation: controller,
             builder: (context, _) {
               final desktopWeb = HpjWebUi.isDesktop(context);
@@ -42174,12 +42251,10 @@ class _AdminBottomNavigationShell
                 child: PopScope(
                   canPop: false,
                   onPopInvokedWithResult: (didPop, result) {
-                    if (didPop) return;
-                    if (actualIndex != workspaceRootIndex) {
-                      controller.animateTo(workspaceRootIndex);
-                    }
-                    // The staff workspace is a root workspace. Switching to
-                    // Customer/Farmer/Wholesale is explicit via Switch Workspace.
+                    // Do not silently change Admin sections on a browser,
+                    // image-chooser or system back event. Actual detail routes
+                    // pop normally; Switch Workspace is the explicit exit.
+                    // Today remains accessible from the bottom navigation.
                   },
                   child: desktopWeb
                       ? _AdminDesktopWebsiteConsole(
@@ -42355,6 +42430,7 @@ class _AdminBottomNavigationShell
                 ),
               );
             },
+            ),
           );
         },
       ),
@@ -43045,10 +43121,17 @@ class _AdminDashboardScreenState
   String? _authBoundaryUserId;
   int refreshKey = 0;
   bool _initialIntentPublished = false;
+  // Remember the REAL selected section, including tabs opened through More,
+  // while transient access/role futures are refreshed.
+  String _lastAdminSection = 'Dashboard';
+  // A resume check for the same staff role must not replace FutureBuilder
+  // futures: even completed futures can briefly tear down the current tab.
+  String? _renderedStaffRole;
 
   @override
   void initState() {
     super.initState();
+    _lastAdminSection = widget.initialSection;
     WidgetsBinding.instance.addObserver(this);
     _authBoundaryUserId =
         supabase.auth.currentUser?.id.trim();
@@ -43117,7 +43200,7 @@ class _AdminDashboardScreenState
   }
 
   Future<void> _revalidateAdminWorkspace() async {
-    if (!mounted) return;
+    if (!mounted || hpjImagePickerBusy) return;
 
     final operationBoundary =
         captureHpjPrivateOperationBoundary();
@@ -43161,22 +43244,25 @@ class _AdminDashboardScreenState
         return;
       }
 
-      // Keep the existing Admin navigation shell alive after a camera,
-      // gallery or browser-file-picker handoff. Replacing the staff-role
-      // future with a pending Future temporarily removes the shell and can
-      // recreate DefaultTabController at Today/Dashboard.
-      //
-      // Resolve the role first, then publish an already-completed Future so
-      // the current tab (Orders, Products, Feed, etc.) stays selected.
-      final currentRole = await fetchCurrentStaffRole();
+      // Returning from a browser chooser causes AppLifecycleState.resumed.
+      // Refreshing both futures unmounts the Admin shell and resets Marketing
+      // to Today. Rebuild the shell only when a genuine staff-role change occurs.
+      final currentRole = normalizeStaffRole(await fetchCurrentStaffRole());
 
       if (!mounted ||
-          !isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
+          !isHpjPrivateOperationBoundaryCurrent(operationBoundary) ||
+          hpjImagePickerBusy) {
         return;
       }
 
+      if (_renderedStaffRole == null ||
+          currentRole.isEmpty ||
+          _renderedStaffRole == currentRole) {
+        return;
+      }
+
+      // Access was verified above; refresh role-dependent tabs only.
       setState(() {
-        _adminAllowedFuture = Future<bool>.value(true);
         _staffRoleFuture = Future<String>.value(currentRole);
         refreshKey++;
       });
@@ -43366,6 +43452,7 @@ class _AdminDashboardScreenState
                 normalizeStaffRole(
               roleSnapshot.data,
             );
+            _renderedStaffRole = staffRole;
 
             final roleLabel =
                 staffRoleDisplayLabel(
@@ -43373,7 +43460,7 @@ class _AdminDashboardScreenState
             );
 
             final initialIntent = _AdminNavigationIntent(
-              section: widget.initialSection,
+              section: _lastAdminSection,
               subSection: widget.initialSubSection,
               filter: widget.initialFilter,
               recordId: widget.initialRecordId,
@@ -43403,6 +43490,7 @@ class _AdminDashboardScreenState
               refreshKey: refreshKey,
               onRefresh: refresh,
               onExit: goBackHome,
+              onSectionChanged: (section) => _lastAdminSection = section,
               initialIntent: initialIntent,
             );
           },
@@ -62261,8 +62349,9 @@ class _AdminAgricultureFeedTabState
   int localRefreshKey = 0;
 
   void _refresh() {
+    // A feed change only needs this feed's local refresh. Rebuilding the
+    // parent Admin shell can discard the current tab and return to Today.
     if (mounted) setState(() => localRefreshKey++);
-    widget.onChanged();
   }
 
   String _categoryLabel(String value) {
@@ -62341,6 +62430,10 @@ class _AdminAgricultureFeedTabState
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      // Uploads and draft edits should never disappear from an outside tap
+      // or swipe while the browser file chooser temporarily takes focus.
+      isDismissible: false,
+      enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         return StatefulBuilder(
@@ -62410,22 +62503,25 @@ class _AdminAgricultureFeedTabState
             }
 
             Future<void> uploadImage() async {
+              if (saving || uploading) return;
+              // Mark busy BEFORE launching the picker. Otherwise the editor
+              // can be closed while its native picker has browser focus.
+              setSheetState(() => uploading = true);
               try {
                 final picked = await pickProductImageFromDevice();
                 if (picked == null) return;
-                setSheetState(() => uploading = true);
                 final url = await uploadAgricultureFeedImageToStorage(picked);
                 if (!context.mounted) return;
-                setSheetState(() {
-                  imageUrl = url;
-                  uploading = false;
-                });
+                setSheetState(() => imageUrl = url);
               } catch (error) {
                 if (context.mounted) {
-                  setSheetState(() => uploading = false);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text(friendlyAppError(error))),
                   );
+                }
+              } finally {
+                if (context.mounted) {
+                  setSheetState(() => uploading = false);
                 }
               }
             }
@@ -62520,7 +62616,7 @@ class _AdminAgricultureFeedTabState
                             ),
                           ),
                           IconButton(
-                            onPressed: saving
+                            onPressed: saving || uploading
                                 ? null
                                 : () => Navigator.of(context).pop(false),
                             icon: const Icon(Icons.close_rounded),
@@ -65957,6 +66053,8 @@ class _AdminP97ParishIntelRow extends StatelessWidget {
 
 
 // HPJ Marketing & Sharing — one editable, public campaign; owner/manager only.
+// Admin-local default: compile-safe even if Share & Promote is not updated yet.
+const String _hpjAdminWebsiteUrl = 'https://harvestplaceja.com';
 class HpjAdminMarketingTab extends StatefulWidget {
   const HpjAdminMarketingTab({super.key});
   @override
@@ -65966,13 +66064,15 @@ class HpjAdminMarketingTab extends StatefulWidget {
 class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
   final _headline = TextEditingController();
   final _caption = TextEditingController();
-  final _destination = TextEditingController(text: hpjSharePlayUrl);
+  final _destination = TextEditingController(text: _hpjAdminWebsiteUrl);
   String _imageUrl = '';
   // Keep a preview of a successful upload so the Admin can distinguish a
   // broken public Storage URL from a failed file selection.
   Uint8List? _localImagePreview;
   bool _selectedImageNotUploaded = false;
   bool _enabled = false;
+  bool _savedPublished = false;
+  bool _hasUnsavedChanges = false;
   bool _saving = false;
   bool _loading = true;
   String? _error;
@@ -66016,6 +66116,8 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
         _selectedImageNotUploaded = false;
         // No campaign row means no published campaign yet.
         _enabled = campaign?.enabled == true;
+        _savedPublished = _enabled;
+        _hasUnsavedChanges = false;
         _loading = false;
         _error = null;
       });
@@ -66025,8 +66127,6 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
   }
 
   Future<void> _uploadImage() async {
-    // The picker is invoked directly from the user's button tap. Do not
-    // await a role lookup, show a dialog or change the tab before opening it.
     if (_saving) return;
     final userBefore = supabase.auth.currentUser;
     if (userBefore == null) {
@@ -66036,24 +66136,26 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
       return;
     }
 
+    // Use HPJ's shared picker, not ImagePicker directly. On the web the shared
+    // picker opens the browser chooser synchronously, tracks its focus handoff
+    // with hpjImagePickerBusy and returns actual file bytes. This prevents the
+    // Admin workspace from resetting to Today while the chooser is open.
+    setState(() {
+      _saving = true;
+      _uploadStatus = 'Choose a JPG, PNG or WebP advertisement image…';
+    });
     try {
-      // Use the existing ImagePicker web/mobile path (also used by Sponsor
-      // Media). Catch picker errors here: previously they escaped this method
-      // and could leave the browser preview on an error/blank screen.
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1800,
-        imageQuality: 90,
+      final picked = await pickProductImageFromDevice(
+        source: HpjImageSource.gallery,
       );
-      if (!mounted || picked == null) return;
+      if (!mounted) return;
+      if (picked == null) {
+        setState(() => _uploadStatus = 'No new image selected.');
+        return;
+      }
 
-      setState(() {
-        _saving = true;
-        _uploadStatus = 'Checking the image…';
-      });
-
-      final filename = picked.name.toLowerCase().trim();
-      final declaredMime = (picked.mimeType ?? '').trim().toLowerCase();
+      final filename = picked.fileName.toLowerCase().trim();
+      final declaredMime = picked.mimeType.trim().toLowerCase();
       late final String contentType;
       if (filename.endsWith('.png') || declaredMime == 'image/png') {
         contentType = 'image/png';
@@ -66068,26 +66170,21 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
         throw Exception('Choose a JPG, PNG or WebP advertisement image.');
       }
 
-      final byteLength = await picked.length();
-      if (!mounted) return;
-      if (byteLength <= 0) {
+      final bytes = picked.bytes;
+      if (bytes.isEmpty) {
         throw Exception('The selected image is empty. Select another image.');
       }
-      if (byteLength > 8 * 1024 * 1024) {
+      if (bytes.length > 8 * 1024 * 1024) {
         throw Exception('The image must be smaller than 8 MB.');
       }
 
-      // Show the selected image immediately, BEFORE the network upload. If
-      // Storage rejects the upload, the selected image remains visible and
-      // Save is blocked so an older campaign image cannot be mistaken for it.
-      final bytes = await picked.readAsBytes();
-      if (!mounted) return;
-      if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
-        throw Exception('Please select an image smaller than 8 MB.');
-      }
+      // A local preview is deliberately labelled unsaved until Storage has
+      // confirmed the upload. Keep it visible if the upload fails, so owners
+      // can distinguish a file-picker failure from a Storage/RLS failure.
       setState(() {
         _localImagePreview = bytes;
         _selectedImageNotUploaded = true;
+        _hasUnsavedChanges = true;
         _uploadStatus = 'Image selected. Uploading to HPJ Storage…';
       });
 
@@ -66116,15 +66213,43 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
         _imageUrl = url;
         _localImagePreview = bytes;
         _selectedImageNotUploaded = false;
-        _uploadStatus =
-            'Image uploaded. This preview is from your selected file. Tap Save marketing campaign to keep the image after leaving this page.';
+        _uploadStatus = 'Storage upload complete. Saving advertisement…';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Advertisement image uploaded. Now save the campaign.')),
-      );
+
+      // Image upload alone is not durable: the customer page reads the URL
+      // from hpj_share_campaigns. Commit the campaign immediately, otherwise
+      // a navigation/lifecycle interruption loses the selected artwork.
+      // Keep publish state unchanged; uploading must not publish a draft.
+      try {
+        await _writeCampaign(imageUrl: url, useSafeDraftDefaults: true);
+        if (!mounted) return;
+        setState(() {
+          // Storage image, URL, and safe text defaults were committed together.
+          if (_headline.text.trim().isEmpty) {
+            _headline.text = HpjShareCampaign.fallback.headline;
+          }
+          if (_caption.text.trim().isEmpty) {
+            _caption.text = HpjShareCampaign.fallback.caption;
+          }
+          _destination.text = hpjShareSafeDestination(_destination.text);
+          _savedPublished = _enabled;
+          _hasUnsavedChanges = false;
+          _uploadStatus =
+              'Advertisement uploaded AND saved. The image will remain after leaving this page.';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Advertisement image uploaded and saved.'),
+        ));
+      } catch (saveError) {
+        if (!mounted) return;
+        final message = 'Image uploaded to Storage, but campaign save failed: '
+            '$saveError. Stay here and tap Save marketing campaign to retry.';
+        setState(() => _uploadStatus = message);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
     } catch (error) {
-      // Keep the Admin Marketing page on screen and preserve any previous image
-      // and unsaved form fields. The visible error remains after a snackbar ends.
       if (!mounted) return;
       final message = 'Image upload failed: $error';
       setState(() => _uploadStatus = message);
@@ -66136,8 +66261,36 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _writeCampaign({
+    required String imageUrl,
+    bool useSafeDraftDefaults = false,
+  }) async {
+    final headline = _headline.text.trim();
+    final caption = _caption.text.trim();
+    final destination = _destination.text.trim();
+    final saved = await supabase.from('hpj_share_campaigns').upsert({
+      'id': 'default',
+      'headline': useSafeDraftDefaults && headline.isEmpty
+          ? HpjShareCampaign.fallback.headline : headline,
+      'caption': useSafeDraftDefaults && caption.isEmpty
+          ? HpjShareCampaign.fallback.caption : caption,
+      'destination_url': hpjShareSafeDestination(destination),
+      'image_url': imageUrl,
+      'is_enabled': _enabled,
+      'updated_by': supabase.auth.currentUser?.id,
+    }, onConflict: 'id')
+        .select('image_url,is_enabled,headline,caption,destination_url')
+        .single();
+
+    if ((saved['image_url'] ?? '').toString() != imageUrl ||
+        saved['is_enabled'] != _enabled) {
+      throw StateError('The database did not confirm the image URL and publish state.');
+    }
+  }
+
+  Future<void> _save({bool? publish}) async {
     if (_saving) return;
+    final shouldPublish = publish ?? _enabled;
     if (_selectedImageNotUploaded) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('This image was selected but did not upload. Fix the upload error and select it again before saving.'),
@@ -66155,35 +66308,97 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
         content: Text('Use a valid https:// destination URL.')));
       return;
     }
-    if (_enabled && cleanHostedImageUrl(_imageUrl) == null) {
+    if (shouldPublish && cleanHostedImageUrl(_imageUrl) == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Upload an image before publishing the campaign.')));
       return;
     }
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _enabled = shouldPublish;
+      _hasUnsavedChanges = true;
+    });
     try {
       await _authorize();
-      await supabase.from('hpj_share_campaigns').upsert({
-        'id': 'default',
-        'headline': _headline.text.trim(),
-        'caption': _caption.text.trim(),
-        'destination_url': url.toString(),
-        'image_url': _imageUrl,
-        'is_enabled': _enabled,
-        'updated_by': supabase.auth.currentUser?.id,
-      }, onConflict: 'id');
+      await _writeCampaign(imageUrl: _imageUrl);
       if (!mounted) return;
       setState(() {
-        _uploadStatus = 'Campaign saved. Reopen this page to confirm the image also loads from public Storage.';
+        _destination.text = hpjShareSafeDestination(_destination.text);
+        _savedPublished = shouldPublish;
+        _hasUnsavedChanges = false;
+        _uploadStatus = shouldPublish
+            ? 'Campaign published. Customer sharing can now load the saved advertisement.'
+            : 'Campaign saved as draft. Customers still see HPJ branding.';
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('HPJ marketing campaign saved.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(shouldPublish
+            ? 'HPJ campaign published.'
+            : 'HPJ campaign saved as draft.')));
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Campaign save failed: $error')));
+      if (mounted) {
+        setState(() => _uploadStatus = 'Campaign save failed: $error');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Campaign save failed: $error')));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _previewDraft() {
+    if (_saving) return;
+    final draft = HpjShareCampaign(
+      id: 'admin-preview',
+      headline: _headline.text.trim().isEmpty
+          ? HpjShareCampaign.fallback.headline
+          : _headline.text.trim(),
+      caption: _caption.text.trim().isEmpty
+          ? HpjShareCampaign.fallback.caption
+          : _caption.text.trim(),
+      destinationUrl: hpjShareSafeDestination(_destination.text),
+      imageUrl: _imageUrl,
+      enabled: _enabled,
+    );
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => HpjSharePromoteScreen(
+          previewCampaign: draft,
+          previewImageBytes: _localImagePreview,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _publishNow() async {
+    if (_saving) return;
+    if (_selectedImageNotUploaded || cleanHostedImageUrl(_imageUrl) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Upload and save a valid advertisement image before publishing.'),
+      ));
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Publish this advertisement?'),
+        content: const Text(
+          'The saved image, headline, caption and link will become '
+          'visible on the customer Share & Promote page.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Publish'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await _save(publish: true);
   }
 
   Widget _imagePreview(String? publicUrl) {
@@ -66213,7 +66428,7 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                'Upload a JPG, PNG or WebP, then tap Save marketing campaign.',
+                'Choose a JPG, PNG or WebP. The image is saved automatically after upload.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: FarmColors.mutedText, fontSize: 12),
               ),
@@ -66245,7 +66460,7 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
                       child: Text(
                         _selectedImageNotUploaded
                             ? 'Selected locally • NOT uploaded yet'
-                            : 'Uploaded • Save campaign below to keep it',
+                            : 'Image uploaded • see save confirmation below',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white, fontSize: 11,
                             fontWeight: FontWeight.w700),
@@ -66289,7 +66504,37 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) return Center(child: Text(_error!));
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: FarmColors.danger, size: 34),
+              const SizedBox(height: 12),
+              const Text('Marketing campaign could not be loaded.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              SelectableText(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _load();
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final image = cleanHostedImageUrl(_imageUrl);
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 110),
@@ -66297,7 +66542,7 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
         const Text('Marketing & Sharing', style: TextStyle(
           fontSize: 24, fontWeight: FontWeight.w900, color: FarmColors.deepGreen)),
         const SizedBox(height: 6),
-        const Text('Control the image, message and link customers share. Changes appear when they reopen Share & Promote.',
+        const Text('Set the image, message and link customers share. Image uploads save automatically; use Save for later text or publish changes.',
           style: TextStyle(color: FarmColors.mutedText)),
         const SizedBox(height: 12),
         Card(
@@ -66317,6 +66562,32 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
           ),
         ),
         const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _savedPublished
+                ? FarmColors.successSoft
+                : FarmColors.warningSoft,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                _savedPublished ? Icons.check_circle_outline : Icons.edit_note_rounded,
+                color: _savedPublished ? FarmColors.success : FarmColors.warning,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${_savedPublished ? 'Published' : 'Draft'}'
+                  '${_hasUnsavedChanges ? ' • Unsaved edits' : ' • Saved'}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
         _imagePreview(image),
         const SizedBox(height: 10),
         OutlinedButton.icon(
@@ -66329,7 +66600,7 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
           Text(
             _uploadStatus!,
             style: TextStyle(
-              color: _uploadStatus!.startsWith('Image upload failed')
+              color: _uploadStatus!.contains('failed:')
                   ? FarmColors.danger
                   : FarmColors.deepGreen,
               fontWeight: FontWeight.w700,
@@ -66339,33 +66610,75 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
         ],
         const SizedBox(height: 14),
         TextField(controller: _headline,
+          onChanged: (_) => setState(() => _hasUnsavedChanges = true),
           maxLength: 90,
           decoration: const InputDecoration(labelText: 'Campaign headline', border: OutlineInputBorder())),
         const SizedBox(height: 10),
-        TextField(controller: _caption, maxLines: 4, maxLength: 700,
+        TextField(controller: _caption,
+          onChanged: (_) => setState(() => _hasUnsavedChanges = true),
+          maxLines: 4, maxLength: 700,
           decoration: const InputDecoration(labelText: 'WhatsApp caption', border: OutlineInputBorder())),
         const SizedBox(height: 10),
         TextField(controller: _destination,
-          decoration: const InputDecoration(labelText: 'HTTPS destination / app link',
+          onChanged: (_) => setState(() => _hasUnsavedChanges = true),
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+              labelText: 'Advertisement website URL (HTTPS)',
+              hintText: _hpjAdminWebsiteUrl,
+              helperText: 'Website is the main destination. Add a specific HTTPS campaign page if needed.',
               border: OutlineInputBorder())),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _saving ? null : () => setState(() {
+              _destination.text = _hpjAdminWebsiteUrl;
+              _hasUnsavedChanges = true;
+            }),
+            icon: const Icon(Icons.language_rounded),
+            label: const Text('Use harvestplaceja.com'),
+          ),
+        ),
         SwitchListTile.adaptive(
           title: const Text('Publish advertisement'),
           subtitle: const Text('OFF hides this campaign and uses the default HPJ logo share.'),
           value: _enabled,
-          onChanged: _saving ? null : (value) => setState(() => _enabled = value),
+          onChanged: _saving ? null : (value) => setState(() {
+            _enabled = value;
+            _hasUnsavedChanges = true;
+          }),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _saving ? null : _previewDraft,
+          icon: const Icon(Icons.visibility_outlined),
+          label: const Text('Preview my edits (private)'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: (_saving || _selectedImageNotUploaded)
+              ? null : () => _save(publish: false),
+          icon: const Icon(Icons.save_outlined),
+          label: Text(_saving ? 'Saving…' : 'Save as draft / pause campaign'),
         ),
         const SizedBox(height: 10),
         FilledButton.icon(
-          onPressed: (_saving || _selectedImageNotUploaded) ? null : _save,
-          icon: const Icon(Icons.save_outlined),
-          label: Text(_saving ? 'Saving…' : 'Save marketing campaign'),
+          onPressed: (_saving || _selectedImageNotUploaded) ? null : _publishNow,
+          icon: const Icon(Icons.campaign_outlined),
+          label: const Text('Publish campaign'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: (_saving || _selectedImageNotUploaded)
+              ? null : () => _save(),
+          icon: const Icon(Icons.save_alt_rounded),
+          label: const Text('Save current settings'),
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed: _saving ? null : () => Navigator.of(context).push<void>(
             MaterialPageRoute<void>(builder: (_) => const HpjSharePromoteScreen())),
-          icon: const Icon(Icons.visibility_outlined),
-          label: const Text('Preview customer sharing'),
+          icon: const Icon(Icons.people_outline_rounded),
+          label: const Text('View published customer page'),
         ),
       ],
     );

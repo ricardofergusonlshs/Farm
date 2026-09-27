@@ -30,6 +30,7 @@ import 'share_photo_files.dart' as hpj_share_files;
 part 'app/app_config.dart';
 part 'app/harvest_place_app.dart';
 part 'theme/farm_colors.dart';
+part 'theme/hpj_typography.dart';
 part 'models/models.dart';
 part 'services/services.dart';
 part 'services/push_notification_service.dart';

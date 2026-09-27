@@ -357,9 +357,18 @@ class Product {
     return candidate;
   }
 
-  String get formattedPrice => formatJmd(effectivePrice);
-  String get formattedEffectivePrice => formatJmd(effectivePrice);
-  String get formattedOriginalPrice => formatJmd(originalPriceValue);
+  bool get hasCustomerPrice => effectivePrice > 0;
+
+  String get formattedPrice =>
+      hasCustomerPrice ? formatJmd(effectivePrice) : 'Price unavailable';
+
+  String get formattedEffectivePrice =>
+      hasCustomerPrice ? formatJmd(effectivePrice) : 'Price unavailable';
+
+  String get formattedOriginalPrice => originalPriceValue > 0
+      ? formatJmd(originalPriceValue)
+      : 'Price unavailable';
+
   String get originLabel => isLocal ? 'Local' : 'Not Local';
 
   int get discountPercentDisplay {
@@ -375,10 +384,27 @@ class Product {
   bool get isHidden => productStatus.trim().toLowerCase() == 'hidden';
   bool get isApproved => approvalStatus.trim().toLowerCase() == 'approved';
   bool get isCustomerVisible => isApproved && !isHidden && !isReadySoon;
+
+  bool get isExplicitlyOutOfStock {
+    final status = productStatus.trim().toLowerCase();
+    return status == 'out_of_stock' ||
+        status == 'unavailable' ||
+        status == 'sold_out';
+  }
+
   bool get isOutOfStock =>
-      isCustomerVisible && (!isAvailable || stockQuantity <= 0);
+      isCustomerVisible &&
+      (isExplicitlyOutOfStock ||
+          !isAvailable ||
+          stockQuantity <= 0 ||
+          !hasCustomerPrice);
+
   bool get canAddToCart =>
-      isCustomerVisible && isAvailable && stockQuantity > 0;
+      isCustomerVisible &&
+      !isExplicitlyOutOfStock &&
+      isAvailable &&
+      stockQuantity > 0 &&
+      hasCustomerPrice;
 
   bool get isLowStock =>
       canAddToCart && stockQuantity > 0 && stockQuantity <= 5;
@@ -1439,6 +1465,35 @@ class FarmerOrderSummary {
   }
 }
 
+// HPJ COUPON TYPE COMPATIBILITY — 2026-09-27
+// Database canonical values are: fixed / percentage.
+// Flutter keeps using percent internally so the existing UI/discount logic
+// remains unchanged.
+String _normalizeCouponDiscountTypeForUi(dynamic value) {
+  final clean = value?.toString().trim().toLowerCase() ?? '';
+
+  switch (clean) {
+    case 'percent':
+    case 'percentage':
+    case 'percentage_off':
+    case 'percent_off':
+    case 'pct':
+    case '%':
+      return 'percent';
+
+    case 'fixed':
+    case 'amount':
+    case 'fixed_amount':
+    case 'fixed_value':
+    case 'flat':
+    case 'cash':
+    case 'jmd':
+    case '':
+    default:
+      return 'fixed';
+  }
+}
+
 class Coupon {
   final String id;
   final String code;
@@ -1460,7 +1515,7 @@ class Coupon {
     return Coupon(
       id: (data['id'] ?? '').toString(),
       code: (data['code'] ?? '').toString(),
-      discountType: (data['discount_type'] ?? 'fixed').toString(),
+      discountType: _normalizeCouponDiscountTypeForUi(data['discount_type']),
       discountValue: Product._toDouble(data['discount_value']),
       isActive: data['is_active'] == null ? true : data['is_active'] == true,
       minimumOrder: data['minimum_order'] == null
@@ -1516,7 +1571,7 @@ class CouponValidationResult {
       message: (data['message'] ?? '').toString(),
       couponId: data['coupon_id']?.toString(),
       code: data['code']?.toString(),
-      discountType: (data['discount_type'] ?? 'fixed').toString(),
+      discountType: _normalizeCouponDiscountTypeForUi(data['discount_type']),
       discountValue: Product._toDouble(data['discount_value']),
       discountAmount: Product._toDouble(data['discount_amount']),
       originalTotal: Product._toDouble(data['original_total']),
@@ -1549,6 +1604,12 @@ class SupportTicket {
   final DateTime? lastMessageAt;
   final DateTime? customerLastReadAt;
   final DateTime? staffLastReadAt;
+  final DateTime? userArchivedAt;
+  final DateTime? userMutedUntil;
+  final String pinnedMessageId;
+  final bool userMarkedUnread;
+  final DateTime? customerTypingAt;
+  final DateTime? staffTypingAt;
 
   const SupportTicket({
     required this.id,
@@ -1567,6 +1628,12 @@ class SupportTicket {
     this.lastMessageAt,
     this.customerLastReadAt,
     this.staffLastReadAt,
+    this.userArchivedAt,
+    this.userMutedUntil,
+    this.pinnedMessageId = '',
+    this.userMarkedUnread = false,
+    this.customerTypingAt,
+    this.staffTypingAt,
   });
 
   factory SupportTicket.fromSupabase(Map<String, dynamic> data) {
@@ -1587,6 +1654,12 @@ class SupportTicket {
       lastMessageAt: parseProductDate(data['last_message_at']),
       customerLastReadAt: parseProductDate(data['customer_last_read_at']),
       staffLastReadAt: parseProductDate(data['staff_last_read_at']),
+      userArchivedAt: parseProductDate(data['user_archived_at']),
+      userMutedUntil: parseProductDate(data['user_muted_until']),
+      pinnedMessageId: (data['pinned_message_id'] ?? '').toString(),
+      userMarkedUnread: data['user_marked_unread'] == true,
+      customerTypingAt: parseProductDate(data['customer_typing_at']),
+      staffTypingAt: parseProductDate(data['staff_typing_at']),
     );
   }
 
@@ -1608,6 +1681,7 @@ class SupportTicket {
   }
 
   bool get hasUnreadForCustomer {
+    if (userMarkedUnread) return true;
     if (lastSenderRole.trim().toLowerCase() != 'staff') return false;
     final sentAt = lastMessageAt;
     if (sentAt == null) return false;
@@ -1627,6 +1701,21 @@ class SupportTicket {
     final value = status.trim().toLowerCase();
     return value == 'resolved' || value == 'closed';
   }
+
+  bool get isArchivedForUser => userArchivedAt != null;
+
+  bool get isMutedForUser {
+    final until = userMutedUntil;
+    return until != null && until.isAfter(DateTime.now());
+  }
+
+  bool _typingStillFresh(DateTime? value) {
+    if (value == null) return false;
+    return DateTime.now().difference(value).inSeconds.abs() <= 6;
+  }
+
+  bool get customerIsTyping => _typingStillFresh(customerTypingAt);
+  bool get staffIsTyping => _typingStillFresh(staffTypingAt);
 }
 
 class SupportMessage {
@@ -1637,6 +1726,17 @@ class SupportMessage {
   final String message;
   final bool isInternal;
   final DateTime? createdAt;
+  final String replyToMessageId;
+  final String replyPreview;
+  final DateTime? editedAt;
+  final DateTime? deletedForEveryoneAt;
+  final String deletedByUserId;
+  final List<String> hiddenForUserIds;
+  final Map<String, String> reactions;
+  final String attachmentPath;
+  final String attachmentType;
+  final String attachmentName;
+  final List<String> starredForUserIds;
 
   const SupportMessage({
     required this.id,
@@ -1646,9 +1746,63 @@ class SupportMessage {
     required this.message,
     required this.isInternal,
     this.createdAt,
+    this.replyToMessageId = '',
+    this.replyPreview = '',
+    this.editedAt,
+    this.deletedForEveryoneAt,
+    this.deletedByUserId = '',
+    this.hiddenForUserIds = const <String>[],
+    this.reactions = const <String, String>{},
+    this.attachmentPath = '',
+    this.attachmentType = '',
+    this.attachmentName = '',
+    this.starredForUserIds = const <String>[],
   });
 
   factory SupportMessage.fromSupabase(Map<String, dynamic> data) {
+    final hidden = <String>[];
+    final rawHidden = data['hidden_for_user_ids'];
+    if (rawHidden is List) {
+      for (final value in rawHidden) {
+        final id = value?.toString().trim() ?? '';
+        if (id.isNotEmpty) hidden.add(id);
+      }
+    }
+
+    final starred = <String>[];
+    final rawStarred = data['starred_for_user_ids'];
+    if (rawStarred is List) {
+      for (final value in rawStarred) {
+        final id = value?.toString().trim() ?? '';
+        if (id.isNotEmpty) starred.add(id);
+      }
+    }
+
+    final parsedReactions = <String, String>{};
+    final rawReactions = data['reactions'];
+    if (rawReactions is Map) {
+      rawReactions.forEach((key, value) {
+        final userId = key.toString().trim();
+        final reaction = value?.toString().trim() ?? '';
+        if (userId.isNotEmpty && reaction.isNotEmpty) {
+          parsedReactions[userId] = reaction;
+        }
+      });
+    } else if (rawReactions is String && rawReactions.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawReactions);
+        if (decoded is Map) {
+          decoded.forEach((key, value) {
+            final userId = key.toString().trim();
+            final reaction = value?.toString().trim() ?? '';
+            if (userId.isNotEmpty && reaction.isNotEmpty) {
+              parsedReactions[userId] = reaction;
+            }
+          });
+        }
+      } catch (_) {}
+    }
+
     return SupportMessage(
       id: (data['id'] ?? '').toString(),
       ticketId: (data['ticket_id'] ?? '').toString(),
@@ -1657,11 +1811,55 @@ class SupportMessage {
       message: (data['message'] ?? '').toString(),
       isInternal: data['is_internal'] == true,
       createdAt: parseProductDate(data['created_at']),
+      replyToMessageId: (data['reply_to_message_id'] ?? '').toString(),
+      replyPreview: (data['reply_preview'] ?? '').toString(),
+      editedAt: parseProductDate(data['edited_at']),
+      deletedForEveryoneAt: parseProductDate(data['deleted_for_everyone_at']),
+      deletedByUserId: (data['deleted_by_user_id'] ?? '').toString(),
+      hiddenForUserIds: List<String>.unmodifiable(hidden),
+      reactions: Map<String, String>.unmodifiable(parsedReactions),
+      attachmentPath: (data['attachment_path'] ?? '').toString(),
+      attachmentType: (data['attachment_type'] ?? '').toString(),
+      attachmentName: (data['attachment_name'] ?? '').toString(),
+      starredForUserIds: List<String>.unmodifiable(starred),
     );
   }
 
   bool get isFromStaff => senderRole.trim().toLowerCase() == 'staff';
   bool get isFromUser => senderRole.trim().toLowerCase() == 'user';
+  bool get isDeletedForEveryone => deletedForEveryoneAt != null;
+  bool get isEdited => editedAt != null && !isDeletedForEveryone;
+  bool get hasAttachment =>
+      attachmentPath.trim().isNotEmpty &&
+      <String>{'image', 'video'}.contains(attachmentType.trim().toLowerCase());
+  bool get isPhoto => attachmentType.trim().toLowerCase() == 'image';
+  bool get isVideo => attachmentType.trim().toLowerCase() == 'video';
+
+  String get displayMessage =>
+      isDeletedForEveryone ? 'This message was deleted' : message;
+
+  bool isStarredFor(String userId) {
+    final clean = userId.trim();
+    return clean.isNotEmpty && starredForUserIds.contains(clean);
+  }
+
+  bool isHiddenFor(String userId) {
+    final clean = userId.trim();
+    return clean.isNotEmpty && hiddenForUserIds.contains(clean);
+  }
+
+  String reactionForUser(String userId) =>
+      reactions[userId.trim()]?.trim() ?? '';
+
+  Map<String, int> get reactionCounts {
+    final counts = <String, int>{};
+    for (final reaction in reactions.values) {
+      final clean = reaction.trim();
+      if (clean.isEmpty) continue;
+      counts[clean] = (counts[clean] ?? 0) + 1;
+    }
+    return counts;
+  }
 }
 
 class ProductReview {

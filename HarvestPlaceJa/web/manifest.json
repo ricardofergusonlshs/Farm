@@ -1,35 +1,33 @@
 {
-    "name": "The Harvest Place Ja",
-    "short_name": "Harvest Place",
-    "start_url": ".",
-    "display": "standalone",
-    "background_color": "#F8FBF4",
-    "theme_color": "#2E7D32",
-    "description": "Fresh local food ordering and farm updates for The Harvest Place Ja.",
-    "orientation": "portrait-primary",
-    "prefer_related_applications": false,
-    "icons": [
-        {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-maskable-192.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "maskable"
-        },
-        {
-            "src": "icons/Icon-maskable-512.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "maskable"
-        }
-    ]
+  "name": "The Harvest Place Ja",
+  "short_name": "HPJ",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F8F5E9",
+  "theme_color": "#1F6B3B",
+  "description": "Fresh local food ordering and farm updates for The Harvest Place Ja.",
+  "icons": [
+    {
+      "src": "icons/hpj-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/hpj-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/hpj-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/hpj-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }

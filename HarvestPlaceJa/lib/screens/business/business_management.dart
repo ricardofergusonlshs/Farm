@@ -2,10 +2,23 @@
 // Business UI separated from wholesale_management.dart, but intentionally
 // kept in ONE Dart part so FlutLab only needs one new part declaration.
 part of harvest_place_app;
+// HPJ BUSINESS HOME PERSONALISATION — HERO + LOGO — 2026-09-25
 // HPJ BUSINESS SOURCING RESILIENCE MVP — 2026-09-13
 // HPJ BUSINESS WHOLESALE PRODUCT CARD — COMPACT MOBILE MVP FIX — 2026-09-13
 // HPJ BUSINESS SUPER ELITE MVP — RENDERFLEX MOBILE STATUS FIX — 2026-09-13
 // HPJ BUSINESS SUPER ELITE MVP — WEB + RESPONSIVE APP — 2026-09-13
+// HPJ BUSINESS HOME ELITE PHOTO MVP — REFERENCE MATCH + CLICKABLE IMAGE CARDS — 2026-09-25
+// HPJ BUSINESS HOME INFORMATION DASHBOARD + NETWORK MVP — 2026-09-25
+// HPJ BUSINESS HOME EXACT REFERENCE REBUILD — 2026-09-25
+// HPJ BUSINESS HOME VISUAL POLISH PASS — SAME DESIGN / SAME FEATURES — 2026-09-25
+// HPJ BUSINESS HOME STANDARD UTILITY HEADER RESTORE — 2026-09-25
+// HPJ BUSINESS HOME RESPONSIVE REFINEMENT — FEATURES UNCHANGED — 2026-09-25
+// HPJ BUSINESS NEWS TAP DETAIL FIX — 2026-09-25
+// HPJ BUSINESS NEWS NULL-SAFE COMPILE FIX — 2026-09-25
+// HPJ BUSINESS SOURCE PRODUCE + MARKET INTELLIGENCE MVP — 2026-09-25
+// HPJ MARKET INTELLIGENCE HEIGHT HOTFIX — bounded metric cards in mobile ListView
+// HPJ MARKET INTELLIGENCE NARROW MOBILE OVERFLOW FIX — 126px cards
+// HPJ BUSINESS NAVIGATION BACK ICON PASS — CHILD ROUTES + MOBILE WORKSPACE SECTIONS — 2026-09-25
 
 
 // ============================================================================
@@ -80,6 +93,50 @@ PreferredSizeWidget _wholesaleAccessAppBar(
     ],
   );
 }
+
+PreferredSizeWidget _hpjBusinessReferenceMobileAppBar({
+  required BusinessAccount account,
+  VoidCallback? onRefresh,
+}) {
+  // Keep the standard HPJ mobile utility header intact on Business Home.
+  // This restores the HPJ logo, location control, notifications/inbox,
+  // and the signed-in account/profile control exactly as the other portals use it.
+  return hpjPortalUtilityAppBar(
+    currentPortal: 'wholesale',
+    includeInbox: true,
+    onRefresh: onRefresh,
+  );
+}
+
+
+// HPJ BUSINESS NAVIGATION — explicit back icon for pushed child screens.
+// Shows only when the current route can actually return to a previous screen.
+PreferredSizeWidget _businessChildAppBar(
+  BuildContext context,
+  String title, {
+  PreferredSizeWidget? bottom,
+  List<Widget>? actions,
+}) {
+  final navigator = Navigator.of(context);
+  final canGoBack = navigator.canPop();
+
+  return AppBar(
+    automaticallyImplyLeading: false,
+    leading: canGoBack
+        ? IconButton(
+            tooltip: 'Back',
+            onPressed: () => navigator.maybePop(),
+            icon: const Icon(Icons.arrow_back_rounded),
+          )
+        : null,
+    title: Text(title),
+    actions: actions,
+    bottom: bottom,
+    backgroundColor: FarmColors.background,
+    surfaceTintColor: Colors.transparent,
+  );
+}
+
 
 class BusinessWholesaleHubScreen extends StatefulWidget {
   final int initialTab;
@@ -464,12 +521,12 @@ class _WholesaleWorkspaceShellState
         return 0; // Home
       case 1:
       case 2:
-        return 1; // Source / Planning
+        return 1; // Supply / planning
       case 3:
-        return 3; // Orders
+        return 2; // Orders
       case 4:
       default:
-        return 4; // Account
+        return 4; // More / account tools
     }
   }
 
@@ -478,12 +535,11 @@ class _WholesaleWorkspaceShellState
 
     final safe = index.clamp(0, 4).toInt();
 
-    // Suppliers is a new native primary destination. Keep the legacy
-    // wholesale tab contract (0..4) intact for web, notifications and
-    // remembered routes.
-    if (safe == 2) {
+    // Suppliers is a native primary destination without changing the legacy
+    // wholesale tab contract used by web, notifications and remembered routes.
+    if (safe == 3) {
       setState(() {
-        mobileSectionIndex = 2;
+        mobileSectionIndex = 3;
       });
 
       unawaited(
@@ -498,7 +554,7 @@ class _WholesaleWorkspaceShellState
     final legacyIndex = switch (safe) {
       0 => 0,
       1 => 1,
-      3 => 3,
+      2 => 3,
       4 => 4,
       _ => 0,
     };
@@ -518,10 +574,16 @@ class _WholesaleWorkspaceShellState
     if (!mounted) return;
 
     final safeIndex = index.clamp(0, 4).toInt();
+    final returningHome = safeIndex == 0 &&
+        (selectedIndex != 0 || mobileSectionIndex != 0);
+
     setState(() {
       selectedIndex = safeIndex;
       if (hpjUseMobileAppPresentation(context)) {
         mobileSectionIndex = _mobileSectionForLegacyIndex(safeIndex);
+      }
+      if (returningHome) {
+        todayRefreshKey++;
       }
     });
     unawaited(
@@ -565,13 +627,14 @@ class _WholesaleWorkspaceShellState
         onOpenOrders: () => _select(3),
         onOpenAccount: () => _select(4),
         onOpenSuppliers:
-            mobileApp ? () => _selectMobileBusinessSection(2) : null,
+            mobileApp ? () => _selectMobileBusinessSection(3) : null,
       ),
       WholesaleCatalogueScreen(
         account: account,
         embedded: true,
+        onOpenPlan: () => _select(2),
         onOpenSuppliers:
-            mobileApp ? () => _selectMobileBusinessSection(2) : null,
+            mobileApp ? () => _selectMobileBusinessSection(3) : null,
       ),
       WholesalePlanningAheadScreen(
         account: account,
@@ -598,14 +661,9 @@ class _WholesaleWorkspaceShellState
         label: 'Home',
       ),
       FarmBottomOption(
-        icon: Icon(Icons.shopping_basket_outlined, size: 27),
-        selectedIcon: Icon(Icons.shopping_basket_rounded, size: 27),
-        label: 'Source',
-      ),
-      FarmBottomOption(
-        icon: Icon(Icons.handshake_outlined, size: 27),
-        selectedIcon: Icon(Icons.handshake_rounded, size: 27),
-        label: 'Suppliers',
+        icon: Icon(Icons.eco_outlined, size: 27),
+        selectedIcon: Icon(Icons.eco_rounded, size: 27),
+        label: 'Supply',
       ),
       FarmBottomOption(
         icon: Icon(Icons.receipt_long_outlined, size: 27),
@@ -613,9 +671,14 @@ class _WholesaleWorkspaceShellState
         label: 'Orders',
       ),
       FarmBottomOption(
-        icon: Icon(Icons.business_outlined, size: 27),
-        selectedIcon: Icon(Icons.business, size: 27),
-        label: 'Account',
+        icon: Icon(Icons.groups_2_outlined, size: 27),
+        selectedIcon: Icon(Icons.groups_2_rounded, size: 27),
+        label: 'Suppliers',
+      ),
+      FarmBottomOption(
+        icon: Icon(Icons.grid_view_outlined, size: 27),
+        selectedIcon: Icon(Icons.grid_view_rounded, size: 27),
+        label: 'More',
       ),
     ];
 
@@ -668,17 +731,19 @@ class _WholesaleWorkspaceShellState
         desktopMaxContentWidth: 1320,
         backgroundColor: FarmColors.background,
         appBar: mobileApp
-            ? hpjPortalUtilityAppBar(
-                currentPortal: 'wholesale',
-                includeInbox: true,
-                onRefresh: mobileSectionIndex == 0
-                    ? () {
-                        setState(() {
-                          todayRefreshKey++;
-                        });
-                      }
-                    : null,
-              )
+            ? (mobileSectionIndex == 0
+                ? _hpjBusinessReferenceMobileAppBar(
+                    account: account,
+                    onRefresh: () {
+                      setState(() {
+                        todayRefreshKey++;
+                      });
+                    },
+                  )
+                : hpjPortalUtilityAppBar(
+                    currentPortal: 'wholesale',
+                    includeInbox: true,
+                  ))
             : AppBar(
                 automaticallyImplyLeading: false,
                 leading: selectedIndex == 0
@@ -708,15 +773,90 @@ class _WholesaleWorkspaceShellState
                     ),
                 ],
               ),
-        body: mobileApp && mobileSectionIndex == 2
-            ? WholesaleSupplierDiscoveryScreen(
-                account: account,
-                embedded: true,
-              )
-            : IndexedStack(
-                index: selectedIndex,
-                children: pages,
-              ),
+        body: Builder(
+          builder: (context) {
+            final workspaceBody = mobileApp && mobileSectionIndex == 3
+                ? WholesaleSupplierDiscoveryScreen(
+                    account: account,
+                    embedded: true,
+                  )
+                : IndexedStack(
+                    index: selectedIndex,
+                    children: pages,
+                  );
+
+            if (!mobileApp || mobileSectionIndex == 0) {
+              return workspaceBody;
+            }
+
+            final sectionTitle = switch (mobileSectionIndex) {
+              1 => selectedIndex == 2 ? 'Planning Ahead' : 'Source Produce',
+              2 => 'Orders',
+              3 => 'Suppliers',
+              4 => 'More',
+              _ => 'Business Home',
+            };
+
+            return Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  color: FarmColors.background,
+                  padding: const EdgeInsets.fromLTRB(6, 0, 12, 4),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Back to Business Home',
+                        onPressed: () => _select(0),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        color: FarmColors.deepGreen,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              sectionTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            if (account.businessType.trim().isNotEmpty ||
+                                account.parish.trim().isNotEmpty)
+                              Text(
+                                <String>[
+                                  if (account.businessType.trim().isNotEmpty)
+                                    account.businessType.trim(),
+                                  if (account.parish.trim().isNotEmpty)
+                                    account.parish.trim(),
+                                ].join(' • '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 9.2,
+                                  height: 1.15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: workspaceBody),
+              ],
+            );
+          },
+        ),
         selectedIndex: mobileApp ? mobileSectionIndex : selectedIndex,
         destinations: destinations,
         onSelected: mobileApp ? _selectMobileBusinessSection : _select,
@@ -767,11 +907,11 @@ class _WholesaleTodayWorkspacePageState
         child: ListView(
           physics:
               const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(
-            18,
-            16,
-            18,
-            120,
+          padding: EdgeInsets.fromLTRB(
+            hpjUseMobileAppPresentation(context) ? 10 : 18,
+            hpjUseMobileAppPresentation(context) ? 6 : 16,
+            hpjUseMobileAppPresentation(context) ? 10 : 18,
+            hpjUseMobileAppPresentation(context) ? 88 : 120,
           ),
           children: [
             KeyedSubtree(
@@ -918,8 +1058,9 @@ class _WholesaleSettingsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Wholesale Settings'),
+      appBar: _businessChildAppBar(
+        context,
+        'Wholesale Settings',
       ),
       body: FarmPage(
         child: loading
@@ -1117,6 +1258,20 @@ class _WholesaleAccountWorkspacePage extends StatelessWidget {
     }
   }
 
+  Future<void> _editHomeAppearance(BuildContext context) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => _BusinessHomeAppearanceScreen(
+          account: account,
+        ),
+      ),
+    );
+
+    if (changed == true) {
+      await onBusinessUpdated();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FarmPage(
@@ -1233,8 +1388,15 @@ class _WholesaleAccountWorkspacePage extends StatelessWidget {
                       icon: Icons.business_center_outlined,
                       title: 'Business Details',
                       subtitle:
-                          'Contacts, address, parish and delivery preferences.',
+                          'Name, type, contacts, parish and delivery preferences.',
                       onTap: () => _editBusiness(context),
+                    ),
+                    AccountListTile(
+                      icon: Icons.photo_size_select_actual_outlined,
+                      title: 'Home Appearance',
+                      subtitle:
+                          'Custom hero image, crop position and optional business logo.',
+                      onTap: () => _editHomeAppearance(context),
                     ),
                     AccountListTile(
                       icon: Icons.repeat_rounded,
@@ -2294,6 +2456,7 @@ Future<Uint8List>
   final pdf = pw.Document();
   final logo =
       await _loadBusinessPortalPdfLogo();
+  final companySettings = await fetchHpjCompanySettings();
 
   final green =
       PdfColor.fromInt(0xFF1F6B3A);
@@ -2518,6 +2681,7 @@ Future<Uint8List>
       build: (context) => [
         _businessPortalPdfHeader(
           logo: logo,
+          companySettings: companySettings,
           title:
               'BUSINESS ACTIVITY STATEMENT',
           reference:
@@ -2863,10 +3027,9 @@ class _WholesaleActivityStatementScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text(
-          'Business Activity Statement',
-        ),
+      appBar: _businessChildAppBar(
+        context,
+        'Business Activity Statement',
       ),
       body:
           FutureBuilder<_WholesaleTodaySnapshot>(
@@ -3862,6 +4025,7 @@ Future<pw.MemoryImage?> _loadBusinessPortalPdfLogo() async {
 
 pw.Widget _businessPortalPdfHeader({
   required pw.MemoryImage? logo,
+  required HpjCompanySettings companySettings,
   required String title,
   required String reference,
 }) {
@@ -3906,7 +4070,7 @@ pw.Widget _businessPortalPdfHeader({
                 ),
                 pw.SizedBox(height: 4),
                 pw.Text(
-                  'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
+                  hpjCompanyContactLine(companySettings),
                   style: const pw.TextStyle(
                     fontSize: 9,
                     color: PdfColors.grey700,
@@ -4034,6 +4198,7 @@ Future<Uint8List> _buildBusinessPortalInvoicePdf(
 ) async {
   final pdf = pw.Document();
   final logo = await _loadBusinessPortalPdfLogo();
+  final companySettings = await fetchHpjCompanySettings();
   final green = PdfColor.fromInt(0xFF1F6B3A);
   final softGreen = PdfColor.fromInt(0xFFEAF3EC);
   final requestRef = _businessPortalShortId(invoice.requestId);
@@ -4087,6 +4252,7 @@ Future<Uint8List> _buildBusinessPortalInvoicePdf(
       build: (context) => [
         _businessPortalPdfHeader(
           logo: logo,
+          companySettings: companySettings,
           title: 'WHOLESALE INVOICE',
           reference: invoice.invoiceNumber,
         ),
@@ -4357,6 +4523,7 @@ Future<Uint8List> _buildBusinessPortalReceiptPdf(
 
   final pdf = pw.Document();
   final logo = await _loadBusinessPortalPdfLogo();
+  final companySettings = await fetchHpjCompanySettings();
   final green = PdfColor.fromInt(0xFF1F6B3A);
 
   final confirmed = invoice.payments.where((item) => item.isConfirmed).toList()
@@ -4392,6 +4559,7 @@ Future<Uint8List> _buildBusinessPortalReceiptPdf(
         children: [
           _businessPortalPdfHeader(
             logo: logo,
+            companySettings: companySettings,
             title: 'OFFICIAL WHOLESALE PAYMENT RECEIPT',
             reference: 'Receipt #$receiptNumber',
           ),
@@ -4624,6 +4792,349 @@ Future<List<WholesaleDemandGapLine>> fetchMyWholesaleDemandGap({
   }
 }
 
+
+// ============================================================================
+// HPJ BUSINESS HOME PERSONALISATION
+// Business controls the hero photo + optional logo/avatar only.
+// HPJ layout, theme, KPIs, Fresh Supply, Market Intelligence and network
+// content remain platform-managed.
+// ============================================================================
+
+class HpjBusinessHomeBranding {
+  final String businessAccountId;
+  final String heroImageUrl;
+  final String logoUrl;
+  final String approvedHeroImageUrl;
+  final String approvedLogoUrl;
+  final double heroFocalX;
+  final double heroFocalY;
+  final String approvalStatus;
+  final String adminNote;
+
+  const HpjBusinessHomeBranding({
+    required this.businessAccountId,
+    this.heroImageUrl = '',
+    this.logoUrl = '',
+    this.approvedHeroImageUrl = '',
+    this.approvedLogoUrl = '',
+    this.heroFocalX = .5,
+    this.heroFocalY = .5,
+    this.approvalStatus = 'approved',
+    this.adminNote = '',
+  });
+
+  factory HpjBusinessHomeBranding.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    double safeDouble(dynamic value, double fallback) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? fallback;
+    }
+
+    double clamp01(double value) => value.clamp(0.0, 1.0).toDouble();
+
+    return HpjBusinessHomeBranding(
+      businessAccountId:
+          (data['business_account_id'] ?? '').toString().trim(),
+      heroImageUrl:
+          (data['hero_image_url'] ?? '').toString().trim(),
+      logoUrl: (data['logo_url'] ?? '').toString().trim(),
+      approvedHeroImageUrl:
+          (data['approved_hero_image_url'] ?? '').toString().trim(),
+      approvedLogoUrl:
+          (data['approved_logo_url'] ?? '').toString().trim(),
+      heroFocalX: clamp01(
+        safeDouble(data['hero_focal_x'], .5),
+      ),
+      heroFocalY: clamp01(
+        safeDouble(data['hero_focal_y'], .5),
+      ),
+      approvalStatus:
+          (data['approval_status'] ?? 'approved').toString().trim(),
+      adminNote: (data['admin_note'] ?? '').toString().trim(),
+    );
+  }
+
+  bool get isPending => approvalStatus.toLowerCase() == 'pending';
+  bool get isRejected => approvalStatus.toLowerCase() == 'rejected';
+
+  String get publishedHeroImageUrl {
+    if (approvalStatus.toLowerCase() == 'approved' &&
+        heroImageUrl.isNotEmpty) {
+      return heroImageUrl;
+    }
+    return approvedHeroImageUrl;
+  }
+
+  String get publishedLogoUrl {
+    if (approvalStatus.toLowerCase() == 'approved' &&
+        logoUrl.isNotEmpty) {
+      return logoUrl;
+    }
+    return approvedLogoUrl;
+  }
+
+  Alignment get heroAlignment {
+    final x = (heroFocalX * 2) - 1;
+    final y = (heroFocalY * 2) - 1;
+    return Alignment(x, y);
+  }
+}
+
+
+class HpjBusinessBrandingPolicy {
+  final bool requireAdminApproval;
+
+  const HpjBusinessBrandingPolicy({
+    required this.requireAdminApproval,
+  });
+
+  static const fallback = HpjBusinessBrandingPolicy(
+    requireAdminApproval: false,
+  );
+}
+
+
+Future<HpjBusinessBrandingPolicy> fetchHpjBusinessBrandingPolicy() async {
+  try {
+    final response = await supabase
+        .from('hpj_business_branding_settings')
+        .select('require_admin_approval')
+        .eq('id', 1)
+        .limit(1);
+
+    if (response is List && response.isNotEmpty) {
+      final row = Map<String, dynamic>.from(response.first as Map);
+      return HpjBusinessBrandingPolicy(
+        requireAdminApproval:
+            row['require_admin_approval'] == true,
+      );
+    }
+  } catch (error) {
+    farmDebugLog(
+      'Business branding policy unavailable; using safe default: $error',
+    );
+  }
+
+  return HpjBusinessBrandingPolicy.fallback;
+}
+
+
+Future<HpjBusinessHomeBranding?> fetchHpjBusinessHomeBranding(
+  BusinessAccount account,
+) async {
+  try {
+    final response = await supabase
+        .from('hpj_business_home_branding')
+        .select(
+          'business_account_id, hero_image_url, logo_url, '
+          'approved_hero_image_url, approved_logo_url, '
+          'hero_focal_x, hero_focal_y, approval_status, admin_note',
+        )
+        .eq('business_account_id', account.id)
+        .limit(1);
+
+    if (response is List && response.isNotEmpty) {
+      return HpjBusinessHomeBranding.fromSupabase(
+        Map<String, dynamic>.from(response.first as Map),
+      );
+    }
+  } catch (error) {
+    farmDebugLog(
+      'Business Home branding unavailable; HPJ default will be used: $error',
+    );
+  }
+
+  return null;
+}
+
+
+String _hpjBusinessBrandingContentType(String fileName) {
+  final lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+
+String _hpjBusinessBrandingExtension(String fileName) {
+  final lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'png';
+  if (lower.endsWith('.webp')) return 'webp';
+  if (lower.endsWith('.jpeg')) return 'jpeg';
+  return 'jpg';
+}
+
+
+bool _hpjBusinessBrandingFileAllowed(String fileName) {
+  final lower = fileName.toLowerCase();
+  return lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.webp');
+}
+
+
+Future<String> uploadHpjBusinessBrandingImage({
+  required BusinessAccount account,
+  required XFile image,
+  required String kind,
+}) async {
+  if (!account.isApproved) {
+    throw Exception(
+      'Your Business account must be approved before customising Home.',
+    );
+  }
+
+  final cleanKind = kind == 'logo' ? 'logo' : 'hero';
+
+  if (!_hpjBusinessBrandingFileAllowed(image.name)) {
+    throw Exception(
+      'Use a JPG, PNG or WebP image.',
+    );
+  }
+
+  final bytes = await image.readAsBytes();
+
+  if (bytes.isEmpty) {
+    throw Exception('The selected image could not be read.');
+  }
+
+  const maxBytes = 5 * 1024 * 1024;
+  if (bytes.length > maxBytes) {
+    throw Exception(
+      'Use an image smaller than 5 MB.',
+    );
+  }
+
+  final safeAccountId = account.id.replaceAll(
+    RegExp(r'[^A-Za-z0-9_-]'),
+    '',
+  );
+  final extension = _hpjBusinessBrandingExtension(image.name);
+  final fileName =
+      '${DateTime.now().millisecondsSinceEpoch}.$extension';
+  final path = '$safeAccountId/$cleanKind/$fileName';
+
+  await supabase.storage
+      .from('business-branding')
+      .uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: _hpjBusinessBrandingContentType(image.name),
+          upsert: false,
+          cacheControl: '3600',
+        ),
+      );
+
+  return supabase.storage
+      .from('business-branding')
+      .getPublicUrl(path);
+}
+
+
+Future<HpjBusinessHomeBranding> saveHpjBusinessHomeBranding({
+  required BusinessAccount account,
+  required String heroImageUrl,
+  required String logoUrl,
+  required double heroFocalX,
+  required double heroFocalY,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    throw Exception('Please sign in before saving Home Appearance.');
+  }
+
+  if (!account.isApproved) {
+    throw Exception(
+      'Your Business account must be approved before customising Home.',
+    );
+  }
+
+  final current = await fetchHpjBusinessHomeBranding(account);
+  final policy = await fetchHpjBusinessBrandingPolicy();
+  final status =
+      policy.requireAdminApproval ? 'pending' : 'approved';
+
+  final payload = <String, dynamic>{
+    'business_account_id': account.id,
+    'hero_image_url': heroImageUrl.trim(),
+    'logo_url': logoUrl.trim(),
+    'hero_focal_x': heroFocalX.clamp(0.0, 1.0),
+    'hero_focal_y': heroFocalY.clamp(0.0, 1.0),
+    'approval_status': status,
+    'admin_note': '',
+    'updated_at': DateTime.now().toUtc().toIso8601String(),
+  };
+
+  if (!policy.requireAdminApproval) {
+    payload['approved_hero_image_url'] = heroImageUrl.trim();
+    payload['approved_logo_url'] = logoUrl.trim();
+    payload['reviewed_at'] =
+        DateTime.now().toUtc().toIso8601String();
+  } else if (current != null) {
+    payload['approved_hero_image_url'] =
+        current.approvedHeroImageUrl;
+    payload['approved_logo_url'] =
+        current.approvedLogoUrl;
+  }
+
+  if (current == null) {
+    await supabase
+        .from('hpj_business_home_branding')
+        .insert(payload);
+  } else {
+    await supabase
+        .from('hpj_business_home_branding')
+        .update(payload)
+        .eq('business_account_id', account.id);
+  }
+
+  final saved = await fetchHpjBusinessHomeBranding(account);
+
+  if (saved == null) {
+    throw Exception(
+      'HPJ saved the appearance, but could not reload it yet.',
+    );
+  }
+
+  return saved;
+}
+
+
+Future<void> resetHpjBusinessHomeBranding(
+  BusinessAccount account,
+) async {
+  final current = await fetchHpjBusinessHomeBranding(account);
+  if (current == null) return;
+
+  final policy = await fetchHpjBusinessBrandingPolicy();
+  final payload = <String, dynamic>{
+    'hero_image_url': '',
+    'logo_url': '',
+    'hero_focal_x': .5,
+    'hero_focal_y': .5,
+    'approval_status':
+        policy.requireAdminApproval ? 'pending' : 'approved',
+    'admin_note': '',
+    'updated_at': DateTime.now().toUtc().toIso8601String(),
+  };
+
+  if (!policy.requireAdminApproval) {
+    payload['approved_hero_image_url'] = '';
+    payload['approved_logo_url'] = '';
+    payload['reviewed_at'] =
+        DateTime.now().toUtc().toIso8601String();
+  }
+
+  await supabase
+      .from('hpj_business_home_branding')
+      .update(payload)
+      .eq('business_account_id', account.id);
+}
+
+
 class _WholesaleTodaySnapshot {
   final List<WholesaleDemandForecast> forecasts;
   final List<WholesaleOrderRequest> requests;
@@ -4632,6 +5143,7 @@ class _WholesaleTodaySnapshot {
   final List<WholesaleProduct> catalogue;
   final List<WholesaleDemandGapLine> demandGaps;
   final WholesaleOrderingControl? orderingControl;
+  final HpjBusinessHomeBranding? branding;
   final Set<String> unavailableSections;
 
   const _WholesaleTodaySnapshot({
@@ -4642,6 +5154,7 @@ class _WholesaleTodaySnapshot {
     required this.catalogue,
     this.demandGaps = const <WholesaleDemandGapLine>[],
     this.orderingControl,
+    this.branding,
     this.unavailableSections = const <String>{},
   });
 
@@ -4738,6 +5251,18 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     }
   }
 
+  Future<HpjBusinessHomeBranding?> loadBranding() async {
+    if (account == null) return null;
+    try {
+      return await fetchHpjBusinessHomeBranding(account);
+    } catch (error) {
+      farmDebugLog(
+        'Wholesale Today — Home branding unavailable: $error',
+      );
+      return null;
+    }
+  }
+
   final forecastsFuture = loadForecasts();
   final requestsFuture = loadRequests();
   final invoicesFuture = loadInvoices();
@@ -4745,6 +5270,7 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
   final catalogueFuture = loadCatalogue();
   final demandGapsFuture = loadDemandGaps();
   final orderingControlFuture = loadOrderingControl();
+  final brandingFuture = loadBranding();
 
   final forecasts = await forecastsFuture;
   final requests = await requestsFuture;
@@ -4753,6 +5279,7 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
   final catalogue = await catalogueFuture;
   var demandGaps = await demandGapsFuture;
   final orderingControl = await orderingControlFuture;
+  final branding = await brandingFuture;
 
   if (demandGaps.isEmpty && forecasts.isNotEmpty) {
     final today = DateTime.now();
@@ -4804,6 +5331,7 @@ Future<_WholesaleTodaySnapshot> fetchWholesaleTodaySnapshot({
     catalogue: catalogue,
     demandGaps: demandGaps,
     orderingControl: orderingControl,
+    branding: branding,
     unavailableSections:
         Set<String>.unmodifiable(unavailableSections),
   );
@@ -5588,6 +6116,92 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
   }
 }
 
+
+class _HpjBusinessStartNewChatCard extends StatelessWidget {
+  const _HpjBusinessStartNewChatCard();
+
+  void _open(BuildContext context) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const SupportScreen(
+          initialSubject: 'Wholesale support',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF3F7F1),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: () => _open(context),
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(13, 11, 11, 11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: FarmColors.green.withOpacity(0.17),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: FarmColors.deepGreen,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.chat_bubble_rounded,
+                  color: Colors.white,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Business support',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Start a new chat with HPJ',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: FarmColors.green,
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ApprovedWholesaleDashboard extends StatelessWidget {
   final BusinessAccount account;
   final VoidCallback? onOpenShop;
@@ -5733,6 +6347,9 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             snapshot.data == null) {
+          if (hpjUseMobileAppPresentation(context)) {
+            return const _HpjBusinessReferenceHomeSkeleton();
+          }
           return const SizedBox(
             height: 360,
             child: SkeletonList(count: 4),
@@ -5946,10 +6563,12 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
             kIsWeb && MediaQuery.sizeOf(context).width >= 1100;
 
         if (mobileBusinessApp) {
-          return _HpjEliteBusinessMobileHome(
+          return _HpjBusinessReferenceMobileHome(
             account: account,
+            branding: data.branding,
             activeForecasts: activeForecasts,
             gapLines: gapLinesNeedingSupply,
+            catalogue: data.catalogue,
             recommendedProducts: dailyPicks,
             attentionRows: attentionRows,
             activeNeeds: activeForecasts.length,
@@ -6042,6 +6661,8 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
                 onOpenPlan: () => _goPlan(context),
                 onOpenOrders: () => _goOrders(context),
               ),
+            const SizedBox(height: 12),
+            const _HpjBusinessStartNewChatCard(),
             if (data.hasLoadIssues) ...[
               const SizedBox(height: 12),
               Container(
@@ -6196,6 +6817,2265 @@ class _ApprovedWholesaleDashboard extends StatelessWidget {
 
 
 
+
+// =====================================================
+// HPJ BUSINESS HOME — EXACT REFERENCE MOBILE MVP
+// Information-first dashboard. Navigation remains in the persistent menu.
+// =====================================================
+
+class _HpjBusinessReferenceHomeSkeleton extends StatelessWidget {
+  const _HpjBusinessReferenceHomeSkeleton();
+
+  Widget _block(double height, {double radius = 18}) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5EE),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _block(226, radius: 22),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            for (var i = 0; i < 4; i++) ...[
+              if (i > 0) const SizedBox(width: 7),
+              Expanded(child: _block(96, radius: 17)),
+            ],
+          ],
+        ),
+        const SizedBox(height: 11),
+        _block(91),
+        const SizedBox(height: 14),
+        _block(188),
+        const SizedBox(height: 14),
+        _block(152),
+        const SizedBox(height: 14),
+        _block(255),
+        const SizedBox(height: 14),
+        _block(86),
+      ],
+    );
+  }
+}
+
+
+class _HpjBusinessReferenceMobileHome extends StatelessWidget {
+  final BusinessAccount account;
+  final HpjBusinessHomeBranding? branding;
+  final List<WholesaleDemandForecast> activeForecasts;
+  final List<WholesaleDemandGapLine> gapLines;
+  final List<WholesaleProduct> catalogue;
+  final List<WholesaleProduct> recommendedProducts;
+  final List<Widget> attentionRows;
+  final int activeNeeds;
+  final int supplyGaps;
+  final double amountDue;
+  final int deliveriesToday;
+  final int securedDemandLines;
+  final int purchasedOrders30;
+  final double spend30;
+  final double spend90;
+  final bool hasLoadIssues;
+  final Set<String> unavailableSections;
+  final VoidCallback? onRetry;
+  final VoidCallback onOpenShop;
+  final VoidCallback onOpenPlan;
+  final VoidCallback onOpenOrders;
+  final VoidCallback onOpenAccount;
+  final VoidCallback onOpenDemandNetwork;
+  final VoidCallback onFindSuppliers;
+  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
+
+  const _HpjBusinessReferenceMobileHome({
+    required this.account,
+    this.branding,
+    required this.activeForecasts,
+    required this.gapLines,
+    required this.catalogue,
+    required this.recommendedProducts,
+    required this.attentionRows,
+    required this.activeNeeds,
+    required this.supplyGaps,
+    required this.amountDue,
+    required this.deliveriesToday,
+    required this.securedDemandLines,
+    required this.purchasedOrders30,
+    required this.spend30,
+    required this.spend90,
+    required this.hasLoadIssues,
+    required this.unavailableSections,
+    required this.onRetry,
+    required this.onOpenShop,
+    required this.onOpenPlan,
+    required this.onOpenOrders,
+    required this.onOpenAccount,
+    required this.onOpenDemandNetwork,
+    required this.onFindSuppliers,
+    required this.onAgricultureAction,
+  });
+
+  List<String> _imagePool() {
+    final seen = <String>{};
+    final urls = <String>[];
+
+    final candidates = <WholesaleProduct>[
+      ...recommendedProducts,
+      ...catalogue,
+    ];
+
+    const preferred = <String>[
+      'vegetable',
+      'callaloo',
+      'carrot',
+      'pepper',
+      'tomato',
+      'cabbage',
+      'lettuce',
+      'pak choi',
+      'bundle',
+      'produce',
+    ];
+
+    for (final word in preferred) {
+      for (final item in candidates) {
+        final haystack = '${item.product.name} ${item.product.category}'.toLowerCase();
+        final url = item.product.imageUrl?.trim() ?? '';
+        if (haystack.contains(word) && url.isNotEmpty && seen.add(url)) {
+          urls.add(url);
+        }
+      }
+    }
+    for (final item in candidates) {
+      final url = item.product.imageUrl?.trim() ?? '';
+      if (url.isNotEmpty && seen.add(url)) urls.add(url);
+    }
+    return urls;
+  }
+
+  void _openInsights(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _HpjBusinessMarketInsightsScreen(
+          account: account,
+          catalogue: catalogue,
+          activeForecasts: activeForecasts,
+          gapLines: gapLines,
+          onOpenShop: onOpenShop,
+          onOpenPlan: onOpenPlan,
+          onAgricultureAction: onAgricultureAction,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reviewCount = activeForecasts
+        .where((item) => _wholesaleForecastNeedsReview(item))
+        .length;
+    final images = _imagePool();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HpjReferenceBusinessHero(
+          account: account,
+          branding: branding,
+          imageUrls: images.take(4).toList(growable: false),
+          onOpenShop: onOpenShop,
+        ),
+        if (hasLoadIssues) ...[
+          const SizedBox(height: 9),
+          _EliteBusinessLoadWarning(
+            unavailableSections: unavailableSections,
+            onRetry: onRetry,
+          ),
+        ],
+        const SizedBox(height: 10),
+        const _HpjBusinessStartNewChatCard(),
+        const SizedBox(height: 10),
+        _HpjReferenceKpiRow(
+          activeNeeds: activeNeeds,
+          supplyGaps: supplyGaps,
+          amountDue: amountDue,
+          deliveriesToday: deliveriesToday,
+          onOpenPlan: onOpenPlan,
+          onOpenOrders: onOpenOrders,
+        ),
+        if (reviewCount > 0) ...[
+          const SizedBox(height: 10),
+          _HpjReferenceActionNeeded(
+            count: reviewCount,
+            onTap: onOpenPlan,
+          ),
+        ] else if (attentionRows.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          FarmCard(
+            padding: const EdgeInsets.all(12),
+            child: attentionRows.first,
+          ),
+        ],
+        const SizedBox(height: 12),
+        _HpjReferenceFreshSupply(
+          products: recommendedProducts.isEmpty
+              ? catalogue
+              : recommendedProducts,
+          onOpenShop: onOpenShop,
+        ),
+        const SizedBox(height: 12),
+        _HpjReferenceMarketIntelligence(
+          catalogue: catalogue,
+          activeForecasts: activeForecasts,
+          gapLines: gapLines,
+          onOpenShop: onOpenShop,
+          onOpenPlan: onOpenPlan,
+          onViewInsights: () => _openInsights(context),
+        ),
+        const SizedBox(height: 12),
+        _HpjReferenceNetworkSection(
+          account: account,
+          onOpenShop: onOpenShop,
+          onAgricultureAction: onAgricultureAction,
+        ),
+        const SizedBox(height: 12),
+        _HpjReferenceDemandNetworkCard(onTap: onOpenDemandNetwork),
+      ],
+    );
+  }
+}
+
+
+class _HpjReferenceBusinessHero extends StatelessWidget {
+  final BusinessAccount account;
+  final HpjBusinessHomeBranding? branding;
+  final List<String> imageUrls;
+  final VoidCallback onOpenShop;
+
+  const _HpjReferenceBusinessHero({
+    required this.account,
+    this.branding,
+    required this.imageUrls,
+    required this.onOpenShop,
+  });
+
+  Widget _networkImage(
+    String url, {
+    required BoxFit fit,
+    Alignment alignment = Alignment.center,
+  }) {
+    return Image.network(
+      url,
+      fit: fit,
+      alignment: alignment,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const deep = Color(0xFF064A31);
+    final cleanName = account.displayName.trim();
+    final heroName = cleanName.isEmpty
+        ? 'HPJ Business'
+        : cleanName.toLowerCase() == 'hpj'
+            ? 'HPJ Business'
+            : cleanName;
+
+    final customHero =
+        cleanHostedImageUrl(branding?.publishedHeroImageUrl);
+    final customLogo =
+        cleanHostedImageUrl(branding?.publishedLogoUrl);
+    final heroAlignment =
+        branding?.heroAlignment ?? Alignment.centerRight;
+
+    return SizedBox(
+      height: 232,
+      width: double.infinity,
+      child: Material(
+        color: deep,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF064A31), Color(0xFF23764B)],
+                    ),
+                  ),
+                ),
+                if (customHero != null)
+                  Positioned.fill(
+                    child: _networkImage(
+                      customHero,
+                      fit: BoxFit.cover,
+                      alignment: heroAlignment,
+                    ),
+                  )
+                else if (imageUrls.isNotEmpty)
+                  Positioned.fill(
+                    child: _networkImage(
+                      imageUrls.first,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.centerRight,
+                    ),
+                  ),
+                if (customHero == null && imageUrls.length > 1)
+                  Positioned(
+                    right: -18,
+                    top: 2,
+                    width: constraints.maxWidth * .46,
+                    height: 116,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(70),
+                      child: _networkImage(
+                        imageUrls[1],
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                if (customHero == null && imageUrls.length > 2)
+                  Positioned(
+                    right: 68,
+                    bottom: -22,
+                    width: constraints.maxWidth * .34,
+                    height: 120,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(70),
+                      child: _networkImage(
+                        imageUrls[2],
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                if (customLogo != null)
+                  Positioned(
+                    right: 18,
+                    top: 16,
+                    child: Container(
+                      width: 46,
+                      height: 46,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(.96),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(.18),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.network(
+                          customLogo,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  width: constraints.maxWidth * .31,
+                  height: 70,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFD6A269), Color(0xFF9F6C35)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF7A4B22).withOpacity(.45)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(.18),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: Image.asset(
+                      'lib/assets/images/logo.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (_, __, ___) => const Text(
+                        'HPJ',
+                        style: TextStyle(
+                          color: Color(0xFF0B5B3D),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        Color(0xFF023D29),
+                        Color(0xF2055036),
+                        Color(0xB3055036),
+                        Color(0x22055036),
+                      ],
+                      stops: [0, .43, .70, 1],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 14, 15),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Welcome back,',
+                        style: TextStyle(
+                          color: Color(0xFFF1F6F2),
+                          fontSize: 12.6,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              heroName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 26.2,
+                                height: 1,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -.62,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0A61B),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_circle_rounded, size: 12, color: Colors.white),
+                                SizedBox(width: 3),
+                                Text(
+                                  'APPROVED',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8.2,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      const SizedBox(
+                        width: 245,
+                        child: Text(
+                          'Your sourcing workspace for fresh, local Jamaican produce.',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.3,
+                            height: 1.28,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      SizedBox(
+                        width: 212,
+                        height: 44,
+                        child: FilledButton.icon(
+                          onPressed: onOpenShop,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: deep,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                          icon: const Icon(Icons.near_me_rounded, size: 18),
+                          label: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Source produce',
+                                style: TextStyle(fontSize: 12.7, fontWeight: FontWeight.w900),
+                              ),
+                              SizedBox(width: 9),
+                              Icon(Icons.arrow_forward_rounded, size: 17),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjReferenceKpiRow extends StatelessWidget {
+  final int activeNeeds;
+  final int supplyGaps;
+  final double amountDue;
+  final int deliveriesToday;
+  final VoidCallback onOpenPlan;
+  final VoidCallback onOpenOrders;
+
+  const _HpjReferenceKpiRow({
+    required this.activeNeeds,
+    required this.supplyGaps,
+    required this.amountDue,
+    required this.deliveriesToday,
+    required this.onOpenPlan,
+    required this.onOpenOrders,
+  });
+
+  Widget _tile({
+    required IconData icon,
+    required String value,
+    required String label,
+    required Color accent,
+    required Color background,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: background,
+        borderRadius: BorderRadius.circular(17),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(17),
+          child: Container(
+            height: 100,
+            padding: const EdgeInsets.fromLTRB(10, 10, 8, 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: accent.withOpacity(.13)),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withOpacity(.055),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent.withOpacity(.10),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, size: 17, color: accent),
+                    ),
+                    const Spacer(),
+                    Icon(Icons.arrow_forward_rounded, size: 14, color: accent.withOpacity(.72)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18.0,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.0,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _tile(
+          icon: Icons.event_note_rounded,
+          value: '$activeNeeds',
+          label: 'Needs',
+          accent: const Color(0xFF0B6A43),
+          background: const Color(0xFFF0F7ED),
+          onTap: onOpenPlan,
+        ),
+        const SizedBox(width: 7),
+        _tile(
+          icon: Icons.inventory_2_rounded,
+          value: '$supplyGaps',
+          label: 'Supply gaps',
+          accent: const Color(0xFFE68B15),
+          background: const Color(0xFFFFF7E9),
+          onTap: onOpenPlan,
+        ),
+        const SizedBox(width: 7),
+        _tile(
+          icon: Icons.account_balance_wallet_rounded,
+          value: formatJmd(amountDue),
+          label: 'Amount due',
+          accent: const Color(0xFF0B6A43),
+          background: const Color(0xFFF0F7ED),
+          onTap: onOpenOrders,
+        ),
+        const SizedBox(width: 7),
+        _tile(
+          icon: Icons.schedule_rounded,
+          value: '$deliveriesToday',
+          label: 'Today',
+          accent: const Color(0xFFB07910),
+          background: const Color(0xFFFFF8E8),
+          onTap: onOpenOrders,
+        ),
+      ],
+    );
+  }
+}
+
+
+class _HpjReferenceActionNeeded extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _HpjReferenceActionNeeded({
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFFF4F2),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFF0CCC7)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFE12626).withOpacity(.045),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFDDDA),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.event_busy_rounded, color: Color(0xFFE22F2F), size: 22),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Action needed',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 13.4,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          '$count',
+                          style: const TextStyle(
+                            color: Color(0xFFE12626),
+                            fontSize: 19.5,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'planned need${count == 1 ? '' : 's'} need review',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 10.8,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Confirm dates and quantities so HPJ can keep your supply plan current.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.88),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFE12626).withOpacity(.16)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Review',
+                      style: TextStyle(
+                        color: Color(0xFFE12626),
+                        fontSize: 9.0,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(width: 3),
+                    Icon(Icons.arrow_forward_rounded, color: Color(0xFFE12626), size: 13),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjReferenceFreshSupply extends StatelessWidget {
+  final List<WholesaleProduct> products;
+  final VoidCallback onOpenShop;
+
+  const _HpjReferenceFreshSupply({
+    required this.products,
+    required this.onOpenShop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final picks = products.take(4).toList(growable: false);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(11, 11, 11, 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFDF9),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDEE7D9)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0B244C35),
+            blurRadius: 14,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEDF6E9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.near_me_rounded, color: Color(0xFF00673E), size: 18),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Fresh Supply',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 1),
+                    Text(
+                      'Wholesale produce available now.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onOpenShop,
+                iconAlignment: IconAlignment.end,
+                icon: const Icon(Icons.arrow_forward_rounded, size: 13),
+                label: const Text('View all'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0B5B3D),
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFD8E3D5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const TextStyle(fontSize: 8.7, fontWeight: FontWeight.w900),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+              ),
+            ],
+          ),
+          if (picks.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const gap = 8.0;
+                final width = (constraints.maxWidth - gap * 3) / 4;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < picks.length; i++) ...[
+                      if (i > 0) const SizedBox(width: gap),
+                      SizedBox(
+                        width: width,
+                        child: _HpjReferenceFreshProductCard(
+                          item: picks[i],
+                          onTap: onOpenShop,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ] else ...[
+            const SizedBox(height: 9),
+            const Text(
+              'Fresh wholesale products will appear here as supply becomes available.',
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 9.0,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+
+class _HpjReferenceFreshProductCard extends StatelessWidget {
+  final WholesaleProduct item;
+  final VoidCallback onTap;
+
+  const _HpjReferenceFreshProductCard({
+    required this.item,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final image = item.product.imageUrl?.trim() ?? '';
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 150,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFD9E4D5)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x09244C35),
+                blurRadius: 9,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  SizedBox(
+                    height: 93,
+                    width: double.infinity,
+                    child: image.isEmpty
+                        ? Container(
+                            color: const Color(0xFFF7FAF4),
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.eco_rounded, color: Color(0xFF0B6B43), size: 27),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.fromLTRB(3, 5, 3, 2),
+                            child: Image.network(
+                              image,
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.medium,
+                              errorBuilder: (_, __, ___) => const Center(
+                                child: Icon(Icons.eco_rounded, color: Color(0xFF0B6B43), size: 27),
+                              ),
+                            ),
+                          ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 5,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(.96),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFDCE5D8)),
+                      ),
+                      child: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0B5B3D), size: 13),
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 4, 5, 5),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.product.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 8.9,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const Spacer(),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${item.formattedWholesalePrice} / ${item.wholesaleUnit}',
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: Color(0xFF0B6B43),
+                            fontSize: 8.7,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjReferenceMarketIntelligence extends StatelessWidget {
+  final List<WholesaleProduct> catalogue;
+  final List<WholesaleDemandForecast> activeForecasts;
+  final List<WholesaleDemandGapLine> gapLines;
+  final VoidCallback onOpenShop;
+  final VoidCallback onOpenPlan;
+  final VoidCallback onViewInsights;
+
+  const _HpjReferenceMarketIntelligence({
+    required this.catalogue,
+    required this.activeForecasts,
+    required this.gapLines,
+    required this.onOpenShop,
+    required this.onOpenPlan,
+    required this.onViewInsights,
+  });
+
+  Widget _metric({
+    required IconData icon,
+    required String value,
+    required String label,
+    required String helper,
+    required Color accent,
+    required VoidCallback onTap,
+    bool crown = false,
+  }) {
+    return Material(
+      color: Colors.white.withOpacity(.82),
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          height: 96,
+          padding: const EdgeInsets.fromLTRB(8, 8, 7, 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDDE6D9)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x08244C35),
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 27,
+                    height: 27,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, color: accent, size: 14),
+                  ),
+                  if (crown) ...[
+                    const Spacer(),
+                    const Icon(Icons.workspace_premium_rounded, color: Color(0xFFE3A115), size: 12),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 5),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 12.6,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 7.7,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                helper,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 7.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final priced = catalogue.where((item) => item.wholesalePrice > 0).toList(growable: false);
+    final average = priced.isEmpty
+        ? 0.0
+        : priced.fold<double>(0, (sum, item) => sum + item.wholesalePrice) / priced.length;
+
+    final totals = <String, double>{};
+    final names = <String, String>{};
+    for (final forecast in activeForecasts) {
+      final clean = forecast.productName.trim();
+      if (clean.isEmpty) continue;
+      final key = clean.toLowerCase();
+      names[key] = clean;
+      totals[key] = (totals[key] ?? 0) + forecast.quantity;
+    }
+    var topDemand = 'No demand';
+    if (totals.isNotEmpty) {
+      final key = totals.keys.reduce((a, b) => totals[a]! >= totals[b]! ? a : b);
+      topDemand = names[key] ?? key;
+    }
+
+    final gapCount = gapLines.where((item) => item.hasGap).length;
+    final supplyValue = gapCount == 0 ? 'Stable' : '$gapCount gap${gapCount == 1 ? '' : 's'}';
+    final supplyHelper = gapCount == 0 ? 'Current market' : 'Needs attention';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(11, 11, 11, 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBF5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDDE6D9)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x09244C35),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D8B4E),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.bar_chart_rounded, color: Colors.white, size: 19),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Market Intelligence',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 15.1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 1),
+                    Text(
+                      'Fresh supply, demand gaps, price trends and opportunities.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onViewInsights,
+                iconAlignment: IconAlignment.end,
+                icon: const Icon(Icons.arrow_forward_rounded, size: 13),
+                label: const Text('View insights'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0B5B3D),
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFD8E3D5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const TextStyle(fontSize: 8.2, fontWeight: FontWeight.w900),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = 6.0;
+              final compactRow = constraints.maxWidth >= 390;
+              final cards = <Widget>[
+                _metric(
+                  icon: Icons.sell_rounded,
+                  value: average <= 0 ? '—' : formatJmd(average),
+                  label: 'Avg wholesale',
+                  helper: 'All items',
+                  accent: const Color(0xFF0B6A43),
+                  onTap: onOpenShop,
+                ),
+                _metric(
+                  icon: Icons.bar_chart_rounded,
+                  value: '${activeForecasts.length}',
+                  label: 'Active demand',
+                  helper: 'Next 30 days',
+                  accent: const Color(0xFFE68B15),
+                  onTap: onOpenPlan,
+                ),
+                _metric(
+                  icon: Icons.eco_rounded,
+                  value: topDemand,
+                  label: 'Top demand',
+                  helper: 'Product',
+                  accent: const Color(0xFF13814B),
+                  crown: totals.isNotEmpty,
+                  onTap: onOpenPlan,
+                ),
+                _metric(
+                  icon: gapCount == 0 ? Icons.trending_up_rounded : Icons.warning_amber_rounded,
+                  value: supplyValue,
+                  label: 'Supply outlook',
+                  helper: supplyHelper,
+                  accent: gapCount == 0 ? const Color(0xFF2B8A4B) : const Color(0xFFE08A16),
+                  onTap: onOpenPlan,
+                ),
+              ];
+
+              if (compactRow) {
+                return Row(
+                  children: [
+                    for (var i = 0; i < cards.length; i++) ...[
+                      if (i > 0) const SizedBox(width: gap),
+                      Expanded(child: cards[i]),
+                    ],
+                  ],
+                );
+              }
+
+              final width = (constraints.maxWidth - gap) / 2;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: cards.map((card) => SizedBox(width: width, child: card)).toList(growable: false),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _HpjReferenceNetworkSection extends StatefulWidget {
+  final BusinessAccount account;
+  final VoidCallback onOpenShop;
+  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
+
+  const _HpjReferenceNetworkSection({
+    required this.account,
+    required this.onOpenShop,
+    required this.onAgricultureAction,
+  });
+
+  @override
+  State<_HpjReferenceNetworkSection> createState() => _HpjReferenceNetworkSectionState();
+}
+
+
+class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection> {
+  late Future<List<HpjFreshReel>> _reelsFuture;
+  late Future<List<AgricultureFeedUpdate>> _newsFuture;
+  late Future<HpjSponsorCampaign?> _sponsorFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _reelsFuture = _loadReels();
+    _newsFuture = _loadNews();
+    _sponsorFuture = fetchActiveBusinessHomeSponsor();
+  }
+
+  Future<List<HpjFreshReel>> _loadReels() async {
+    if (!hpjCurrentUserExperiencePreferences.showFreshReels) {
+      return const <HpjFreshReel>[];
+    }
+    try {
+      final primary = await fetchPublishedFreshReels(
+        preferences: hpjCurrentUserExperiencePreferences,
+        placement: freshReelPlacementWholesaleFeed,
+        limit: 3,
+      );
+      if (primary.length >= 3) return primary.take(3).toList(growable: false);
+
+      // The Home network is broader than the Supply tab. If the wholesale
+      // placement has fewer than three live reels, fill the strip with other
+      // published HPJ network reels rather than leaving a large blank area.
+      final allPublished = await fetchPublishedFreshReels(
+        preferences: hpjCurrentUserExperiencePreferences,
+        placement: '',
+        limit: 12,
+      );
+      final seen = primary.map((item) => item.id).toSet();
+      final combined = <HpjFreshReel>[...primary];
+      for (final reel in allPublished) {
+        if (seen.add(reel.id)) combined.add(reel);
+        if (combined.length >= 3) break;
+      }
+      return combined.take(3).toList(growable: false);
+    } catch (error) {
+      farmDebugLog('Business Home reference reels unavailable: $error');
+      return const <HpjFreshReel>[];
+    }
+  }
+
+  Future<List<AgricultureFeedUpdate>> _loadNews() async {
+    try {
+      final updates = await fetchAgricultureFeedUpdates(
+        audience: 'wholesale',
+        limit: 8,
+      );
+      return updates
+          .where((item) => item.category != 'education')
+          .take(2)
+          .toList(growable: false);
+    } catch (error) {
+      farmDebugLog('Business Home reference news unavailable: $error');
+      return const <AgricultureFeedUpdate>[];
+    }
+  }
+
+  void _openReels([String initialReelId = '']) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FreshReelsScreen(
+          preferences: hpjCurrentUserExperiencePreferences,
+          initialReelId: initialReelId,
+          placement: freshReelPlacementWholesaleFeed,
+        ),
+      ),
+    );
+  }
+
+  void _openAllNews() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _HpjBusinessNewsScreen(
+          onAgricultureAction: widget.onAgricultureAction,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openNews(AgricultureFeedUpdate update) async {
+    final actionType = update.actionType.trim().toLowerCase();
+
+    // These are the Business-workspace actions that have real destinations.
+    // Do not send normal HPJ editorial/news posts to the action handler,
+    // because unknown action types intentionally no-op there.
+    const supportedWorkspaceActions = <String>{
+      'wholesale_shop',
+      'wholesale_plan',
+      'customer_care',
+    };
+
+    if (supportedWorkspaceActions.contains(actionType)) {
+      await widget.onAgricultureAction(update);
+      return;
+    }
+
+    if (actionType == 'external') {
+      final source = update.sourceUrl?.trim() ?? '';
+      if (source.isNotEmpty) {
+        final opened = await openExternalShareUrl(source);
+        if (!opened && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open the news source.')),
+          );
+        }
+        return;
+      }
+    }
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _HpjBusinessNewsDetailScreen(
+          update: update,
+          onAgricultureAction: widget.onAgricultureAction,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSponsor(HpjSponsorCampaign campaign) async {
+    if (campaign.ctaType == 'farm') {
+      final farmerId = campaign.targetFarmerId.trim();
+      if (farmerId.isEmpty) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => PublicFarmProfileScreen(
+            farmerId: farmerId,
+            sourceWorkspace: 'wholesale',
+            wholesaleAccount: widget.account,
+          ),
+        ),
+      );
+      return;
+    }
+    if (campaign.ctaType == 'external' && _isSafeSponsorExternalUrl(campaign.ctaUrl)) {
+      final opened = await openExternalShareUrl(campaign.ctaUrl);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the sponsor link.')),
+        );
+      }
+      return;
+    }
+    widget.onOpenShop();
+  }
+
+  String _dateLabel(DateTime date) {
+    const months = <String>['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final local = date.toLocal();
+    return '${months[local.month - 1]} ${local.day}';
+  }
+
+  Widget _miniHeader({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      height: 27,
+      child: Row(
+        children: [
+          Icon(icon, color: const Color(0xFF0B5B3D), size: 14),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 9.6,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(999),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'View all',
+                    style: TextStyle(
+                      color: Color(0xFF0B5B3D),
+                      fontSize: 6.8,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(width: 2),
+                  Icon(Icons.arrow_forward_rounded, color: Color(0xFF0B5B3D), size: 10),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reelTile(HpjFreshReel reel) {
+    final image = cleanHostedImageUrl(reel.thumbnailUrl);
+    return Expanded(
+      child: Material(
+        color: const Color(0xFFEDF3E9),
+        borderRadius: BorderRadius.circular(10),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openReels(reel.id),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (image != null)
+                Image.network(
+                  image,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: const Color(0xFFDBEAD7),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.eco_rounded, color: Color(0xFF0B5B3D), size: 18),
+                  ),
+                )
+              else
+                Container(
+                  color: const Color(0xFFDBEAD7),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.eco_rounded, color: Color(0xFF0B5B3D), size: 18),
+                ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xE6002D1E)],
+                    stops: [.36, 1],
+                  ),
+                ),
+              ),
+              Center(
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(.45),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(.85)),
+                  ),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 17),
+                ),
+              ),
+              Positioned(
+                left: 4,
+                right: 4,
+                bottom: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      reel.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 6.8,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      reel.farmName.trim().isNotEmpty ? reel.farmName : reel.creatorLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(.82),
+                        fontSize: 5.9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _newsTile(AgricultureFeedUpdate update) {
+    final image = cleanHostedImageUrl(update.imageUrl);
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(9),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => unawaited(_openNews(update)),
+        child: SizedBox(
+          height: 59,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 46,
+                height: double.infinity,
+                child: image == null
+                    ? Container(
+                        color: const Color(0xFFEDF4EA),
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.newspaper_rounded, size: 16, color: Color(0xFF0B5B3D)),
+                      )
+                    : Image.network(
+                        image,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: const Color(0xFFEDF4EA),
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.newspaper_rounded, size: 16, color: Color(0xFF0B5B3D)),
+                        ),
+                      ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(5, 4, 4, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEAF4E6),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          update.categoryLabel.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF0B6A43),
+                            fontSize: 5.2,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Expanded(
+                        child: Text(
+                          update.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 6.8,
+                            height: 1.05,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _dateLabel(update.publishAt),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 5.6,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Color(0xFF0B5B3D),
+                            size: 11,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sponsorTile(HpjSponsorCampaign campaign) {
+    final raw = campaign.imageUrl.trim().isNotEmpty ? campaign.imageUrl.trim() : campaign.logoUrl.trim();
+    final image = cleanHostedImageUrl(raw);
+
+    return Material(
+      color: const Color(0xFFFFFCF2),
+      borderRadius: BorderRadius.circular(9),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => unawaited(_openSponsor(campaign)),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: const Color(0xFFE9DFC7)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(5, 5, 5, 4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5E7B9),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.workspace_premium_rounded, color: Color(0xFFA9750B), size: 8),
+                      SizedBox(width: 2),
+                      Text(
+                        'Sponsored',
+                        style: TextStyle(
+                          color: Color(0xFF8A6415),
+                          fontSize: 5.8,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (image != null)
+                SizedBox(
+                  height: 54,
+                  width: double.infinity,
+                  child: Image.network(
+                    image,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      campaign.sponsorName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF0B5B3D),
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      campaign.headline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 6.4,
+                        height: 1.05,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFB9851D),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              campaign.ctaLabel.trim().isEmpty ? 'Learn more' : campaign.ctaLabel.trim(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 6.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 9),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget reelsPanel() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _miniHeader(
+            icon: Icons.video_library_rounded,
+            title: 'Reels',
+            onTap: _openReels,
+          ),
+          FutureBuilder<List<HpjFreshReel>>(
+            future: _reelsFuture,
+            builder: (context, snapshot) {
+              final reels = snapshot.data ?? const <HpjFreshReel>[];
+              if (reels.isEmpty) {
+                return Container(
+                  height: 132,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2F6EF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'Fresh reels will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 7.0,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                );
+              }
+
+              final visible = reels.take(3).toList(growable: false);
+              return SizedBox(
+                height: 136,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < visible.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 6),
+                      _reelTile(visible[i]),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      );
+    }
+
+    Widget newsPanel() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _miniHeader(
+            icon: Icons.newspaper_rounded,
+            title: 'Latest News',
+            onTap: _openAllNews,
+          ),
+          FutureBuilder<List<AgricultureFeedUpdate>>(
+            future: _newsFuture,
+            builder: (context, snapshot) {
+              final news =
+                  snapshot.data ?? const <AgricultureFeedUpdate>[];
+              if (news.isEmpty) {
+                return Container(
+                  height: 128,
+                  padding: const EdgeInsets.all(8),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F9F5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'No new updates right now.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 7.0,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                );
+              }
+
+              return Column(
+                children: [
+                  _newsTile(news.first),
+                  if (news.length > 1) ...[
+                    const SizedBox(height: 7),
+                    _newsTile(news[1]),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFEFA),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE4E0D3)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A5A4822),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF07583A),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.groups_2_rounded,
+                  color: Colors.white,
+                  size: 17,
+                ),
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'From the HPJ Network',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 15.0,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 1),
+                    Text(
+                      'Real people. Real stories. A stronger Jamaican food system.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.1,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          FutureBuilder<HpjSponsorCampaign?>(
+            future: _sponsorFuture,
+            builder: (context, sponsorSnapshot) {
+              final sponsor =
+                  hpjCurrentUserExperiencePreferences.showPromotions
+                      ? sponsorSnapshot.data
+                      : null;
+
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 8.0;
+                  final narrow = constraints.maxWidth < 390;
+
+                  if (narrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        reelsPanel(),
+                        const SizedBox(height: 9),
+                        if (sponsor == null)
+                          newsPanel()
+                        else
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                flex: 6,
+                                child: newsPanel(),
+                              ),
+                              const SizedBox(width: gap),
+                              Expanded(
+                                flex: 5,
+                                child: _sponsorTile(sponsor),
+                              ),
+                            ],
+                          ),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: sponsor == null ? 6 : 5,
+                        child: reelsPanel(),
+                      ),
+                      const SizedBox(width: gap),
+                      Expanded(
+                        flex: sponsor == null ? 4 : 3,
+                        child: newsPanel(),
+                      ),
+                      if (sponsor != null) ...[
+                        const SizedBox(width: gap),
+                        Expanded(
+                          flex: 3,
+                          child: _sponsorTile(sponsor),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _HpjReferenceNetworkPainter extends CustomPainter {
+  const _HpjReferenceNetworkPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()
+      ..color = const Color(0xFFE8C24B).withOpacity(.55)
+      ..strokeWidth = 1.1
+      ..style = PaintingStyle.stroke;
+    final glow = Paint()
+      ..color = const Color(0xFFF1C74D).withOpacity(.92)
+      ..style = PaintingStyle.fill;
+
+    final paths = <Path>[
+      Path()
+        ..moveTo(size.width * .48, size.height * .76)
+        ..cubicTo(size.width * .60, size.height * .15, size.width * .72, size.height * .95, size.width * .95, size.height * .33),
+      Path()
+        ..moveTo(size.width * .50, size.height * .38)
+        ..cubicTo(size.width * .63, size.height * .82, size.width * .78, size.height * .15, size.width * .98, size.height * .72),
+      Path()
+        ..moveTo(size.width * .56, size.height * .90)
+        ..cubicTo(size.width * .68, size.height * .47, size.width * .82, size.height * .88, size.width, size.height * .52),
+    ];
+    for (final path in paths) {
+      canvas.drawPath(path, line);
+    }
+
+    final nodes = <Offset>[
+      Offset(size.width * .57, size.height * .55),
+      Offset(size.width * .67, size.height * .34),
+      Offset(size.width * .76, size.height * .68),
+      Offset(size.width * .86, size.height * .42),
+      Offset(size.width * .94, size.height * .63),
+    ];
+    for (final node in nodes) {
+      canvas.drawCircle(node, 2.6, glow);
+      canvas.drawCircle(node, 5.2, Paint()..color = glow.color.withOpacity(.10));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+
+class _HpjReferenceDemandNetworkCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _HpjReferenceDemandNetworkCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    const deep = Color(0xFF07583A);
+
+    return SizedBox(
+      height: 88,
+      child: Material(
+        color: deep,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Stack(
+            children: [
+              const Positioned.fill(
+                child: CustomPaint(painter: _HpjReferenceNetworkPainter()),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 45,
+                      height: 45,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(.11),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withOpacity(.14)),
+                      ),
+                      child: const Icon(Icons.bar_chart_rounded, color: Colors.white, size: 23),
+                    ),
+                    const SizedBox(width: 9),
+                    const Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Jamaica Demand Network',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.4,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Post a buyer need, see national supply gaps and let HPJ match farmers.',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Color(0xFFDDEBE2),
+                              fontSize: 8.3,
+                              height: 1.16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Post a need',
+                            style: TextStyle(
+                              color: deep,
+                              fontSize: 7.8,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(width: 3),
+                          Icon(Icons.arrow_forward_rounded, color: deep, size: 13),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
 // =====================================================
 // HPJ BUSINESS SUPER ELITE — RESPONSIVE APP HOME
 // Uses the same live Business data as desktop while prioritising the five
@@ -6206,6 +9086,7 @@ class _HpjEliteBusinessMobileHome extends StatelessWidget {
   final BusinessAccount account;
   final List<WholesaleDemandForecast> activeForecasts;
   final List<WholesaleDemandGapLine> gapLines;
+  final List<WholesaleProduct> catalogue;
   final List<WholesaleProduct> recommendedProducts;
   final List<Widget> attentionRows;
   final int activeNeeds;
@@ -6231,6 +9112,7 @@ class _HpjEliteBusinessMobileHome extends StatelessWidget {
     required this.account,
     required this.activeForecasts,
     required this.gapLines,
+    required this.catalogue,
     required this.recommendedProducts,
     required this.attentionRows,
     required this.activeNeeds,
@@ -6253,21 +9135,51 @@ class _HpjEliteBusinessMobileHome extends StatelessWidget {
     required this.onAgricultureAction,
   });
 
+  List<String> _imagePool() {
+    final seen = <String>{};
+    final urls = <String>[];
+    for (final item in <WholesaleProduct>[
+      ...recommendedProducts,
+      ...catalogue,
+    ]) {
+      final url = item.product.imageUrl?.trim() ?? '';
+      if (url.isNotEmpty && seen.add(url)) urls.add(url);
+    }
+    return urls;
+  }
+
+  void _openInsights(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _HpjBusinessMarketInsightsScreen(
+          account: account,
+          catalogue: catalogue,
+          activeForecasts: activeForecasts,
+          gapLines: gapLines,
+          onOpenShop: onOpenShop,
+          onOpenPlan: onOpenPlan,
+          onAgricultureAction: onAgricultureAction,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final images = _imagePool();
+    String? imageAt(int index) => index < images.length ? images[index] : null;
+
+    final reviewCount = activeForecasts
+        .where((item) => _wholesaleForecastNeedsReview(item))
+        .length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _PremiumBusinessHeadquartersHero(
+        _HpjEliteBusinessPhotoHero(
           account: account,
-          activeNeeds: activeNeeds,
-          supplyGaps: supplyGaps,
-          amountDue: amountDue,
-          deliveriesToday: deliveriesToday,
-          hasLoadIssues: hasLoadIssues,
+          imageUrl: imageAt(0),
           onOpenShop: onOpenShop,
-          onOpenPlan: onOpenPlan,
-          onOpenOrders: onOpenOrders,
         ),
         if (hasLoadIssues) ...[
           const SizedBox(height: 10),
@@ -6276,80 +9188,1994 @@ class _HpjEliteBusinessMobileHome extends StatelessWidget {
             onRetry: onRetry,
           ),
         ],
-        const SizedBox(height: 15),
-        _WholesaleHomeQuickActions(
-          onOrderNow: onOpenShop,
-          onPlanAhead: onOpenPlan,
-          onFindSuppliers: onFindSuppliers,
-          onTrackOrders: onOpenOrders,
-        ),
-        const SizedBox(height: 13),
-        _HpjBusinessDemandNetworkEntryCard(
-          onTap: onOpenDemandNetwork,
-        ),
-        const SizedBox(height: 18),
-        _HpjBusinessMobileSectionTitle(
-          icon: Icons.warning_amber_rounded,
-          title: 'Supply gaps',
-          subtitle: 'Requirements HPJ is still working to secure.',
-          action: 'Plan',
-          onAction: onOpenPlan,
-        ),
-        const SizedBox(height: 9),
-        _HpjBusinessMobileGapList(
-          gaps: gapLines,
+        const SizedBox(height: 11),
+        _HpjEliteBusinessKpiRow(
+          activeNeeds: activeNeeds,
+          supplyGaps: supplyGaps,
+          amountDue: amountDue,
+          deliveriesToday: deliveriesToday,
           onOpenPlan: onOpenPlan,
+          onOpenOrders: onOpenOrders,
         ),
-        const SizedBox(height: 18),
-        _HpjBusinessMobileSectionTitle(
-          icon: Icons.storefront_outlined,
-          title: 'Fresh Supply',
-          subtitle: 'Wholesale produce available now.',
-          action: 'View all',
-          onAction: onOpenShop,
-        ),
-        const SizedBox(height: 9),
-        _HpjBusinessMobileFreshSupply(
-          products: recommendedProducts,
-          onOpenShop: onOpenShop,
-        ),
-        if (attentionRows.isNotEmpty) ...[
-          const SizedBox(height: 18),
-          const _HpjBusinessMobileSectionTitle(
-            icon: Icons.priority_high_rounded,
-            title: 'Action needed',
-            subtitle: 'The highest-priority item for your business.',
+        if (reviewCount > 0) ...[
+          const SizedBox(height: 13),
+          _HpjBusinessActionNeededCard(
+            count: reviewCount,
+            onTap: onOpenPlan,
           ),
-          const SizedBox(height: 9),
+        ] else if (attentionRows.isNotEmpty) ...[
+          const SizedBox(height: 13),
           FarmCard(
             padding: const EdgeInsets.all(13),
             child: attentionRows.first,
           ),
         ],
-        const SizedBox(height: 18),
-        _HpjBusinessMobileStatusCard(
-          activeNeeds: activeNeeds,
-          supplyGaps: supplyGaps,
-          securedDemandLines: securedDemandLines,
-          purchasedOrders30: purchasedOrders30,
-          spend30: spend30,
-          spend90: spend90,
-          amountDue: amountDue,
-          deliveriesToday: deliveriesToday,
-          onOpenPlan: onOpenPlan,
-          onOpenOrders: onOpenOrders,
-          onOpenAccount: onOpenAccount,
+        const SizedBox(height: 17),
+        _HpjBusinessMobileSectionTitle(
+          icon: Icons.near_me_outlined,
+          title: 'Fresh Supply',
+          subtitle: 'Wholesale produce available now.',
+          action: 'View all',
+          onAction: onOpenShop,
         ),
-        const SizedBox(height: 14),
-        _WholesaleMarketIntelligenceCard(
-          dailyPicks: recommendedProducts,
+        const SizedBox(height: 8),
+        _HpjBusinessMobileFreshSupply(
+          products: recommendedProducts.isEmpty
+              ? catalogue.take(8).toList(growable: false)
+              : recommendedProducts,
+          onOpenShop: onOpenShop,
+        ),
+        const SizedBox(height: 17),
+        _HpjBusinessHomeMarketIntelligence(
+          catalogue: catalogue,
           activeForecasts: activeForecasts,
           gapLines: gapLines,
           onOpenShop: onOpenShop,
           onOpenPlan: onOpenPlan,
+          onViewInsights: () => _openInsights(context),
+        ),
+        const SizedBox(height: 17),
+        _HpjBusinessHomeNetworkSection(
+          account: account,
+          onOpenShop: onOpenShop,
           onAgricultureAction: onAgricultureAction,
         ),
+        const SizedBox(height: 16),
+        _HpjBusinessMobileDemandNetworkCard(
+          onTap: onOpenDemandNetwork,
+        ),
       ],
+    );
+  }
+}
+
+
+class _HpjBusinessActionNeededCard extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _HpjBusinessActionNeededCard({
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFFF3F0),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(13, 12, 10, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFF1D8D1)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE1DC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.event_busy_rounded,
+                  color: FarmColors.danger,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Action needed',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 13.3,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '$count ',
+                            style: const TextStyle(
+                              color: FarmColors.danger,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          TextSpan(
+                            text: 'planned need${count == 1 ? '' : 's'} need review',
+                          ),
+                        ],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 10.5,
+                        height: 1.15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    const Text(
+                      'Confirm dates and quantities so HPJ can keep your supply plan current.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.7,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.76),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: FarmColors.danger.withOpacity(.14)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Review',
+                      style: TextStyle(
+                        color: FarmColors.danger,
+                        fontSize: 9.3,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(width: 3),
+                    Icon(Icons.arrow_forward_rounded, color: FarmColors.danger, size: 14),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjBusinessHomeMarketIntelligence extends StatelessWidget {
+  final List<WholesaleProduct> catalogue;
+  final List<WholesaleDemandForecast> activeForecasts;
+  final List<WholesaleDemandGapLine> gapLines;
+  final VoidCallback onOpenShop;
+  final VoidCallback onOpenPlan;
+  final VoidCallback onViewInsights;
+
+  const _HpjBusinessHomeMarketIntelligence({
+    required this.catalogue,
+    required this.activeForecasts,
+    required this.gapLines,
+    required this.onOpenShop,
+    required this.onOpenPlan,
+    required this.onViewInsights,
+  });
+
+  Widget _metric({
+    required IconData icon,
+    required String label,
+    required String value,
+    required String helper,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: accent.withOpacity(.055),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 102,
+          padding: const EdgeInsets.fromLTRB(9, 9, 8, 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withOpacity(.10)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, size: 15, color: accent),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 12.4,
+                  height: 1.0,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 7.7,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                helper,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 7.2,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final priced = catalogue
+        .where((item) => item.wholesalePrice > 0)
+        .toList(growable: false);
+    final average = priced.isEmpty
+        ? 0.0
+        : priced.fold<double>(0, (sum, item) => sum + item.wholesalePrice) /
+            priced.length;
+
+    final demandByProduct = <String, double>{};
+    final displayNameByKey = <String, String>{};
+    for (final forecast in activeForecasts) {
+      final clean = forecast.productName.trim();
+      if (clean.isEmpty) continue;
+      final key = clean.toLowerCase();
+      displayNameByKey[key] = clean;
+      demandByProduct[key] = (demandByProduct[key] ?? 0) + forecast.quantity;
+    }
+    String topDemand = 'No active demand';
+    if (demandByProduct.isNotEmpty) {
+      final topKey = demandByProduct.keys.reduce(
+        (a, b) => demandByProduct[a]! >= demandByProduct[b]! ? a : b,
+      );
+      topDemand = displayNameByKey[topKey] ?? topKey;
+    }
+
+    final gapCount = gapLines.where((item) => item.hasGap).length;
+    final supplyValue = gapCount == 0 ? 'Stable' : '$gapCount gap${gapCount == 1 ? '' : 's'}';
+    final supplyHelper = gapCount == 0 ? 'Current market' : 'Needs attention';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(11, 11, 11, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.trending_up_rounded,
+                  color: FarmColors.primary,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Market Intelligence',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 14.7,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Fresh supply, demand gaps, prices and opportunities.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.7,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onViewInsights,
+                iconAlignment: IconAlignment.end,
+                icon: const Icon(Icons.arrow_forward_rounded, size: 14),
+                label: const Text(
+                  'View insights',
+                  style: TextStyle(fontSize: 8.9, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 400 ? 4 : 2;
+              const gap = 6.0;
+              final width =
+                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+
+              final cards = <Widget>[
+                _metric(
+                  icon: Icons.sell_outlined,
+                  label: 'Avg wholesale',
+                  value: average <= 0 ? '—' : formatJmd(average),
+                  helper: 'All items',
+                  accent: FarmColors.primary,
+                  onTap: onOpenShop,
+                ),
+                _metric(
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Active demand',
+                  value: '${activeForecasts.length}',
+                  helper: 'Next 30 days',
+                  accent: const Color(0xFFE68B15),
+                  onTap: onOpenPlan,
+                ),
+                _metric(
+                  icon: Icons.eco_outlined,
+                  label: 'Top demand',
+                  value: topDemand,
+                  helper: 'Planned needs',
+                  accent: const Color(0xFF15834E),
+                  onTap: onOpenPlan,
+                ),
+                _metric(
+                  icon: gapCount == 0
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.warning_amber_rounded,
+                  label: 'Supply outlook',
+                  value: supplyValue,
+                  helper: supplyHelper,
+                  accent: gapCount == 0 ? FarmColors.success : FarmColors.warning,
+                  onTap: onOpenPlan,
+                ),
+              ];
+
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: cards
+                    .map((card) => SizedBox(width: width, child: card))
+                    .toList(growable: false),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _HpjBusinessMarketInsightsScreen extends StatelessWidget {
+  final BusinessAccount account;
+  final List<WholesaleProduct> catalogue;
+  final List<WholesaleDemandForecast> activeForecasts;
+  final List<WholesaleDemandGapLine> gapLines;
+  final VoidCallback onOpenShop;
+  final VoidCallback onOpenPlan;
+  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
+
+  const _HpjBusinessMarketInsightsScreen({
+    required this.account,
+    required this.catalogue,
+    required this.activeForecasts,
+    required this.gapLines,
+    required this.onOpenShop,
+    required this.onOpenPlan,
+    required this.onAgricultureAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: const Text('Market Intelligence'),
+      ),
+      body: FarmPage(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 110),
+          children: [
+            _HpjBusinessHomeMarketIntelligence(
+              catalogue: catalogue,
+              activeForecasts: activeForecasts,
+              gapLines: gapLines,
+              onOpenShop: onOpenShop,
+              onOpenPlan: onOpenPlan,
+              onViewInsights: () {},
+            ),
+            const SizedBox(height: 16),
+            HpjJamaicaMarketPulseSection(
+              audience: 'wholesale',
+              limit: 8,
+              socialStyle: true,
+              preferredCropNames: activeForecasts
+                  .map((item) => item.productName)
+                  .toList(growable: false),
+              onPrimaryAction: (insight) async {
+                insight.hasShortage ? onOpenPlan() : onOpenShop();
+              },
+            ),
+            const SizedBox(height: 16),
+            HpjAgricultureUpdatesSection(
+              audience: 'wholesale',
+              workspace: 'wholesale',
+              limit: 8,
+              socialStyle: true,
+              title: 'Market & agriculture updates',
+              subtitle: 'Useful signals for your sourcing decisions.',
+              onAction: onAgricultureAction,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjBusinessHomeNetworkSection extends StatefulWidget {
+  final BusinessAccount account;
+  final VoidCallback onOpenShop;
+  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
+
+  const _HpjBusinessHomeNetworkSection({
+    required this.account,
+    required this.onOpenShop,
+    required this.onAgricultureAction,
+  });
+
+  @override
+  State<_HpjBusinessHomeNetworkSection> createState() =>
+      _HpjBusinessHomeNetworkSectionState();
+}
+
+
+class _HpjBusinessHomeNetworkSectionState
+    extends State<_HpjBusinessHomeNetworkSection> {
+  late Future<List<HpjFreshReel>> _reelsFuture;
+  late Future<HpjSponsorCampaign?> _sponsorFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _reelsFuture = _loadReels();
+    _sponsorFuture = fetchActiveBusinessHomeSponsor();
+  }
+
+  Future<List<HpjFreshReel>> _loadReels() async {
+    if (!hpjCurrentUserExperiencePreferences.showFreshReels) {
+      return const <HpjFreshReel>[];
+    }
+    try {
+      return await fetchPublishedFreshReels(
+        preferences: hpjCurrentUserExperiencePreferences,
+        placement: freshReelPlacementWholesaleFeed,
+        limit: 3,
+      );
+    } catch (error) {
+      farmDebugLog('Business Home Reels unavailable: $error');
+      return const <HpjFreshReel>[];
+    }
+  }
+
+  void _openReels([String initialReelId = '']) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FreshReelsScreen(
+          preferences: hpjCurrentUserExperiencePreferences,
+          initialReelId: initialReelId,
+          placement: freshReelPlacementWholesaleFeed,
+        ),
+      ),
+    );
+  }
+
+  void _openAllNews() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _HpjBusinessNewsScreen(
+          onAgricultureAction: widget.onAgricultureAction,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSponsor(HpjSponsorCampaign campaign) async {
+    if (campaign.ctaType == 'farm') {
+      final farmerId = campaign.targetFarmerId.trim();
+      if (farmerId.isEmpty) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => PublicFarmProfileScreen(
+            farmerId: farmerId,
+            sourceWorkspace: 'wholesale',
+            wholesaleAccount: widget.account,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (campaign.ctaType == 'external' &&
+        _isSafeSponsorExternalUrl(campaign.ctaUrl)) {
+      final opened = await openExternalShareUrl(campaign.ctaUrl);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the sponsor link.')),
+        );
+      }
+      return;
+    }
+
+    widget.onOpenShop();
+  }
+
+  Widget _sectionHeader({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: FarmColors.deepGreen, size: 17),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 11.7,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: onTap,
+          iconAlignment: IconAlignment.end,
+          icon: const Icon(Icons.arrow_forward_rounded, size: 13),
+          label: const Text(
+            'View all',
+            style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reelCard(HpjFreshReel reel) {
+    final image = cleanHostedImageUrl(reel.thumbnailUrl);
+    return SizedBox(
+      width: 108,
+      child: Material(
+        color: const Color(0xFFF2F6EF),
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openReels(reel.id),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (image != null)
+                Image.network(
+                  image,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: FarmColors.primarySoft,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.eco_rounded, color: FarmColors.primary),
+                  ),
+                )
+              else
+                Container(
+                  color: FarmColors.primarySoft,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.eco_rounded, color: FarmColors.primary, size: 36),
+                ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xD9002E1F)],
+                    stops: [.38, 1],
+                  ),
+                ),
+              ),
+              Center(
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(.42),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(.72)),
+                  ),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 22),
+                ),
+              ),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      reel.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9.2,
+                        height: 1.08,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      reel.creatorLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(.80),
+                        fontSize: 7.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sponsorCard(HpjSponsorCampaign campaign) {
+    final rawMedia = campaign.imageUrl.trim().isNotEmpty
+        ? campaign.imageUrl.trim()
+        : campaign.logoUrl.trim();
+    final media = cleanHostedImageUrl(rawMedia);
+
+    return Material(
+      color: const Color(0xFFFFFBF0),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => unawaited(_openSponsor(campaign)),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE9DDBF)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (media != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    media,
+                    width: 72,
+                    height: 72,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox(width: 0, height: 72),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF2E4BF),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'SPONSORED',
+                        style: TextStyle(
+                          color: Color(0xFF8A621A),
+                          fontSize: 7.0,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .55,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      campaign.sponsorName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.deepGreen,
+                        fontSize: 11.2,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      campaign.headline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 9.0,
+                        height: 1.15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (campaign.description.trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        campaign.description.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 7.8,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 7),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFB48420),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      campaign.ctaLabel.trim().isEmpty ? 'Learn more' : campaign.ctaLabel.trim(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 7.8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    const Icon(Icons.arrow_forward_rounded, size: 12, color: Colors.white),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 11, 10, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFEFA),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE9E6D9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: FarmColors.deepGreen,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.groups_2_rounded, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'From the HPJ Network',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 1),
+                    Text(
+                      'Real people. Real stories. A stronger Jamaican food system.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (hpjCurrentUserExperiencePreferences.showFreshReels) ...[
+            const SizedBox(height: 8),
+            _sectionHeader(
+              icon: Icons.video_library_outlined,
+              title: 'Reels',
+              onTap: _openReels,
+            ),
+            FutureBuilder<List<HpjFreshReel>>(
+              future: _reelsFuture,
+              builder: (context, snapshot) {
+                final reels = snapshot.data ?? const <HpjFreshReel>[];
+                if (reels.isEmpty) return const SizedBox.shrink();
+                return SizedBox(
+                  height: 154,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: reels.length > 3 ? 3 : reels.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 7),
+                    itemBuilder: (_, index) => _reelCard(reels[index]),
+                  ),
+                );
+              },
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.newspaper_outlined, color: FarmColors.deepGreen, size: 17),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Latest News',
+                  style: TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 11.7,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _openAllNews,
+                iconAlignment: IconAlignment.end,
+                icon: const Icon(Icons.arrow_forward_rounded, size: 13),
+                label: const Text(
+                  'View all',
+                  style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          HpjAgricultureUpdatesSection(
+            audience: 'wholesale',
+            workspace: 'wholesale',
+            limit: 2,
+            socialStyle: true,
+            title: '',
+            subtitle: '',
+            showEducation: false,
+            showImages: true,
+            onAction: widget.onAgricultureAction,
+          ),
+          if (hpjCurrentUserExperiencePreferences.showPromotions) ...[
+            FutureBuilder<HpjSponsorCampaign?>(
+              future: _sponsorFuture,
+              builder: (context, snapshot) {
+                final campaign = snapshot.data;
+                if (campaign == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: _sponsorCard(campaign),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+
+
+class _HpjBusinessNewsDetailScreen extends StatelessWidget {
+  final AgricultureFeedUpdate update;
+  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
+
+  const _HpjBusinessNewsDetailScreen({
+    required this.update,
+    required this.onAgricultureAction,
+  });
+
+  String _dateLabel(DateTime value) {
+    const months = <String>[
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final local = value.toLocal();
+    return '${months[local.month - 1]} ${local.day}, ${local.year}';
+  }
+
+  Future<void> _runAction(BuildContext context) async {
+    final actionType = update.actionType.trim().toLowerCase();
+
+    if (actionType == 'external') {
+      final source = update.sourceUrl?.trim() ?? '';
+      if (source.isEmpty) return;
+      final opened = await openExternalShareUrl(source);
+      if (!opened && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the news source.')),
+        );
+      }
+      return;
+    }
+
+    if (actionType == 'wholesale_shop' ||
+        actionType == 'wholesale_plan' ||
+        actionType == 'customer_care') {
+      await onAgricultureAction(update);
+      return;
+    }
+
+    final source = update.sourceUrl?.trim() ?? '';
+    if (source.isNotEmpty) {
+      final opened = await openExternalShareUrl(source);
+      if (!opened && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the news source.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = cleanHostedImageUrl(update.imageUrl);
+    final actionType = update.actionType.trim().toLowerCase();
+    final source = update.sourceUrl?.trim() ?? '';
+    final hasSupportedAction =
+        actionType == 'wholesale_shop' ||
+        actionType == 'wholesale_plan' ||
+        actionType == 'customer_care' ||
+        actionType == 'external' ||
+        source.isNotEmpty;
+
+    final cleanActionLabel = update.actionLabel?.trim() ?? '';
+    final actionLabel = cleanActionLabel.isNotEmpty
+        ? cleanActionLabel
+        : (source.isNotEmpty ? 'Open source' : 'Open');
+
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: _businessChildAppBar(
+        context,
+        'HPJ Update',
+      ),
+      body: FarmPage(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 110),
+          children: [
+            Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: FarmColors.line),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (image != null)
+                    AspectRatio(
+                      aspectRatio: 16 / 8.5,
+                      child: Image.network(
+                        image,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: const Color(0xFFEDF4EA),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.newspaper_rounded,
+                            color: FarmColors.primary,
+                            size: 34,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(15, 14, 15, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEAF4E6),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                update.categoryLabel.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Color(0xFF0B6A43),
+                                  fontSize: 8.2,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              _dateLabel(update.publishAt),
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          update.title,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 21,
+                            height: 1.12,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -.35,
+                          ),
+                        ),
+                        if (update.summary.trim().isNotEmpty) ...[
+                          const SizedBox(height: 11),
+                          Text(
+                            update.summary.trim(),
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 12,
+                              height: 1.48,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                        if ((update.sourceName?.trim() ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 13),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.verified_outlined,
+                                color: FarmColors.primary,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  update.sourceName!.trim(),
+                                  style: const TextStyle(
+                                    color: FarmColors.deepGreen,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (hasSupportedAction) ...[
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 44,
+                            child: FilledButton.icon(
+                              onPressed: () => _runAction(context),
+                              icon: const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 17,
+                              ),
+                              label: Text(actionLabel),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: FarmColors.primary,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(13),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjBusinessNewsScreen extends StatelessWidget {
+  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
+
+  const _HpjBusinessNewsScreen({
+    required this.onAgricultureAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: const Text('HPJ News & Updates'),
+      ),
+      body: FarmPage(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 110),
+          children: [
+            HpjAgricultureUpdatesSection(
+              audience: 'wholesale',
+              workspace: 'wholesale',
+              limit: 20,
+              title: 'Latest News',
+              subtitle: 'Useful agriculture, supply and HPJ updates.',
+              showEducation: false,
+              showImages: true,
+              onAction: onAgricultureAction,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjEliteBusinessPhotoHero extends StatelessWidget {
+  final BusinessAccount account;
+  final String? imageUrl;
+  final VoidCallback onOpenShop;
+
+  const _HpjEliteBusinessPhotoHero({
+    required this.account,
+    required this.imageUrl,
+    required this.onOpenShop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const deep = Color(0xFF064A31);
+    final businessName = account.displayName.trim().isEmpty
+        ? 'HPJ Business'
+        : account.displayName.trim();
+    final businessLine = <String>[
+      if (account.businessType.trim().isNotEmpty) account.businessType.trim(),
+      if (account.parish.trim().isNotEmpty) account.parish.trim(),
+    ].join(' • ');
+    final cleanImage = imageUrl?.trim() ?? '';
+
+    return SizedBox(
+      height: 246,
+      width: double.infinity,
+      child: Material(
+        color: deep,
+        borderRadius: BorderRadius.circular(22),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (cleanImage.isNotEmpty)
+              Image.network(
+                cleanImage,
+                fit: BoxFit.cover,
+                alignment: Alignment.centerRight,
+                errorBuilder: (_, __, ___) => Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [deep, Color(0xFF167146)],
+                    ),
+                  ),
+                ),
+              )
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [deep, Color(0xFF167146)],
+                  ),
+                ),
+                alignment: Alignment.centerRight,
+                child: Icon(
+                  Icons.eco_rounded,
+                  size: 190,
+                  color: Colors.white.withOpacity(.06),
+                ),
+              ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    deep.withOpacity(.98),
+                    deep.withOpacity(.91),
+                    deep.withOpacity(.64),
+                    deep.withOpacity(.20),
+                  ],
+                  stops: const [0, .44, .72, 1],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(17, 17, 17, 15),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Welcome back,',
+                    style: TextStyle(
+                      color: Color(0xFFE7EFE9),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          businessName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            height: 1.02,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -.65,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE7AF22),
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(.09),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'APPROVED',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 8.3,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: .2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (businessLine.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      businessLine,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFFE5EEE8),
+                        fontSize: 10.7,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 285),
+                    child: const Text(
+                      'Your sourcing workspace for fresh, local Jamaican produce.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.4,
+                        height: 1.34,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  SizedBox(
+                    width: 236,
+                    height: 46,
+                    child: FilledButton.icon(
+                      onPressed: onOpenShop,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: deep,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 12.6,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      icon: const Icon(Icons.shopping_basket_outlined, size: 18),
+                      label: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Source produce'),
+                          SizedBox(width: 10),
+                          Icon(Icons.arrow_forward_rounded, size: 18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HpjEliteBusinessKpiRow extends StatelessWidget {
+  final int activeNeeds;
+  final int supplyGaps;
+  final double amountDue;
+  final int deliveriesToday;
+  final VoidCallback onOpenPlan;
+  final VoidCallback onOpenOrders;
+
+  const _HpjEliteBusinessKpiRow({
+    required this.activeNeeds,
+    required this.supplyGaps,
+    required this.amountDue,
+    required this.deliveriesToday,
+    required this.onOpenPlan,
+    required this.onOpenOrders,
+  });
+
+  Widget _tile({
+    required IconData icon,
+    required String value,
+    required String label,
+    required Color accent,
+    required Color background,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: background,
+        borderRadius: BorderRadius.circular(17),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(17),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 102),
+            padding: const EdgeInsets.fromLTRB(10, 10, 8, 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: accent.withOpacity(.10)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 31,
+                      height: 31,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent.withOpacity(.10),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, color: accent, size: 16),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      color: accent.withOpacity(.70),
+                      size: 14,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 16.5,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.0,
+                    height: 1.15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tile(
+          icon: Icons.event_note_outlined,
+          value: '$activeNeeds',
+          label: 'Needs\n(sourcing)',
+          accent: const Color(0xFF0B6A43),
+          background: const Color(0xFFF0F7ED),
+          onTap: onOpenPlan,
+        ),
+        const SizedBox(width: 7),
+        _tile(
+          icon: Icons.inventory_2_outlined,
+          value: '$supplyGaps',
+          label: 'Supply gaps',
+          accent: const Color(0xFFE68B15),
+          background: const Color(0xFFFFF7E9),
+          onTap: onOpenPlan,
+        ),
+        const SizedBox(width: 7),
+        _tile(
+          icon: Icons.account_balance_wallet_outlined,
+          value: formatJmd(amountDue),
+          label: 'Amount due',
+          accent: const Color(0xFF0B6A43),
+          background: const Color(0xFFF0F7ED),
+          onTap: onOpenOrders,
+        ),
+        const SizedBox(width: 7),
+        _tile(
+          icon: Icons.schedule_rounded,
+          value: '$deliveriesToday',
+          label: 'Today',
+          accent: const Color(0xFFAD7410),
+          background: const Color(0xFFFFF8EA),
+          onTap: onOpenOrders,
+        ),
+      ],
+    );
+  }
+}
+
+class _HpjBusinessMobileDemandNetworkCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _HpjBusinessMobileDemandNetworkCard({
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const deep = Color(0xFF064A31);
+
+    return SizedBox(
+      height: 108,
+      width: double.infinity,
+      child: Material(
+        color: deep,
+        borderRadius: BorderRadius.circular(19),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(19),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _EliteBusinessNetworkPatternPainter(),
+                ),
+              ),
+              Positioned(
+                right: 12,
+                top: 12,
+                child: Row(
+                  children: [
+                    Icon(Icons.eco_rounded, color: Colors.white.withOpacity(.12), size: 40),
+                    const SizedBox(width: 4),
+                    Icon(Icons.hub_rounded, color: Colors.white.withOpacity(.11), size: 46),
+                  ],
+                ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      deep,
+                      deep.withOpacity(.98),
+                      deep.withOpacity(.86),
+                      deep.withOpacity(.70),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(13, 12, 12, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 45,
+                      height: 45,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(.11),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: Colors.white.withOpacity(.12)),
+                      ),
+                      child: const Icon(
+                        Icons.bar_chart_rounded,
+                        color: Color(0xFFF0C451),
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Jamaica Demand Network',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13.2,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Post a buyer need, see national supply gaps and let HPJ match farmers.',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Color(0xFFD6E5DA),
+                              fontSize: 8.6,
+                              height: 1.22,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Post a need',
+                            style: TextStyle(
+                              color: deep,
+                              fontSize: 8.8,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_forward_rounded, color: deep, size: 14),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HpjBusinessMobileSupplyGapCard extends StatelessWidget {
+  final int plannedReviewCount;
+  final int gapCount;
+  final int securedDemandLines;
+  final VoidCallback onOpenPlan;
+
+  const _HpjBusinessMobileSupplyGapCard({
+    required this.plannedReviewCount,
+    required this.gapCount,
+    required this.securedDemandLines,
+    required this.onOpenPlan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final needsAttention = plannedReviewCount > 0 || gapCount > 0;
+    final panelColor = needsAttention
+        ? const Color(0xFFFFF3F0)
+        : const Color(0xFFF2F8EF);
+    final borderColor = needsAttention
+        ? const Color(0xFFF0D7CF)
+        : const Color(0xFFDCE8D8);
+
+    return Material(
+      color: panelColor,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onOpenPlan,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(13, 13, 13, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 39,
+                    height: 39,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: needsAttention
+                          ? const Color(0xFFFFE3DE)
+                          : const Color(0xFFE3F2DF),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Icon(
+                      needsAttention
+                          ? Icons.warning_amber_rounded
+                          : Icons.check_circle_outline_rounded,
+                      color: needsAttention
+                          ? const Color(0xFFD53B2F)
+                          : const Color(0xFF12854D),
+                      size: 21,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Supply gaps',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 14.2,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Requirements HPJ is still working to secure.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.6,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(.86),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'View all',
+                          style: TextStyle(
+                            color: Color(0xFF0B5B3D),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(Icons.arrow_forward_rounded, color: Color(0xFF0B5B3D), size: 15),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 11),
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.58),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 11),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.event_note_outlined,
+                              color: plannedReviewCount > 0
+                                  ? const Color(0xFFD72C2C)
+                                  : const Color(0xFF0B6A43),
+                              size: 19,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '$plannedReviewCount',
+                                    style: TextStyle(
+                                      color: plannedReviewCount > 0
+                                          ? const Color(0xFFD72C2C)
+                                          : FarmColors.ink,
+                                      fontSize: 18,
+                                      height: 1,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    plannedReviewCount == 0
+                                        ? 'Planned needs are current'
+                                        : plannedReviewCount == 1
+                                            ? 'Planned need needs review'
+                                            : 'Planned needs need review',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 9.2,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 48,
+                      color: borderColor,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 11),
+                        child: Row(
+                          children: [
+                            Icon(
+                              gapCount == 0
+                                  ? Icons.check_circle_rounded
+                                  : Icons.warning_amber_rounded,
+                              color: gapCount == 0
+                                  ? const Color(0xFF11864E)
+                                  : const Color(0xFFD87B10),
+                              size: 21,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    gapCount == 0
+                                        ? 'No current supply gaps'
+                                        : '$gapCount current supply gap${gapCount == 1 ? '' : 's'}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 9.2,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    gapCount == 0
+                                        ? 'HPJ is aligned with your active plan.'
+                                        : '$securedDemandLines demand line${securedDemandLines == 1 ? '' : 's'} secured.',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontSize: 8.5,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -6572,7 +11398,7 @@ class _HpjBusinessMobileFreshSupply extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final picks = products.take(4).toList(growable: false);
+    final picks = products.take(6).toList(growable: false);
 
     if (picks.isEmpty) {
       return Container(
@@ -6596,15 +11422,16 @@ class _HpjBusinessMobileFreshSupply extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 205,
+      height: 184,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.only(right: 2),
         itemCount: picks.length,
         separatorBuilder: (_, __) => const SizedBox(width: 9),
         itemBuilder: (context, index) {
           return SizedBox(
-            width: 154,
+            width: 148,
             child: _HpjBusinessMobileProductCard(
               item: picks[index],
               onTap: onOpenShop,
@@ -6631,91 +11458,120 @@ class _HpjBusinessMobileProductCard extends StatelessWidget {
 
     return Material(
       color: const Color(0xFFFFFEFB),
-      borderRadius: BorderRadius.circular(19),
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(19),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
-          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(19),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xFFDDE7DB)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.025),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                height: 104,
-                width: double.infinity,
-                child: imageUrl.isEmpty
-                    ? Container(
-                        color: const Color(0xFFF0F6ED),
-                        alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.eco_outlined,
-                          color: Color(0xFF0B5B3D),
-                          size: 30,
-                        ),
-                      )
-                    : Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFFF0F6ED),
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.eco_outlined,
-                            color: Color(0xFF0B5B3D),
-                            size: 30,
+              Stack(
+                children: [
+                  SizedBox(
+                    height: 98,
+                    width: double.infinity,
+                    child: imageUrl.isEmpty
+                        ? Container(
+                            color: const Color(0xFFF0F6ED),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.eco_outlined,
+                              color: Color(0xFF0B5B3D),
+                              size: 31,
+                            ),
+                          )
+                        : Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: const Color(0xFFF0F6ED),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.eco_outlined,
+                                color: Color(0xFF0B5B3D),
+                                size: 31,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.product.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${item.formattedWholesalePrice} / ${item.wholesaleUnit}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF0B6B43),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    Container(
-                      width: double.infinity,
-                      height: 31,
+                  ),
+                  Positioned(
+                    top: 7,
+                    right: 7,
+                    child: Container(
+                      width: 29,
+                      height: 29,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEDF6E9),
-                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.white.withOpacity(.94),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      child: const Text(
-                        'View supply',
-                        style: TextStyle(
-                          color: Color(0xFF0B5B3D),
-                          fontSize: 10.5,
+                      child: const Icon(
+                        Icons.arrow_forward_rounded,
+                        color: Color(0xFF0B5B3D),
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.product.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 11.3,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        '${item.formattedWholesalePrice} / ${item.wholesaleUnit}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF0B6B43),
+                          fontSize: 10.1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'View supply',
+                        style: TextStyle(
+                          color: Color(0xFF0B5B3D),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -6759,56 +11615,59 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
     required String label,
     required String note,
     required VoidCallback onTap,
-    bool warning = false,
+    required Color accent,
+    required Color background,
   }) {
     return Expanded(
       child: Material(
-        color: const Color(0xFFF7FAF4),
-        borderRadius: BorderRadius.circular(16),
+        color: background,
+        borderRadius: BorderRadius.circular(15),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(15),
           child: Container(
-            constraints: const BoxConstraints(minHeight: 104),
-            padding: const EdgeInsets.all(11),
+            constraints: const BoxConstraints(minHeight: 106),
+            padding: const EdgeInsets.fromLTRB(10, 9, 9, 9),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: warning
-                    ? const Color(0xFFE8C768).withOpacity(.55)
-                    : const Color(0xFFDDE7DB),
-              ),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: accent.withOpacity(.12)),
             ),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  icon,
-                  size: 17,
-                  color: warning
-                      ? const Color(0xFFAD7410)
-                      : const Color(0xFF0B5B3D),
+                Container(
+                  width: 31,
+                  height: 31,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 16, color: accent),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 13.2,
-                    fontWeight: FontWeight.w900,
+                const SizedBox(height: 8),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 14.2,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: FarmColors.ink,
-                    fontSize: 10,
+                    fontSize: 9.6,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -6819,7 +11678,7 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: FarmColors.mutedText,
-                    fontSize: 10,
+                    fontSize: 8.7,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -6834,7 +11693,7 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FarmCard(
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 11),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -6845,24 +11704,48 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
                   'Business status',
                   style: TextStyle(
                     color: FarmColors.ink,
-                    fontSize: 13.5,
+                    fontSize: 14.2,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7FAF4),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFDDE7DB)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Next 30 days',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.6,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: FarmColors.mutedText),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
               IconButton(
                 tooltip: 'Business account',
                 visualDensity: VisualDensity.compact,
                 onPressed: onOpenAccount,
                 icon: const Icon(
                   Icons.lock_outline_rounded,
-                  size: 17,
+                  size: 16,
                   color: FarmColors.mutedText,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 8),
           Row(
             children: [
               _metric(
@@ -6871,32 +11754,43 @@ class _HpjBusinessMobileStatusCard extends StatelessWidget {
                 label: 'Demand',
                 note: 'Next 30 days',
                 onTap: onOpenPlan,
+                accent: const Color(0xFF0B6A43),
+                background: const Color(0xFFF1F7EE),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 7),
               _metric(
                 icon: Icons.warning_amber_rounded,
                 value: '$supplyGaps',
                 label: 'Supply gaps',
                 note: '$securedDemandLines secured',
                 onTap: onOpenPlan,
-                warning: supplyGaps > 0,
+                accent: supplyGaps > 0
+                    ? const Color(0xFFC98211)
+                    : const Color(0xFF0B6A43),
+                background: supplyGaps > 0
+                    ? const Color(0xFFFFF7E9)
+                    : const Color(0xFFF1F7EE),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 7),
               _metric(
-                icon: Icons.payments_outlined,
+                icon: Icons.account_balance_wallet_outlined,
                 value: formatJmd(spend30),
                 label: 'Purchased',
                 note: '$purchasedOrders30 orders',
                 onTap: onOpenOrders,
+                accent: const Color(0xFF0B6A43),
+                background: const Color(0xFFF1F7EE),
               ),
             ],
           ),
           const SizedBox(height: 9),
           Text(
             '$deliveriesToday due today • ${formatJmd(amountDue)} outstanding • 90d ${formatJmd(spend90)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: FarmColors.mutedText,
-              fontSize: 10,
+              fontSize: 9.4,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -6995,6 +11889,8 @@ class _EliteBusinessSocialCommerceHome extends StatelessWidget {
             onRetry: onRetry,
           ),
         ],
+        const SizedBox(height: 12),
+        const _HpjBusinessStartNewChatCard(),
         const SizedBox(height: 12),
         _EliteBusinessKpiRow(
           activeNeeds: activeNeeds,
@@ -9030,7 +13926,7 @@ class _WholesaleMarketIntelligenceCardState
                           ),
                           SizedBox(height: 3),
                           Text(
-                            'Fresh supply, demand gaps, reels and updates',
+                            'Fresh supply, demand gaps, price trends and opportunities.',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -9043,12 +13939,15 @@ class _WholesaleMarketIntelligenceCardState
                       ),
                     ),
                     const SizedBox(width: 8),
-                    AnimatedRotation(
-                      turns: expanded ? .5 : 0,
+                    AnimatedSwitcher(
                       duration: const Duration(milliseconds: 160),
-                      child: const Icon(
-                        Icons.expand_more_rounded,
+                      child: Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.arrow_forward_rounded,
+                        key: ValueKey<bool>(expanded),
                         color: FarmColors.mutedText,
+                        size: 20,
                       ),
                     ),
                   ],
@@ -9489,13 +14388,21 @@ class _WholesaleHomeQuickActions extends StatelessWidget {
   final VoidCallback onPlanAhead;
   final VoidCallback onFindSuppliers;
   final VoidCallback onTrackOrders;
+  final List<String?> imageUrls;
 
   const _WholesaleHomeQuickActions({
     required this.onOrderNow,
     required this.onPlanAhead,
     required this.onFindSuppliers,
     required this.onTrackOrders,
+    this.imageUrls = const <String?>[],
   });
+
+  String? _imageAt(int index) {
+    if (index >= imageUrls.length) return null;
+    final value = imageUrls[index]?.trim() ?? '';
+    return value.isEmpty ? null : value;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -9513,7 +14420,7 @@ class _WholesaleHomeQuickActions extends StatelessWidget {
           const SizedBox(height: 10),
           LayoutBuilder(
             builder: (context, constraints) {
-              const gap = 8.0;
+              const gap = 10.0;
               final width = (constraints.maxWidth - gap) / 2;
 
               return Wrap(
@@ -9522,39 +14429,46 @@ class _WholesaleHomeQuickActions extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: width,
-                    child: _HpjBusinessMobileActionTile(
+                    child: _HpjBusinessPhotoActionCard(
+                      imageUrl: _imageAt(0),
                       icon: Icons.shopping_basket_outlined,
                       title: 'Source Produce',
                       subtitle: 'Order from current HPJ supply.',
-                      emphasized: true,
                       onTap: onOrderNow,
+                      dark: true,
                     ),
                   ),
                   SizedBox(
                     width: width,
-                    child: _HpjBusinessMobileActionTile(
+                    child: _HpjBusinessPhotoActionCard(
+                      imageUrl: _imageAt(1),
                       icon: Icons.event_note_outlined,
                       title: 'Plan Ahead',
                       subtitle: 'Share future demand early.',
                       onTap: onPlanAhead,
+                      light: true,
                     ),
                   ),
                   SizedBox(
                     width: width,
-                    child: _HpjBusinessMobileActionTile(
+                    child: _HpjBusinessPhotoActionCard(
+                      imageUrl: _imageAt(2),
                       icon: Icons.handshake_outlined,
                       title: 'Suppliers',
                       subtitle: 'Preferred & repeat farm links.',
                       onTap: onFindSuppliers,
+                      dark: true,
                     ),
                   ),
                   SizedBox(
                     width: width,
-                    child: _HpjBusinessMobileActionTile(
+                    child: _HpjBusinessPhotoActionCard(
+                      imageUrl: _imageAt(3),
                       icon: Icons.local_shipping_outlined,
                       title: 'Orders',
                       subtitle: 'Track, receive and buy again.',
                       onTap: onTrackOrders,
+                      warm: true,
                     ),
                   ),
                 ],
@@ -9626,6 +14540,175 @@ class _WholesaleHomeQuickActions extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+class _HpjBusinessPhotoActionCard extends StatelessWidget {
+  final String? imageUrl;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool dark;
+  final bool light;
+  final bool warm;
+
+  const _HpjBusinessPhotoActionCard({
+    required this.imageUrl,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.dark = false,
+    this.light = false,
+    this.warm = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const forest = Color(0xFF075437);
+    final cleanImage = imageUrl?.trim() ?? '';
+    final textColor = light ? FarmColors.ink : Colors.white;
+    final subtitleColor = light
+        ? const Color(0xFF4E574F)
+        : Colors.white.withOpacity(.88);
+    final fallback = warm
+        ? const Color(0xFF8C5A1E)
+        : light
+            ? const Color(0xFFF4EFE4)
+            : forest;
+
+    return SizedBox(
+      height: 154,
+      child: Material(
+        color: fallback,
+        borderRadius: BorderRadius.circular(19),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(19),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (cleanImage.isNotEmpty)
+                Image.network(
+                  cleanImage,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: light
+                      ? LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            const Color(0xFFFFFBF3).withOpacity(.48),
+                            const Color(0xFFFFFBF3).withOpacity(.88),
+                            const Color(0xFFFFFBF3).withOpacity(.98),
+                          ],
+                        )
+                      : LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: warm
+                              ? [
+                                  const Color(0xFF5D3513).withOpacity(.20),
+                                  const Color(0xFF5D3513).withOpacity(.62),
+                                  const Color(0xFF4A2A12).withOpacity(.93),
+                                ]
+                              : [
+                                  forest.withOpacity(.18),
+                                  forest.withOpacity(.62),
+                                  forest.withOpacity(.94),
+                                ],
+                        ),
+                ),
+              ),
+              Positioned(
+                top: 11,
+                left: 11,
+                child: Container(
+                  width: 39,
+                  height: 39,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: light
+                        ? const Color(0xFFF0F6EA).withOpacity(.96)
+                        : Colors.white.withOpacity(.91),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: light ? forest : forest,
+                    size: 19,
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 11,
+                bottom: 12,
+                child: Container(
+                  width: 37,
+                  height: 37,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: light
+                        ? Colors.white.withOpacity(.92)
+                        : Colors.white.withOpacity(.18),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: light
+                          ? const Color(0xFFD7E4D7)
+                          : Colors.white.withOpacity(.20),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_rounded,
+                    color: light ? forest : Colors.white,
+                    size: 19,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 12,
+                right: 51,
+                bottom: 12,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 13.2,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: subtitleColor,
+                        fontSize: 9.5,
+                        height: 1.22,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -11091,6 +16174,743 @@ class _WholesaleSimpleMenuTile extends StatelessWidget {
   }
 }
 
+
+class _BusinessHomeAppearanceScreen extends StatefulWidget {
+  final BusinessAccount account;
+
+  const _BusinessHomeAppearanceScreen({
+    required this.account,
+  });
+
+  @override
+  State<_BusinessHomeAppearanceScreen> createState() =>
+      _BusinessHomeAppearanceScreenState();
+}
+
+
+class _BusinessHomeAppearanceScreenState
+    extends State<_BusinessHomeAppearanceScreen> {
+  late Future<List<dynamic>> _future;
+  HpjBusinessHomeBranding? branding;
+  HpjBusinessBrandingPolicy policy =
+      HpjBusinessBrandingPolicy.fallback;
+
+  String heroImageUrl = '';
+  String logoUrl = '';
+  double focalX = .5;
+  double focalY = .5;
+
+  Uint8List? heroPreviewBytes;
+  Uint8List? logoPreviewBytes;
+  XFile? heroFile;
+  XFile? logoFile;
+
+  bool saving = false;
+
+  BusinessAccount get account => widget.account;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = Future.wait<dynamic>([
+      fetchHpjBusinessHomeBranding(account),
+      fetchHpjBusinessBrandingPolicy(),
+    ]);
+  }
+
+  Future<void> _loadResult(List<dynamic> values) async {
+    if (!mounted) return;
+
+    final loadedBranding =
+        values.isNotEmpty ? values[0] as HpjBusinessHomeBranding? : null;
+    final loadedPolicy = values.length > 1
+        ? values[1] as HpjBusinessBrandingPolicy
+        : HpjBusinessBrandingPolicy.fallback;
+
+    branding = loadedBranding;
+    policy = loadedPolicy;
+    heroImageUrl = loadedBranding?.heroImageUrl ?? '';
+    logoUrl = loadedBranding?.logoUrl ?? '';
+    focalX = loadedBranding?.heroFocalX ?? .5;
+    focalY = loadedBranding?.heroFocalY ?? .5;
+  }
+
+  Future<XFile?> _pickImage({
+    required bool hero,
+  }) async {
+    final picker = ImagePicker();
+
+    return picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: hero ? 82 : 86,
+      maxWidth: hero ? 1920 : 900,
+      maxHeight: hero ? 1080 : 900,
+    );
+  }
+
+  Future<void> _chooseHero() async {
+    try {
+      final image = await _pickImage(hero: true);
+      if (image == null) return;
+
+      if (!_hpjBusinessBrandingFileAllowed(image.name)) {
+        throw Exception('Use a JPG, PNG or WebP image.');
+      }
+
+      final bytes = await image.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw Exception('Use an image smaller than 5 MB.');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        heroFile = image;
+        heroPreviewBytes = bytes;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Future<void> _chooseLogo() async {
+    try {
+      final image = await _pickImage(hero: false);
+      if (image == null) return;
+
+      if (!_hpjBusinessBrandingFileAllowed(image.name)) {
+        throw Exception('Use a JPG, PNG or WebP image.');
+      }
+
+      final bytes = await image.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw Exception('Use an image smaller than 5 MB.');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        logoFile = image;
+        logoPreviewBytes = bytes;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    }
+  }
+
+  Widget _remoteOrMemoryImage({
+    required Uint8List? previewBytes,
+    required String remoteUrl,
+    required BoxFit fit,
+    Alignment alignment = Alignment.center,
+  }) {
+    if (previewBytes != null) {
+      return Image.memory(
+        previewBytes,
+        fit: fit,
+        alignment: alignment,
+        filterQuality: FilterQuality.medium,
+      );
+    }
+
+    final clean = cleanHostedImageUrl(remoteUrl);
+    if (clean != null) {
+      return Image.network(
+        clean,
+        fit: fit,
+        alignment: alignment,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
+
+    return Container(
+      color: const Color(0xFFEAF3E7),
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.add_photo_alternate_outlined,
+        color: FarmColors.primary,
+        size: 34,
+      ),
+    );
+  }
+
+  Alignment get _previewAlignment {
+    return Alignment(
+      (focalX * 2) - 1,
+      (focalY * 2) - 1,
+    );
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+
+    setState(() => saving = true);
+
+    try {
+      var nextHero = heroImageUrl;
+      var nextLogo = logoUrl;
+
+      if (heroFile != null) {
+        nextHero = await uploadHpjBusinessBrandingImage(
+          account: account,
+          image: heroFile!,
+          kind: 'hero',
+        );
+      }
+
+      if (logoFile != null) {
+        nextLogo = await uploadHpjBusinessBrandingImage(
+          account: account,
+          image: logoFile!,
+          kind: 'logo',
+        );
+      }
+
+      final saved = await saveHpjBusinessHomeBranding(
+        account: account,
+        heroImageUrl: nextHero,
+        logoUrl: nextLogo,
+        heroFocalX: focalX,
+        heroFocalY: focalY,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        branding = saved;
+        heroImageUrl = saved.heroImageUrl;
+        logoUrl = saved.logoUrl;
+        heroFile = null;
+        logoFile = null;
+        heroPreviewBytes = null;
+        logoPreviewBytes = null;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            policy.requireAdminApproval
+                ? 'Home Appearance submitted for HPJ approval.'
+                : 'Business Home appearance updated.',
+          ),
+        ),
+      );
+
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> _reset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Use HPJ default?'),
+        content: const Text(
+          'This removes your custom hero image and business logo from Home. '
+          'Your business name, type and parish are not changed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => saving = true);
+
+    try {
+      await resetHpjBusinessHomeBranding(account);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Widget _statusCard() {
+    final current = branding;
+    if (current == null) return const SizedBox.shrink();
+
+    if (current.isPending) {
+      return Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7E7),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: FarmColors.warning.withOpacity(.25),
+          ),
+        ),
+        child: const Row(
+          children: [
+            Icon(
+              Icons.hourglass_top_rounded,
+              color: FarmColors.warning,
+              size: 18,
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Your new Home image is awaiting HPJ approval. '
+                'The last approved image stays live until review is complete.',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 9.2,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (current.isRejected) {
+      return Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF1F0),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: FarmColors.danger.withOpacity(.22),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              color: FarmColors.danger,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                current.adminNote.isEmpty
+                    ? 'HPJ asked you to choose a different Home image.'
+                    : current.adminNote,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 9.2,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _appearanceBody() {
+    final businessLine = <String>[
+      if (account.businessType.trim().isNotEmpty)
+        account.businessType.trim(),
+      if (account.parish.trim().isNotEmpty)
+        account.parish.trim(),
+    ].join(' • ');
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
+      children: [
+        const HpjCompactAccountHero(
+          icon: Icons.palette_outlined,
+          title: 'Home Appearance',
+          subtitle:
+              'Personalise your Business Home while HPJ keeps the layout, '
+              'theme and market tools consistent.',
+          badge: 'Business',
+          badgeColor: FarmColors.success,
+        ),
+        const SizedBox(height: 12),
+
+        _statusCard(),
+        if (branding != null &&
+            (branding!.isPending || branding!.isRejected))
+          const SizedBox(height: 12),
+
+        FarmCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Business identity',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                account.displayName,
+                style: const TextStyle(
+                  color: FarmColors.deepGreen,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (businessLine.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  businessLine,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              const Text(
+                'Business name, type and parish are managed in Business Details.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 9.2,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        FarmCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Home hero image',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Recommended 16:9. JPG, PNG or WebP. Maximum 5 MB. '
+                'HPJ automatically requests a web-friendly image size.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 9.2,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _remoteOrMemoryImage(
+                    previewBytes: heroPreviewBytes,
+                    remoteUrl: heroImageUrl,
+                    fit: BoxFit.cover,
+                    alignment: _previewAlignment,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: saving ? null : _chooseHero,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: Text(
+                    heroFile == null
+                        ? 'Choose hero image'
+                        : 'Choose a different image',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Reposition crop',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 10.2,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 62,
+                    child: Text(
+                      'Horizontal',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: focalX,
+                      min: 0,
+                      max: 1,
+                      onChanged: saving
+                          ? null
+                          : (value) => setState(() => focalX = value),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 62,
+                    child: Text(
+                      'Vertical',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: focalY,
+                      min: 0,
+                      max: 1,
+                      onChanged: saving
+                          ? null
+                          : (value) => setState(() => focalY = value),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        FarmCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Business logo / avatar',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Optional. This appears as a small business identity mark '
+                'inside your Home hero. HPJ branding remains fixed.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 9.2,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Center(
+                child: Container(
+                  width: 92,
+                  height: 92,
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: FarmColors.line),
+                  ),
+                  child: ClipOval(
+                    child: _remoteOrMemoryImage(
+                      previewBytes: logoPreviewBytes,
+                      remoteUrl: logoUrl,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: saving ? null : _chooseLogo,
+                  icon: const Icon(Icons.add_a_photo_outlined),
+                  label: Text(
+                    logoFile == null
+                        ? 'Choose business logo'
+                        : 'Choose a different logo',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        const FarmCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'HPJ-managed Home',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '🔒 HPJ layout & theme\n'
+                '🔒 KPI cards\n'
+                '🔒 Fresh Supply\n'
+                '🔒 Market Intelligence\n'
+                '🔒 Reels, News & Sponsored content',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 9.4,
+                  height: 1.55,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: saving ? null : _save,
+            icon: saving
+                ? const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: Text(
+              saving
+                  ? 'Saving...'
+                  : policy.requireAdminApproval
+                      ? 'Submit for HPJ approval'
+                      : 'Save Home Appearance',
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            onPressed: saving ? null : _reset,
+            icon: const Icon(Icons.restart_alt_rounded),
+            label: const Text('Reset to HPJ default'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: _businessChildAppBar(
+        context,
+        'Home Appearance',
+      ),
+      body: FarmPage(
+        child: FutureBuilder<List<dynamic>>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                snapshot.data == null) {
+              return const Center(
+                child: CircularProgressIndicator(),
+              );
+            }
+
+            if (snapshot.hasError && snapshot.data == null) {
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 120),
+                children: [
+                  FarmEmptyState(
+                    icon: Icons.cloud_off_outlined,
+                    title: 'Home Appearance unavailable',
+                    message:
+                        'HPJ could not load your appearance settings. '
+                        'Your Business Home is still using the HPJ default.',
+                  ),
+                ],
+              );
+            }
+
+            final values = snapshot.data ?? const <dynamic>[];
+            // Load once after FutureBuilder resolves.
+            if (branding == null && values.isNotEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                setState(() {
+                  final loaded = values[0] as HpjBusinessHomeBranding?;
+                  branding = loaded;
+                  policy = values[1] as HpjBusinessBrandingPolicy;
+                  heroImageUrl = loaded?.heroImageUrl ?? '';
+                  logoUrl = loaded?.logoUrl ?? '';
+                  focalX = loaded?.heroFocalX ?? .5;
+                  focalY = loaded?.heroFocalY ?? .5;
+                });
+              });
+            }
+
+            return _appearanceBody();
+          },
+        ),
+      ),
+    );
+  }
+}
+
+
 class _BusinessDetailsEditScreen extends StatelessWidget {
   final BusinessAccount account;
 
@@ -11119,8 +16939,9 @@ class _BusinessDetailsEditScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Business Details'),
+      appBar: _businessChildAppBar(
+        context,
+        'Business Details',
       ),
       body: FarmPage(
         child: ListView(
@@ -11371,6 +17192,7 @@ class WholesaleCatalogueScreen extends StatefulWidget {
   final BusinessAccount account;
   final bool embedded;
   final String initialSearch;
+  final VoidCallback? onOpenPlan;
   final VoidCallback? onOpenSuppliers;
 
   const WholesaleCatalogueScreen({
@@ -11378,6 +17200,7 @@ class WholesaleCatalogueScreen extends StatefulWidget {
     required this.account,
     this.embedded = false,
     this.initialSearch = '',
+    this.onOpenPlan,
     this.onOpenSuppliers,
   });
 
@@ -11388,11 +17211,14 @@ class WholesaleCatalogueScreen extends StatefulWidget {
 
 class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
   late Future<List<WholesaleProduct>> _future;
+  late Future<_WholesaleTodaySnapshot> _insightFuture;
   final Map<String, WholesaleProduct> selectedProducts =
       <String, WholesaleProduct>{};
   final Map<String, int> quantities = <String, int>{};
   final searchController = TextEditingController();
   String search = '';
+  String categoryFilter = 'all';
+  String sortMode = 'priority';
 
   @override
   void initState() {
@@ -11406,6 +17232,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
       );
     }
     _future = fetchWholesaleCatalogue();
+    _insightFuture = fetchWholesaleTodaySnapshot(account: widget.account);
   }
 
   @override
@@ -11415,11 +17242,18 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
   }
 
   Future<void> _refreshCatalogue() async {
-    final next = fetchWholesaleCatalogue();
+    final nextCatalogue = fetchWholesaleCatalogue();
+    final nextInsights = fetchWholesaleTodaySnapshot(account: widget.account);
     if (mounted) {
-      setState(() => _future = next);
+      setState(() {
+        _future = nextCatalogue;
+        _insightFuture = nextInsights;
+      });
     }
-    await next;
+    await Future.wait<dynamic>(<Future<dynamic>>[
+      nextCatalogue,
+      nextInsights,
+    ]);
   }
 
   int get selectedLineCount => selectedProducts.length;
@@ -11506,6 +17340,94 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
     );
   }
 
+  void _openPlan() {
+    final callback = widget.onOpenPlan;
+    if (callback != null) {
+      callback();
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WholesalePlanningAheadScreen(
+          account: widget.account,
+        ),
+      ),
+    );
+  }
+
+  void _showAllSupply() {
+    searchController.clear();
+    setState(() {
+      search = '';
+      categoryFilter = 'all';
+      sortMode = 'priority';
+    });
+  }
+
+  Future<void> _handleAgricultureFeedAction(
+    AgricultureFeedUpdate update,
+  ) async {
+    switch (update.actionType) {
+      case 'wholesale_shop':
+        _showAllSupply();
+        return;
+      case 'wholesale_plan':
+        _openPlan();
+        return;
+      case 'customer_care':
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => SupportScreen(
+              initialSubject: update.title,
+            ),
+          ),
+        );
+        return;
+      case 'external':
+        final url = update.sourceUrl?.trim() ?? '';
+        if (url.isEmpty) return;
+        final opened = await openExternalShareUrl(url);
+        if (!opened && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open the source link.'),
+            ),
+          );
+        }
+        return;
+      default:
+        return;
+    }
+  }
+
+  Widget _searchField(String query) {
+    return TextField(
+      controller: searchController,
+      textInputAction: TextInputAction.search,
+      onChanged: (value) => setState(() => search = value),
+      onSubmitted: (value) {
+        unawaited(
+          HpjSmartLocalStore.rememberRecentSearch(value),
+        );
+      },
+      decoration: InputDecoration(
+        hintText: 'Search produce or price',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: query.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                onPressed: () {
+                  searchController.clear();
+                  setState(() => search = '');
+                },
+                icon: const Icon(Icons.close_rounded),
+              ),
+      ),
+    );
+  }
+
   void _openSuppliers() {
     final callback = widget.onOpenSuppliers;
     if (callback != null) {
@@ -11528,7 +17450,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
       backgroundColor: FarmColors.background,
       appBar: widget.embedded
           ? null
-          : AppBar(title: const Text('Wholesale Shop')),
+          : _businessChildAppBar(context, 'Wholesale Shop'),
       bottomNavigationBar: selectedProducts.isEmpty
           ? null
           : _PremiumWholesaleBasketBar(
@@ -11584,7 +17506,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
           final textQuery = hpjSmartSearchTextQuery(query);
           final maxWholesalePrice = hpjSmartSearchMaxPrice(query);
 
-          final items = query.isEmpty
+          var items = query.isEmpty
               ? List<WholesaleProduct>.from(all)
               : all.where((item) {
                   final matchesPrice = maxWholesalePrice == null ||
@@ -11597,6 +17519,30 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
 
                   return matchesPrice && matchesText;
                 }).toList();
+
+          final categoryCounts = <String, int>{};
+          for (final item in all) {
+            final category = item.product.category.trim();
+            if (category.isEmpty) continue;
+            categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+          }
+          final categoryOptions = categoryCounts.keys.toList()
+            ..sort((a, b) {
+              final countCompare =
+                  (categoryCounts[b] ?? 0).compareTo(categoryCounts[a] ?? 0);
+              if (countCompare != 0) return countCompare;
+              return a.toLowerCase().compareTo(b.toLowerCase());
+            });
+
+          if (categoryFilter != 'all') {
+            items = items
+                .where(
+                  (item) =>
+                      item.product.category.trim().toLowerCase() ==
+                      categoryFilter.toLowerCase(),
+                )
+                .toList();
+          }
 
           items.sort((a, b) {
             if (textQuery.isNotEmpty) {
@@ -11614,7 +17560,17 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
               if (scoreCompare != 0) return scoreCompare;
             }
 
-            if (maxWholesalePrice != null) {
+            if (sortMode == 'price_low') {
+              final compare = a.wholesalePrice.compareTo(b.wholesalePrice);
+              if (compare != 0) return compare;
+            } else if (sortMode == 'price_high') {
+              final compare = b.wholesalePrice.compareTo(a.wholesalePrice);
+              if (compare != 0) return compare;
+            } else if (sortMode == 'name') {
+              return a.product.name.toLowerCase().compareTo(
+                    b.product.name.toLowerCase(),
+                  );
+            } else if (maxWholesalePrice != null) {
               final priceCompare =
                   a.wholesalePrice.compareTo(b.wholesalePrice);
               if (priceCompare != 0) return priceCompare;
@@ -11631,6 +17587,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
 
           final managedCount =
               all.where((item) => item.marketAllocationManaged).length;
+          final mobileApp = hpjUseMobileAppPresentation(context);
 
           return FarmPage(
             child: ListView(
@@ -11642,88 +17599,201 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                 selectedProducts.isEmpty ? 120 : 200,
               ),
               children: [
-                _PremiumWholesaleShopHero(
-                  businessName: widget.account.displayName,
-                  productCount: all.length,
-                  managedCount: managedCount,
-                  selectedCount: selectedLineCount,
-                  selectedEstimate: selectedEstimate,
-                  onFindSuppliers: _openSuppliers,
-                ),
-                const SizedBox(height: 16),
-
-                const Text(
-                  'Shop wholesale',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                if (!mobileApp) ...[
+                  _PremiumWholesaleShopHero(
+                    businessName: widget.account.displayName,
+                    productCount: all.length,
+                    managedCount: managedCount,
+                    selectedCount: selectedLineCount,
+                    selectedEstimate: selectedEstimate,
+                    onFindSuppliers: _openSuppliers,
                   ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Build a bulk request using current HPJ wholesale prices, '
-                  'minimum quantities and available market allocation.',
-                  style: TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 10.2,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Shop wholesale',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 11),
-
-                TextField(
-                  controller: searchController,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (value) => setState(() => search = value),
-                  onSubmitted: (value) {
-                    unawaited(
-                      HpjSmartLocalStore.rememberRecentSearch(value),
-                    );
-                  },
-                  decoration: InputDecoration(
-                    hintText: 'Search produce or price',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: query.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              searchController.clear();
-                              setState(() => search = '');
-                            },
-                            icon: const Icon(Icons.close_rounded),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Build a bulk request using current HPJ wholesale prices, '
+                    'minimum quantities and available market allocation.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 10.2,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 11),
+                  _searchField(query),
+                  const SizedBox(height: 10),
+                ] else ...[
+                  Row(
+                    children: [
+                      Expanded(child: _searchField(query)),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          onPressed: _openSuppliers,
+                          icon: const Icon(
+                            Icons.agriculture_outlined,
+                            size: 17,
                           ),
+                          label: const Text(
+                            'Find Farms',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 10),
+                  if (categoryOptions.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          ChoiceChip(
+                            label: const Text('All Produce'),
+                            selected: categoryFilter == 'all',
+                            onSelected: (_) {
+                              setState(() => categoryFilter = 'all');
+                            },
+                          ),
+                          for (final category in categoryOptions.take(6)) ...[
+                            const SizedBox(width: 7),
+                            ChoiceChip(
+                              label: Text(category),
+                              selected: categoryFilter == category,
+                              onSelected: (_) {
+                                setState(() => categoryFilter = category);
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  FutureBuilder<_WholesaleTodaySnapshot>(
+                    future: _insightFuture,
+                    builder: (context, insightSnapshot) {
+                      final insight = insightSnapshot.data;
+                      if (insight == null) return const SizedBox.shrink();
+                      final reviewCount = insight.forecasts
+                          .where(
+                            (item) =>
+                                item.isActive &&
+                                _wholesaleForecastNeedsReview(item),
+                          )
+                          .length;
+                      if (reviewCount == 0) return const SizedBox.shrink();
+
+                      return _WholesaleSourcePlanReviewBanner(
+                        count: reviewCount,
+                        onTap: _openPlan,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                ],
 
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        query.isEmpty
+                        query.isEmpty && categoryFilter == 'all'
                             ? '${all.length} wholesale product${all.length == 1 ? '' : 's'} available'
                             : '${items.length} result${items.length == 1 ? '' : 's'}',
-                        style: const TextStyle(
-                          color: FarmColors.mutedText,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
+                        style: TextStyle(
+                          color: mobileApp
+                              ? FarmColors.ink
+                              : FarmColors.mutedText,
+                          fontSize: mobileApp ? 13.5 : 9.5,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                    TextButton.icon(
-                      onPressed: _openSuppliers,
-                      icon: const Icon(
-                        Icons.agriculture_outlined,
-                        size: 16,
+                    if (mobileApp)
+                      PopupMenuButton<String>(
+                        tooltip: 'Sort products',
+                        initialValue: sortMode,
+                        onSelected: (value) {
+                          setState(() => sortMode = value);
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: 'priority',
+                            child: Text('Recommended'),
+                          ),
+                          PopupMenuItem(
+                            value: 'price_low',
+                            child: Text('Price: low to high'),
+                          ),
+                          PopupMenuItem(
+                            value: 'price_high',
+                            child: Text('Price: high to low'),
+                          ),
+                          PopupMenuItem(
+                            value: 'name',
+                            child: Text('Name'),
+                          ),
+                        ],
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: FarmColors.card,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: FarmColors.line),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                switch (sortMode) {
+                                  'price_low' => 'Price ↑',
+                                  'price_high' => 'Price ↓',
+                                  'name' => 'Name',
+                                  _ => 'Popular',
+                                },
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 17,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      TextButton.icon(
+                        onPressed: _openSuppliers,
+                        icon: const Icon(
+                          Icons.agriculture_outlined,
+                          size: 16,
+                        ),
+                        label: const Text('Find Farms'),
                       ),
-                      label: const Text('Find Farms'),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
 
                 if (items.isEmpty)
                   const FarmEmptyState(
@@ -11770,6 +17840,31 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                       );
                     },
                   ),
+                const SizedBox(height: 16),
+                FutureBuilder<_WholesaleTodaySnapshot>(
+                  future: _insightFuture,
+                  builder: (context, insightSnapshot) {
+                    final insight = insightSnapshot.data;
+                    if (insight == null) {
+                      if (insightSnapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return const FarmSkeletonCard(height: 170);
+                      }
+                      return const SizedBox.shrink();
+                    }
+
+                    return _WholesaleSourceMarketIntelligencePanel(
+                      catalogue: insight.catalogue.isEmpty
+                          ? all
+                          : insight.catalogue,
+                      forecasts: insight.forecasts,
+                      gapLines: insight.demandGaps,
+                      onOpenPlan: _openPlan,
+                      onOpenShop: _showAllSupply,
+                      onAgricultureAction: _handleAgricultureFeedAction,
+                    );
+                  },
+                ),
               ],
             ),
           );
@@ -11778,6 +17873,466 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
     );
   }
 }
+
+
+class _WholesaleSourcePlanReviewBanner extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _WholesaleSourcePlanReviewBanner({
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFFF5F0),
+      borderRadius: BorderRadius.circular(15),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(
+              color: FarmColors.danger.withOpacity(.13),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: FarmColors.danger.withOpacity(.08),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.event_busy_outlined,
+                  color: FarmColors.danger,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '$count ',
+                            style: const TextStyle(
+                              color: FarmColors.danger,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          TextSpan(
+                            text:
+                                'planned need${count == 1 ? '' : 's'} need review',
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 11.4,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Confirm dates and quantities so HPJ can keep your supply plan current.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.6,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              TextButton(
+                onPressed: onTap,
+                child: const Text(
+                  'Review',
+                  style: TextStyle(
+                    fontSize: 9.6,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _WholesaleSourceMarketIntelligencePanel extends StatefulWidget {
+  final List<WholesaleProduct> catalogue;
+  final List<WholesaleDemandForecast> forecasts;
+  final List<WholesaleDemandGapLine> gapLines;
+  final VoidCallback onOpenPlan;
+  final VoidCallback onOpenShop;
+  final Future<void> Function(AgricultureFeedUpdate) onAgricultureAction;
+
+  const _WholesaleSourceMarketIntelligencePanel({
+    required this.catalogue,
+    required this.forecasts,
+    required this.gapLines,
+    required this.onOpenPlan,
+    required this.onOpenShop,
+    required this.onAgricultureAction,
+  });
+
+  @override
+  State<_WholesaleSourceMarketIntelligencePanel> createState() =>
+      _WholesaleSourceMarketIntelligencePanelState();
+}
+
+
+class _WholesaleSourceMarketIntelligencePanelState
+    extends State<_WholesaleSourceMarketIntelligencePanel> {
+  bool expanded = false;
+
+  Widget _metric({
+    required IconData icon,
+    required String label,
+    required String value,
+    required String helper,
+    Color? accent,
+    VoidCallback? onTap,
+  }) {
+    final tone = accent ?? FarmColors.primary;
+
+    final child = Container(
+      height: 126,
+      padding: const EdgeInsets.fromLTRB(8, 9, 7, 8),
+      decoration: BoxDecoration(
+        color: tone.withOpacity(.055),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tone.withOpacity(.10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: tone, size: 16),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 8.1,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 13.2,
+              height: 1.05,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            helper,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: tone,
+              fontSize: 7.2,
+              height: 1.08,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return child;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: child,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeForecasts =
+        widget.forecasts.where((item) => item.isActive).toList()
+          ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
+    final gaps =
+        widget.gapLines.where((item) => item.hasGap).toList(growable: false);
+
+    final pricedProducts = widget.catalogue
+        .where((item) => item.wholesalePrice > 0)
+        .toList(growable: false);
+    final averagePrice = pricedProducts.isEmpty
+        ? 0.0
+        : pricedProducts.fold<double>(
+              0,
+              (sum, item) => sum + item.wholesalePrice,
+            ) /
+            pricedProducts.length;
+
+    final demandNames = <String>[];
+    final seen = <String>{};
+    for (final forecast in activeForecasts) {
+      final clean = forecast.productName.trim();
+      if (clean.isEmpty) continue;
+      final key = clean.toLowerCase();
+      if (seen.add(key)) demandNames.add(clean);
+      if (demandNames.length >= 3) break;
+    }
+
+    final topDemand =
+        demandNames.isEmpty ? 'No active demand' : demandNames.join(', ');
+    final supplyValue = gaps.isEmpty ? 'Stable' : '${gaps.length} gap${gaps.length == 1 ? '' : 's'}';
+    final supplyHelper =
+        gaps.isEmpty ? 'Current plan aligned' : 'Review supply needs';
+
+    final showDetailedMarket =
+        hpjCurrentUserExperiencePreferences.showAgricultureNews;
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBF5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() => expanded = !expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(13, 13, 11, 11),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(
+                        Icons.trending_up_rounded,
+                        color: FarmColors.primary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Market Intelligence',
+                            style: TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Fresh supply, demand gaps, prices and opportunities.',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 8.9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.arrow_forward_ios_rounded,
+                      color: FarmColors.deepGreen,
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(11, 0, 11, 11),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _metric(
+                    icon: Icons.price_change_outlined,
+                    label: 'Avg wholesale',
+                    value: averagePrice <= 0 ? '—' : formatJmd(averagePrice),
+                    helper: '${pricedProducts.length} priced items',
+                    onTap: widget.onOpenShop,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _metric(
+                    icon: Icons.event_note_outlined,
+                    label: 'Active demand',
+                    value: '${activeForecasts.length}',
+                    helper: 'Next 30 days',
+                    accent: const Color(0xFFB66A00),
+                    onTap: widget.onOpenPlan,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _metric(
+                    icon: Icons.local_fire_department_outlined,
+                    label: 'Top demand',
+                    value: topDemand,
+                    helper: 'Planned needs',
+                    onTap: widget.onOpenPlan,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _metric(
+                    icon: gaps.isEmpty
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.warning_amber_rounded,
+                    label: 'Supply insight',
+                    value: supplyValue,
+                    helper: supplyHelper,
+                    accent:
+                        gaps.isEmpty ? FarmColors.success : FarmColors.warning,
+                    onTap: widget.onOpenPlan,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(11, 0, 11, 11),
+            child: SizedBox(
+              width: double.infinity,
+              height: 40,
+              child: OutlinedButton.icon(
+                onPressed: () => setState(() => expanded = !expanded),
+                icon: const Icon(Icons.bar_chart_rounded, size: 17),
+                label: Text(
+                  expanded
+                      ? 'Hide detailed market insights'
+                      : 'View detailed market insights',
+                  style: const TextStyle(
+                    fontSize: 10.3,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (expanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (gaps.isNotEmpty) ...[
+                    const Text(
+                      'Supply gaps needing attention',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    for (final gap in gaps.take(3))
+                      HpjMvpListRow(
+                        icon: Icons.warning_amber_rounded,
+                        title: gap.productName,
+                        subtitle:
+                            '${gap.gapQuantity.toStringAsFixed(gap.gapQuantity == gap.gapQuantity.roundToDouble() ? 0 : 1)} ${gap.unit} still needed',
+                        iconColor: FarmColors.warning,
+                        onTap: widget.onOpenPlan,
+                      ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (showDetailedMarket)
+                    HpjJamaicaMarketPulseSection(
+                      audience: 'wholesale',
+                      limit: 4,
+                      socialStyle: true,
+                      preferredCropNames: activeForecasts
+                          .map((item) => item.productName)
+                          .toList(growable: false),
+                      onPrimaryAction: (insight) async {
+                        insight.hasShortage
+                            ? widget.onOpenPlan()
+                            : widget.onOpenShop();
+                      },
+                    )
+                  else
+                    const HpjMvpListRow(
+                      icon: Icons.visibility_off_outlined,
+                      title: 'Detailed market feed hidden',
+                      subtitle: 'Turn it on from Account → Settings.',
+                      iconColor: FarmColors.mutedText,
+                    ),
+                  if (showDetailedMarket) ...[
+                    const SizedBox(height: 12),
+                    HpjAgricultureUpdatesSection(
+                      audience: 'wholesale',
+                      workspace: 'wholesale',
+                      limit: 1,
+                      socialStyle: true,
+                      title: 'Agriculture update',
+                      subtitle: 'One relevant update for your business.',
+                      onAction: widget.onAgricultureAction,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 
 class _PremiumWholesaleShopHero extends StatelessWidget {
   final String businessName;
@@ -12072,7 +18627,10 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
     required this.onIncrease,
   });
 
-  Widget _image({required bool compact}) {
+  Widget _image({
+    required bool compact,
+    double scale = 1,
+  }) {
     final url = item.product.imageUrl;
 
     if (url == null || url.trim().isEmpty) {
@@ -12082,27 +18640,347 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
         child: Icon(
           Icons.eco_outlined,
           color: FarmColors.green,
-          size: compact ? 26 : 30,
+          size: compact ? 28 : 30,
         ),
       );
     }
 
+    final image = Image.network(
+      url,
+      width: double.infinity,
+      height: double.infinity,
+      fit: compact ? BoxFit.contain : BoxFit.cover,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, __, ___) => Container(
+        color: FarmColors.cardSoft,
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.eco_outlined,
+          color: FarmColors.green,
+          size: compact ? 28 : 30,
+        ),
+      ),
+    );
+
     return Container(
-      color: compact ? Colors.white : FarmColors.cardSoft,
+      color: compact ? const Color(0xFFF8FAF5) : FarmColors.cardSoft,
       alignment: Alignment.center,
-      child: Image.network(
-        url,
-        width: double.infinity,
-        height: double.infinity,
-        // On the app, show the whole produce instead of blowing it up/cropping it.
-        fit: compact ? BoxFit.contain : BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(
-          color: FarmColors.cardSoft,
-          alignment: Alignment.center,
-          child: Icon(
-            Icons.eco_outlined,
-            color: FarmColors.green,
-            size: compact ? 26 : 30,
+      child: scale == 1
+          ? image
+          : ClipRect(
+              child: Transform.scale(
+                scale: scale,
+                child: image,
+              ),
+            ),
+    );
+  }
+
+  Widget _mobileCard(BuildContext context) {
+    final lineTotal = item.totalFor(quantity);
+
+    return FarmCard(
+      padding: EdgeInsets.zero,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: selected
+                ? FarmColors.green.withOpacity(.34)
+                : FarmColors.line,
+            width: selected ? 1.3 : 1,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: SizedBox(
+                          width: 102,
+                          height: 102,
+                          child: _image(
+                            compact: true,
+                            scale: 1.18,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 6,
+                        top: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: FarmColors.deepGreen.withOpacity(.92),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'WHOLESALE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 6.8,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .35,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (selected)
+                        Positioned(
+                          right: 6,
+                          top: 6,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            alignment: Alignment.center,
+                            decoration: const BoxDecoration(
+                              color: FarmColors.success,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check_rounded,
+                              color: Colors.white,
+                              size: 15,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.product.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 15.5,
+                            height: 1.08,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.formattedWholesalePrice,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.deepGreen,
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                '/ ${item.wholesaleUnit}',
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 8.7,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Minimum ${item.minimumQuantity} ${item.wholesaleUnit}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.2,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (item.marketAllocationManaged) ...[
+                          const SizedBox(height: 7),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F6EF),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.hub_outlined,
+                                  color: FarmColors.deepGreen,
+                                  size: 13,
+                                ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    item.marketAvailabilityLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.deepGreen,
+                                      fontSize: 8.2,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: HpjWatchButton(
+                      workspace: 'wholesale',
+                      watchType: 'product',
+                      entityKey: item.product.id,
+                      entityName: item.product.name,
+                      compact: true,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (!selected)
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        height: 38,
+                        child: FilledButton.icon(
+                          onPressed: onToggle,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: FarmColors.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.add_shopping_cart_outlined,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            'Add to request',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10.4,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      flex: 2,
+                      child: Container(
+                        height: 40,
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F8F5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: FarmColors.line),
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              tooltip: 'Decrease quantity',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: onDecrease,
+                              icon: const Icon(Icons.remove_rounded, size: 17),
+                            ),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    '$quantity ${item.wholesaleUnit}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 9.7,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  Text(
+                                    formatJmd(lineTotal),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.green,
+                                      fontSize: 8.1,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Increase quantity',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: onIncrease,
+                              icon: const Icon(Icons.add_rounded, size: 17),
+                            ),
+                            IconButton(
+                              tooltip: 'Remove',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: onToggle,
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: FarmColors.danger,
+                                size: 17,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -12111,19 +18989,13 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lineTotal = item.totalFor(quantity);
     final compact = hpjUseMobileAppPresentation(context);
+    if (compact) return _mobileCard(context);
+
+    final lineTotal = item.totalFor(quantity);
     final viewportWidth = MediaQuery.sizeOf(context).width;
-
-    // Keep the original roomy desktop merchandising card, but make the app
-    // substantially denser so users can browse several products quickly.
-    final imageHeight = compact
-        ? 104.0
-        : viewportWidth < 900
-            ? 126.0
-            : 150.0;
-
-    final cardRadius = compact ? 16.0 : 18.0;
+    final imageHeight = viewportWidth < 900 ? 126.0 : 150.0;
+    const cardRadius = 18.0;
 
     return FarmCard(
       padding: EdgeInsets.zero,
@@ -12143,32 +19015,32 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.vertical(
+                  borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(cardRadius),
                   ),
                   child: SizedBox(
                     width: double.infinity,
                     height: imageHeight,
-                    child: _image(compact: compact),
+                    child: _image(compact: false),
                   ),
                 ),
                 Positioned(
-                  top: compact ? 8 : 10,
-                  left: compact ? 8 : 10,
+                  top: 10,
+                  left: 10,
                   child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: compact ? 7 : 8,
-                      vertical: compact ? 4 : 5,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
                       color: FarmColors.deepGreen.withOpacity(.90),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: Text(
+                    child: const Text(
                       'WHOLESALE',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: compact ? 7.4 : 8.1,
+                        fontSize: 8.1,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .45,
                       ),
@@ -12176,45 +19048,38 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                   ),
                 ),
                 if (selected)
-                  Positioned(
-                    top: compact ? 8 : 10,
-                    right: compact ? 8 : 10,
-                    child: Container(
-                      width: compact ? 26 : 30,
-                      height: compact ? 26 : 30,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: FarmColors.success,
-                        shape: BoxShape.circle,
-                      ),
+                  const Positioned(
+                    top: 10,
+                    right: 10,
+                    child: CircleAvatar(
+                      radius: 15,
+                      backgroundColor: FarmColors.success,
                       child: Icon(
                         Icons.check_rounded,
                         color: Colors.white,
-                        size: compact ? 16 : 18,
+                        size: 18,
                       ),
                     ),
                   ),
               ],
             ),
             Padding(
-              padding: compact
-                  ? const EdgeInsets.fromLTRB(12, 9, 12, 11)
-                  : const EdgeInsets.fromLTRB(14, 13, 14, 14),
+              padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     item.product.name,
-                    maxLines: compact ? 1 : 2,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: FarmColors.ink,
-                      fontSize: compact ? 14 : 15.5,
+                      fontSize: 15.5,
                       height: 1.12,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  SizedBox(height: compact ? 5 : 7),
+                  const SizedBox(height: 7),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -12223,9 +19088,9 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                           item.formattedWholesalePrice,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: FarmColors.deepGreen,
-                            fontSize: compact ? 15.5 : 17,
+                            fontSize: 17,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -12235,56 +19100,53 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 2),
                         child: Text(
                           '/ ${item.wholesaleUnit}',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: FarmColors.mutedText,
-                            fontSize: compact ? 8.8 : 9.4,
+                            fontSize: 9.4,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  SizedBox(height: compact ? 3 : 4),
+                  const SizedBox(height: 4),
                   Text(
                     'Minimum ${item.minimumQuantity} ${item.wholesaleUnit}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: FarmColors.mutedText,
-                      fontSize: compact ? 9.1 : 9.7,
+                      fontSize: 9.7,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   if (item.marketAllocationManaged) ...[
-                    SizedBox(height: compact ? 6 : 7),
+                    const SizedBox(height: 7),
                     Container(
                       width: double.infinity,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: compact ? 8 : 9,
-                        vertical: compact ? 6 : 7,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 7,
                       ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF1F6EF),
-                        borderRadius: BorderRadius.circular(compact ? 10 : 12),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.hub_outlined,
                             color: FarmColors.deepGreen,
-                            size: compact ? 14 : 15,
+                            size: 15,
                           ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               item.marketAvailabilityLabel,
-                              maxLines: compact ? 2 : null,
-                              overflow:
-                                  compact ? TextOverflow.ellipsis : null,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: FarmColors.deepGreen,
-                                fontSize: compact ? 8.4 : 8.9,
+                                fontSize: 8.9,
                                 height: 1.25,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -12294,7 +19156,7 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                  SizedBox(height: compact ? 7 : 9),
+                  const SizedBox(height: 9),
                   HpjWatchButton(
                     workspace: 'wholesale',
                     watchType: 'product',
@@ -12302,54 +19164,31 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                     entityName: item.product.name,
                     compact: true,
                   ),
-                  SizedBox(height: compact ? 8 : 11),
+                  const SizedBox(height: 11),
                   if (!selected)
                     SizedBox(
                       width: double.infinity,
-                      height: compact ? 38 : null,
                       child: OutlinedButton.icon(
-                        style: compact
-                            ? OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 7,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                              )
-                            : null,
-                        icon: Icon(
+                        icon: const Icon(
                           Icons.add_shopping_cart_outlined,
-                          size: compact ? 16 : 17,
+                          size: 17,
                         ),
-                        label: Text(
-                          compact ? 'Add to Bulk Request' : 'Add to Bulk Request',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        label: const Text('Add to Bulk Request'),
                         onPressed: onToggle,
                       ),
                     )
-                  else ...[
+                  else
                     Container(
-                      padding: EdgeInsets.all(compact ? 7 : 9),
+                      padding: const EdgeInsets.all(9),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8F8F5),
-                        borderRadius: BorderRadius.circular(compact ? 13 : 15),
-                        border: Border.all(
-                          color: FarmColors.line,
-                        ),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: FarmColors.line),
                       ),
                       child: Row(
                         children: [
                           IconButton(
                             tooltip: 'Decrease quantity',
-                            visualDensity: VisualDensity.compact,
-                            constraints: compact
-                                ? const BoxConstraints(
-                                    minWidth: 34,
-                                    minHeight: 34,
-                                  )
-                                : null,
                             onPressed: onDecrease,
                             icon: const Icon(Icons.remove_rounded),
                           ),
@@ -12359,9 +19198,9 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                                 Text(
                                   '$quantity ${item.wholesaleUnit}',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: FarmColors.ink,
-                                    fontSize: compact ? 11.5 : 12.5,
+                                    fontSize: 12.5,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -12369,9 +19208,9 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                                 Text(
                                   formatJmd(lineTotal),
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: FarmColors.green,
-                                    fontSize: compact ? 9 : 9.5,
+                                    fontSize: 9.5,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -12380,25 +19219,11 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                           ),
                           IconButton(
                             tooltip: 'Increase quantity',
-                            visualDensity: VisualDensity.compact,
-                            constraints: compact
-                                ? const BoxConstraints(
-                                    minWidth: 34,
-                                    minHeight: 34,
-                                  )
-                                : null,
                             onPressed: onIncrease,
                             icon: const Icon(Icons.add_rounded),
                           ),
                           IconButton(
                             tooltip: 'Remove',
-                            visualDensity: VisualDensity.compact,
-                            constraints: compact
-                                ? const BoxConstraints(
-                                    minWidth: 34,
-                                    minHeight: 34,
-                                  )
-                                : null,
                             onPressed: onToggle,
                             icon: const Icon(
                               Icons.delete_outline,
@@ -12408,7 +19233,6 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ],
                 ],
               ),
             ),
@@ -12772,8 +19596,9 @@ class _WholesaleRequestReviewScreenState
 
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Review Bulk Request'),
+      appBar: _businessChildAppBar(
+        context,
+        'Review Bulk Request',
       ),
       body: FarmPage(
         child: ListView(
@@ -13463,8 +20288,9 @@ class WholesaleRequestSuccessScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Request Submitted'),
+      appBar: _businessChildAppBar(
+        context,
+        'Request Submitted',
       ),
       body: FarmPage(
         child: ListView(
@@ -14016,8 +20842,9 @@ class _WholesaleRepeatStandingOrdersScreenState
       length: 2,
       child: Scaffold(
         backgroundColor: FarmColors.background,
-        appBar: AppBar(
-          title: const Text('Repeat & Standing Orders'),
+        appBar: _businessChildAppBar(
+          context,
+          'Repeat & Standing Orders',
           bottom: const TabBar(
             tabs: [
               Tab(
@@ -16364,7 +23191,7 @@ class _WholesalePlanningAheadScreenState
       backgroundColor: FarmColors.background,
       appBar: widget.embedded
           ? null
-          : AppBar(title: const Text('Planning Ahead')),
+          : _businessChildAppBar(context, 'Planning Ahead'),
       body: FarmPage(
         child: FutureBuilder<List<WholesaleDemandForecast>>(
           key: ValueKey('wholesale-planning-$refreshKey'),
@@ -19874,7 +26701,9 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: widget.embedded ? null : AppBar(title: const Text('Orders')),
+      appBar: widget.embedded
+          ? null
+          : _businessChildAppBar(context, 'Orders'),
       body: FutureBuilder<List<Object>>(
         key: ValueKey(_refreshKey),
         future: Future.wait<Object>([
@@ -21083,9 +27912,7 @@ class _WholesaleSupplierDiscoveryScreenState
       backgroundColor: FarmColors.background,
       appBar: widget.embedded
           ? null
-          : AppBar(
-              title: const Text('Find Suppliers'),
-            ),
+          : _businessChildAppBar(context, 'Find Suppliers'),
       body: SafeArea(
         top: false,
         child: FutureBuilder<List<FarmPublicProfileRecord>>(
@@ -22306,8 +29133,9 @@ class _WholesaleSupplierRequestScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Preferred Farm Request'),
+      appBar: _businessChildAppBar(
+        context,
+        'Preferred Farm Request',
       ),
       body: FarmPage(
         child: FutureBuilder<FarmPublicProfileBundle>(
@@ -23848,8 +30676,9 @@ class _BusinessWholesaleInvoicesScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Invoices & Payments'),
+      appBar: _businessChildAppBar(
+        context,
+        'Invoices & Payments',
       ),
       body: FarmPage(
         child: FutureBuilder<List<Object>>(
@@ -24423,6 +31252,7 @@ class _BusinessWholesaleStatementScreenState
   ) async {
     final pdf = pw.Document();
     final logo = await _statementLogo();
+    final companySettings = await fetchHpjCompanySettings();
     final green = PdfColor.fromInt(0xFF1F6B3A);
     final softGreen = PdfColor.fromInt(0xFFEAF3EC);
     final account = data.account;
@@ -24531,7 +31361,7 @@ class _BusinessWholesaleStatementScreenState
                       ),
                     ),
                     pw.Text(
-                      'Mountainside, St. Elizabeth, Jamaica | Tel: 876-339-1395',
+                      hpjCompanyContactLine(companySettings),
                       style: const pw.TextStyle(
                           fontSize: 8, color: PdfColors.grey700),
                     ),
@@ -24749,8 +31579,9 @@ class _BusinessWholesaleStatementScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Account Statement'),
+      appBar: _businessChildAppBar(
+        context,
+        'Account Statement',
       ),
       body: FarmPage(
         child: FutureBuilder<_WholesaleAccountStatementSnapshot>(
@@ -26126,8 +32957,9 @@ class _HpjBusinessDemandNetworkScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FarmColors.background,
-      appBar: AppBar(
-        title: const Text('Jamaica Demand Network'),
+      appBar: _businessChildAppBar(
+        context,
+        'Jamaica Demand Network',
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _createPost,

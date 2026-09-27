@@ -1,8 +1,6 @@
-// HPJ Repair 034D
-// Non-web implementation.
+// HPJ non-web browser-notification stub.
 //
 // Android/iOS use Firebase/native notifications instead.
-// These no-op functions preserve the shared API without importing dart:html.
 
 Future<bool> requestBrowserNotifications() async {
   return false;

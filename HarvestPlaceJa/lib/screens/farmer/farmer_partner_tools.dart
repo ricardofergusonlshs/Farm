@@ -164,34 +164,66 @@ class FarmerCollectionScheduleItem {
 Future<List<FarmerMarketDemandOpportunity>> fetchFarmerMarketDemandBoard(
   int horizonDays,
 ) async {
-  final response = await supabase.rpc(
-    'farmer_market_demand_board',
-    params: {'p_horizon_days': horizonDays},
-  );
+  try {
+    final response = await supabase.rpc(
+      'farmer_market_demand_board',
+      params: {'p_horizon_days': horizonDays},
+    );
 
-  return (response as List)
-      .map(
-        (row) => FarmerMarketDemandOpportunity.fromSupabase(
-          Map<String, dynamic>.from(row as Map),
-        ),
-      )
-      .toList();
+    if (response is! List) {
+      farmDebugLog(
+        'Farmer market demand returned an unexpected response; showing an empty state.',
+      );
+      return const <FarmerMarketDemandOpportunity>[];
+    }
+
+    return response
+        .whereType<Map>()
+        .map(
+          (row) => FarmerMarketDemandOpportunity.fromSupabase(
+            Map<String, dynamic>.from(row),
+          ),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    // MVP resilience: Demand must never take down the Farmer workspace.
+    // Older or partially migrated Supabase projects can reject this RPC.
+    // The Farmer Home and Demand tab then fall back to the normal empty-state
+    // experience while the rest of Supply / Operations / Account stays usable.
+    farmDebugLog('Farmer market demand unavailable: $error');
+    return const <FarmerMarketDemandOpportunity>[];
+  }
 }
 
 Future<List<FarmerCollectionScheduleItem>>
     fetchFarmerCollectionSchedule() async {
-  final response = await supabase.rpc(
-    'farmer_collection_schedule',
-    params: {'p_limit': 150},
-  );
+  try {
+    final response = await supabase.rpc(
+      'farmer_collection_schedule',
+      params: {'p_limit': 150},
+    );
 
-  return (response as List)
-      .map(
-        (row) => FarmerCollectionScheduleItem.fromSupabase(
-          Map<String, dynamic>.from(row as Map),
-        ),
-      )
-      .toList();
+    if (response is! List) {
+      farmDebugLog(
+        'Farmer collection schedule returned an unexpected response; showing an empty state.',
+      );
+      return const <FarmerCollectionScheduleItem>[];
+    }
+
+    return response
+        .whereType<Map>()
+        .map(
+          (row) => FarmerCollectionScheduleItem.fromSupabase(
+            Map<String, dynamic>.from(row),
+          ),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    // Collections are operationally important, but an unavailable RPC should
+    // degrade to "No collections scheduled" instead of a full-page error.
+    farmDebugLog('Farmer collection schedule unavailable: $error');
+    return const <FarmerCollectionScheduleItem>[];
+  }
 }
 
 String _farmerPartnerNumber(double value) {
@@ -3196,7 +3228,7 @@ class _HpjHarvestJourneyUpdateSheetState
 
   static const stages = <(String, String)>[
     ('planted', 'Planted'),
-    ('established', 'Established'),
+    ('established', 'Seedling'),
     ('growing', 'Growing'),
     ('flowering', 'Flowering'),
     ('fruiting', 'Producing'),

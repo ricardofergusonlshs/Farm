@@ -5615,6 +5615,37 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
     );
   }
 
+  Widget _loadFailed(Object? error) {
+    farmDebugLog('Public farm profile load failed: $error');
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Farm Profile'),
+      ),
+      body: FarmPage(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 28, 18, 120),
+          children: [
+            const FarmEmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: 'Farm profile unavailable right now',
+              message:
+                  'We could not load this farm page. Please check your connection and try again.',
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Try Again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _notAvailable() {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -5662,6 +5693,10 @@ class _PublicFarmProfileScreenState extends State<PublicFarmProfileScreen> {
               child: CircularProgressIndicator(),
             ),
           );
+        }
+
+        if (snapshot.hasError && snapshot.data == null) {
+          return _loadFailed(snapshot.error);
         }
 
         final data = snapshot.data;

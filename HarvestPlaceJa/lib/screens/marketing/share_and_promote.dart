@@ -8,7 +8,7 @@ part of harvest_place_app;
 const String hpjSharePlayUrl =
     'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp';
 
-/// Accept only an HTTPS destination, otherwise return the official app listing.
+/// Accept only an HTTPS destination, otherwise return the official HPJ website.
 String hpjShareSafeDestination(String? destination) {
   final candidate = destination?.trim() ?? '';
   final uri = Uri.tryParse(candidate);
@@ -16,7 +16,7 @@ String hpjShareSafeDestination(String? destination) {
       uri.scheme.toLowerCase() != 'https' ||
       uri.host.isEmpty ||
       uri.userInfo.isNotEmpty) {
-    return hpjSharePlayUrl;
+    return AppConfig.publicShareUrl;
   }
   return uri.toString();
 }
@@ -67,7 +67,7 @@ class HpjShareCampaign {
     id: 'default',
     headline: 'The Harvest Place Ja',
     caption: 'Fresh • Local • Jamaican. Discover fresh Jamaican produce.',
-    destinationUrl: hpjSharePlayUrl,
+    destinationUrl: AppConfig.publicShareUrl,
     imageUrl: '',
     enabled: false,
   );
@@ -173,21 +173,93 @@ Future<XFile> hpjPrepareSharePhoto(String imageUrl, String fileName) async {
 
 /// Functional customer preview and share screen; no placeholder widgets.
 class HpjSharePromoteScreen extends StatefulWidget {
-  const HpjSharePromoteScreen({super.key});
+  final HpjShareCampaign? previewCampaign;
+  final Uint8List? previewImageBytes;
+
+  const HpjSharePromoteScreen({
+    super.key,
+    this.previewCampaign,
+    this.previewImageBytes,
+  });
 
   @override
-  State<HpjSharePromoteScreen> createState() =>
-      _HpjSharePromoteScreenState();
+  State<HpjSharePromoteScreen> createState() => _HpjSharePromoteScreenState();
 }
 
 class _HpjSharePromoteScreenState extends State<HpjSharePromoteScreen> {
   late Future<HpjShareCampaign?> _campaignFuture;
   bool _sharing = false;
 
+  Future<HpjShareCampaign?> _campaignSource() {
+    final preview = widget.previewCampaign;
+    return preview == null
+        ? hpjFetchShareCampaign()
+        : Future<HpjShareCampaign?>.value(preview);
+  }
+
   @override
   void initState() {
     super.initState();
-    _campaignFuture = hpjFetchShareCampaign();
+    _campaignFuture = _campaignSource();
+  }
+
+  @override
+  void didUpdateWidget(covariant HpjSharePromoteScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.previewCampaign != widget.previewCampaign ||
+        !identical(oldWidget.previewImageBytes, widget.previewImageBytes)) {
+      _campaignFuture = _campaignSource();
+    }
+  }
+
+  String _previewMimeType(Uint8List bytes) {
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return 'image/png';
+    }
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return 'image/webp';
+    }
+    return 'image/jpeg';
+  }
+
+  String _extensionForMime(String mimeType) {
+    switch (mimeType) {
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      default:
+        return 'jpg';
+    }
+  }
+
+  Future<XFile> _prepareArtwork(HpjShareCampaign campaign) async {
+    final previewBytes = widget.previewImageBytes;
+    if (previewBytes != null && previewBytes.isNotEmpty) {
+      final mimeType = _previewMimeType(previewBytes);
+      return hpj_share_files.hpjImageShareFile(
+        previewBytes,
+        mimeType: mimeType,
+        fileName: 'hpj-share-and-promote.${_extensionForMime(mimeType)}',
+      );
+    }
+
+    return hpjPrepareSharePhoto(
+      campaign.imageUrl,
+      'hpj-share-and-promote',
+    );
   }
 
   void _notice(String message) {
@@ -207,10 +279,7 @@ class _HpjSharePromoteScreenState extends State<HpjSharePromoteScreen> {
     final message = '$caption\n\n$url';
     try {
       try {
-        final artwork = await hpjPrepareSharePhoto(
-          campaign.imageUrl,
-          'hpj-share-and-promote',
-        );
+        final artwork = await _prepareArtwork(campaign);
         if (!mounted) return;
         await SharePlus.instance.share(
           ShareParams(
@@ -223,7 +292,8 @@ class _HpjSharePromoteScreenState extends State<HpjSharePromoteScreen> {
           ),
         );
       } catch (imageError) {
-        farmDebugLog('Share artwork unavailable; sharing link instead: $imageError');
+        farmDebugLog(
+            'Share artwork unavailable; sharing link instead: $imageError');
         if (!mounted) return;
         await SharePlus.instance.share(
           ShareParams(
@@ -257,6 +327,7 @@ class _HpjSharePromoteScreenState extends State<HpjSharePromoteScreen> {
           // No published campaign -> official HPJ branding, never an Admin draft.
           final campaign = snapshot.data ?? HpjShareCampaign.fallback;
           final photo = cleanHostedImageUrl(campaign.imageUrl);
+          final previewBytes = widget.previewImageBytes;
           final destination = hpjShareSafeDestination(campaign.destinationUrl);
           return ListView(
             padding: const EdgeInsets.all(20),
@@ -266,19 +337,24 @@ class _HpjSharePromoteScreenState extends State<HpjSharePromoteScreen> {
                 child: Container(
                   color: FarmColors.primarySoft,
                   height: 220,
-                  child: photo == null
-                      ? Image.asset(
-                          'lib/assets/images/logo.png',
+                  child: previewBytes != null && previewBytes.isNotEmpty
+                      ? Image.memory(
+                          previewBytes,
                           fit: BoxFit.contain,
                         )
-                      : Image.network(
-                          photo,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Image.asset(
-                            'lib/assets/images/logo.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
+                      : photo == null
+                          ? Image.asset(
+                              'lib/assets/images/logo.png',
+                              fit: BoxFit.contain,
+                            )
+                          : Image.network(
+                              photo,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Image.asset(
+                                'lib/assets/images/logo.png',
+                                fit: BoxFit.contain,
+                              ),
+                            ),
                 ),
               ),
               const SizedBox(height: 20),

@@ -1893,22 +1893,40 @@ class _AuthGateState extends State<AuthGate> {
       final code = AppConfig.emailConfirmationCode;
       final refreshToken = AppConfig.emailConfirmationRefreshToken;
       final accessToken = AppConfig.emailConfirmationAccessToken;
-      final currentSession = supabase.auth.currentSession;
 
-      if (code != null && code.isNotEmpty) {
-        await supabase.auth.exchangeCodeForSession(code);
-      } else if (refreshToken != null && refreshToken.isNotEmpty) {
-        if (accessToken != null && accessToken.isNotEmpty) {
-          await supabase.auth.setSession(
-            refreshToken,
-            accessToken: accessToken,
-          );
-        } else {
-          await supabase.auth.setSession(refreshToken);
+      // Supabase Flutter may already complete the PKCE callback before
+      // AuthGate's fallback runs. Never exchange the same one-time code twice.
+      if (supabase.auth.currentSession == null) {
+        if (code != null && code.isNotEmpty) {
+          try {
+            await supabase.auth.exchangeCodeForSession(code);
+          } catch (error) {
+            // Android App Links and Supabase's own auth listener can race.
+            // If the SDK created the session during our fallback exchange,
+            // confirmation succeeded and the duplicate-code error is harmless.
+            if (supabase.auth.currentSession == null) {
+              rethrow;
+            }
+
+            farmDebugLog(
+              'Email confirmation was already completed by the Supabase SDK.',
+            );
+          }
+        } else if (refreshToken != null && refreshToken.isNotEmpty) {
+          if (accessToken != null && accessToken.isNotEmpty) {
+            await supabase.auth.setSession(
+              refreshToken,
+              accessToken: accessToken,
+            );
+          } else {
+            await supabase.auth.setSession(refreshToken);
+          }
         }
-      } else if (currentSession == null) {
+      }
+
+      if (supabase.auth.currentSession == null) {
         throw Exception(
-          'Open the newest email confirmation link. This link is missing the confirmation code.',
+          'Open the newest email confirmation link. This link is missing or no longer contains a valid confirmation session.',
         );
       }
 
@@ -2277,211 +2295,177 @@ class _SmartEntryLoadingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // FEATURE FREEZE:
-    // This widget is visual-only. It does not add a timer, network request,
-    // animation dependency, navigation change, auth change or startup delay.
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7FAF2),
+    // Visual-only startup screen. No timer, network request, route change,
+    // auth change, Supabase query, Firebase query or artificial loading delay.
+    return const Scaffold(
+      backgroundColor: Color(0xFFF7FAF2),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 390;
-            final logoWidth = compact ? 235.0 : 285.0;
+        child: _HpjResponsiveStartupBranding(),
+      ),
+    );
+  }
+}
 
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                // Soft brand glow behind the official HPJ logo.
-                Positioned(
-                  top: -95,
-                  right: -85,
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 250,
-                      height: 250,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            const Color(0xFFFFA000).withOpacity(.12),
-                            const Color(0xFFFFA000).withOpacity(0),
-                          ],
-                        ),
-                      ),
+class _HpjResponsiveStartupBranding extends StatelessWidget {
+  const _HpjResponsiveStartupBranding();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned(
+              top: -70,
+              right: -55,
+              child: IgnorePointer(
+                child: Icon(
+                  Icons.eco_rounded,
+                  size: 150,
+                  color: const Color(0xFF2F7D32).withOpacity(.08),
+                ),
+              ),
+            ),
+            Positioned(
+              left: -65,
+              bottom: -65,
+              child: IgnorePointer(
+                child: Transform.rotate(
+                  angle: .38,
+                  child: Icon(
+                    Icons.eco_rounded,
+                    size: 180,
+                    color: const Color(0xFF1F6B3B).withOpacity(.07),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: -95,
+              left: -70,
+              child: IgnorePointer(
+                child: Container(
+                  width: 220,
+                  height: 220,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        const Color(0xFFFF9800).withOpacity(.08),
+                        const Color(0xFFFF9800).withOpacity(0),
+                      ],
                     ),
                   ),
                 ),
-
-                // Lightweight leaf accents. These are Flutter icons only —
-                // no additional image/network loading is introduced.
-                Positioned(
-                  top: compact ? 34 : 48,
-                  right: compact ? -18 : 10,
-                  child: IgnorePointer(
-                    child: Transform.rotate(
-                      angle: -.48,
-                      child: Icon(
-                        Icons.eco_rounded,
-                        size: compact ? 86 : 112,
-                        color: const Color(0xFF2F7D32).withOpacity(.10),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: compact ? -34 : -20,
-                  bottom: compact ? -18 : -8,
-                  child: IgnorePointer(
-                    child: Transform.rotate(
-                      angle: .42,
-                      child: Icon(
-                        Icons.eco_rounded,
-                        size: compact ? 132 : 168,
-                        color: const Color(0xFF1F6B3B).withOpacity(.09),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Warm lower corner accent inspired by the HPJ orange.
-                Positioned(
-                  left: -78,
-                  bottom: -95,
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 230,
-                      height: 230,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            const Color(0xFFFF9800).withOpacity(.08),
-                            const Color(0xFFFF9800).withOpacity(0),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                Center(
-                  child: SingleChildScrollView(
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: compact ? 26 : 36,
-                      vertical: 28,
-                    ),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: 430,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Official HPJ logo already bundled locally.
-                          SizedBox(
-                            width: logoWidth,
-                            child: Image.asset(
-                              'lib/assets/images/logo.png',
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.high,
-                              errorBuilder: (_, __, ___) => Container(
-                                width: compact ? 104 : 118,
-                                height: compact ? 104 : 118,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(28),
-                                  border: Border.all(
-                                    color: const Color(0xFFDCE7D9),
-                                  ),
-                                ),
-                                child: Text(
-                                  'HPJ',
-                                  style: TextStyle(
-                                    color: const Color(0xFF1F6B3B),
-                                    fontSize: compact ? 38 : 44,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          SizedBox(height: compact ? 30 : 36),
-
-                          SizedBox(
-                            width: compact ? 42 : 46,
-                            height: compact ? 42 : 46,
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 3.2,
-                              color: Color(0xFF1F6B3B),
-                              backgroundColor: Color(0xFFDDE9D9),
-                              strokeCap: StrokeCap.round,
-                            ),
-                          ),
-
-                          const SizedBox(height: 20),
-
-                          Text(
-                            'Opening HPJ…',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: const Color(0xFF174C2E),
-                              fontSize: compact ? 19 : 21,
-                              height: 1.1,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -.25,
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          Text(
-                            'Preparing fresh Jamaican goodness',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: const Color(0xFF6F7D70),
-                              fontSize: compact ? 12 : 13,
-                              height: 1.35,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-
-                          SizedBox(height: compact ? 26 : 30),
-
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 9,
-                            ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 18,
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: 340,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 250,
+                        height: 230,
+                        child: Image.asset(
+                          'lib/assets/images/logo.png',
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (_, __, ___) => Container(
+                            alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(.72),
-                              borderRadius: BorderRadius.circular(999),
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(30),
                               border: Border.all(
-                                color: const Color(0xFFDDE8D8),
+                                color: const Color(0xFFDDE7D8),
                               ),
                             ),
                             child: const Text(
-                              'FRESH  •  LOCAL  •  JAMAICAN',
-                              textAlign: TextAlign.center,
+                              'HPJ',
                               style: TextStyle(
-                                color: Color(0xFF2F6B3C),
-                                fontSize: 10.5,
+                                color: Color(0xFF1F6B3B),
+                                fontSize: 54,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 1.25,
                               ),
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 22),
+                      const SizedBox(
+                        width: 42,
+                        height: 42,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3.1,
+                          color: Color(0xFF1F6B3B),
+                          backgroundColor: Color(0xFFDDE9D9),
+                          strokeCap: StrokeCap.round,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Opening HPJ…',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF174C2E),
+                          fontSize: 21,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -.25,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      const Text(
+                        'Preparing fresh Jamaican goodness',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF6F7D70),
+                          fontSize: 13,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(.76),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0xFFDDE8D8),
+                          ),
+                        ),
+                        child: const Text(
+                          'FRESH  •  LOCAL  •  JAMAICAN',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF2F6B3C),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.15,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            );
-          },
-        ),
-      ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -193,8 +193,7 @@ class MarketplaceProgramSettings {
           (data['customer_return_note'] ?? '').toString().trim(),
       farmerMaintenanceMessage:
           (data['farmer_maintenance_message'] ?? '').toString().trim(),
-      farmerReturnNote:
-          (data['farmer_return_note'] ?? '').toString().trim(),
+      farmerReturnNote: (data['farmer_return_note'] ?? '').toString().trim(),
       wholesaleMaintenanceMessage:
           (data['wholesale_maintenance_message'] ?? '').toString().trim(),
       wholesaleReturnNote:
@@ -367,8 +366,7 @@ class HpjFarmerSocialFeatureGate extends StatelessWidget {
         if (snapshot.data == true) return child;
         if (compact) return const SizedBox.shrink();
 
-        final isStories =
-            feature.trim().toLowerCase() == 'stories' ||
+        final isStories = feature.trim().toLowerCase() == 'stories' ||
             feature.trim().toLowerCase() == 'story';
 
         return Scaffold(
@@ -456,7 +454,8 @@ Future<void> ownerUpdateWorkspaceControlCenter({
 }) async {
   final role = normalizeStaffRole(await fetchCurrentStaffRole());
   if (role != 'owner') {
-    throw Exception('Only the owner can change Workspace Control Center settings.');
+    throw Exception(
+        'Only the owner can change Workspace Control Center settings.');
   }
 
   final customerMode = hpjNormalizeWorkspaceMode(customerWorkspaceMode);
@@ -488,7 +487,8 @@ Future<void> ownerUpdateWorkspaceControlCenter({
 Future<void> registerCustomerMarketplaceLaunchInterest() async {
   final user = supabase.auth.currentUser;
   if (user == null) {
-    throw Exception('Sign in to receive the customer marketplace launch alert.');
+    throw Exception(
+        'Sign in to receive the customer marketplace launch alert.');
   }
 
   await supabase.from('customer_marketplace_launch_interest').upsert(
@@ -504,7 +504,8 @@ Future<void> registerCustomerMarketplaceLaunchInterest() async {
   try {
     await saveNotificationPreference(enabled: true);
   } catch (error) {
-    farmDebugLog('Launch-interest notification preference sync skipped: $error');
+    farmDebugLog(
+        'Launch-interest notification preference sync skipped: $error');
   }
 }
 
@@ -1187,7 +1188,8 @@ class _OwnerMarketplaceProgramSettingsPanelState
               maxLines: 4,
               decoration: const InputDecoration(
                 labelText: 'Message shown to users',
-                hintText: 'We are improving this workspace. Please check back shortly.',
+                hintText:
+                    'We are improving this workspace. Please check back shortly.',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -1308,7 +1310,8 @@ class _OwnerMarketplaceProgramSettingsPanelState
               const SizedBox(height: 12),
               _workspaceControlCard(
                 title: 'Farmer Workspace',
-                subtitle: 'Supply, demand, collections, payouts and farmer tools.',
+                subtitle:
+                    'Supply, demand, collections, payouts and farmer tools.',
                 icon: Icons.agriculture_outlined,
                 mode: farmerWorkspaceMode,
                 onModeChanged: (value) =>
@@ -1373,7 +1376,8 @@ class _OwnerMarketplaceProgramSettingsPanelState
               const SizedBox(height: 12),
               _workspaceControlCard(
                 title: 'Business Workspace',
-                subtitle: 'Wholesale sourcing, planning, orders and business tools.',
+                subtitle:
+                    'Wholesale sourcing, planning, orders and business tools.',
                 icon: Icons.business_outlined,
                 mode: wholesaleWorkspaceMode,
                 onModeChanged: (value) =>
@@ -1393,8 +1397,8 @@ class _OwnerMarketplaceProgramSettingsPanelState
                   onChanged: saving
                       ? null
                       : (value) => setState(
-                          () => wholesaleApplicationsEnabled = value,
-                        ),
+                            () => wholesaleApplicationsEnabled = value,
+                          ),
                 ),
               ),
               const SizedBox(height: 14),
@@ -1960,13 +1964,16 @@ class WholesaleOrderJourney {
       isCollection ? dispatchStatus == 'collected' : businessReceivedAt != null;
 
   bool get canConfirmReceipt =>
-      !isCollection && dispatchStatus == 'delivered' && businessReceivedAt == null;
+      !isCollection &&
+      dispatchStatus == 'delivered' &&
+      businessReceivedAt == null;
 
   int get currentStageIndex {
     if (requestStatus == 'cancelled' || requestStatus == 'rejected') return 0;
 
     if (!isCollection && businessReceivedAt != null) return 8;
-    if (dispatchStatus == 'delivered' || dispatchStatus == 'collected') return 7;
+    if (dispatchStatus == 'delivered' || dispatchStatus == 'collected')
+      return 7;
     if (dispatchStatus == 'out_for_delivery' ||
         dispatchStatus == 'ready_for_pickup') {
       return 6;
@@ -2423,14 +2430,11 @@ class WholesaleDemandForecast {
       convertedRequestId: _nullableText(
         data['converted_request_id'],
       ),
-      sourceType: (data['source_type'] ?? 'planning')
-          .toString()
-          .trim()
-          .toLowerCase(),
+      sourceType:
+          (data['source_type'] ?? 'planning').toString().trim().toLowerCase(),
       sourceRequestId: _nullableText(data['source_request_id']),
       sourceRequestItemId: _nullableText(data['source_request_item_id']),
-      sourceReceivingBatchId:
-          _nullableText(data['source_receiving_batch_id']),
+      sourceReceivingBatchId: _nullableText(data['source_receiving_batch_id']),
       createdAt: parseProductDate(
         data['created_at'],
       ),
@@ -2541,7 +2545,6 @@ class WholesaleDemandForecast {
   }
 }
 
-
 class WholesaleProduct {
   final Product product;
   final bool wholesaleEnabled;
@@ -2586,16 +2589,14 @@ class WholesaleProduct {
         Product._toInt(data['wholesale_min_quantity'] ?? 1),
       ),
       wholesaleUnit: cleanUnit.isEmpty ? 'unit' : cleanUnit,
-      marketAllocationManaged:
-          data['_hpj_market_allocation_managed'] == true,
+      marketAllocationManaged: data['_hpj_market_allocation_managed'] == true,
       marketAllocatedQuantity:
           Product._toDouble(data['_hpj_market_allocated_quantity']),
       marketCommittedQuantity:
           Product._toDouble(data['_hpj_market_committed_quantity']),
       marketAvailableQuantity:
           Product._toDouble(data['_hpj_market_available_quantity']),
-      marketUnit:
-          (data['_hpj_market_unit'] ?? '').toString().trim(),
+      marketUnit: (data['_hpj_market_unit'] ?? '').toString().trim(),
     );
   }
 
@@ -3774,8 +3775,7 @@ Future<String> captureWholesaleDispatchProofPhoto(
     '',
   );
 
-  final fileName =
-      '${DateTime.now().millisecondsSinceEpoch}.$extension';
+  final fileName = '${DateTime.now().millisecondsSinceEpoch}.$extension';
 
   final path = '$cleanDispatchId/$fileName';
 
@@ -5531,7 +5531,8 @@ Future<List<WholesaleDemandForecast>> createWholesaleDemandForecastBatch({
     throw Exception('Choose at least one product to plan.');
   }
   if (items.length > 25) {
-    throw Exception('Please keep each Planning Ahead list to 25 products or fewer.');
+    throw Exception(
+        'Please keep each Planning Ahead list to 25 products or fewer.');
   }
 
   final account = await fetchCurrentBusinessAccount();
@@ -5582,7 +5583,8 @@ Future<List<WholesaleDemandForecast>> createWholesaleDemandForecastBatch({
       item.needByDate.day,
     );
     if (target.isBefore(today)) {
-      throw Exception('The need-by date for $productName cannot be in the past.');
+      throw Exception(
+          'The need-by date for $productName cannot be in the past.');
     }
 
     final duplicateKey = productId != null && productId.isNotEmpty
@@ -5627,7 +5629,8 @@ Future<List<WholesaleDemandForecast>> createWholesaleDemandForecastBatch({
   // The plan itself is already saved. A notification problem must not make
   // the business think the planning list failed and submit it again.
   try {
-    final preview = forecasts.take(3).map((item) => item.productName).join(', ');
+    final preview =
+        forecasts.take(3).map((item) => item.productName).join(', ');
     final more = forecasts.length > 3 ? ' +${forecasts.length - 3} more' : '';
     await createAdminNotification(
       title: 'New wholesale planning list',
@@ -5999,8 +6002,7 @@ Future<void> adminUpdateWholesaleDemandForecast({
     userId: forecast.userId,
     actionType: 'wholesale_plan',
     actionId: forecast.id,
-    dedupeKey:
-        'wholesale-plan:${forecast.id}:${status.trim().toLowerCase()}',
+    dedupeKey: 'wholesale-plan:${forecast.id}:${status.trim().toLowerCase()}',
   );
 }
 // =====================================================
@@ -6252,9 +6254,8 @@ Future<SupplyDemandAllocation> createSupplyDemandAllocation({
   final demandUsedElsewhere = usedDemand - currentPairQuantity;
   final supplyAvailable = confirmedQuantity - usedElsewhere;
   final demandAvailable = demand.quantity - demandUsedElsewhere;
-  final maximumAllowed = supplyAvailable < demandAvailable
-      ? supplyAvailable
-      : demandAvailable;
+  final maximumAllowed =
+      supplyAvailable < demandAvailable ? supplyAvailable : demandAvailable;
 
   if (maximumAllowed <= 0 || quantity > maximumAllowed + 0.0001) {
     throw Exception(
@@ -7499,15 +7500,12 @@ String _wholesaleWarehouseError(
     }
   }
 
-  final raw = error
-      .toString()
-      .replaceFirst('Exception: ', '')
-      .trim();
+  final raw = error.toString().replaceFirst('Exception: ', '').trim();
 
   if (raw.isNotEmpty &&
       !raw.toLowerCase().contains(
-        'something went wrong',
-      )) {
+            'something went wrong',
+          )) {
     return raw;
   }
 
@@ -7532,7 +7530,6 @@ Future<void> reserveWholesaleFulfillmentStock(
     },
   );
 }
-
 
 class WarehouseAutoFlowResult {
   final int checked;
@@ -7594,7 +7591,6 @@ Future<WarehouseAutoFlowResult> autoReleaseWaitingWarehouseOrders({
   );
 }
 
-
 // =====================================================
 // GENERIC FULFILMENT ITEM UPDATE
 // =====================================================
@@ -7609,19 +7605,15 @@ Future<WholesaleFulfillmentItem> updateWholesaleFulfillmentItem({
 }) async {
   await requireAdminAccess();
 
-  final cleanStatus =
-      status.trim().toLowerCase();
+  final cleanStatus = status.trim().toLowerCase();
 
-  if (!_wholesaleFulfillmentItemStatuses
-      .contains(cleanStatus)) {
+  if (!_wholesaleFulfillmentItemStatuses.contains(cleanStatus)) {
     throw Exception(
       'Invalid packing item status.',
     );
   }
 
-  if (packedQuantity < 0 ||
-      packedQuantity.isNaN ||
-      packedQuantity.isInfinite) {
+  if (packedQuantity < 0 || packedQuantity.isNaN || packedQuantity.isInfinite) {
     throw Exception(
       'Enter a valid packed quantity.',
     );
@@ -7641,17 +7633,14 @@ Future<WholesaleFulfillmentItem> updateWholesaleFulfillmentItem({
     );
   }
 
-  if (packedQuantity + shortageQuantity >
-      item.orderedQuantity) {
+  if (packedQuantity + shortageQuantity > item.orderedQuantity) {
     throw Exception(
       'Packed plus shortage quantity cannot exceed the ordered quantity.',
     );
   }
 
   if (cleanStatus == 'packed' &&
-      (packedQuantity - item.orderedQuantity)
-              .abs() >
-          0.001) {
+      (packedQuantity - item.orderedQuantity).abs() > 0.001) {
     throw Exception(
       'A fully packed line must equal the ordered quantity.',
     );
@@ -7664,11 +7653,8 @@ Future<WholesaleFulfillmentItem> updateWholesaleFulfillmentItem({
       );
     }
 
-    if ((packedQuantity +
-                    shortageQuantity -
-                    item.orderedQuantity)
-                .abs() >
-            0.001) {
+    if ((packedQuantity + shortageQuantity - item.orderedQuantity).abs() >
+        0.001) {
       throw Exception(
         'Packed plus shortage quantity must equal the ordered quantity.',
       );
@@ -7687,12 +7673,9 @@ Future<WholesaleFulfillmentItem> updateWholesaleFulfillmentItem({
         'p_item_id': item.id,
         'p_status': cleanStatus,
         'p_packed_quantity': packedQuantity,
-        'p_shortage_quantity':
-            shortageQuantity,
-        'p_substitution_note':
-            substitutionNote.trim(),
-        'p_packing_note':
-            packingNote.trim(),
+        'p_shortage_quantity': shortageQuantity,
+        'p_substitution_note': substitutionNote.trim(),
+        'p_packing_note': packingNote.trim(),
       },
     );
 
@@ -7716,14 +7699,10 @@ Future<WholesaleFulfillmentItem> updateWholesaleFulfillmentItem({
       )
       .update({
         'status': cleanStatus,
-        'packed_quantity':
-            packedQuantity,
-        'shortage_quantity':
-            shortageQuantity,
-        'substitution_note':
-            substitutionNote.trim(),
-        'packing_note':
-            packingNote.trim(),
+        'packed_quantity': packedQuantity,
+        'shortage_quantity': shortageQuantity,
+        'substitution_note': substitutionNote.trim(),
+        'packing_note': packingNote.trim(),
       })
       .eq(
         'id',
@@ -8657,10 +8636,8 @@ Future<_WholesaleAccountStatementSnapshot>
 
   final invoices = byId.values.toList()
     ..sort((a, b) {
-      final ad =
-          a.issuedAt ?? a.issueDate ?? a.createdAt ?? DateTime(2000);
-      final bd =
-          b.issuedAt ?? b.issueDate ?? b.createdAt ?? DateTime(2000);
+      final ad = a.issuedAt ?? a.issueDate ?? a.createdAt ?? DateTime(2000);
+      final bd = b.issuedAt ?? b.issueDate ?? b.createdAt ?? DateTime(2000);
       return bd.compareTo(ad);
     });
 
@@ -8819,8 +8796,7 @@ Future<void> submitWholesalePaymentConfirmation({
   String paymentReference = '',
   String note = '',
 }) async {
-  final operationBoundary =
-      captureHpjPrivateOperationBoundary();
+  final operationBoundary = captureHpjPrivateOperationBoundary();
 
   final user = supabase.auth.currentUser;
   if (user == null || operationBoundary.userId == null) {
@@ -8886,6 +8862,7 @@ Future<void> submitWholesalePaymentConfirmation({
     mutationLease.release();
   }
 }
+
 Future<void> cancelWholesalePaymentConfirmation(
   WholesalePaymentSubmission submission,
 ) async {
@@ -8945,7 +8922,6 @@ Future<String> getWholesalePaymentProofSignedUrl(
       .createSignedUrl(cleanPath, 900);
 }
 
-
 Future<String?> _wholesaleNotificationRequestIdForInvoice(
   String invoiceId,
 ) async {
@@ -8982,8 +8958,7 @@ Future<void> approveWholesalePaymentConfirmation(
     },
   );
 
-  final requestId =
-      await _wholesaleNotificationRequestIdForInvoice(
+  final requestId = await _wholesaleNotificationRequestIdForInvoice(
     submission.invoiceId,
   );
 
@@ -9023,8 +8998,7 @@ Future<void> rejectWholesalePaymentConfirmation({
     },
   );
 
-  final requestId =
-      await _wholesaleNotificationRequestIdForInvoice(
+  final requestId = await _wholesaleNotificationRequestIdForInvoice(
     submission.invoiceId,
   );
 
@@ -9608,7 +9582,6 @@ Future<void> submitBusinessApplication({
   );
 }
 
-
 Future<List<WholesaleProduct>> fetchWholesaleCatalogue() async {
   final settings = await fetchMarketplaceProgramSettings();
   if (!await hpjWorkspaceOperationalAccessAllowed(
@@ -9672,7 +9645,6 @@ Future<List<WholesaleProduct>> fetchWholesaleCatalogue() async {
           ),
     );
 }
-
 
 // =====================================================
 // PHASE 3R — SCHEDULING SERVICES
@@ -9941,7 +9913,6 @@ Future<DateTime?> confirmWholesaleOrderReceived(String requestId) async {
   return DateTime.tryParse(response.toString());
 }
 
-
 // =====================================================
 // HPJ PHASE 039 — PREFERRED FARM → PROCUREMENT LINK
 // A business request remains an HPJ demand forecast. This optional record
@@ -10020,8 +9991,7 @@ Future<String> submitWholesaleOrderRequest({
   required String notes,
   double estimatedTotal = 0,
 }) async {
-  final operationBoundary =
-      captureHpjPrivateOperationBoundary();
+  final operationBoundary = captureHpjPrivateOperationBoundary();
 
   final settings = await fetchMarketplaceProgramSettings();
   if (!isHpjPrivateOperationBoundaryCurrent(operationBoundary)) {
@@ -10083,8 +10053,7 @@ Future<String> submitWholesaleOrderRequest({
           : 'Delivery parish',
     );
 
-    final idempotencyKey =
-        newHpjIdempotencyKey('wholesale-order-request');
+    final idempotencyKey = newHpjIdempotencyKey('wholesale-order-request');
 
     final response = await supabase.rpc(
       'submit_wholesale_order_request_scheduled_idempotent',
@@ -10240,8 +10209,7 @@ Future<String> createWholesaleStandingOrderFromTemplate({
   required String deliveryParish,
   String notes = '',
 }) async {
-  final operationBoundary =
-      captureHpjPrivateOperationBoundary();
+  final operationBoundary = captureHpjPrivateOperationBoundary();
 
   final cleanName = name.trim();
   if (cleanName.isEmpty) throw Exception('Enter a standing-order name.');
@@ -10271,10 +10239,9 @@ Future<String> createWholesaleStandingOrderFromTemplate({
   try {
     mutationLease.ensureCurrent();
 
-    final idempotencyKey =
-        newHpjIdempotencyKey(
-          'wholesale-standing-order:${template.id}',
-        );
+    final idempotencyKey = newHpjIdempotencyKey(
+      'wholesale-standing-order:${template.id}',
+    );
 
     final response = await supabase.rpc(
       'business_create_standing_order_from_template_idempotent',
@@ -10302,6 +10269,7 @@ Future<String> createWholesaleStandingOrderFromTemplate({
     mutationLease.release();
   }
 }
+
 Future<void> updateMyWholesaleStandingOrderStatus({
   required WholesaleStandingOrder order,
   required String status,
@@ -10449,8 +10417,7 @@ Future<void> adminUpdateBusinessStatus({
     userEmail: account.email,
     actionType: 'wholesale_account',
     actionId: account.id,
-    dedupeKey:
-        'wholesale-account:${account.id}:${status.trim().toLowerCase()}',
+    dedupeKey: 'wholesale-account:${account.id}:${status.trim().toLowerCase()}',
   );
 }
 
@@ -10613,8 +10580,7 @@ Future<void> adminUpdateWholesaleRequest({
     userEmail: account?.email,
     actionType: 'wholesale_order',
     actionId: request.id,
-    dedupeKey:
-        'wholesale-request:${request.id}:${status.trim().toLowerCase()}',
+    dedupeKey: 'wholesale-request:${request.id}:${status.trim().toLowerCase()}',
   );
 }
 
@@ -11230,9 +11196,7 @@ class _WholesaleSchedulingAdminScreenState
 DateTime _wholesaleForecastFreshnessDate(
   WholesaleDemandForecast forecast,
 ) {
-  return forecast.updatedAt ??
-      forecast.createdAt ??
-      DateTime.now();
+  return forecast.updatedAt ?? forecast.createdAt ?? DateTime.now();
 }
 
 int _wholesaleForecastAgeDays(
@@ -11286,8 +11250,7 @@ String _wholesaleForecastFreshnessLabel(
   return 'Checked $age days ago';
 }
 
-Future<WholesaleDemandForecast>
-    confirmWholesaleDemandForecastCurrent(
+Future<WholesaleDemandForecast> confirmWholesaleDemandForecastCurrent(
   WholesaleDemandForecast forecast,
 ) async {
   final user = supabase.auth.currentUser;
@@ -11307,8 +11270,7 @@ Future<WholesaleDemandForecast>
   final response = await supabase
       .from('wholesale_demand_forecasts')
       .update({
-        'updated_at':
-            DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       })
       .eq('id', forecast.id)
       .eq('user_id', user.id)
@@ -11365,7 +11327,6 @@ class _WholesaleAdminSectionSpec {
   });
 }
 
-
 class _WholesaleAdminFocusNotice extends StatelessWidget {
   final bool found;
   final String foundMessage;
@@ -11379,17 +11340,13 @@ class _WholesaleAdminFocusNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = found
-        ? FarmColors.primary
-        : FarmColors.warning;
+    final accent = found ? FarmColors.primary : FarmColors.warning;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
-        color: found
-            ? FarmColors.primarySoft
-            : const Color(0xFFFFF7E8),
+        color: found ? FarmColors.primarySoft : const Color(0xFFFFF7E8),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: accent.withOpacity(0.25),
@@ -12287,8 +12244,7 @@ class _AdminWholesaleManagementTabState
 
   String demandFilter = 'active';
 
-  final TextEditingController _orderSearchController =
-      TextEditingController();
+  final TextEditingController _orderSearchController = TextEditingController();
   final TextEditingController _fulfillmentSearchController =
       TextEditingController();
   final TextEditingController _receivingSearchController =
@@ -12418,14 +12374,9 @@ class _AdminWholesaleManagementTabState
     final clean = query.trim().toLowerCase();
     if (clean.isEmpty) return true;
 
-    final haystack = values
-        .whereType<String>()
-        .join(' ')
-        .toLowerCase();
+    final haystack = values.whereType<String>().join(' ').toLowerCase();
 
-    final terms = clean
-        .split(RegExp(r'\s+'))
-        .where((term) => term.isNotEmpty);
+    final terms = clean.split(RegExp(r'\s+')).where((term) => term.isNotEmpty);
 
     return terms.every(haystack.contains);
   }
@@ -12538,9 +12489,7 @@ class _AdminWholesaleManagementTabState
               SizedBox(
                 width: 164,
                 child: DropdownButtonFormField<String>(
-                  value: dateOptions.containsKey(dateValue)
-                      ? dateValue
-                      : 'all',
+                  value: dateOptions.containsKey(dateValue) ? dateValue : 'all',
                   isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Date',
@@ -13583,8 +13532,7 @@ class _AdminWholesaleManagementTabState
         requests: values[5] as List<WholesaleOrderRequest>,
         fulfillments: values[6] as List<WholesaleFulfillment>,
         warehouseReservations: values[7] as List<WarehousePickQueueRow>,
-        supplierPerformance:
-            values[8] as List<WarehouseSupplierPerformanceRow>,
+        supplierPerformance: values[8] as List<WarehouseSupplierPerformanceRow>,
       );
     });
   }
@@ -13797,8 +13745,7 @@ class _AdminWholesaleManagementTabState
       'cancelled',
     ];
 
-    final isDeliveredOrder =
-        request.status.trim().toLowerCase() == 'fulfilled';
+    final isDeliveredOrder = request.status.trim().toLowerCase() == 'fulfilled';
 
     final saved = await showDialog<bool>(
       context: context,
@@ -14137,8 +14084,7 @@ class _AdminWholesaleManagementTabState
           );
         }
 
-        final requestedAccountId =
-            widget.businessAccountIdFilter?.trim() ?? '';
+        final requestedAccountId = widget.businessAccountIdFilter?.trim() ?? '';
 
         final focusedAccounts = requestedAccountId.isEmpty
             ? const <BusinessAccount>[]
@@ -14149,8 +14095,7 @@ class _AdminWholesaleManagementTabState
                 .toList();
 
         final exactAccountFound = focusedAccounts.isNotEmpty;
-        final accounts =
-            exactAccountFound ? focusedAccounts : allAccounts;
+        final accounts = exactAccountFound ? focusedAccounts : allAccounts;
 
         return RefreshIndicator(
           onRefresh: _refresh,
@@ -14168,139 +14113,139 @@ class _AdminWholesaleManagementTabState
                 const SizedBox(height: 12),
               ],
               ...List<Widget>.generate(accounts.length, (index) {
-              final account = accounts[index];
-              final color = businessAccountStatusColor(account.status);
+                final account = accounts[index];
+                final color = businessAccountStatusColor(account.status);
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: FarmCard(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              account.displayName,
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          _WholesaleStatusChip(status: account.status),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${account.businessType} • ${account.parish}',
-                        style: const TextStyle(
-                          color: FarmColors.mutedText,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${account.contactName} • ${account.phone}',
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (account.expectedWeeklySpend > 0) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Expected weekly spend: ${formatJmd(account.expectedWeeklySpend)}',
-                          style: const TextStyle(
-                            color: FarmColors.green,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                      if (account.isApproved) ...[
-                        const SizedBox(height: 7),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: FarmColors.cardSoft,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: FarmColors.line),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                account.wholesaleCreditStatusLabel,
-                                style: TextStyle(
-                                  color: account.isWholesaleCreditOnHold
-                                      ? FarmColors.danger
-                                      : FarmColors.primary,
-                                  fontSize: 10.5,
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: FarmCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                account.displayName,
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 17,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${account.wholesalePaymentTermsLabel} • '
-                                '${account.wholesaleCreditLimit > 0 ? 'Limit ${formatJmd(account.wholesaleCreditLimit)}' : account.hasActiveWholesaleCredit ? 'No hard limit' : 'Due now'}',
-                                style: const TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
+                            ),
+                            _WholesaleStatusChip(status: account.status),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${account.businessType} • ${account.parish}',
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.check_circle_outline),
-                            label: const Text('Approve'),
-                            onPressed: account.isApproved
-                                ? null
-                                : () => _changeBusinessStatus(
-                                      account,
-                                      'approved',
-                                    ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${account.contactName} • ${account.phone}',
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontWeight: FontWeight.w700,
                           ),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.edit_note_outlined),
-                            label: const Text('Needs Info'),
-                            onPressed: () => _changeBusinessStatus(
-                              account,
-                              'rejected',
+                        ),
+                        if (account.expectedWeeklySpend > 0) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Expected weekly spend: ${formatJmd(account.expectedWeeklySpend)}',
+                            style: const TextStyle(
+                              color: FarmColors.green,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.pause_circle_outline),
-                            label: const Text('Suspend'),
-                            onPressed: () => _changeBusinessStatus(
-                              account,
-                              'suspended',
-                            ),
-                          ),
-                          if (account.isApproved)
-                            OutlinedButton.icon(
-                              icon: const Icon(Icons.credit_card_outlined),
-                              label: const Text('Credit Terms'),
-                              onPressed: () =>
-                                  _editBusinessCreditTerms(account),
-                            ),
                         ],
-                      ),
-                    ],
+                        if (account.isApproved) ...[
+                          const SizedBox(height: 7),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: FarmColors.cardSoft,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: FarmColors.line),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  account.wholesaleCreditStatusLabel,
+                                  style: TextStyle(
+                                    color: account.isWholesaleCreditOnHold
+                                        ? FarmColors.danger
+                                        : FarmColors.primary,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${account.wholesalePaymentTermsLabel} • '
+                                  '${account.wholesaleCreditLimit > 0 ? 'Limit ${formatJmd(account.wholesaleCreditLimit)}' : account.hasActiveWholesaleCredit ? 'No hard limit' : 'Due now'}',
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.check_circle_outline),
+                              label: const Text('Approve'),
+                              onPressed: account.isApproved
+                                  ? null
+                                  : () => _changeBusinessStatus(
+                                        account,
+                                        'approved',
+                                      ),
+                            ),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.edit_note_outlined),
+                              label: const Text('Needs Info'),
+                              onPressed: () => _changeBusinessStatus(
+                                account,
+                                'rejected',
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.pause_circle_outline),
+                              label: const Text('Suspend'),
+                              onPressed: () => _changeBusinessStatus(
+                                account,
+                                'suspended',
+                              ),
+                            ),
+                            if (account.isApproved)
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.credit_card_outlined),
+                                label: const Text('Credit Terms'),
+                                onPressed: () =>
+                                    _editBusinessCreditTerms(account),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
             ],
           ),
         );
@@ -14373,62 +14318,47 @@ class _AdminWholesaleManagementTabState
     );
   }
 
-
   Widget _requestsTab() {
     return FutureBuilder<List<WholesaleOrderRequest>>(
       future: requestsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState ==
-                ConnectionState.waiting &&
+        if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const Center(
             child: CircularProgressIndicator(),
           );
         }
 
-        final allRequests =
-            snapshot.data ??
-            const <WholesaleOrderRequest>[];
+        final allRequests = snapshot.data ?? const <WholesaleOrderRequest>[];
 
-        final requestedStatus = widget
-            .requestStatusFilter
-            ?.trim()
-            .toLowerCase();
+        final requestedStatus =
+            widget.requestStatusFilter?.trim().toLowerCase();
 
-        final requestedId =
-            widget.requestIdFilter?.trim() ?? '';
+        final requestedId = widget.requestIdFilter?.trim() ?? '';
 
-        final statusRequests =
-            allRequests.where((request) {
+        final statusRequests = allRequests.where((request) {
           if (requestedStatus != null &&
               requestedStatus.isNotEmpty &&
-              request.status !=
-                  requestedStatus) {
+              request.status != requestedStatus) {
             return false;
           }
 
           return true;
         }).toList();
 
-        final focusedRequests =
-            requestedId.isEmpty
-                ? const <WholesaleOrderRequest>[]
-                : allRequests
-                    .where(
-                      (request) =>
-                          request.id.trim() ==
-                          requestedId,
-                    )
-                    .toList();
+        final focusedRequests = requestedId.isEmpty
+            ? const <WholesaleOrderRequest>[]
+            : allRequests
+                .where(
+                  (request) => request.id.trim() == requestedId,
+                )
+                .toList();
 
-        final exactRequestFound =
-            focusedRequests.isNotEmpty;
+        final exactRequestFound = focusedRequests.isNotEmpty;
 
-        final locallyFilteredRequests =
-            statusRequests.where((request) {
+        final locallyFilteredRequests = statusRequests.where((request) {
           if (_orderStatusFilter != 'all' &&
-              request.status !=
-                  _orderStatusFilter) {
+              request.status != _orderStatusFilter) {
             return false;
           }
 
@@ -14440,9 +14370,7 @@ class _AdminWholesaleManagementTabState
           }
 
           final accountName =
-              request.businessAccount
-                      ?.displayName ??
-                  request.businessName;
+              request.businessAccount?.displayName ?? request.businessName;
 
           return _opsSearchMatches(
             _orderSearchController.text,
@@ -14469,74 +14397,60 @@ class _AdminWholesaleManagementTabState
         locallyFilteredRequests.sort(
           (a, b) {
             final ad = a.createdAt ??
-                DateTime
-                    .fromMillisecondsSinceEpoch(
+                DateTime.fromMillisecondsSinceEpoch(
                   0,
                 );
 
             final bd = b.createdAt ??
-                DateTime
-                    .fromMillisecondsSinceEpoch(
+                DateTime.fromMillisecondsSinceEpoch(
                   0,
                 );
 
-            return _orderSort == 'oldest'
-                ? ad.compareTo(bd)
-                : bd.compareTo(ad);
+            return _orderSort == 'oldest' ? ad.compareTo(bd) : bd.compareTo(ad);
           },
         );
 
-        final requests = exactRequestFound
-            ? focusedRequests
-            : locallyFilteredRequests;
+        final requests =
+            exactRequestFound ? focusedRequests : locallyFilteredRequests;
 
         final pendingCount = allRequests
             .where(
-              (request) =>
-                  request.status == 'pending',
+              (request) => request.status == 'pending',
             )
             .length;
 
         final quotedCount = allRequests
             .where(
-              (request) =>
-                  request.status == 'quoted',
+              (request) => request.status == 'quoted',
             )
             .length;
 
         final approvedCount = allRequests
             .where(
-              (request) =>
-                  request.status == 'approved',
+              (request) => request.status == 'approved',
             )
             .length;
 
         final fulfilledCount = allRequests
             .where(
-              (request) =>
-                  request.status ==
-                  'fulfilled',
+              (request) => request.status == 'fulfilled',
             )
             .length;
 
         final activeEstimate = allRequests
             .where(
               (request) =>
-                  request.status != 'cancelled' &&
-                  request.status != 'rejected',
+                  request.status != 'cancelled' && request.status != 'rejected',
             )
             .fold<double>(
               0,
-              (sum, request) =>
-                  sum +
-                  request.subtotalEstimate,
+              (sum, request) => sum + request.subtotalEstimate,
             );
 
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
-            physics:
-                const AlwaysScrollableScrollPhysics(),
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(
               14,
               14,
@@ -14545,163 +14459,105 @@ class _AdminWholesaleManagementTabState
             ),
             children: [
               _PremiumAdminWholesaleOrdersHero(
-                totalOrders:
-                    allRequests.length,
-                pendingOrders:
-                    pendingCount,
-                quotedOrders:
-                    quotedCount,
-                approvedOrders:
-                    approvedCount,
-                fulfilledOrders:
-                    fulfilledCount,
-                activeEstimate:
-                    activeEstimate,
-                capped:
-                    allRequests.length >= 500,
+                totalOrders: allRequests.length,
+                pendingOrders: pendingCount,
+                quotedOrders: quotedCount,
+                approvedOrders: approvedCount,
+                fulfilledOrders: fulfilledCount,
+                activeEstimate: activeEstimate,
+                capped: allRequests.length >= 500,
               ),
-
               if (requestedId.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 _WholesaleAdminFocusNotice(
-                  found:
-                      exactRequestFound,
+                  found: exactRequestFound,
                   foundMessage:
                       'Opened from your notification. Showing the related wholesale order.',
                   missingMessage:
                       'That wholesale order is no longer available. Showing the current order list instead.',
                 ),
               ],
-
               const SizedBox(height: 16),
-
               if (requestedId.isEmpty) ...[
                 const Text(
                   'Find & triage business orders',
                   style: TextStyle(
-                    color:
-                        FarmColors.ink,
+                    color: FarmColors.ink,
                     fontSize: 17,
-                    fontWeight:
-                        FontWeight.w900,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 3),
                 const Text(
                   'Search business, order number, product, parish or status, then update or prepare the quote.',
                   style: TextStyle(
-                    color:
-                        FarmColors.mutedText,
+                    color: FarmColors.mutedText,
                     fontSize: 9.5,
                     height: 1.3,
-                    fontWeight:
-                        FontWeight.w600,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 10),
-
                 _operationsFilterBar(
-                  controller:
-                      _orderSearchController,
-                  searchHint:
-                      'Search business, order #, product, parish...',
-                  statusValue:
-                      _orderStatusFilter,
-                  statusOptions:
-                      const <String, String>{
-                    'all':
-                        'All statuses',
-                    'pending':
-                        'Pending',
-                    'quoted':
-                        'Quote Ready',
-                    'approved':
-                        'Confirmed',
-                    'fulfilled':
-                        'Fulfilled',
-                    'rejected':
-                        'Rejected',
-                    'cancelled':
-                        'Cancelled',
+                  controller: _orderSearchController,
+                  searchHint: 'Search business, order #, product, parish...',
+                  statusValue: _orderStatusFilter,
+                  statusOptions: const <String, String>{
+                    'all': 'All statuses',
+                    'pending': 'Pending',
+                    'quoted': 'Quote Ready',
+                    'approved': 'Confirmed',
+                    'fulfilled': 'Fulfilled',
+                    'rejected': 'Rejected',
+                    'cancelled': 'Cancelled',
                   },
-                  dateValue:
-                      _orderDateFilter,
-                  sortValue:
-                      _orderSort,
-                  onSearch: (_) =>
-                      setState(() {}),
-                  onStatus: (value) =>
-                      setState(
-                    () =>
-                        _orderStatusFilter =
-                            value,
+                  dateValue: _orderDateFilter,
+                  sortValue: _orderSort,
+                  onSearch: (_) => setState(() {}),
+                  onStatus: (value) => setState(
+                    () => _orderStatusFilter = value,
                   ),
-                  onDate: (value) =>
-                      setState(
-                    () =>
-                        _orderDateFilter =
-                            value,
+                  onDate: (value) => setState(
+                    () => _orderDateFilter = value,
                   ),
-                  onSort: (value) =>
-                      setState(
-                    () =>
-                        _orderSort =
-                            value,
+                  onSort: (value) => setState(
+                    () => _orderSort = value,
                   ),
                   onClear: () {
-                    _orderSearchController
-                        .clear();
+                    _orderSearchController.clear();
 
                     setState(() {
-                      _orderStatusFilter =
-                          'all';
-                      _orderDateFilter =
-                          'all';
-                      _orderSort =
-                          'newest';
+                      _orderStatusFilter = 'all';
+                      _orderDateFilter = 'all';
+                      _orderSort = 'newest';
                     });
                   },
                 ),
-
                 _operationsResultCount(
                   count: requests.length,
                   singular: 'order',
-                  note: allRequests.length >=
-                          500
+                  note: allRequests.length >= 500
                       ? 'Filtering latest 500 loaded'
                       : null,
                 ),
-
                 const SizedBox(height: 10),
               ],
-
               if (requests.isEmpty)
                 const FarmEmptyState(
-                  icon:
-                      Icons.storefront_outlined,
-                  title:
-                      'No wholesale orders in this view',
-                  message:
-                      'Try another search, date or status filter.',
+                  icon: Icons.storefront_outlined,
+                  title: 'No wholesale orders in this view',
+                  message: 'Try another search, date or status filter.',
                 )
               else
                 LayoutBuilder(
-                  builder:
-                      (context, constraints) {
-                    final useTwoColumns =
-                        constraints.maxWidth >=
-                            1000;
+                  builder: (context, constraints) {
+                    final useTwoColumns = constraints.maxWidth >= 1000;
 
                     const gap = 12.0;
 
-                    final width =
-                        useTwoColumns
-                            ? (constraints
-                                        .maxWidth -
-                                    gap) /
-                                2
-                            : constraints
-                                .maxWidth;
+                    final width = useTwoColumns
+                        ? (constraints.maxWidth - gap) / 2
+                        : constraints.maxWidth;
 
                     return Wrap(
                       spacing: gap,
@@ -14709,27 +14565,18 @@ class _AdminWholesaleManagementTabState
                       children: requests.map(
                         (request) {
                           final accountName =
-                              request
-                                      .businessAccount
-                                      ?.displayName ??
-                                  request
-                                      .businessName;
+                              request.businessAccount?.displayName ??
+                                  request.businessName;
 
                           return SizedBox(
                             width: width,
-                            child:
-                                _PremiumAdminWholesaleOrderCard(
-                              request:
-                                  request,
-                              accountName:
-                                  accountName,
-                              placedLabel:
-                                  _opsDateTimeLabel(
-                                request
-                                    .createdAt,
+                            child: _PremiumAdminWholesaleOrderCard(
+                              request: request,
+                              accountName: accountName,
+                              placedLabel: _opsDateTimeLabel(
+                                request.createdAt,
                               ),
-                              onUpdate: () =>
-                                  _updateRequest(
+                              onUpdate: () => _updateRequest(
                                 request,
                               ),
                             ),
@@ -15775,8 +15622,7 @@ class _AdminWholesaleManagementTabState
 
                 final otherDemandReservations = demandReserved - currentPair;
 
-                var demandAvailable =
-                    demand.quantity - otherDemandReservations;
+                var demandAvailable = demand.quantity - otherDemandReservations;
 
                 // For real orders, warehouse stock and previously converted
                 // Planning Ahead supply can already cover part of the line.
@@ -16355,10 +16201,8 @@ class _AdminWholesaleManagementTabState
               }
 
               List<FarmerSupplyForecast> additionalCandidates() {
-                final demandName =
-                    _normalizeMatchName(demand.productName);
-                final demandUnit =
-                    _normalizeMatchUnit(demand.unit);
+                final demandName = _normalizeMatchName(demand.productName);
+                final demandUnit = _normalizeMatchUnit(demand.unit);
 
                 return supplies.where((supply) {
                   return supply.isActive &&
@@ -16402,17 +16246,13 @@ class _AdminWholesaleManagementTabState
                 final reservedForOtherFarms =
                     demandReserved - allocation.allocatedQuantity;
 
-                final demandAvailable =
-                    demand.quantity - reservedForOtherFarms;
+                final demandAvailable = demand.quantity - reservedForOtherFarms;
 
-                final maxSupply =
-                    supplyAvailable < 0 ? 0.0 : supplyAvailable;
+                final maxSupply = supplyAvailable < 0 ? 0.0 : supplyAvailable;
 
-                final maxDemand =
-                    demandAvailable < 0 ? 0.0 : demandAvailable;
+                final maxDemand = demandAvailable < 0 ? 0.0 : demandAvailable;
 
-                final maximum =
-                    maxSupply < maxDemand ? maxSupply : maxDemand;
+                final maximum = maxSupply < maxDemand ? maxSupply : maxDemand;
 
                 final quantityController = TextEditingController(
                   text: number(allocation.allocatedQuantity),
@@ -16443,14 +16283,12 @@ class _AdminWholesaleManagementTabState
                         right: 18,
                         top: 12,
                         bottom:
-                            MediaQuery.viewInsetsOf(editContext).bottom +
-                                18,
+                            MediaQuery.viewInsetsOf(editContext).bottom + 18,
                       ),
                       child: SingleChildScrollView(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment:
-                              CrossAxisAlignment.stretch,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Center(
                               child: Container(
@@ -16458,8 +16296,7 @@ class _AdminWholesaleManagementTabState
                                 height: 4,
                                 decoration: BoxDecoration(
                                   color: FarmColors.line,
-                                  borderRadius:
-                                      BorderRadius.circular(999),
+                                  borderRadius: BorderRadius.circular(999),
                                 ),
                               ),
                             ),
@@ -16548,9 +16385,7 @@ class _AdminWholesaleManagementTabState
                 }
 
                 final quantity = double.tryParse(
-                  quantityController.text
-                      .trim()
-                      .replaceAll(',', ''),
+                  quantityController.text.trim().replaceAll(',', ''),
                 );
 
                 if (quantity == null || quantity <= 0) {
@@ -16622,9 +16457,8 @@ class _AdminWholesaleManagementTabState
                 if (!allocation.isReserved) return;
 
                 final supply = supplyFor(allocation);
-                final farmer = supply == null
-                    ? null
-                    : farmerMap[supply.farmerId];
+                final farmer =
+                    supply == null ? null : farmerMap[supply.farmerId];
 
                 final confirmed = await showDialog<bool>(
                   context: sheetContext,
@@ -16735,14 +16569,11 @@ class _AdminWholesaleManagementTabState
 
               final progress = demand.quantity <= 0
                   ? 0.0
-                  : (reserved / demand.quantity)
-                      .clamp(0.0, 1.0)
-                      .toDouble();
+                  : (reserved / demand.quantity).clamp(0.0, 1.0).toDouble();
 
               final progressPercent = (progress * 100).round();
 
-              final grouped =
-                  <String, List<SupplyDemandAllocation>>{};
+              final grouped = <String, List<SupplyDemandAllocation>>{};
 
               for (final allocation in allocations) {
                 final supply = supplyFor(allocation);
@@ -16854,8 +16685,7 @@ class _AdminWholesaleManagementTabState
                         Row(
                           children: [
                             OutlinedButton.icon(
-                              onPressed: () =>
-                                  editAllocation(allocation),
+                              onPressed: () => editAllocation(allocation),
                               icon: const Icon(
                                 Icons.edit_outlined,
                                 size: 14,
@@ -16864,8 +16694,7 @@ class _AdminWholesaleManagementTabState
                             ),
                             const Spacer(),
                             TextButton(
-                              onPressed: () =>
-                                  releaseAllocation(allocation),
+                              onPressed: () => releaseAllocation(allocation),
                               style: TextButton.styleFrom(
                                 foregroundColor: FarmColors.danger,
                               ),
@@ -16894,9 +16723,8 @@ class _AdminWholesaleManagementTabState
                   groupTotal += allocation.allocatedQuantity;
                 }
 
-                final groupUnit = items.isEmpty
-                    ? demand.unit
-                    : items.first.unit;
+                final groupUnit =
+                    items.isEmpty ? demand.unit : items.first.unit;
 
                 final title = farmer?.farmName.trim().isNotEmpty == true
                     ? farmer!.farmName.trim()
@@ -17006,28 +16834,24 @@ class _AdminWholesaleManagementTabState
                           items.first,
                           supplyFor(items.first),
                         )
-                      else
-                        ...[
-                          const Text(
-                            'Supply batches',
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                            ),
+                      else ...[
+                        const Text(
+                          'Supply batches',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
                           ),
-                          const SizedBox(height: 6),
-                          for (var index = 0;
-                              index < items.length;
-                              index++) ...[
-                            if (index > 0)
-                              const SizedBox(height: 6),
-                            batchRow(
-                              items[index],
-                              supplyFor(items[index]),
-                            ),
-                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        for (var index = 0; index < items.length; index++) ...[
+                          if (index > 0) const SizedBox(height: 6),
+                          batchRow(
+                            items[index],
+                            supplyFor(items[index]),
+                          ),
                         ],
+                      ],
                     ],
                   ),
                 );
@@ -17037,13 +16861,11 @@ class _AdminWholesaleManagementTabState
                 padding: EdgeInsets.only(
                   left: 12,
                   right: 12,
-                  bottom:
-                      MediaQuery.viewInsetsOf(sheetContext).bottom + 12,
+                  bottom: MediaQuery.viewInsetsOf(sheetContext).bottom + 12,
                 ),
                 child: Container(
                   constraints: BoxConstraints(
-                    maxHeight:
-                        MediaQuery.sizeOf(sheetContext).height * .88,
+                    maxHeight: MediaQuery.sizeOf(sheetContext).height * .88,
                   ),
                   decoration: const BoxDecoration(
                     color: FarmColors.background,
@@ -17071,8 +16893,7 @@ class _AdminWholesaleManagementTabState
                               height: 4,
                               decoration: BoxDecoration(
                                 color: FarmColors.line,
-                                borderRadius:
-                                    BorderRadius.circular(999),
+                                borderRadius: BorderRadius.circular(999),
                               ),
                             ),
                             Expanded(
@@ -17099,8 +16920,7 @@ class _AdminWholesaleManagementTabState
                           0,
                         ),
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
                               'Manage Reservations',
@@ -17131,8 +16951,7 @@ class _AdminWholesaleManagementTabState
                                 ),
                               ),
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
@@ -17158,8 +16977,7 @@ class _AdminWholesaleManagementTabState
                                   ),
                                   const SizedBox(height: 9),
                                   ClipRRect(
-                                    borderRadius:
-                                        BorderRadius.circular(999),
+                                    borderRadius: BorderRadius.circular(999),
                                     child: LinearProgressIndicator(
                                       value: progress,
                                       minHeight: 7,
@@ -17274,13 +17092,10 @@ class _AdminWholesaleManagementTabState
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color:
-                                      FarmColors.success.withOpacity(.08),
-                                  borderRadius:
-                                      BorderRadius.circular(14),
+                                  color: FarmColors.success.withOpacity(.08),
+                                  borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
-                                    color:
-                                        FarmColors.success.withOpacity(.22),
+                                    color: FarmColors.success.withOpacity(.22),
                                   ),
                                 ),
                                 child: Row(
@@ -18160,7 +17975,8 @@ class _AdminWholesaleManagementTabState
     if (requestId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('This procurement requirement is not linked to an order.'),
+          content:
+              Text('This procurement requirement is not linked to an order.'),
         ),
       );
       return;
@@ -18169,7 +17985,8 @@ class _AdminWholesaleManagementTabState
     if (coveredQuantity + 0.0001 < demand.quantity) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Secure the remaining quantity before confirming procurement.'),
+          content: Text(
+              'Secure the remaining quantity before confirming procurement.'),
         ),
       );
       return;
@@ -18228,7 +18045,8 @@ class _AdminWholesaleManagementTabState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Procurement confirmed. Farmer supply is now waiting in Collection/Receiving planning.'),
+          content: Text(
+              'Procurement confirmed. Farmer supply is now waiting in Collection/Receiving planning.'),
         ),
       );
     } catch (error) {
@@ -18267,7 +18085,8 @@ class _AdminWholesaleManagementTabState
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  friendlyAppError(error ?? Exception('Unknown procurement error')),
+                  friendlyAppError(
+                      error ?? Exception('Unknown procurement error')),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: FarmColors.mutedText,
@@ -18313,9 +18132,10 @@ class _AdminWholesaleManagementTabState
           );
         }
 
-        final allActiveDemands =
-            data.demands.where((item) => item.isActive).toList()
-              ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
+        final allActiveDemands = data.demands
+            .where((item) => item.isActive)
+            .toList()
+          ..sort((a, b) => a.needByDate.compareTo(b.needByDate));
 
         final requestedDemandId = widget.demandIdFilter?.trim() ?? '';
 
@@ -18511,8 +18331,7 @@ class _AdminWholesaleManagementTabState
         }
 
         bool searchMatches(WholesaleDemandForecast demand) {
-          final query =
-              _procurementSearchController.text.trim().toLowerCase();
+          final query = _procurementSearchController.text.trim().toLowerCase();
           if (query.isEmpty) return true;
 
           final supplierNames = <String>[];
@@ -18595,13 +18414,11 @@ class _AdminWholesaleManagementTabState
         }).length;
 
         final urgentCount = allActiveDemands.where((demand) {
-          return stillNeededForDemand(demand) > 0.0001 &&
-              isUrgent(demand);
+          return stillNeededForDemand(demand) > 0.0001 && isUrgent(demand);
         }).length;
 
         final thisWeekCount = allActiveDemands.where((demand) {
-          return stillNeededForDemand(demand) > 0.0001 &&
-              isThisWeek(demand);
+          return stillNeededForDemand(demand) > 0.0001 && isThisWeek(demand);
         }).length;
 
         final readyCount = allActiveDemands.where((demand) {
@@ -18746,31 +18563,25 @@ class _AdminWholesaleManagementTabState
           final warehouseReserved = warehouseReservedForDemand(demand);
           final priorFarmerSecured =
               priorConvertedFarmerCoverageForDemand(demand);
-          final currentFarmerSecured =
-              allocatedByDemand[demand.id] ?? 0;
+          final currentFarmerSecured = allocatedByDemand[demand.id] ?? 0;
 
-          final farmerSecured =
-              (priorFarmerSecured + currentFarmerSecured)
-                  .clamp(0.0, demand.quantity)
-                  .toDouble();
+          final farmerSecured = (priorFarmerSecured + currentFarmerSecured)
+              .clamp(0.0, demand.quantity)
+              .toDouble();
 
           final farmerTarget = demand.isOrderDemand
-              ? (demand.quantity -
-                      warehouseReserved -
-                      priorFarmerSecured)
+              ? (demand.quantity - warehouseReserved - priorFarmerSecured)
                   .clamp(0.0, demand.quantity)
                   .toDouble()
               : demand.quantity;
 
-          final stillNeeded =
-              (farmerTarget - currentFarmerSecured)
-                  .clamp(0.0, demand.quantity)
-                  .toDouble();
+          final stillNeeded = (farmerTarget - currentFarmerSecured)
+              .clamp(0.0, demand.quantity)
+              .toDouble();
 
-          final totalCovered =
-              (warehouseReserved + farmerSecured)
-                  .clamp(0.0, demand.quantity)
-                  .toDouble();
+          final totalCovered = (warehouseReserved + farmerSecured)
+              .clamp(0.0, demand.quantity)
+              .toDouble();
 
           String coverageLabel;
           Color coverageColor;
@@ -18806,8 +18617,7 @@ class _AdminWholesaleManagementTabState
                 : '$farm • ${_matchQuantityLabel(available, supply.unit)} • ${score.toStringAsFixed(0)}%';
           }).toList();
 
-          final expanded =
-              _expandedProcurementDemandIds.contains(demand.id);
+          final expanded = _expandedProcurementDemandIds.contains(demand.id);
 
           VoidCallback? primaryAction;
           String primaryLabel = '';
@@ -19204,17 +19014,16 @@ class _AdminWholesaleManagementTabState
                 decoration: InputDecoration(
                   hintText: 'Search produce, order or supplier...',
                   prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon:
-                      _procurementSearchController.text.trim().isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: 'Clear search',
-                              onPressed: () {
-                                _procurementSearchController.clear();
-                                setState(() {});
-                              },
-                              icon: const Icon(Icons.close_rounded),
-                            ),
+                  suffixIcon: _procurementSearchController.text.trim().isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _procurementSearchController.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
                 ),
               ),
               const SizedBox(height: 9),
@@ -19241,9 +19050,7 @@ class _AdminWholesaleManagementTabState
                       onSelected: (_) {
                         setState(() {
                           _procurementDateFilter =
-                              _procurementDateFilter == 'week'
-                                  ? 'all'
-                                  : 'week';
+                              _procurementDateFilter == 'week' ? 'all' : 'week';
                         });
                       },
                     ),
@@ -20470,8 +20277,7 @@ class _AdminWholesaleManagementTabState
         final flow = await autoReleaseWaitingWarehouseOrders();
 
         if (flow.released > 0) {
-          final orderWord =
-              flow.released == 1 ? 'order is' : 'orders are';
+          final orderWord = flow.released == 1 ? 'order is' : 'orders are';
 
           message = '$message '
               '${flow.released} waiting $orderWord now Ready to Prepare.';
@@ -20654,7 +20460,8 @@ class _AdminWholesaleManagementTabState
         var visibleBatches = widget.receivingMode == 'collections'
             ? batches
                 .where(
-                  (item) => item.isPlanned ||
+                  (item) =>
+                      item.isPlanned ||
                       item.isCollectionScheduled ||
                       item.isCollected,
                 )
@@ -20662,7 +20469,8 @@ class _AdminWholesaleManagementTabState
             : widget.receivingMode == 'receiving'
                 ? batches
                     .where(
-                      (item) => item.isCollected ||
+                      (item) =>
+                          item.isCollected ||
                           item.isReceived ||
                           item.isInspected,
                     )
@@ -20700,10 +20508,9 @@ class _AdminWholesaleManagementTabState
 
         visibleBatches = visibleBatches.where((batch) {
           if (_receivingStatusFilter == 'issues') {
-            final hasIssue =
-                (batch.isReceived || batch.isInspected) &&
-                    (batch.rejectedQuantity > 0 ||
-                        batch.remainingToReceive > 0.001);
+            final hasIssue = (batch.isReceived || batch.isInspected) &&
+                (batch.rejectedQuantity > 0 ||
+                    batch.remainingToReceive > 0.001);
             if (!hasIssue) return false;
           } else if (_receivingStatusFilter != 'all' &&
               batch.status != _receivingStatusFilter) {
@@ -20835,8 +20642,7 @@ class _AdminWholesaleManagementTabState
 
               _operationsFilterBar(
                 controller: _receivingSearchController,
-                searchHint:
-                    'Search product, lot, farmer, request #...',
+                searchHint: 'Search product, lot, farmer, request #...',
                 statusValue: _receivingStatusFilter,
                 statusOptions: const <String, String>{
                   'all': 'All statuses',
@@ -20877,7 +20683,8 @@ class _AdminWholesaleManagementTabState
               // READY TO SCHEDULE
               // -----------------------------------------
 
-              if (widget.receivingMode != 'receiving' && convertedAllocations.isNotEmpty) ...[
+              if (widget.receivingMode != 'receiving' &&
+                  convertedAllocations.isNotEmpty) ...[
                 const Text(
                   'Ready to Schedule',
                   style: TextStyle(
@@ -21615,14 +21422,12 @@ class _AdminWholesaleManagementTabState
   Future<void> _recordFulfillmentShortage(
     WholesaleFulfillmentItem item,
   ) async {
-    final saved =
-        await showModalBottomSheet<bool>(
+    final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _WholesaleFulfillmentShortageSheet(
+      builder: (_) => _WholesaleFulfillmentShortageSheet(
         item: item,
       ),
     );
@@ -21651,14 +21456,12 @@ class _AdminWholesaleManagementTabState
   Future<void> _removeFulfillmentLine(
     WholesaleFulfillmentItem item,
   ) async {
-    final removed =
-        await showModalBottomSheet<bool>(
+    final removed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _WholesaleFulfillmentRemoveSheet(
+      builder: (_) => _WholesaleFulfillmentRemoveSheet(
         item: item,
       ),
     );
@@ -21765,8 +21568,6 @@ class _AdminWholesaleManagementTabState
       );
     }
   }
-
-
 
 // =====================================================
 // FULFILMENT TAB
@@ -21910,10 +21711,8 @@ class _AdminWholesaleManagementTabState
           );
         }).toList()
           ..sort((a, b) {
-            final ad = a.createdAt ??
-                DateTime.fromMillisecondsSinceEpoch(0);
-            final bd = b.createdAt ??
-                DateTime.fromMillisecondsSinceEpoch(0);
+            final ad = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bd = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
             return bd.compareTo(ad);
           });
 
@@ -22063,8 +21862,7 @@ class _AdminWholesaleManagementTabState
 
               _operationsFilterBar(
                 controller: _fulfillmentSearchController,
-                searchHint:
-                    'Search business, request #, product...',
+                searchHint: 'Search business, request #, product...',
                 statusValue: _fulfillmentStatusFilter,
                 statusOptions: const <String, String>{
                   'all': 'All statuses',
@@ -22091,8 +21889,7 @@ class _AdminWholesaleManagementTabState
                 },
               ),
               _operationsResultCount(
-                count: activeFulfillments.length +
-                    readyToCreate.length,
+                count: activeFulfillments.length + readyToCreate.length,
                 singular: 'warehouse order',
               ),
 
@@ -22339,430 +22136,432 @@ class _AdminWholesaleManagementTabState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                            // ----------------------------
-                            // ORDER HEADER
-                            // ----------------------------
+                              // ----------------------------
+                              // ORDER HEADER
+                              // ----------------------------
 
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(
-                                      0.10,
-                                    ),
-                                    borderRadius: BorderRadius.circular(
-                                      13,
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.inventory_2_outlined,
-                                    color: statusColor,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(
-                                  width: 10,
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        request?.businessName
-                                                    .trim()
-                                                    .isNotEmpty ==
-                                                true
-                                            ? request!.businessName
-                                            : 'Wholesale Order',
-                                        style: const TextStyle(
-                                          color: FarmColors.ink,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w900,
-                                        ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withOpacity(
+                                        0.10,
                                       ),
-                                      const SizedBox(
-                                        height: 2,
+                                      borderRadius: BorderRadius.circular(
+                                        13,
                                       ),
-                                      Text(
-                                        request == null
-                                            ? 'Wholesale request'
-                                            : 'Request #${request.shortId} • Tap to open',
-                                        style: const TextStyle(
-                                          color: FarmColors.mutedText,
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Order ${_opsDateTimeLabel(request?.createdAt ?? fulfillment.createdAt)}',
-                                        style: const TextStyle(
-                                          color: FarmColors.mutedText,
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(
-                                      0.10,
                                     ),
-                                    borderRadius: BorderRadius.circular(
-                                      999,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    fulfillment.statusLabel,
-                                    style: TextStyle(
+                                    child: Icon(
+                                      Icons.inventory_2_outlined,
                                       color: statusColor,
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w900,
+                                      size: 20,
                                     ),
                                   ),
-                                ),
-                                if (request != null) ...[
                                   const SizedBox(
-                                    width: 5,
+                                    width: 10,
                                   ),
-                                  const Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: FarmColors.mutedText,
-                                    size: 20,
-                                  ),
-                                ],
-                              ],
-                            ),
-
-                            const SizedBox(
-                              height: 12,
-                            ),
-
-                            // ----------------------------
-                            // PROGRESS
-                            // ----------------------------
-
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    fulfillment.progressLabel,
-                                    style: const TextStyle(
-                                      color: FarmColors.mutedText,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  '${(progress * 100).round()}%',
-                                  style: const TextStyle(
-                                    color: FarmColors.green,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(
-                              height: 6,
-                            ),
-
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                99,
-                              ),
-                              child: LinearProgressIndicator(
-                                value: progress,
-                                minHeight: 7,
-                                backgroundColor: FarmColors.line,
-                              ),
-                            ),
-
-                            const SizedBox(
-                              height: 13,
-                            ),
-
-                            // ----------------------------
-                            // PACKING ITEMS
-                            // ----------------------------
-
-                            ...fulfillment.items.map(
-                              (item) {
-                                Color itemColor;
-
-                                if (item.isPacked) {
-                                  itemColor = FarmColors.green;
-                                } else if (item.isShort) {
-                                  itemColor = FarmColors.warning;
-                                } else if (item.isRemoved) {
-                                  itemColor = FarmColors.danger;
-                                } else {
-                                  itemColor = FarmColors.mutedText;
-                                }
-
-                                return Container(
-                                  margin: const EdgeInsets.only(
-                                    bottom: 8,
-                                  ),
-                                  padding: const EdgeInsets.all(
-                                    11,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: FarmColors.background,
-                                    borderRadius: BorderRadius.circular(
-                                      14,
-                                    ),
-                                    border: Border.all(
-                                      color: FarmColors.line,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              item.productName,
-                                              style: const TextStyle(
-                                                color: FarmColors.ink,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w900,
-                                              ),
-                                            ),
-                                          ),
-                                          Text(
-                                            item.statusLabel,
-                                            style: TextStyle(
-                                              color: itemColor,
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w900,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(
-                                        height: 5,
-                                      ),
-                                      Text(
-                                        'Ordered ${item.orderedLabel}',
-                                        style: const TextStyle(
-                                          color: FarmColors.mutedText,
-                                          fontSize: 9.5,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      if (item.packedQuantity > 0)
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
                                         Text(
-                                          'Packed ${item.packedLabel}',
+                                          request?.businessName
+                                                      .trim()
+                                                      .isNotEmpty ==
+                                                  true
+                                              ? request!.businessName
+                                              : 'Wholesale Order',
                                           style: const TextStyle(
-                                            color: FarmColors.green,
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w700,
+                                            color: FarmColors.ink,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w900,
                                           ),
                                         ),
-                                      if (item.shortageQuantity > 0)
-                                        Text(
-                                          'Short ${item.shortageLabel}',
-                                          style: const TextStyle(
-                                            color: FarmColors.warning,
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      if (item.substitutionNote.isNotEmpty) ...[
                                         const SizedBox(
-                                          height: 4,
+                                          height: 2,
                                         ),
                                         Text(
-                                          item.substitutionNote,
+                                          request == null
+                                              ? 'Wholesale request'
+                                              : 'Request #${request.shortId} • Tap to open',
                                           style: const TextStyle(
                                             color: FarmColors.mutedText,
-                                            fontSize: 9.5,
-                                            height: 1.3,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Order ${_opsDateTimeLabel(request?.createdAt ?? fulfillment.createdAt)}',
+                                          style: const TextStyle(
+                                            color: FarmColors.mutedText,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
                                       ],
-                                      if (fulfillment.isPacking &&
-                                          !item.isAccountedFor) ...[
-                                        const SizedBox(
-                                          height: 8,
-                                        ),
-                                        Wrap(
-                                          spacing: 7,
-                                          runSpacing: 7,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withOpacity(
+                                        0.10,
+                                      ),
+                                      borderRadius: BorderRadius.circular(
+                                        999,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      fulfillment.statusLabel,
+                                      style: TextStyle(
+                                        color: statusColor,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  if (request != null) ...[
+                                    const SizedBox(
+                                      width: 5,
+                                    ),
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: FarmColors.mutedText,
+                                      size: 20,
+                                    ),
+                                  ],
+                                ],
+                              ),
+
+                              const SizedBox(
+                                height: 12,
+                              ),
+
+                              // ----------------------------
+                              // PROGRESS
+                              // ----------------------------
+
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      fulfillment.progressLabel,
+                                      style: const TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${(progress * 100).round()}%',
+                                    style: const TextStyle(
+                                      color: FarmColors.green,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              const SizedBox(
+                                height: 6,
+                              ),
+
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                  99,
+                                ),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 7,
+                                  backgroundColor: FarmColors.line,
+                                ),
+                              ),
+
+                              const SizedBox(
+                                height: 13,
+                              ),
+
+                              // ----------------------------
+                              // PACKING ITEMS
+                              // ----------------------------
+
+                              ...fulfillment.items.map(
+                                (item) {
+                                  Color itemColor;
+
+                                  if (item.isPacked) {
+                                    itemColor = FarmColors.green;
+                                  } else if (item.isShort) {
+                                    itemColor = FarmColors.warning;
+                                  } else if (item.isRemoved) {
+                                    itemColor = FarmColors.danger;
+                                  } else {
+                                    itemColor = FarmColors.mutedText;
+                                  }
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(
+                                      bottom: 8,
+                                    ),
+                                    padding: const EdgeInsets.all(
+                                      11,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: FarmColors.background,
+                                      borderRadius: BorderRadius.circular(
+                                        14,
+                                      ),
+                                      border: Border.all(
+                                        color: FarmColors.line,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
                                           children: [
-                                            ElevatedButton(
-                                              onPressed: () =>
-                                                  _packFulfillmentItem(
-                                                item,
-                                              ),
-                                              child: const Text(
-                                                'Pack Full',
-                                              ),
-                                            ),
-                                            OutlinedButton(
-                                              onPressed: () =>
-                                                  _recordFulfillmentShortage(
-                                                item,
-                                              ),
-                                              child: const Text(
-                                                'Shortage',
+                                            Expanded(
+                                              child: Text(
+                                                item.productName,
+                                                style: const TextStyle(
+                                                  color: FarmColors.ink,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
                                               ),
                                             ),
-                                            TextButton(
-                                              onPressed: () =>
-                                                  _removeFulfillmentLine(
-                                                item,
-                                              ),
-                                              child: const Text(
-                                                'Remove',
+                                            Text(
+                                              item.statusLabel,
+                                              style: TextStyle(
+                                                color: itemColor,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w900,
                                               ),
                                             ),
                                           ],
                                         ),
+                                        const SizedBox(
+                                          height: 5,
+                                        ),
+                                        Text(
+                                          'Ordered ${item.orderedLabel}',
+                                          style: const TextStyle(
+                                            color: FarmColors.mutedText,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        if (item.packedQuantity > 0)
+                                          Text(
+                                            'Packed ${item.packedLabel}',
+                                            style: const TextStyle(
+                                              color: FarmColors.green,
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        if (item.shortageQuantity > 0)
+                                          Text(
+                                            'Short ${item.shortageLabel}',
+                                            style: const TextStyle(
+                                              color: FarmColors.warning,
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        if (item
+                                            .substitutionNote.isNotEmpty) ...[
+                                          const SizedBox(
+                                            height: 4,
+                                          ),
+                                          Text(
+                                            item.substitutionNote,
+                                            style: const TextStyle(
+                                              color: FarmColors.mutedText,
+                                              fontSize: 9.5,
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                        ],
+                                        if (fulfillment.isPacking &&
+                                            !item.isAccountedFor) ...[
+                                          const SizedBox(
+                                            height: 8,
+                                          ),
+                                          Wrap(
+                                            spacing: 7,
+                                            runSpacing: 7,
+                                            children: [
+                                              ElevatedButton(
+                                                onPressed: () =>
+                                                    _packFulfillmentItem(
+                                                  item,
+                                                ),
+                                                child: const Text(
+                                                  'Pack Full',
+                                                ),
+                                              ),
+                                              OutlinedButton(
+                                                onPressed: () =>
+                                                    _recordFulfillmentShortage(
+                                                  item,
+                                                ),
+                                                child: const Text(
+                                                  'Shortage',
+                                                ),
+                                              ),
+                                              TextButton(
+                                                onPressed: () =>
+                                                    _removeFulfillmentLine(
+                                                  item,
+                                                ),
+                                                child: const Text(
+                                                  'Remove',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ],
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
+                                    ),
+                                  );
+                                },
+                              ),
 
-                            // ----------------------------
-                            // WORKFLOW BUTTON
-                            // ----------------------------
+                              // ----------------------------
+                              // WORKFLOW BUTTON
+                              // ----------------------------
 
-                            const SizedBox(
-                              height: 4,
-                            ),
-
-                            if (fulfillment.isWaitingStock)
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  icon: const Icon(
-                                    Icons.inventory_outlined,
-                                    size: 17,
-                                  ),
-                                  label: const Text(
-                                    'Stock Ready',
-                                  ),
-                                  onPressed: () => _markFulfillmentStockReady(
-                                    fulfillment,
-                                  ),
-                                ),
-                              )
-                            else if (fulfillment.isReadyToPrepare)
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  icon: const Icon(
-                                    Icons.play_arrow_outlined,
-                                    size: 17,
-                                  ),
-                                  label: const Text(
-                                    'Start Preparing',
-                                  ),
-                                  onPressed: () => _startFulfillmentPreparation(
-                                    fulfillment,
-                                  ),
-                                ),
-                              )
-                            else if (fulfillment.isPreparing)
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  icon: const Icon(
-                                    Icons.inventory_2_outlined,
-                                    size: 17,
-                                  ),
-                                  label: const Text(
-                                    'Start Packing',
-                                  ),
-                                  onPressed: () => _startFulfillmentPacking(
-                                    fulfillment,
-                                  ),
-                                ),
-                              )
-                            else if (fulfillment.isPacking &&
-                                fulfillment.allItemsAccountedFor)
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  icon: const Icon(
-                                    Icons.local_shipping_outlined,
-                                    size: 17,
-                                  ),
-                                  label: const Text(
-                                    'Ready for Dispatch',
-                                  ),
-                                  onPressed: () => _markFulfillmentReady(
-                                    fulfillment,
-                                  ),
-                                ),
-                              )
-                            else if (fulfillment.isPacking)
                               const SizedBox(
-                                width: double.infinity,
-                                child: Text(
-                                  'Complete every packing line before dispatch.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: FarmColors.mutedText,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              )
-                            else if (fulfillment.isReadyForDispatch)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(
-                                  11,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: FarmColors.primarySoft,
-                                  borderRadius: BorderRadius.circular(
-                                    13,
-                                  ),
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.check_circle_outline,
-                                      color: FarmColors.green,
-                                      size: 18,
+                                height: 4,
+                              ),
+
+                              if (fulfillment.isWaitingStock)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(
+                                      Icons.inventory_outlined,
+                                      size: 17,
                                     ),
-                                    SizedBox(
-                                      width: 7,
+                                    label: const Text(
+                                      'Stock Ready',
                                     ),
-                                    Expanded(
-                                      child: Text(
-                                        'Ready for Delivery • open the Delivery tab',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: FarmColors.green,
-                                          fontWeight: FontWeight.w900,
+                                    onPressed: () => _markFulfillmentStockReady(
+                                      fulfillment,
+                                    ),
+                                  ),
+                                )
+                              else if (fulfillment.isReadyToPrepare)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(
+                                      Icons.play_arrow_outlined,
+                                      size: 17,
+                                    ),
+                                    label: const Text(
+                                      'Start Preparing',
+                                    ),
+                                    onPressed: () =>
+                                        _startFulfillmentPreparation(
+                                      fulfillment,
+                                    ),
+                                  ),
+                                )
+                              else if (fulfillment.isPreparing)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(
+                                      Icons.inventory_2_outlined,
+                                      size: 17,
+                                    ),
+                                    label: const Text(
+                                      'Start Packing',
+                                    ),
+                                    onPressed: () => _startFulfillmentPacking(
+                                      fulfillment,
+                                    ),
+                                  ),
+                                )
+                              else if (fulfillment.isPacking &&
+                                  fulfillment.allItemsAccountedFor)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(
+                                      Icons.local_shipping_outlined,
+                                      size: 17,
+                                    ),
+                                    label: const Text(
+                                      'Ready for Dispatch',
+                                    ),
+                                    onPressed: () => _markFulfillmentReady(
+                                      fulfillment,
+                                    ),
+                                  ),
+                                )
+                              else if (fulfillment.isPacking)
+                                const SizedBox(
+                                  width: double.infinity,
+                                  child: Text(
+                                    'Complete every packing line before dispatch.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                )
+                              else if (fulfillment.isReadyForDispatch)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(
+                                    11,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: FarmColors.primarySoft,
+                                    borderRadius: BorderRadius.circular(
+                                      13,
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.check_circle_outline,
+                                        color: FarmColors.green,
+                                        size: 18,
+                                      ),
+                                      SizedBox(
+                                        width: 7,
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          'Ready for Delivery • open the Delivery tab',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: FarmColors.green,
+                                            fontWeight: FontWeight.w900,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
@@ -22951,12 +22750,10 @@ class _AdminWholesaleManagementTabState
               if (kIsWeb)
                 _PremiumWebWholesaleDispatchHero(
                   readyToDispatch: readyToDispatch.length,
-                  planned: visibleDispatches
-                      .where((item) => item.isPlanned)
-                      .length,
-                  assigned: visibleDispatches
-                      .where((item) => item.isAssigned)
-                      .length,
+                  planned:
+                      visibleDispatches.where((item) => item.isPlanned).length,
+                  assigned:
+                      visibleDispatches.where((item) => item.isAssigned).length,
                   outForDelivery: visibleDispatches
                       .where((item) => item.isOutForDelivery)
                       .length,
@@ -22967,8 +22764,7 @@ class _AdminWholesaleManagementTabState
                   onManageScheduling: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) =>
-                            const WholesaleSchedulingAdminScreen(),
+                        builder: (_) => const WholesaleSchedulingAdminScreen(),
                       ),
                     );
                   },
@@ -23066,8 +22862,7 @@ class _AdminWholesaleManagementTabState
               const SizedBox(height: 12),
               _operationsFilterBar(
                 controller: _dispatchSearchController,
-                searchHint:
-                    'Search business, request #, driver, parish...',
+                searchHint: 'Search business, request #, driver, parish...',
                 statusValue: _dispatchStatusFilter,
                 statusOptions: const <String, String>{
                   'all': 'All statuses',
@@ -23097,8 +22892,7 @@ class _AdminWholesaleManagementTabState
                 },
               ),
               _operationsResultCount(
-                count: readyToDispatch.length +
-                    visibleDispatches.length,
+                count: readyToDispatch.length + visibleDispatches.length,
                 singular: 'dispatch item',
               ),
               if (readyToDispatch.isNotEmpty) ...[
@@ -24520,6 +24314,7 @@ class _AdminWholesaleManagementTabState
 
   pw.Widget _wholesalePdfHeader({
     required pw.MemoryImage? logo,
+    required HpjCompanySettings companySettings,
     required String documentTitle,
     required String reference,
   }) {
@@ -24582,8 +24377,7 @@ class _AdminWholesaleManagementTabState
                     height: 4,
                   ),
                   pw.Text(
-                    'Mountainside, St. Elizabeth, Jamaica | '
-                    'Tel: 876-339-1395',
+                    hpjCompanyContactLine(companySettings),
                     style: const pw.TextStyle(
                       fontSize: 9,
                       color: PdfColors.grey700,
@@ -24748,6 +24542,7 @@ class _AdminWholesaleManagementTabState
     final pdf = pw.Document();
 
     final logo = await _loadWholesalePdfLogo();
+    final companySettings = await fetchHpjCompanySettings();
 
     final green = PdfColor.fromInt(
       0xFF1F6B3A,
@@ -24828,6 +24623,7 @@ class _AdminWholesaleManagementTabState
           return [
             _wholesalePdfHeader(
               logo: logo,
+              companySettings: companySettings,
               documentTitle: 'WHOLESALE INVOICE',
               reference: invoice.invoiceNumber,
             ),
@@ -25219,6 +25015,7 @@ class _AdminWholesaleManagementTabState
     final pdf = pw.Document();
 
     final logo = await _loadWholesalePdfLogo();
+    final companySettings = await fetchHpjCompanySettings();
 
     final green = PdfColor.fromInt(
       0xFF1F6B3A,
@@ -25284,6 +25081,7 @@ class _AdminWholesaleManagementTabState
             children: [
               _wholesalePdfHeader(
                 logo: logo,
+                companySettings: companySettings,
                 documentTitle: 'OFFICIAL WHOLESALE PAYMENT RECEIPT',
                 reference: 'Receipt #$receiptNumber',
               ),
@@ -25947,8 +25745,7 @@ class _AdminWholesaleManagementTabState
 
         final allInvoices = data[0] as List<WholesaleInvoice>;
 
-        final requestedInvoiceId =
-            widget.invoiceIdFilter?.trim() ?? '';
+        final requestedInvoiceId = widget.invoiceIdFilter?.trim() ?? '';
 
         final focusedInvoices = requestedInvoiceId.isEmpty
             ? const <WholesaleInvoice>[]
@@ -25959,8 +25756,7 @@ class _AdminWholesaleManagementTabState
                 .toList();
 
         final exactInvoiceFound = focusedInvoices.isNotEmpty;
-        final invoices =
-            exactInvoiceFound ? focusedInvoices : allInvoices;
+        final invoices = exactInvoiceFound ? focusedInvoices : allInvoices;
 
         final requests = data[1] as List<WholesaleOrderRequest>;
 
@@ -27056,17 +26852,20 @@ class _AdminWholesaleManagementTabState
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'applications',
-        tab: const Tab(icon: Icon(Icons.business_outlined), text: 'Applications'),
+        tab: const Tab(
+            icon: Icon(Icons.business_outlined), text: 'Applications'),
         child: _applicationsTab(),
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'access',
-        tab: const Tab(icon: Icon(Icons.admin_panel_settings_outlined), text: 'Access'),
+        tab: const Tab(
+            icon: Icon(Icons.admin_panel_settings_outlined), text: 'Access'),
         child: const OwnerMarketplaceProgramSettingsPanel(),
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'pricing',
-        tab: const Tab(icon: Icon(Icons.price_change_outlined), text: 'Pricing'),
+        tab:
+            const Tab(icon: Icon(Icons.price_change_outlined), text: 'Pricing'),
         child: _pricingTab(),
       ),
       _WholesaleAdminSectionSpec(
@@ -27076,7 +26875,8 @@ class _AdminWholesaleManagementTabState
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'procurement',
-        tab: const Tab(icon: Icon(Icons.account_tree_outlined), text: 'Procurement'),
+        tab: const Tab(
+            icon: Icon(Icons.account_tree_outlined), text: 'Procurement'),
         child: _matchingTab(),
       ),
       _WholesaleAdminSectionSpec(
@@ -27106,17 +26906,20 @@ class _AdminWholesaleManagementTabState
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'recurring',
-        tab: const Tab(icon: Icon(Icons.event_repeat_rounded), text: 'Recurring'),
+        tab: const Tab(
+            icon: Icon(Icons.event_repeat_rounded), text: 'Recurring'),
         child: _recurringOrdersTab(),
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'invoices',
-        tab: const Tab(icon: Icon(Icons.receipt_long_outlined), text: 'Invoices'),
+        tab: const Tab(
+            icon: Icon(Icons.receipt_long_outlined), text: 'Invoices'),
         child: _invoicesTab(),
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'finance',
-        tab: const Tab(icon: Icon(Icons.account_balance_wallet_outlined), text: 'Finance'),
+        tab: const Tab(
+            icon: Icon(Icons.account_balance_wallet_outlined), text: 'Finance'),
         child: const WholesaleFinanceScreen(),
       ),
       _WholesaleAdminSectionSpec(
@@ -27215,47 +27018,39 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(.12),
-          borderRadius:
-              BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: Colors.white.withOpacity(.16),
           ),
         ),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
               icon,
-              color:
-                  const Color(0xFFE8C768),
+              color: const Color(0xFFE8C768),
               size: 17,
             ),
             const SizedBox(height: 7),
             Text(
               value,
               maxLines: 1,
-              overflow:
-                  TextOverflow.ellipsis,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
-                fontWeight:
-                    FontWeight.w900,
+                fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 2),
             Text(
               label,
               maxLines: 1,
-              overflow:
-                  TextOverflow.ellipsis,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white
-                    .withOpacity(.72),
+                color: Colors.white.withOpacity(.72),
                 fontSize: 8.6,
-                fontWeight:
-                    FontWeight.w800,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ],
@@ -27266,18 +27061,13 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeCount =
-        pendingOrders +
-        quotedOrders +
-        approvedOrders;
+    final activeCount = pendingOrders + quotedOrders + approvedOrders;
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius:
-            BorderRadius.circular(28),
-        gradient:
-            const LinearGradient(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
@@ -27288,39 +27078,32 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.deepGreen
-                .withOpacity(.14),
+            color: FarmColors.deepGreen.withOpacity(.14),
             blurRadius: 24,
             offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
                 width: 49,
                 height: 49,
-                alignment:
-                    Alignment.center,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white
-                      .withOpacity(.13),
-                  borderRadius:
-                      BorderRadius.circular(
+                  color: Colors.white.withOpacity(.13),
+                  borderRadius: BorderRadius.circular(
                     16,
                   ),
                   border: Border.all(
-                    color: Colors.white
-                        .withOpacity(.18),
+                    color: Colors.white.withOpacity(.18),
                   ),
                 ),
                 child: const Icon(
-                  Icons
-                      .storefront_outlined,
+                  Icons.storefront_outlined,
                   color: Colors.white,
                   size: 25,
                 ),
@@ -27328,8 +27111,7 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
               const SizedBox(width: 12),
               const Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'WHOLESALE ORDERS',
@@ -27338,8 +27120,7 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                           0xFFCFE0CF,
                         ),
                         fontSize: 10.3,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                         letterSpacing: .9,
                       ),
                     ),
@@ -27349,29 +27130,24 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 21,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(
+                padding: const EdgeInsets.symmetric(
                   horizontal: 9,
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white
-                      .withOpacity(.11),
-                  borderRadius:
-                      BorderRadius.circular(
+                  color: Colors.white.withOpacity(.11),
+                  borderRadius: BorderRadius.circular(
                     999,
                   ),
                   border: Border.all(
-                    color: Colors.white
-                        .withOpacity(.15),
+                    color: Colors.white.withOpacity(.15),
                   ),
                 ),
                 child: Text(
@@ -27379,80 +27155,61 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 8.2,
-                    fontWeight:
-                        FontWeight.w900,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
             ],
           ),
-
           const SizedBox(height: 10),
-
           Text(
             'Review business requirements, prepare the quote and move confirmed orders into procurement and fulfilment.',
             style: TextStyle(
-              color:
-                  Colors.white.withOpacity(.83),
+              color: Colors.white.withOpacity(.83),
               fontSize: 10.7,
               height: 1.4,
-              fontWeight:
-                  FontWeight.w600,
+              fontWeight: FontWeight.w600,
             ),
           ),
-
           const SizedBox(height: 15),
-
           Row(
             children: [
               _metric(
-                icon:
-                    Icons.pending_actions_outlined,
+                icon: Icons.pending_actions_outlined,
                 value: '$pendingOrders',
                 label: 'Pending',
               ),
               const SizedBox(width: 8),
               _metric(
-                icon:
-                    Icons.request_quote_outlined,
+                icon: Icons.request_quote_outlined,
                 value: '$quotedOrders',
                 label: 'Quote ready',
               ),
               const SizedBox(width: 8),
               _metric(
-                icon:
-                    Icons.verified_outlined,
+                icon: Icons.verified_outlined,
                 value: '$approvedOrders',
                 label: 'Confirmed',
               ),
             ],
           ),
-
           const SizedBox(height: 8),
-
           Row(
             children: [
               _metric(
-                icon:
-                    Icons.receipt_long_outlined,
-                value: capped
-                    ? '$totalOrders+'
-                    : '$totalOrders',
-                label: capped
-                    ? 'Latest loaded'
-                    : 'Loaded orders',
+                icon: Icons.receipt_long_outlined,
+                value: capped ? '$totalOrders+' : '$totalOrders',
+                label: capped ? 'Latest loaded' : 'Loaded orders',
               ),
               const SizedBox(width: 8),
               _metric(
-                icon:
-                    Icons.done_all_rounded,
+                icon: Icons.done_all_rounded,
                 value: '$fulfilledOrders',
                 label: 'Fulfilled',
               ),
               const SizedBox(width: 8),
               _metric(
-                icon:
-                    Icons.payments_outlined,
+                icon: Icons.payments_outlined,
                 value: formatJmd(
                   activeEstimate,
                 ),
@@ -27481,30 +27238,25 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final attention =
-        request.status == 'pending';
+    final attention = request.status == 'pending';
 
     return FarmCard(
       padding: EdgeInsets.zero,
       child: Container(
         decoration: BoxDecoration(
-          borderRadius:
-              BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(
             color: attention
-                ? FarmColors.warning
-                    .withOpacity(.18)
+                ? FarmColors.warning.withOpacity(.18)
                 : Colors.transparent,
           ),
         ),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.fromLTRB(
+              padding: const EdgeInsets.fromLTRB(
                 14,
                 13,
                 14,
@@ -27512,62 +27264,45 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
               ),
               decoration: const BoxDecoration(
                 color: Color(0xFFF8F8F5),
-                borderRadius:
-                    BorderRadius.vertical(
+                borderRadius: BorderRadius.vertical(
                   top: Radius.circular(22),
                 ),
               ),
               child: Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     width: 40,
                     height: 40,
-                    alignment:
-                        Alignment.center,
-                    decoration:
-                        BoxDecoration(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
                       color: attention
                           ? const Color(
                               0xFFFFF8E9,
                             )
-                          : FarmColors
-                              .primarySoft,
-                      borderRadius:
-                          BorderRadius
-                              .circular(13),
+                          : FarmColors.primarySoft,
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     child: Icon(
                       Icons.business_outlined,
-                      color: attention
-                          ? FarmColors.warning
-                          : FarmColors
-                              .deepGreen,
+                      color:
+                          attention ? FarmColors.warning : FarmColors.deepGreen,
                       size: 20,
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment
-                              .start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           accountName,
                           maxLines: 1,
-                          overflow:
-                              TextOverflow
-                                  .ellipsis,
-                          style:
-                              const TextStyle(
-                            color:
-                                FarmColors.ink,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
                             fontSize: 14.5,
-                            fontWeight:
-                                FontWeight
-                                    .w900,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                         const SizedBox(
@@ -27576,17 +27311,11 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
                         Text(
                           'Order #${request.shortId} • $placedLabel',
                           maxLines: 1,
-                          overflow:
-                              TextOverflow
-                                  .ellipsis,
-                          style:
-                              const TextStyle(
-                            color: FarmColors
-                                .mutedText,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
                             fontSize: 9.2,
-                            fontWeight:
-                                FontWeight
-                                    .w700,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -27598,67 +27327,51 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
                 ],
               ),
             ),
-
             Padding(
-              padding:
-                  const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(14),
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       Expanded(
-                        child:
-                            _PremiumWholesaleOrderMetric(
+                        child: _PremiumWholesaleOrderMetric(
                           label: 'LINES',
-                          value:
-                              '${request.items.length}',
-                          icon: Icons
-                              .inventory_2_outlined,
+                          value: '${request.items.length}',
+                          icon: Icons.inventory_2_outlined,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child:
-                            _PremiumWholesaleOrderMetric(
+                        child: _PremiumWholesaleOrderMetric(
                           label: 'ESTIMATE',
                           value: formatJmd(
-                            request
-                                .subtotalEstimate,
+                            request.subtotalEstimate,
                           ),
-                          icon:
-                              Icons.payments_outlined,
+                          icon: Icons.payments_outlined,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child:
-                            _PremiumWholesaleOrderMetric(
+                        child: _PremiumWholesaleOrderMetric(
                           label: 'PARISH',
-                          value: request
-                              .deliveryParish,
-                          icon:
-                              Icons.map_outlined,
+                          value: request.deliveryParish,
+                          icon: Icons.map_outlined,
                         ),
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 11),
-
                   Container(
                     width: double.infinity,
-                    padding:
-                        const EdgeInsets.all(
+                    padding: const EdgeInsets.all(
                       10,
                     ),
                     decoration: BoxDecoration(
                       color: const Color(
                         0xFFF8F8F5,
                       ),
-                      borderRadius:
-                          BorderRadius.circular(
+                      borderRadius: BorderRadius.circular(
                         13,
                       ),
                       border: Border.all(
@@ -27666,14 +27379,11 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
                       ),
                     ),
                     child: Row(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Icon(
-                          Icons
-                              .location_on_outlined,
-                          color: FarmColors
-                              .deepGreen,
+                          Icons.location_on_outlined,
+                          color: FarmColors.deepGreen,
                           size: 16,
                         ),
                         const SizedBox(
@@ -27681,58 +27391,41 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
                         ),
                         Expanded(
                           child: Text(
-                            request
-                                .deliveryAddress,
+                            request.deliveryAddress,
                             maxLines: 2,
-                            overflow:
-                                TextOverflow
-                                    .ellipsis,
-                            style:
-                                const TextStyle(
-                              color:
-                                  FarmColors.ink,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
                               fontSize: 9.2,
                               height: 1.3,
-                              fontWeight:
-                                  FontWeight
-                                      .w700,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
-
-                  if (request
-                      .items.isNotEmpty) ...[
+                  if (request.items.isNotEmpty) ...[
                     const SizedBox(height: 11),
                     const Text(
                       'Requested produce',
                       style: TextStyle(
                         color: FarmColors.ink,
                         fontSize: 11.5,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 6),
-                    ...request.items
-                        .take(4)
-                        .map(
+                    ...request.items.take(4).map(
                           (line) => Padding(
-                            padding:
-                                const EdgeInsets
-                                    .only(
+                            padding: const EdgeInsets.only(
                               bottom: 4,
                             ),
                             child: Row(
                               children: [
                                 const Icon(
-                                  Icons
-                                      .eco_outlined,
-                                  color:
-                                      FarmColors
-                                          .green,
+                                  Icons.eco_outlined,
+                                  color: FarmColors.green,
                                   size: 14,
                                 ),
                                 const SizedBox(
@@ -27742,19 +27435,11 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
                                   child: Text(
                                     line.productName,
                                     maxLines: 1,
-                                    overflow:
-                                        TextOverflow
-                                            .ellipsis,
-                                    style:
-                                        const TextStyle(
-                                      color:
-                                          FarmColors
-                                              .ink,
-                                      fontSize:
-                                          9.2,
-                                      fontWeight:
-                                          FontWeight
-                                              .w700,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 9.2,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
@@ -27763,50 +27448,36 @@ class _PremiumAdminWholesaleOrderCard extends StatelessWidget {
                                 ),
                                 Text(
                                   '${line.quantityLabel} ${line.unit}',
-                                  style:
-                                      const TextStyle(
-                                    color:
-                                        FarmColors
-                                            .mutedText,
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
                                     fontSize: 9,
-                                    fontWeight:
-                                        FontWeight
-                                            .w800,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                    if (request.items.length >
-                        4)
+                    if (request.items.length > 4)
                       Text(
                         '+${request.items.length - 4} more line${request.items.length - 4 == 1 ? '' : 's'}',
-                        style:
-                            const TextStyle(
-                          color: FarmColors
-                              .mutedText,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
                           fontSize: 8.7,
-                          fontWeight:
-                              FontWeight.w700,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                   ],
-
                   const SizedBox(height: 12),
-
                   SizedBox(
                     width: double.infinity,
-                    child:
-                        ElevatedButton.icon(
+                    child: ElevatedButton.icon(
                       icon: const Icon(
-                        Icons
-                            .edit_note_outlined,
+                        Icons.edit_note_outlined,
                         size: 18,
                       ),
                       label: Text(
-                        request.status ==
-                                'pending'
+                        request.status == 'pending'
                             ? 'Review / Prepare Quote'
                             : 'Update Wholesale Order',
                       ),
@@ -27840,15 +27511,13 @@ class _PremiumWholesaleOrderMetric extends StatelessWidget {
       padding: const EdgeInsets.all(9),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F8F5),
-        borderRadius:
-            BorderRadius.circular(13),
+        borderRadius: BorderRadius.circular(13),
         border: Border.all(
           color: FarmColors.line,
         ),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
             icon,
@@ -27859,25 +27528,21 @@ class _PremiumWholesaleOrderMetric extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              color:
-                  FarmColors.mutedText,
+              color: FarmColors.mutedText,
               fontSize: 7.8,
-              fontWeight:
-                  FontWeight.w800,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             value,
             maxLines: 2,
-            overflow:
-                TextOverflow.ellipsis,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: FarmColors.ink,
               fontSize: 9.3,
               height: 1.2,
-              fontWeight:
-                  FontWeight.w900,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -27886,8 +27551,7 @@ class _PremiumWholesaleOrderMetric extends StatelessWidget {
   }
 }
 
-class _WholesaleFulfillmentShortageSheet
-    extends StatefulWidget {
+class _WholesaleFulfillmentShortageSheet extends StatefulWidget {
   final WholesaleFulfillmentItem item;
 
   const _WholesaleFulfillmentShortageSheet({
@@ -27895,37 +27559,29 @@ class _WholesaleFulfillmentShortageSheet
   });
 
   @override
-  State<_WholesaleFulfillmentShortageSheet>
-      createState() =>
-          _WholesaleFulfillmentShortageSheetState();
+  State<_WholesaleFulfillmentShortageSheet> createState() =>
+      _WholesaleFulfillmentShortageSheetState();
 }
 
 class _WholesaleFulfillmentShortageSheetState
     extends State<_WholesaleFulfillmentShortageSheet> {
-  late final TextEditingController
-      packedController;
-  late final TextEditingController
-      shortageController;
-  late final TextEditingController
-      noteController;
+  late final TextEditingController packedController;
+  late final TextEditingController shortageController;
+  late final TextEditingController noteController;
 
   bool saving = false;
 
-  WholesaleFulfillmentItem get item =>
-      widget.item;
+  WholesaleFulfillmentItem get item => widget.item;
 
   @override
   void initState() {
     super.initState();
 
-    packedController =
-        TextEditingController();
+    packedController = TextEditingController();
 
-    shortageController =
-        TextEditingController();
+    shortageController = TextEditingController();
 
-    noteController =
-        TextEditingController();
+    noteController = TextEditingController();
   }
 
   @override
@@ -27940,21 +27596,14 @@ class _WholesaleFulfillmentShortageSheetState
     if (saving) return;
 
     final packed = double.tryParse(
-      packedController.text
-          .trim()
-          .replaceAll(',', ''),
+      packedController.text.trim().replaceAll(',', ''),
     );
 
     final shortage = double.tryParse(
-      shortageController.text
-          .trim()
-          .replaceAll(',', ''),
+      shortageController.text.trim().replaceAll(',', ''),
     );
 
-    if (packed == null ||
-        shortage == null ||
-        packed < 0 ||
-        shortage <= 0) {
+    if (packed == null || shortage == null || packed < 0 || shortage <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -27965,11 +27614,7 @@ class _WholesaleFulfillmentShortageSheetState
       return;
     }
 
-    if ((packed +
-                    shortage -
-                    item.orderedQuantity)
-                .abs() >
-            0.001) {
+    if ((packed + shortage - item.orderedQuantity).abs() > 0.001) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -27989,8 +27634,7 @@ class _WholesaleFulfillmentShortageSheetState
         item: item,
         packedQuantity: packed,
         shortageQuantity: shortage,
-        substitutionNote:
-            noteController.text,
+        substitutionNote: noteController.text,
       );
 
       if (!mounted) return;
@@ -28016,12 +27660,10 @@ class _WholesaleFulfillmentShortageSheetState
   @override
   Widget build(BuildContext context) {
     return AnimatedPadding(
-      duration:
-          const Duration(milliseconds: 160),
+      duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
       padding: EdgeInsets.only(
-        bottom:
-            MediaQuery.of(context).viewInsets.bottom,
+        bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Container(
         decoration: const BoxDecoration(
@@ -28038,8 +27680,7 @@ class _WholesaleFulfillmentShortageSheetState
             22,
           ),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
                 child: Container(
@@ -28047,13 +27688,11 @@ class _WholesaleFulfillmentShortageSheetState
                   height: 4,
                   decoration: BoxDecoration(
                     color: FarmColors.line,
-                    borderRadius:
-                        BorderRadius.circular(99),
+                    borderRadius: BorderRadius.circular(99),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
-
               Text(
                 'Shortage • ${item.productName}',
                 style: const TextStyle(
@@ -28062,9 +27701,7 @@ class _WholesaleFulfillmentShortageSheetState
                   fontWeight: FontWeight.w900,
                 ),
               ),
-
               const SizedBox(height: 5),
-
               Text(
                 'Ordered ${item.orderedLabel}. Record exactly what was packed and what is unavailable.',
                 style: const TextStyle(
@@ -28074,14 +27711,11 @@ class _WholesaleFulfillmentShortageSheetState
                   fontWeight: FontWeight.w600,
                 ),
               ),
-
               const SizedBox(height: 16),
-
               TextField(
                 controller: packedController,
                 enabled: !saving,
-                keyboardType:
-                    const TextInputType.numberWithOptions(
+                keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 decoration: InputDecoration(
@@ -28089,14 +27723,11 @@ class _WholesaleFulfillmentShortageSheetState
                   suffixText: item.unit,
                 ),
               ),
-
               const SizedBox(height: 11),
-
               TextField(
                 controller: shortageController,
                 enabled: !saving,
-                keyboardType:
-                    const TextInputType.numberWithOptions(
+                keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 decoration: InputDecoration(
@@ -28104,33 +27735,25 @@ class _WholesaleFulfillmentShortageSheetState
                   suffixText: item.unit,
                 ),
               ),
-
               const SizedBox(height: 11),
-
               TextField(
                 controller: noteController,
                 enabled: !saving,
                 minLines: 2,
                 maxLines: 3,
                 decoration: const InputDecoration(
-                  labelText:
-                      'Shortage / substitution note',
+                  labelText: 'Shortage / substitution note',
                   hintText:
                       'Explain what is unavailable or any proposed substitute.',
                 ),
               ),
-
               const SizedBox(height: 18),
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed:
-                      saving ? null : _save,
+                  onPressed: saving ? null : _save,
                   child: Text(
-                    saving
-                        ? 'Saving...'
-                        : 'Save Shortage',
+                    saving ? 'Saving...' : 'Save Shortage',
                   ),
                 ),
               ),
@@ -28142,8 +27765,7 @@ class _WholesaleFulfillmentShortageSheetState
   }
 }
 
-class _WholesaleFulfillmentRemoveSheet
-    extends StatefulWidget {
+class _WholesaleFulfillmentRemoveSheet extends StatefulWidget {
   final WholesaleFulfillmentItem item;
 
   const _WholesaleFulfillmentRemoveSheet({
@@ -28151,27 +27773,23 @@ class _WholesaleFulfillmentRemoveSheet
   });
 
   @override
-  State<_WholesaleFulfillmentRemoveSheet>
-      createState() =>
-          _WholesaleFulfillmentRemoveSheetState();
+  State<_WholesaleFulfillmentRemoveSheet> createState() =>
+      _WholesaleFulfillmentRemoveSheetState();
 }
 
 class _WholesaleFulfillmentRemoveSheetState
     extends State<_WholesaleFulfillmentRemoveSheet> {
-  late final TextEditingController
-      reasonController;
+  late final TextEditingController reasonController;
 
   bool saving = false;
 
-  WholesaleFulfillmentItem get item =>
-      widget.item;
+  WholesaleFulfillmentItem get item => widget.item;
 
   @override
   void initState() {
     super.initState();
 
-    reasonController =
-        TextEditingController();
+    reasonController = TextEditingController();
   }
 
   @override
@@ -28183,8 +27801,7 @@ class _WholesaleFulfillmentRemoveSheetState
   Future<void> _remove() async {
     if (saving) return;
 
-    final reason =
-        reasonController.text.trim();
+    final reason = reasonController.text.trim();
 
     if (reason.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -28230,12 +27847,10 @@ class _WholesaleFulfillmentRemoveSheetState
   @override
   Widget build(BuildContext context) {
     return AnimatedPadding(
-      duration:
-          const Duration(milliseconds: 160),
+      duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
       padding: EdgeInsets.only(
-        bottom:
-            MediaQuery.of(context).viewInsets.bottom,
+        bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Container(
         decoration: const BoxDecoration(
@@ -28252,8 +27867,7 @@ class _WholesaleFulfillmentRemoveSheetState
             22,
           ),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
                 child: Container(
@@ -28261,14 +27875,11 @@ class _WholesaleFulfillmentRemoveSheetState
                   height: 4,
                   decoration: BoxDecoration(
                     color: FarmColors.line,
-                    borderRadius:
-                        BorderRadius.circular(99),
+                    borderRadius: BorderRadius.circular(99),
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
               Text(
                 'Remove ${item.productName}?',
                 style: const TextStyle(
@@ -28277,9 +27888,7 @@ class _WholesaleFulfillmentRemoveSheetState
                   fontWeight: FontWeight.w900,
                 ),
               ),
-
               const SizedBox(height: 5),
-
               const Text(
                 'The line stays in the fulfilment history, but any unused warehouse reservation is released.',
                 style: TextStyle(
@@ -28289,9 +27898,7 @@ class _WholesaleFulfillmentRemoveSheetState
                   fontWeight: FontWeight.w600,
                 ),
               ),
-
               const SizedBox(height: 16),
-
               TextField(
                 controller: reasonController,
                 enabled: !saving,
@@ -28299,22 +27906,16 @@ class _WholesaleFulfillmentRemoveSheetState
                 maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: 'Reason',
-                  hintText:
-                      'Why is this item being removed?',
+                  hintText: 'Why is this item being removed?',
                 ),
               ),
-
               const SizedBox(height: 18),
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed:
-                      saving ? null : _remove,
+                  onPressed: saving ? null : _remove,
                   child: Text(
-                    saving
-                        ? 'Removing...'
-                        : 'Remove Line',
+                    saving ? 'Removing...' : 'Remove Line',
                   ),
                 ),
               ),
@@ -28325,7 +27926,6 @@ class _WholesaleFulfillmentRemoveSheetState
     );
   }
 }
-
 
 // =====================================================
 // RECEIVING METRIC
@@ -28462,8 +28062,7 @@ class OwnerWorkspaceAccessSnapshot {
 
   bool get isOwner => normalizeStaffRole(staffRole) == 'owner';
 
-  bool get hasStaffAccess =>
-      isStaffRoleActive(staffRole) || adminAllowed;
+  bool get hasStaffAccess => isStaffRoleActive(staffRole) || adminAllowed;
 
   bool get hasFarmerProfile => farmerProfile != null;
 
@@ -28495,23 +28094,18 @@ Future<OwnerWorkspaceAccessSnapshot> fetchOwnerWorkspaceAccessSnapshot() async {
   );
 }
 
-
 // ================================================================
 // HPJ WORKSPACE IMAGES — ADMIN-MANAGED PUBLIC VISUALS — 2026-09-02
 // ================================================================
 
 const Map<String, String> hpjWorkspaceImageFallbacks = <String, String>{
-  'customer':
-      'https://images.unsplash.com/photo-1542838132-92c53300491e'
+  'customer': 'https://images.unsplash.com/photo-1542838132-92c53300491e'
       '?auto=format&fit=crop&w=1200&q=86',
-  'wholesale':
-      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d'
+  'wholesale': 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d'
       '?auto=format&fit=crop&w=1200&q=86',
-  'farmer':
-      'https://images.unsplash.com/photo-1767590954924-9ff1057b9f65'
+  'farmer': 'https://images.unsplash.com/photo-1767590954924-9ff1057b9f65'
       '?auto=format&fit=crop&w=1200&q=86',
-  'staff':
-      'https://images.unsplash.com/photo-1497366811353-6870744d04b2'
+  'staff': 'https://images.unsplash.com/photo-1497366811353-6870744d04b2'
       '?auto=format&fit=crop&w=1200&q=86',
 };
 
@@ -28644,10 +28238,7 @@ Future<void> clearWorkspaceImageUrl(String workspaceKey) async {
 
   final key = _normalizeWorkspaceImageKey(workspaceKey);
 
-  await supabase
-      .from('workspace_images')
-      .delete()
-      .eq('workspace_key', key);
+  await supabase.from('workspace_images').delete().eq('workspace_key', key);
 }
 
 class AdminWorkspaceImagesPanel extends StatefulWidget {
@@ -28658,8 +28249,7 @@ class AdminWorkspaceImagesPanel extends StatefulWidget {
       _AdminWorkspaceImagesPanelState();
 }
 
-class _AdminWorkspaceImagesPanelState
-    extends State<AdminWorkspaceImagesPanel> {
+class _AdminWorkspaceImagesPanelState extends State<AdminWorkspaceImagesPanel> {
   late Future<Map<String, String>> _future;
   final Map<String, bool> _uploading = <String, bool>{};
   final Map<String, bool> _clearing = <String, bool>{};
@@ -28771,97 +28361,168 @@ class _AdminWorkspaceImagesPanelState
     final isUploading = _uploading[workspaceKey] == true;
     final isClearing = _clearing[workspaceKey] == true;
     final busy = isUploading || isClearing;
+    final label = hpjWorkspaceImageLabels[workspaceKey] ?? workspaceKey;
 
-    return FarmCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  hpjWorkspaceImageLabels[workspaceKey] ?? workspaceKey,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Chip(
-                visualDensity: VisualDensity.compact,
-                label: Text(
-                  customUrl == null ? 'Default' : 'Custom',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: SizedBox(
-              height: 150,
-              width: double.infinity,
-              child: Image.network(
-                imageUrl,
-                key: ValueKey(imageUrl),
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-                errorBuilder: (_, __, ___) => const ColoredBox(
-                  color: FarmColors.primarySoft,
-                  child: Center(
-                    child: Icon(
-                      Icons.broken_image_outlined,
-                      color: FarmColors.mutedText,
-                      size: 38,
-                    ),
-                  ),
+    Widget preview({double? width, required double height}) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: Image.network(
+            imageUrl,
+            key: ValueKey(imageUrl),
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (_, __, ___) => const ColoredBox(
+              color: FarmColors.primarySoft,
+              child: Center(
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: FarmColors.mutedText,
+                  size: 32,
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 11),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () => _replaceImage(workspaceKey),
-                  icon: isUploading
-                      ? const SizedBox(
-                          width: 15,
-                          height: 15,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+        ),
+      );
+    }
+
+    Widget replaceButton({bool expand = false}) {
+      final button = ElevatedButton.icon(
+        onPressed: busy ? null : () => _replaceImage(workspaceKey),
+        icon: isUploading
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.upload_file_outlined, size: 18),
+        label: Text(isUploading ? 'Uploading...' : 'Replace'),
+      );
+      return expand ? SizedBox(width: double.infinity, child: button) : button;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 560;
+
+        if (compact) {
+          return FarmCard(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                preview(width: 104, height: 94),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 15,
+                                height: 1.15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                           ),
-                        )
-                      : const Icon(Icons.upload_file_outlined),
-                  label: Text(
-                    isUploading ? 'Uploading...' : 'Replace image',
-                  ),
-                ),
-              ),
-              if (customUrl != null) ...[
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: busy
-                      ? null
-                      : () => _useDefault(workspaceKey),
-                  child: Text(
-                    isClearing ? 'Resetting...' : 'Use default',
+                          const SizedBox(width: 6),
+                          Chip(
+                            visualDensity: VisualDensity.compact,
+                            label: Text(
+                              customUrl == null ? 'Default' : 'Custom',
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      replaceButton(expand: true),
+                      if (customUrl != null)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed:
+                                busy ? null : () => _useDefault(workspaceKey),
+                            child: Text(
+                              isClearing ? 'Resetting...' : 'Use default',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],
+            ),
+          );
+        }
+
+        return FarmCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(
+                      customUrl == null ? 'Default' : 'Custom',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              preview(height: 138),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(child: replaceButton()),
+                  if (customUrl != null) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: busy ? null : () => _useDefault(workspaceKey),
+                      child: Text(
+                        isClearing ? 'Resetting...' : 'Use default',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -28870,15 +28531,15 @@ class _AdminWorkspaceImagesPanelState
     return FutureBuilder<Map<String, String>>(
       future: _future,
       builder: (context, snapshot) {
-        final customImages =
-            snapshot.data ?? const <String, String>{};
+        final customImages = snapshot.data ?? const <String, String>{};
 
-        return FarmCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FarmCard(
+              padding: const EdgeInsets.all(14),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
                     Icons.dashboard_customize_outlined,
@@ -28886,68 +28547,69 @@ class _AdminWorkspaceImagesPanelState
                   ),
                   SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      'Workspace Images',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Workspace Images',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Images shown when people choose Customer, Business, Farmer or Staff workspaces.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 7),
-              const Text(
-                'Replace the four images shown on the Workspaces screen. Changes are stored in Supabase and do not require an app update.',
-                style: TextStyle(
-                  color: FarmColors.mutedText,
-                  height: 1.4,
-                  fontWeight: FontWeight.w600,
+            ),
+            const SizedBox(height: 12),
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                snapshot.data == null)
+              const FarmCard(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-              ),
-              const SizedBox(height: 14),
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  snapshot.data == null)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 18),
-                  child: Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final oneColumn = constraints.maxWidth < 560;
-                    final cardWidth = oneColumn
-                        ? constraints.maxWidth
-                        : (constraints.maxWidth - 12) / 2;
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final oneColumn = constraints.maxWidth < 760;
+                  final cardWidth = oneColumn
+                      ? constraints.maxWidth
+                      : (constraints.maxWidth - 12) / 2;
 
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: hpjWorkspaceImageFallbacks.keys
-                          .map(
-                            (key) => SizedBox(
-                              width: cardWidth,
-                              child: _workspaceImageCard(
-                                key,
-                                customImages,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    );
-                  },
-                ),
-            ],
-          ),
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    children: hpjWorkspaceImageFallbacks.keys
+                        .map(
+                          (key) => SizedBox(
+                            width: cardWidth,
+                            child: _workspaceImageCard(key, customImages),
+                          ),
+                        )
+                        .toList(),
+                  );
+                },
+              ),
+          ],
         );
       },
     );
   }
 }
-
 
 // ================================================================
 // HPJ WORKSPACES — REFERENCE IMAGE REDESIGN — 2026-09-02
@@ -29230,12 +28892,10 @@ class _OwnerWorkspaceSwitcherScreenState
               'customer',
               website: kIsWeb,
             );
-            final wholesaleEnabled =
-                settings.isWorkspaceLive('wholesale');
+            final wholesaleEnabled = settings.isWorkspaceLive('wholesale');
             final farmerEnabled = settings.isWorkspaceLive('farmer');
 
-            final customerCurrent =
-                customerEnabled && _isCurrent('customer');
+            final customerCurrent = customerEnabled && _isCurrent('customer');
 
             final wholesaleCurrent = access.isApprovedWholesale &&
                 wholesaleEnabled &&
@@ -29245,8 +28905,7 @@ class _OwnerWorkspaceSwitcherScreenState
                 farmerEnabled &&
                 _isCurrent('farmer');
 
-            final staffCurrent =
-                hasStaffAccess && _isCurrent('staff');
+            final staffCurrent = hasStaffAccess && _isCurrent('staff');
 
             String wholesaleStatus = '';
             Color wholesaleStatusColor = forest;
@@ -29279,10 +28938,9 @@ class _OwnerWorkspaceSwitcherScreenState
             if (farmerCurrent) {
               farmerStatus = 'Current';
             } else if (access.farmerProfile == null) {
-              farmerStatus =
-                  access.programSettings.farmerApplicationsEnabled
-                      ? 'Apply'
-                      : 'Paused';
+              farmerStatus = access.programSettings.farmerApplicationsEnabled
+                  ? 'Apply'
+                  : 'Paused';
               farmerStatusColor =
                   access.programSettings.farmerApplicationsEnabled
                       ? const Color(0xFFB07917)
@@ -29307,9 +28965,8 @@ class _OwnerWorkspaceSwitcherScreenState
                         ),
                       );
 
-            final customerStatusColor = customerEnabled
-                ? forest
-                : const Color(0xFF78817D);
+            final customerStatusColor =
+                customerEnabled ? forest : const Color(0xFF78817D);
 
             return RefreshIndicator(
               onRefresh: _reload,
@@ -29399,8 +29056,7 @@ class _OwnerWorkspaceSwitcherScreenState
                                     statusColor: customerStatusColor,
                                     highlighted: customerCurrent,
                                     showCheck: customerCurrent,
-                                    onTap: () =>
-                                        _openCustomer(customerEnabled),
+                                    onTap: () => _openCustomer(customerEnabled),
                                   ),
                                   _WorkspacePhotoCard(
                                     photoUrl: _workspacePhoto('wholesale'),
@@ -29428,8 +29084,7 @@ class _OwnerWorkspaceSwitcherScreenState
                                     _WorkspacePhotoCard(
                                       photoUrl: _workspacePhoto('staff'),
                                       title: 'HPJ Staff & Operations',
-                                      status:
-                                          staffCurrent ? 'Current' : '',
+                                      status: staffCurrent ? 'Current' : '',
                                       statusColor: forest,
                                       highlighted: staffCurrent,
                                       showCheck: staffCurrent,
@@ -29708,9 +29363,8 @@ class _WorkspacePhotoGrid extends StatelessWidget {
       builder: (context, constraints) {
         final oneColumn = constraints.maxWidth < 300;
         final gap = oneColumn ? 12.0 : 14.0;
-        final width = oneColumn
-            ? constraints.maxWidth
-            : (constraints.maxWidth - gap) / 2;
+        final width =
+            oneColumn ? constraints.maxWidth : (constraints.maxWidth - gap) / 2;
 
         return Wrap(
           spacing: gap,
@@ -29776,9 +29430,7 @@ class _WorkspacePhotoCard extends StatelessWidget {
                   color: const Color(0xFFFFFEFC),
                   borderRadius: BorderRadius.circular(23),
                   border: Border.all(
-                    color: highlighted
-                        ? forest
-                        : const Color(0xFFE4E0D8),
+                    color: highlighted ? forest : const Color(0xFFE4E0D8),
                     width: highlighted ? 2.0 : 1.0,
                   ),
                   boxShadow: [
@@ -30122,12 +29774,9 @@ class HpjFaqItem {
       answer: (data['answer'] ?? '').toString().trim(),
       isPublished: data['is_published'] == true,
       isArchived: data['is_archived'] == true,
-      sortOrder:
-          int.tryParse((data['sort_order'] ?? '100').toString()) ?? 100,
-      createdAt:
-          DateTime.tryParse((data['created_at'] ?? '').toString()),
-      updatedAt:
-          DateTime.tryParse((data['updated_at'] ?? '').toString()),
+      sortOrder: int.tryParse((data['sort_order'] ?? '100').toString()) ?? 100,
+      createdAt: DateTime.tryParse((data['created_at'] ?? '').toString()),
+      updatedAt: DateTime.tryParse((data['updated_at'] ?? '').toString()),
     );
   }
 }
@@ -30151,8 +29800,7 @@ Future<List<HpjFaqItem>> fetchPublishedHpjFaqItems() async {
       )
       .where(
         (item) =>
-            item.question.trim().isNotEmpty &&
-            item.answer.trim().isNotEmpty,
+            item.question.trim().isNotEmpty && item.answer.trim().isNotEmpty,
       )
       .toList();
 }
@@ -30475,8 +30123,7 @@ class _HpjFaqScreenState extends State<HpjFaqScreen> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  if (snapshot.connectionState ==
-                          ConnectionState.waiting &&
+                  if (snapshot.connectionState == ConnectionState.waiting &&
                       snapshot.data == null &&
                       !snapshot.hasError)
                     const SizedBox(
@@ -30514,7 +30161,6 @@ class _HpjFaqScreenState extends State<HpjFaqScreen> {
   }
 }
 
-
 class CustomerMarketplaceComingSoonScreen extends StatefulWidget {
   const CustomerMarketplaceComingSoonScreen({super.key});
 
@@ -30551,7 +30197,7 @@ class _CustomerMarketplaceComingSoonScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'You’re on the Customer Marketplace launch list.',
+            'You’ll be notified when this customer access point opens.',
           ),
         ),
       );
@@ -30731,7 +30377,7 @@ class _CustomerMarketplaceComingSoonScreenState
                               ),
                               const SizedBox(height: 14),
                               const Text(
-                                'Customer ordering is coming soon',
+                                'Customer marketplace access is limited here',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Color(0xFF123E2F),
@@ -30742,7 +30388,7 @@ class _CustomerMarketplaceComingSoonScreenState
                               ),
                               const SizedBox(height: 9),
                               const Text(
-                                'We’re launching our farmer and wholesale network first so customers get stronger availability, dependable quality and reliable delivery when shopping opens.',
+                                'HPJ customer shopping may already be available in the app while this workspace or website access is temporarily limited. You can save a launch alert for this access point.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: FarmColors.mutedText,
@@ -30776,8 +30422,7 @@ class _CustomerMarketplaceComingSoonScreenState
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
-                                  onPressed:
-                                      savingInterest ? null : _notifyMe,
+                                  onPressed: savingInterest ? null : _notifyMe,
                                   icon: Icon(
                                     interestSaved
                                         ? Icons.check_circle_outline_rounded
@@ -30788,7 +30433,7 @@ class _CustomerMarketplaceComingSoonScreenState
                                         ? 'Saving...'
                                         : interestSaved
                                             ? 'Launch Alert Saved'
-                                            : 'Notify Me When It Launches',
+                                            : 'Notify Me When Access Opens',
                                   ),
                                 ),
                               ),

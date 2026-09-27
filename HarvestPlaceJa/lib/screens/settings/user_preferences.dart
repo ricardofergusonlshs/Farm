@@ -480,15 +480,10 @@ class _HpjSettingsPreferencesScreenState
             return ListView(
               padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    label: Text(_isFarmer
-                        ? 'Back to Farmer Account'
-                        : 'Back to Account'),
-                  ),
+                _SettingsBackButton(
+                  onTap: () => Navigator.of(context).maybePop(),
+                  label:
+                      _isFarmer ? 'Back to Farmer Account' : 'Back to Account',
                 ),
                 const Header(
                   title: 'Settings & Preferences',
@@ -517,14 +512,9 @@ class _HpjSettingsPreferencesScreenState
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 112),
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  label: Text(
-                      _isFarmer ? 'Back to Farmer Account' : 'Back to Account'),
-                ),
+              _SettingsBackButton(
+                onTap: () => Navigator.of(context).maybePop(),
+                label: _isFarmer ? 'Back to Farmer Account' : 'Back to Account',
               ),
               const SizedBox(height: 4),
               Header(
@@ -946,26 +936,86 @@ class _HpjSettingsPreferencesScreenState
                 ],
               ),
               const SizedBox(height: 18),
-              SizedBox(
+              Container(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: Text(_saving ? 'Saving...' : 'Save Settings'),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: FarmColors.card,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: FarmColors.line),
+                  boxShadow: [
+                    BoxShadow(
+                      color: FarmColors.shadow.withOpacity(0.05),
+                      blurRadius: 16,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _saving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: FarmColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: Text(
+                      _saving ? 'Saving...' : 'Save Preferences',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SettingsBackButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final String label;
+
+  const _SettingsBackButton({
+    required this.onTap,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: FarmColors.primary,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          minimumSize: const Size(0, 40),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: const Icon(Icons.arrow_back_rounded, size: 21),
+        label: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }
@@ -978,47 +1028,86 @@ class _SettingsIntroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.all(16),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF113A29), Color(0xFF2F6B45)],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
-              color: FarmColors.primarySoft,
-              borderRadius: BorderRadius.circular(14),
+              color: Colors.white.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withOpacity(0.18)),
             ),
             child: Icon(
               isFarmer ? Icons.agriculture_outlined : Icons.tune_rounded,
-              color: FarmColors.primary,
+              color: const Color(0xFFF4D38A),
+              size: 26,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isFarmer ? 'Your farmer experience' : 'Your HPJ experience',
+                  isFarmer ? 'Your farmer experience' : 'Make HPJ yours',
                   style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 15,
+                    color: Colors.white,
+                    fontSize: 19,
                     fontWeight: FontWeight.w900,
+                    letterSpacing: -0.25,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Text(
                   isFarmer
-                      ? 'Optional feed content can be reduced without hiding important collection, payment or accepted-request information.'
-                      : 'Choose what matters to you without crowding the Home or Shop screens.',
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 10.8,
-                    height: 1.4,
+                      ? 'Tune feed content and alerts while keeping important collection, payment and accepted-request information visible.'
+                      : 'Choose what you see, what HPJ recommends and which updates you want to receive.',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.76),
+                    fontSize: 11.3,
+                    height: 1.35,
                     fontWeight: FontWeight.w600,
                   ),
+                ),
+                const SizedBox(height: 11),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.verified_user_outlined,
+                      color: Color(0xFFF4D38A),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Saved securely to your HPJ account',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.70),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1044,8 +1133,20 @@ class _SettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.all(16),
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: FarmColors.card,
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: FarmColors.line.withOpacity(0.88)),
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1053,15 +1154,16 @@ class _SettingsSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 38,
-                height: 38,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(12),
+                  color: FarmColors.primarySoft.withOpacity(0.78),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: FarmColors.green.withOpacity(0.08)),
                 ),
-                child: Icon(icon, color: FarmColors.primary, size: 20),
+                child: Icon(icon, color: FarmColors.primary, size: 21),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 11),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1070,16 +1172,17 @@ class _SettingsSection extends StatelessWidget {
                       title,
                       style: const TextStyle(
                         color: FarmColors.ink,
-                        fontSize: 14,
+                        fontSize: 15.2,
                         fontWeight: FontWeight.w900,
+                        letterSpacing: -0.15,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle,
                       style: const TextStyle(
                         color: FarmColors.mutedText,
-                        fontSize: 9.8,
+                        fontSize: 10.2,
                         height: 1.35,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1089,7 +1192,7 @@ class _SettingsSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           ...children,
         ],
       ),
@@ -1112,32 +1215,53 @@ class _SettingsSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile.adaptive(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: FarmColors.ink,
-          fontSize: 12.2,
-          fontWeight: FontWeight.w800,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: value ? const Color(0xFFF3F8F1) : FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: value
+              ? FarmColors.green.withOpacity(0.13)
+              : FarmColors.line.withOpacity(0.74),
         ),
       ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: Text(
-          subtitle,
-          style: const TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 9.4,
-            height: 1.3,
-            fontWeight: FontWeight.w600,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 12.4,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.7,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Switch.adaptive(
+            value: value,
+            activeColor: FarmColors.primary,
+            onChanged: onChanged,
+          ),
+        ],
       ),
-      value: value,
-      activeColor: FarmColors.primary,
-      onChanged: onChanged,
     );
   }
 }
@@ -1161,8 +1285,14 @@ class _SettingsDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeValue = options.containsKey(value) ? value : options.keys.first;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FarmColors.line.withOpacity(0.76)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1170,8 +1300,8 @@ class _SettingsDropdown extends StatelessWidget {
             title,
             style: const TextStyle(
               color: FarmColors.ink,
-              fontSize: 12.2,
-              fontWeight: FontWeight.w800,
+              fontSize: 12.4,
+              fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 2),
@@ -1179,19 +1309,29 @@ class _SettingsDropdown extends StatelessWidget {
             subtitle,
             style: const TextStyle(
               color: FarmColors.mutedText,
-              fontSize: 9.4,
+              fontSize: 9.7,
               height: 1.3,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 9),
           DropdownButtonFormField<String>(
             value: safeValue,
             isExpanded: true,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               isDense: true,
+              filled: true,
+              fillColor: Colors.white,
               contentPadding:
-                  EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(15),
+                borderSide: BorderSide(color: FarmColors.line),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(15),
+                borderSide: BorderSide(color: FarmColors.line),
+              ),
             ),
             items: options.entries
                 .map(
@@ -1226,36 +1366,74 @@ class _SettingsActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: FarmColors.primarySoft,
-          borderRadius: BorderRadius.circular(12),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: FarmColors.cardSoft,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: FarmColors.line.withOpacity(0.76)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: FarmColors.primary, size: 19),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 12.4,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.7,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: FarmColors.line),
+                ),
+                child: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: FarmColors.green,
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
         ),
-        child: Icon(icon, color: FarmColors.primary, size: 19),
       ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: FarmColors.ink,
-          fontSize: 12.2,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(
-          color: FarmColors.mutedText,
-          fontSize: 9.4,
-          height: 1.3,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: onTap,
     );
   }
 }

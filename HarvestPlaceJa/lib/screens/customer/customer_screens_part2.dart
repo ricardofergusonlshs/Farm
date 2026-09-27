@@ -5899,6 +5899,8 @@ class _ShopScreenState extends State<ShopScreen> {
   String? harvestPulseFreshPickIdContext;
   Timer? searchDebounce;
   Set<String> persistedFavoriteIds = <String>{};
+  late Future<HpjSponsorCampaign?> shopSponsorFuture;
+
   void _applyMealIngredientSearch() {
     final query = mealIngredientShopSearchRequest.value?.trim() ?? '';
     if (query.isEmpty) return;
@@ -6231,18 +6233,197 @@ Widget _harvestPulseShopBanner(int itemCount) {
       });
     });
     mealIngredientShopSearchRequest.addListener(_applyMealIngredientSearch);
+    hpjWebsiteShopSearchRequest.addListener(_applyWebsiteShopSearchRequest);
+    hpjWebsiteShopCategoryRequest.addListener(_applyWebsiteShopCategoryRequest);
     hpjShopParishRequest.addListener(_applyShopParishRequest);
+    shopSponsorFuture = fetchActiveCustomerShopSponsor();
+    hpjSponsorCampaignRefreshVersion.addListener(_reloadShopSponsorCampaign);
 
 harvestPulseShopRequest.addListener(
   _applyHarvestPulseShopRequest,
 );
 WidgetsBinding.instance.addPostFrameCallback((_) {
   _applyHarvestPulseShopRequest();
+  _applyWebsiteShopSearchRequest();
+  _applyWebsiteShopCategoryRequest();
   _applyShopParishRequest();
 });
 loadProducts();
     _loadSavedFavoritesForShop();
     unawaited(_restoreNearYouArea());
+  }
+
+  void _reloadShopSponsorCampaign() {
+    if (!mounted) return;
+    setState(() {
+      shopSponsorFuture = fetchActiveCustomerShopSponsor();
+    });
+  }
+
+  Future<void> _openShopSponsorCampaign(
+    HpjSponsorCampaign campaign,
+  ) async {
+    if (campaign.ctaType == 'farm') {
+      final farmerId = campaign.targetFarmerId.trim();
+      if (farmerId.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This featured farm is not available right now.'),
+          ),
+        );
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => PublicFarmProfileScreen(
+            farmerId: farmerId,
+            sourceWorkspace: 'customer',
+            onAddProduct: _addProductToCart,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (campaign.ctaType == 'external' &&
+        _isSafeSponsorExternalUrl(campaign.ctaUrl)) {
+      final opened = await openExternalShareUrl(campaign.ctaUrl);
+      if (opened || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the sponsor link.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      selectedCategory = 'All';
+      selectedShopFilter = 'All items';
+      selectedShopNutrient = 'All';
+      selectedShopAvailability = 'Any availability';
+      selectedShopPrice = 'Any price';
+      selectedShopFarm = 'All farms';
+      selectedShopSpecial = 'All';
+      selectedSort = 'Recommended';
+      searchController.clear();
+    });
+  }
+
+  Widget _shopSponsorPlacement() {
+    if (!hpjCurrentUserExperiencePreferences.showPromotions) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<HpjSponsorCampaign?>(
+      future: shopSponsorFuture,
+      builder: (context, snapshot) {
+        final campaign = snapshot.data;
+        if (campaign == null) return const SizedBox.shrink();
+
+        final mediaUrl = campaign.imageUrl.trim().isNotEmpty
+            ? campaign.imageUrl.trim()
+            : campaign.logoUrl.trim();
+        final hasMedia = _isSafeSponsorExternalUrl(mediaUrl);
+        final sponsorLine = campaign.description.isEmpty
+            ? campaign.sponsorName
+            : '${campaign.sponsorName} • ${campaign.description}';
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => unawaited(_openShopSponsorCampaign(campaign)),
+              borderRadius: BorderRadius.circular(22),
+              child: Ink(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBF2),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFE8DDBF)),
+                ),
+                child: Row(
+                  children: [
+                    if (hasMedia) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: Image.network(
+                          mediaUrl,
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3E6C8),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              'SPONSORED',
+                              style: TextStyle(
+                                color: Color(0xFF8A621A),
+                                fontSize: 9.2,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: .7,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            campaign.headline,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.deepGreen,
+                              fontSize: 16,
+                              height: 1.08,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            sponsorLine,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 12.5,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: Color(0xFF956A1E),
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   String _cleanNearArea(String value) {
@@ -7003,6 +7184,52 @@ loadProducts();
     );
   }
 
+  void _applyWebsiteShopSearchRequest() {
+    final rawQuery = hpjWebsiteShopSearchRequest.value;
+    if (rawQuery == null) return;
+
+    // Consume once so a later rebuild cannot replay the same website search.
+    hpjWebsiteShopSearchRequest.value = null;
+
+    final query = rawQuery.trim();
+    if (query.isEmpty || !mounted) return;
+
+    setState(() {
+      selectedCategory = 'All';
+      selectedShopFilter = 'All items';
+      selectedShopNutrient = 'All';
+      selectedShopAvailability = 'Any availability';
+      selectedShopPrice = 'Any price';
+      selectedShopFarm = 'All farms';
+      selectedShopSpecial = 'All';
+      selectedSort = 'Recommended';
+      searchController.text = query;
+    });
+  }
+
+  void _applyWebsiteShopCategoryRequest() {
+    final rawCategory = hpjWebsiteShopCategoryRequest.value;
+    if (rawCategory == null) return;
+
+    // Consume once so a later rebuild cannot replay the same website category.
+    hpjWebsiteShopCategoryRequest.value = null;
+
+    final category = rawCategory.trim();
+    if (category.isEmpty || !mounted) return;
+
+    setState(() {
+      selectedCategory = normalizeProductCategory(category);
+      selectedShopFilter = 'All items';
+      selectedShopNutrient = 'All';
+      selectedShopAvailability = 'Any availability';
+      selectedShopPrice = 'Any price';
+      selectedShopFarm = 'All farms';
+      selectedShopSpecial = 'All';
+      selectedSort = 'Recommended';
+      searchController.clear();
+    });
+  }
+
   @override
   void didUpdateWidget(covariant ShopScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -7030,8 +7257,17 @@ void dispose() {
   mealIngredientShopSearchRequest.removeListener(
     _applyMealIngredientSearch,
   );
+  hpjWebsiteShopSearchRequest.removeListener(
+    _applyWebsiteShopSearchRequest,
+  );
+  hpjWebsiteShopCategoryRequest.removeListener(
+    _applyWebsiteShopCategoryRequest,
+  );
   hpjShopParishRequest.removeListener(
     _applyShopParishRequest,
+  );
+  hpjSponsorCampaignRefreshVersion.removeListener(
+    _reloadShopSponsorCampaign,
   );
 
   harvestPulseShopRequest.removeListener(
@@ -7097,7 +7333,7 @@ void dispose() {
     );
   }
 
-  Future<void> loadProducts() async {
+  Future<void> loadProducts({bool forceRefresh = false}) async {
     if (!mounted) return;
 
     setState(() {
@@ -7107,7 +7343,7 @@ void dispose() {
 
     try {
       final fetchedProducts = await fetchProductsForCustomerUi(
-        forceRefresh: products.isEmpty,
+        forceRefresh: forceRefresh || products.isEmpty,
         timeout: const Duration(seconds: 8),
       );
       final cleanProducts = fetchedProducts.where((product) {
@@ -7124,7 +7360,7 @@ void dispose() {
             : null;
       });
 
-      _loadOptionalShopProductSections();
+      _loadOptionalShopProductSections(forceRefresh: forceRefresh);
     } catch (error) {
       farmDebugLog('Shop product load failed: $error');
       if (!mounted) return;
@@ -7137,11 +7373,11 @@ void dispose() {
     }
   }
 
-  Future<void> _loadOptionalShopProductSections() async {
+  Future<void> _loadOptionalShopProductSections({bool forceRefresh = false}) async {
     try {
       final results = await Future.wait<List<Product>>([
-        fetchReadySoonProductsForCustomerUi(forceRefresh: false),
-        fetchBuyAgainProductsForCustomerUi(forceRefresh: false),
+        fetchReadySoonProductsForCustomerUi(forceRefresh: forceRefresh),
+        fetchBuyAgainProductsForCustomerUi(forceRefresh: forceRefresh),
       ]);
 
       if (!mounted) return;
@@ -9002,8 +9238,8 @@ if (harvestPulseContext == 'fresh' &&
         _harvestPulseShopBanner(availableNowProducts.length),
       if (!nativeMobile) _compactShopParishCard(),
       _freshNearYouSection(),
-      if (!nativeMobile &&
-          hpjCurrentUserExperiencePreferences.showFreshReels) ...[
+      _shopSponsorPlacement(),
+      if (hpjCurrentUserExperiencePreferences.showFreshReels) ...[
         FreshReelFeedPreviewCard(
           preferences: hpjCurrentUserExperiencePreferences,
           audience: 'customer',
@@ -9157,7 +9393,7 @@ if (harvestPulseContext == 'fresh' &&
           ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: loadProducts,
+              onRefresh: () => loadProducts(forceRefresh: true),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(
@@ -14568,10 +14804,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
-        onTap: () {
-          Navigator.push(
+        onTap: () async {
+          await Navigator.push<void>(
             context,
-            MaterialPageRoute(
+            MaterialPageRoute<void>(
               builder: (_) => OrderDetailsScreen(
                 orderId: order.id,
                 onAddToCart: widget.onAddToCart,
@@ -14579,6 +14815,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
             ),
           );
+          if (!mounted) return;
+          await _refreshOrders();
         },
         child: Ink(
           width: double.infinity,
@@ -15394,21 +15632,35 @@ class OrderDetailsScreen extends StatefulWidget {
 
 class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   late Future<OrderDetails?> _orderFuture;
+  late Future<List<Product>> _orderProductsFuture;
   bool _loadingReorder = false;
+
   @override
   void initState() {
     super.initState();
     _orderFuture = fetchOrderDetails(widget.orderId);
+    _orderProductsFuture = _loadOrderProducts();
+  }
+
+  Future<List<Product>> _loadOrderProducts({bool forceRefresh = false}) async {
+    try {
+      return await fetchProductsForCustomerUi(forceRefresh: forceRefresh);
+    } catch (error) {
+      farmDebugLog('Order product visuals unavailable: $error');
+      return const <Product>[];
+    }
   }
 
   Future<void> _refreshOrderDetails() async {
-    final future = fetchOrderDetails(widget.orderId);
+    final orderFuture = fetchOrderDetails(widget.orderId);
+    final productsFuture = _loadOrderProducts(forceRefresh: true);
     if (mounted) {
       setState(() {
-        _orderFuture = future;
+        _orderFuture = orderFuture;
+        _orderProductsFuture = productsFuture;
       });
     }
-    await future;
+    await Future.wait<dynamic>([orderFuture, productsFuture]);
   }
 
   int _statusIndex(String status) {
@@ -15656,9 +15908,665 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     );
   }
 
+  Product? _productForOrderItem(
+    OrderDetailsItem item,
+    List<Product> products,
+  ) {
+    final productId = item.productId.trim();
+    if (productId.isNotEmpty) {
+      for (final product in products) {
+        if (product.id.trim() == productId) return product;
+      }
+    }
+
+    final itemName = hpjSmartNormalizeSearch(item.productName);
+    if (itemName.isEmpty) return null;
+    for (final product in products) {
+      if (hpjSmartNormalizeSearch(product.name) == itemName) return product;
+    }
+    return null;
+  }
+
+  String? _orderItemImageUrl(
+    OrderDetailsItem item,
+    List<Product> products,
+  ) {
+    final product = _productForOrderItem(item, products);
+    return cleanHostedImageUrl(product?.imageUrl);
+  }
+
+  List<String> _orderImageUrls(
+    OrderDetails order,
+    List<Product> products,
+  ) {
+    final urls = <String>[];
+    for (final item in order.items) {
+      final url = _orderItemImageUrl(item, products);
+      if (url != null && url.isNotEmpty && !urls.contains(url)) {
+        urls.add(url);
+      }
+      if (urls.length >= 4) break;
+    }
+    return urls;
+  }
+
+  String _orderDateLabel(DateTime? value) {
+    if (value == null) return 'Order date unavailable';
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final hour = value.hour == 0 ? 12 : (value.hour > 12 ? value.hour - 12 : value.hour);
+    final minute = value.minute.toString().padLeft(2, '0');
+    final meridiem = value.hour >= 12 ? 'PM' : 'AM';
+    return '${months[value.month - 1]} ${value.day}, ${value.year} • $hour:$minute $meridiem';
+  }
+
+  int _mvpTrackerIndex(OrderDetails order) {
+    final status = order.status.trim().toLowerCase();
+    final isDelivery = order.fulfillmentType == 'delivery';
+    switch (status) {
+      case 'confirmed':
+      case 'preparing':
+        return 1;
+      case 'ready':
+      case 'ready_for_pickup':
+        return 2;
+      case 'out_for_delivery':
+        return isDelivery ? 3 : 2;
+      case 'delivered':
+      case 'completed':
+        return isDelivery ? 4 : 3;
+      case 'cancelled':
+      case 'canceled':
+      case 'rejected':
+        return 0;
+      case 'pending':
+      default:
+        return 0;
+    }
+  }
+
+  List<String> _mvpTrackerLabels(OrderDetails order) {
+    if (order.fulfillmentType == 'delivery') {
+      return const <String>[
+        'Order\nreceived',
+        'Preparing\nfresh items',
+        'Ready to\ndispatch',
+        'Out for\ndelivery',
+        'Delivered',
+      ];
+    }
+    return const <String>[
+      'Order\nreceived',
+      'Preparing\nfresh items',
+      'Ready for\npickup',
+      'Collected',
+    ];
+  }
+
+  List<IconData> _mvpTrackerIcons(OrderDetails order) {
+    if (order.fulfillmentType == 'delivery') {
+      return const <IconData>[
+        Icons.receipt_long_outlined,
+        Icons.shopping_basket_outlined,
+        Icons.inventory_2_outlined,
+        Icons.local_shipping_outlined,
+        Icons.check_circle_outline_rounded,
+      ];
+    }
+    return const <IconData>[
+      Icons.receipt_long_outlined,
+      Icons.shopping_basket_outlined,
+      Icons.storefront_outlined,
+      Icons.check_circle_outline_rounded,
+    ];
+  }
+
+  String _mvpCurrentStageLabel(OrderDetails order) {
+    final rawStatus = order.status.trim().toLowerCase();
+    if (rawStatus == 'cancelled' || rawStatus == 'canceled' || rawStatus == 'rejected') {
+      return 'Order cancelled';
+    }
+    final labels = _mvpTrackerLabels(order);
+    final index = _mvpTrackerIndex(order).clamp(0, labels.length - 1).toInt();
+    return labels[index].replaceAll('\n', ' ');
+  }
+
+  Widget _mvpOrderHeaderCard(OrderDetails order) {
+    final statusLabel = _mvpCurrentStageLabel(order);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF0A603C), Color(0xFF2C7547)],
+        ),
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '#HPJ-${order.shortId}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.45,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _orderDateLabel(order.createdAt),
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.86),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD58B00),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.schedule_rounded, color: Colors.white, size: 14),
+                    const SizedBox(width: 5),
+                    Text(
+                      statusLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              Expanded(
+                child: _mvpOrderHeaderMetric(
+                  icon: order.fulfillmentType == 'delivery'
+                      ? Icons.local_shipping_outlined
+                      : Icons.storefront_outlined,
+                  label: 'Fulfillment',
+                  value: formatFulfillmentType(order.fulfillmentType),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _mvpOrderHeaderMetric(
+                  icon: Icons.payments_outlined,
+                  label: 'Payment',
+                  value: _prettyOrderValue(order.paymentStatus),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _mvpOrderHeaderMetric(
+                  icon: Icons.shopping_bag_outlined,
+                  label: 'Total',
+                  value: order.formattedTotal,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mvpOrderHeaderMetric({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.white, size: 17),
+          const SizedBox(height: 7),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.72),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mvpOrderTrackerCard(
+    OrderDetails order,
+    List<Product> products,
+  ) {
+    final labels = _mvpTrackerLabels(order);
+    final icons = _mvpTrackerIcons(order);
+    final currentIndex = _mvpTrackerIndex(order).clamp(0, labels.length - 1).toInt();
+    final progress = labels.isEmpty
+        ? 0.0
+        : ((currentIndex + 1) / labels.length).clamp(0.0, 1.0).toDouble();
+    final images = _orderImageUrls(order, products);
+    final imageCount = images.length > 3 ? 3 : images.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(15, 15, 15, 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEE),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFEADAB6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (images.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: SizedBox(
+                height: 126,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(
+                      images.first,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const ColoredBox(
+                        color: Color(0xFFEAF4E5),
+                        child: Center(
+                          child: Icon(Icons.eco_rounded, color: FarmColors.green, size: 34),
+                        ),
+                      ),
+                    ),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: <Color>[Colors.transparent, Color(0xB3000000)],
+                        ),
+                      ),
+                    ),
+                    const Positioned(
+                      left: 14,
+                      right: 14,
+                      bottom: 12,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'From our farms to your home',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Follow your fresh order as it moves through HPJ.',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1CE),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.route_rounded,
+                  color: Color(0xFF9E6100),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Live Order Tracker',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.25,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      order.fulfillmentType == 'delivery'
+                          ? 'Follow each step as your fresh order moves from HPJ to your home.'
+                          : 'Follow each step as your fresh order is prepared for collection.',
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 11.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD58B00),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${((progress * 100).round()).clamp(0, 100)}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.72),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFEADAB6)),
+            ),
+            child: Text(
+              'Current stage: ${_mvpCurrentStageLabel(order)}',
+              style: const TextStyle(
+                color: Color(0xFF8C5700),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 11),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 9,
+              backgroundColor: const Color(0xFFE1EBE4),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFB76C00)),
+            ),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List<Widget>.generate(labels.length, (index) {
+              final complete = index < currentIndex;
+              final active = index == currentIndex;
+              final color = complete || active
+                  ? const Color(0xFF0A7B49)
+                  : const Color(0xFF8B938E);
+              return Expanded(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: complete || active
+                            ? const Color(0xFFE1F3E7)
+                            : const Color(0xFFF3F5F3),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: active ? const Color(0xFF0A7B49) : const Color(0xFFD6DED8),
+                          width: active ? 2 : 1,
+                        ),
+                      ),
+                      child: Icon(
+                        complete ? Icons.check_rounded : icons[index],
+                        color: color,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      labels[index],
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: active ? const Color(0xFF0A603C) : FarmColors.ink,
+                        fontSize: labels.length == 5 ? 8.7 : 9.4,
+                        height: 1.15,
+                        fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+          if (images.isNotEmpty) ...[
+            const SizedBox(height: 15),
+            const Divider(height: 1, color: Color(0xFFEADAB6)),
+            const SizedBox(height: 13),
+            const Text(
+              'Fresh items in this order',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 9),
+            SizedBox(
+              height: 94,
+              child: Row(
+                children: List<Widget>.generate(imageCount, (index) {
+                  final url = images[index];
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(right: index < imageCount - 1 ? 8 : 0),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.network(
+                          url,
+                          width: double.infinity,
+                          height: 94,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const ColoredBox(
+                            color: Color(0xFFEAF4E5),
+                            child: Center(
+                              child: Icon(Icons.eco_rounded, color: FarmColors.green),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _mvpFulfillmentCard(OrderDetails order) {
+    final scheduled = order.scheduleText.trim();
+    final address = (order.deliveryAddress ?? '').trim();
+    final zone = (order.deliveryZone ?? '').trim();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
+      decoration: BoxDecoration(
+        color: FarmColors.card,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        children: [
+          _mvpOrderInfoRow(
+            icon: order.fulfillmentType == 'delivery'
+                ? Icons.local_shipping_outlined
+                : Icons.storefront_outlined,
+            label: 'Fulfillment',
+            value: formatFulfillmentType(order.fulfillmentType),
+          ),
+          if (scheduled.isNotEmpty) ...[
+            const Divider(height: 20),
+            _mvpOrderInfoRow(
+              icon: Icons.calendar_month_outlined,
+              label: order.fulfillmentType == 'delivery'
+                  ? 'Scheduled delivery'
+                  : 'Scheduled collection',
+              value: scheduled,
+            ),
+          ],
+          if (address.isNotEmpty || zone.isNotEmpty) ...[
+            const Divider(height: 20),
+            _mvpOrderInfoRow(
+              icon: Icons.location_on_outlined,
+              label: 'Delivery location',
+              value: <String>[address, zone]
+                  .where((value) => value.trim().isNotEmpty)
+                  .join(' • '),
+            ),
+          ],
+          const Divider(height: 20),
+          _mvpOrderInfoRow(
+            icon: Icons.credit_card_outlined,
+            label: 'Payment method',
+            value: '${order.formattedPaymentMethod} • ${_prettyOrderValue(order.paymentStatus)}',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mvpOrderInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: FarmColors.primarySoft,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: FarmColors.green, size: 20),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 12.5,
+                  height: 1.28,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _premiumOrderItemsCard(
     OrderDetails order, {
     required bool isDelivery,
+    List<Product> products = const <Product>[],
   }) {
     return Container(
       width: double.infinity,
@@ -15734,42 +16642,108 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
             ...order.items.asMap().entries.map((entry) {
               final item = entry.value;
               final isLast = entry.key == order.items.length - 1;
+              final product = _productForOrderItem(item, products);
+              final imageUrl = cleanHostedImageUrl(product?.imageUrl);
+              final farmName = (product?.farmName ?? '').trim();
+              final parish = (product?.parish ?? '').trim();
+              final sourceLine = <String>[
+                if (farmName.isNotEmpty) farmName,
+                if (parish.isNotEmpty) parish,
+              ].join(' • ');
 
               return Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: FarmColors.cardSoft,
-                            borderRadius: BorderRadius.circular(11),
-                            border: Border.all(color: FarmColors.line),
-                          ),
-                          child: Text(
-                            '${item.quantity}×',
-                            style: const TextStyle(
-                              color: FarmColors.green,
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w900,
-                            ),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox(
+                            width: 70,
+                            height: 70,
+                            child: imageUrl == null
+                                ? const ColoredBox(
+                                    color: Color(0xFFEAF4E5),
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.eco_rounded,
+                                        color: FarmColors.green,
+                                        size: 27,
+                                      ),
+                                    ),
+                                  )
+                                : Image.network(
+                                    imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const ColoredBox(
+                                      color: Color(0xFFEAF4E5),
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.eco_rounded,
+                                          color: FarmColors.green,
+                                          size: 27,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            item.productName,
-                            style: const TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 13.2,
-                              height: 1.25,
-                              fontWeight: FontWeight.w800,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.productName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 13.5,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              if (sourceLine.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  sourceLine,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 10.5,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: FarmColors.primarySoft,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '${item.quantity} × ${formatJmd(item.unitPrice)}',
+                                      style: const TextStyle(
+                                        color: FarmColors.green,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -17254,20 +18228,39 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                     isDelivery: isDelivery,
                   )
                 else
-                  _premiumOrderDetailHero(order),
-                const SizedBox(height: 16),
-                EliteOrderStatusCard(order: order),
+                  _mvpOrderHeaderCard(order),
                 const SizedBox(height: 14),
-                PremiumOrderTracker(
-                  status: order.status,
-                  isDelivery: isDelivery,
-                  paymentStatus: order.paymentStatus,
-                ),
-                const SizedBox(height: 14),
-                EliteOrderQuickActions(
-                  order: order,
-                  onRefresh: _refreshOrderDetails,
-                ),
+                if (desktopWeb) ...[
+                  EliteOrderStatusCard(order: order),
+                  const SizedBox(height: 14),
+                  PremiumOrderTracker(
+                    status: order.status,
+                    isDelivery: isDelivery,
+                    paymentStatus: order.paymentStatus,
+                  ),
+                  const SizedBox(height: 14),
+                  EliteOrderQuickActions(
+                    order: order,
+                    onRefresh: _refreshOrderDetails,
+                  ),
+                ] else ...[
+                  FutureBuilder<List<Product>>(
+                    future: _orderProductsFuture,
+                    builder: (context, productSnapshot) {
+                      return _mvpOrderTrackerCard(
+                        order,
+                        productSnapshot.data ?? const <Product>[],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _mvpFulfillmentCard(order),
+                  const SizedBox(height: 12),
+                  EliteOrderQuickActions(
+                    order: order,
+                    onRefresh: _refreshOrderDetails,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 if (canReorder) ...[
                   SizedBox(
@@ -17328,9 +18321,15 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                 const SizedBox(height: 14),
                 HpjOrderFarmPassportCard(orderId: widget.orderId),
                 const SizedBox(height: 14),
-                _premiumOrderItemsCard(
-                  order,
-                  isDelivery: isDelivery,
+                FutureBuilder<List<Product>>(
+                  future: _orderProductsFuture,
+                  builder: (context, productSnapshot) {
+                    return _premiumOrderItemsCard(
+                      order,
+                      isDelivery: isDelivery,
+                      products: productSnapshot.data ?? const <Product>[],
+                    );
+                  },
                 ),
                 if ((order.notes ?? '').isNotEmpty) ...[
                   const SizedBox(height: 14),
@@ -18152,6 +19151,1306 @@ class _PremiumSavedProductCard extends StatelessWidget {
   }
 }
 
+Future<void> openHpjNotificationHubMenu(
+  BuildContext context, {
+  int? unreadCount,
+}) async {
+  var resolvedUnreadCount = unreadCount;
+
+  if (resolvedUnreadCount == null) {
+    try {
+      resolvedUnreadCount = await fetchUnreadNotificationCount();
+    } catch (error) {
+      farmDebugLog('Notification hub unread count lookup skipped: $error');
+      resolvedUnreadCount = 0;
+    }
+  }
+
+  if (!context.mounted) return;
+
+  final count = resolvedUnreadCount ?? 0;
+
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    useSafeArea: true,
+    backgroundColor: FarmColors.background,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(26),
+      ),
+    ),
+    builder: (sheetContext) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: FarmColors.line,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: FarmColors.primarySoft,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: FarmColors.green,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Notifications & help',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        count > 0
+                            ? '$count unread update${count == 1 ? '' : 's'}'
+                            : 'You’re all caught up',
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              tileColor: Colors.white,
+              leading: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(
+                    Icons.notifications_rounded,
+                    color: FarmColors.green,
+                  ),
+                  if (count > 0)
+                    Positioned(
+                      right: -8,
+                      top: -8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: FarmColors.danger,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          count > 99 ? '99+' : '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              title: const Text(
+                'View notifications',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              subtitle: const Text(
+                'See orders, payments, deliveries and HPJ updates.',
+              ),
+              trailing: const Icon(
+                Icons.chevron_right_rounded,
+                color: FarmColors.green,
+              ),
+              onTap: () => Navigator.pop(sheetContext, 'notifications'),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              tileColor: FarmColors.primarySoft,
+              leading: const Icon(
+                Icons.add_comment_rounded,
+                color: FarmColors.green,
+              ),
+              title: const Text(
+                'Start new chat with HPJ',
+                style: TextStyle(
+                  color: FarmColors.deepGreen,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              subtitle: const Text(
+                'Open a new private conversation with HPJ Customer Care.',
+              ),
+              trailing: const Icon(
+                Icons.chevron_right_rounded,
+                color: FarmColors.green,
+              ),
+              onTap: () => Navigator.pop(sheetContext, 'chat'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  if (!context.mounted || action == null) return;
+
+  switch (action) {
+    case 'notifications':
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const NotificationsScreen(),
+        ),
+      );
+      refreshHpjNotificationBadges();
+      break;
+
+    case 'chat':
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const SupportScreen(
+            initialSubject: 'General help',
+          ),
+        ),
+      );
+      refreshHpjNotificationBadges();
+      break;
+  }
+}
+
+
+// ============================================================================
+// HPJ FINAL NOTIFICATION SYSTEM — ADDITIVE ONLY — 2026-09-27
+// Customer notification preferences + event follow/update experience.
+// Existing Notification Center, chat, Shop, Orders, Feed, Reels and all other
+// current features remain unchanged.
+// ============================================================================
+
+class HpjNotificationPreferences {
+  final bool ordersDelivery;
+  final bool payments;
+  final bool messages;
+  final bool produceAvailability;
+  final bool priceDrops;
+  final bool events;
+  final bool freshUpdates;
+  final bool promotions;
+  final bool serviceStatus;
+  final bool quietHoursEnabled;
+  final int quietStartHour;
+  final int quietEndHour;
+
+  const HpjNotificationPreferences({
+    this.ordersDelivery = true,
+    this.payments = true,
+    this.messages = true,
+    this.produceAvailability = true,
+    this.priceDrops = true,
+    this.events = true,
+    this.freshUpdates = true,
+    this.promotions = false,
+    this.serviceStatus = true,
+    this.quietHoursEnabled = false,
+    this.quietStartHour = 22,
+    this.quietEndHour = 7,
+  });
+
+  factory HpjNotificationPreferences.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    int hour(dynamic value, int fallback) {
+      final parsed = value is num
+          ? value.toInt()
+          : int.tryParse((value ?? '').toString());
+      if (parsed == null || parsed < 0 || parsed > 23) return fallback;
+      return parsed;
+    }
+
+    return HpjNotificationPreferences(
+      ordersDelivery: data['push_orders_delivery'] != false,
+      payments: data['push_payments'] != false,
+      messages: data['push_messages'] != false,
+      produceAvailability: data['push_produce_availability'] != false,
+      priceDrops: data['push_price_drops'] != false,
+      events: data['push_events'] != false,
+      freshUpdates: data['push_fresh_updates'] != false,
+      promotions: data['push_promotions'] == true,
+      serviceStatus: data['push_service_status'] != false,
+      quietHoursEnabled: data['quiet_hours_enabled'] == true,
+      quietStartHour: hour(data['quiet_start_hour'], 22),
+      quietEndHour: hour(data['quiet_end_hour'], 7),
+    );
+  }
+
+  Map<String, dynamic> toSupabase(String userId) => <String, dynamic>{
+        'user_id': userId,
+        'push_orders_delivery': ordersDelivery,
+        'push_payments': payments,
+        'push_messages': messages,
+        'push_produce_availability': produceAvailability,
+        'push_price_drops': priceDrops,
+        'push_events': events,
+        'push_fresh_updates': freshUpdates,
+        'push_promotions': promotions,
+        'push_service_status': serviceStatus,
+        'quiet_hours_enabled': quietHoursEnabled,
+        'quiet_start_hour': quietStartHour,
+        'quiet_end_hour': quietEndHour,
+        'quiet_timezone': 'America/Jamaica',
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+
+  HpjNotificationPreferences copyWith({
+    bool? ordersDelivery,
+    bool? payments,
+    bool? messages,
+    bool? produceAvailability,
+    bool? priceDrops,
+    bool? events,
+    bool? freshUpdates,
+    bool? promotions,
+    bool? serviceStatus,
+    bool? quietHoursEnabled,
+    int? quietStartHour,
+    int? quietEndHour,
+  }) {
+    return HpjNotificationPreferences(
+      ordersDelivery: ordersDelivery ?? this.ordersDelivery,
+      payments: payments ?? this.payments,
+      messages: messages ?? this.messages,
+      produceAvailability:
+          produceAvailability ?? this.produceAvailability,
+      priceDrops: priceDrops ?? this.priceDrops,
+      events: events ?? this.events,
+      freshUpdates: freshUpdates ?? this.freshUpdates,
+      promotions: promotions ?? this.promotions,
+      serviceStatus: serviceStatus ?? this.serviceStatus,
+      quietHoursEnabled: quietHoursEnabled ?? this.quietHoursEnabled,
+      quietStartHour: quietStartHour ?? this.quietStartHour,
+      quietEndHour: quietEndHour ?? this.quietEndHour,
+    );
+  }
+}
+
+Future<HpjNotificationPreferences> fetchHpjNotificationPreferences() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return const HpjNotificationPreferences();
+
+  try {
+    final row = await supabase
+        .from('hpj_notification_preferences')
+        .select()
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (row == null) return const HpjNotificationPreferences();
+    return HpjNotificationPreferences.fromSupabase(
+      Map<String, dynamic>.from(row),
+    );
+  } catch (error) {
+    farmDebugLog('Notification preferences unavailable: $error');
+    return const HpjNotificationPreferences();
+  }
+}
+
+Future<void> saveHpjNotificationPreferences(
+  HpjNotificationPreferences preferences,
+) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) throw Exception('Please sign in first.');
+
+  await supabase.from('hpj_notification_preferences').upsert(
+        preferences.toSupabase(user.id),
+        onConflict: 'user_id',
+      );
+}
+
+String _hpjHourLabel(int hour) {
+  final normalized = hour.clamp(0, 23);
+  final period = normalized >= 12 ? 'PM' : 'AM';
+  final display = normalized % 12 == 0 ? 12 : normalized % 12;
+  return '$display:00 $period';
+}
+
+class HpjNotificationPreferencesScreen extends StatefulWidget {
+  const HpjNotificationPreferencesScreen({super.key});
+
+  @override
+  State<HpjNotificationPreferencesScreen> createState() =>
+      _HpjNotificationPreferencesScreenState();
+}
+
+class _HpjNotificationPreferencesScreenState
+    extends State<HpjNotificationPreferencesScreen> {
+  HpjNotificationPreferences preferences =
+      const HpjNotificationPreferences();
+  bool loading = true;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final loaded = await fetchHpjNotificationPreferences();
+    if (!mounted) return;
+    setState(() {
+      preferences = loaded;
+      loading = false;
+    });
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+    setState(() => saving = true);
+    try {
+      await saveHpjNotificationPreferences(preferences);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notification preferences saved.'),
+        ),
+      );
+    } catch (error) {
+      farmDebugLog('Could not save notification preferences: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not save notification preferences. Please try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Widget _switchTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return SwitchListTile.adaptive(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      secondary: Icon(icon, color: FarmColors.green),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: FarmColors.ink,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(
+          color: FarmColors.mutedText,
+          fontSize: 11.5,
+          height: 1.3,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _section({
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      decoration: BoxDecoration(
+        color: FarmColors.card,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: FarmColors.deepGreen,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 11,
+              height: 1.3,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('Notification Preferences'),
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(
+                    color: FarmColors.primarySoft,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(
+                      color: FarmColors.green.withOpacity(.14),
+                    ),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.notifications_active_outlined,
+                        color: FarmColors.green,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Choose which updates can reach your phone. '
+                          'Important activity still remains available inside '
+                          'HPJ Updates even when a push category is off.',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 12,
+                            height: 1.4,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _section(
+                  title: 'Orders & communication',
+                  subtitle:
+                      'Control the operational updates connected to your HPJ account.',
+                  children: [
+                    _switchTile(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'Orders & delivery',
+                      subtitle:
+                          'Order accepted, ready, out for delivery, delivered and cancellations.',
+                      value: preferences.ordersDelivery,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(ordersDelivery: value),
+                      ),
+                    ),
+                    _switchTile(
+                      icon: Icons.payments_outlined,
+                      title: 'Payments',
+                      subtitle:
+                          'Payment verification and payment-related order updates.',
+                      value: preferences.payments,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(payments: value),
+                      ),
+                    ),
+                    _switchTile(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      title: 'Messages from HPJ',
+                      subtitle:
+                          'Private Customer Care and HPJ Inbox replies.',
+                      value: preferences.messages,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(messages: value),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _section(
+                  title: 'Fresh alerts',
+                  subtitle:
+                      'HPJ only sends produce availability alerts for produce you follow or watch.',
+                  children: [
+                    _switchTile(
+                      icon: Icons.eco_outlined,
+                      title: 'Produce availability',
+                      subtitle:
+                          'Get a push when produce you follow or watch becomes available again.',
+                      value: preferences.produceAvailability,
+                      onChanged: (value) => setState(
+                        () => preferences = preferences.copyWith(
+                          produceAvailability: value,
+                        ),
+                      ),
+                    ),
+                    _switchTile(
+                      icon: Icons.trending_down_rounded,
+                      title: 'Price drops',
+                      subtitle:
+                          'Get a push when watched/followed produce drops in price.',
+                      value: preferences.priceDrops,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(priceDrops: value),
+                      ),
+                    ),
+                    _switchTile(
+                      icon: Icons.event_outlined,
+                      title: 'Events',
+                      subtitle:
+                          'Event reminders and important date, time, location, postponement or cancellation changes.',
+                      value: preferences.events,
+                      onChanged: (value) => setState(
+                        () =>
+                            preferences = preferences.copyWith(events: value),
+                      ),
+                    ),
+                    ListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 4),
+                      leading: const Icon(
+                        Icons.event_available_outlined,
+                        color: FarmColors.green,
+                      ),
+                      title: const Text(
+                        'Manage event alerts',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Choose the individual HPJ events you want to follow.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () {
+                        Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const HpjEventAlertsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    _switchTile(
+                      icon: Icons.agriculture_outlined,
+                      title: 'Fresh & farm updates',
+                      subtitle:
+                          'Useful fresh-market and farm-network updates.',
+                      value: preferences.freshUpdates,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(freshUpdates: value),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _section(
+                  title: 'Offers & service',
+                  subtitle:
+                      'Marketing is optional. Service-status alerts tell you when HPJ is temporarily limited and when it returns.',
+                  children: [
+                    _switchTile(
+                      icon: Icons.local_offer_outlined,
+                      title: 'Promotions & offers',
+                      subtitle:
+                          'Special offers, discounts and optional campaigns.',
+                      value: preferences.promotions,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(promotions: value),
+                      ),
+                    ),
+                    _switchTile(
+                      icon: Icons.cloud_done_outlined,
+                      title: 'HPJ service status',
+                      subtitle:
+                          'Maintenance, temporary availability changes and back-online alerts.',
+                      value: preferences.serviceStatus,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(serviceStatus: value),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _section(
+                  title: 'Quiet hours',
+                  subtitle:
+                      'Non-essential fresh, event and promotional pushes are paused during quiet hours. The updates still remain inside HPJ. Orders, payments, messages and service-status alerts are not paused.',
+                  children: [
+                    _switchTile(
+                      icon: Icons.bedtime_outlined,
+                      title: 'Use quiet hours',
+                      subtitle: preferences.quietHoursEnabled
+                          ? '${_hpjHourLabel(preferences.quietStartHour)} – ${_hpjHourLabel(preferences.quietEndHour)} Jamaica time'
+                          : 'Off',
+                      value: preferences.quietHoursEnabled,
+                      onChanged: (value) => setState(
+                        () => preferences =
+                            preferences.copyWith(quietHoursEnabled: value),
+                      ),
+                    ),
+                    if (preferences.quietHoursEnabled)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: preferences.quietStartHour,
+                              decoration:
+                                  const InputDecoration(labelText: 'Start'),
+                              items: List<DropdownMenuItem<int>>.generate(
+                                24,
+                                (hour) => DropdownMenuItem<int>(
+                                  value: hour,
+                                  child: Text(_hpjHourLabel(hour)),
+                                ),
+                              ),
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setState(
+                                  () => preferences = preferences.copyWith(
+                                    quietStartHour: value,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: preferences.quietEndHour,
+                              decoration:
+                                  const InputDecoration(labelText: 'End'),
+                              items: List<DropdownMenuItem<int>>.generate(
+                                24,
+                                (hour) => DropdownMenuItem<int>(
+                                  value: hour,
+                                  child: Text(_hpjHourLabel(hour)),
+                                ),
+                              ),
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setState(
+                                  () => preferences = preferences.copyWith(
+                                    quietEndHour: value,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: saving ? null : _save,
+                  icon: saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(saving ? 'Saving...' : 'Save preferences'),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class HpjPublicEvent {
+  final String id;
+  final String title;
+  final String description;
+  final DateTime startAt;
+  final DateTime? endAt;
+  final String locationName;
+  final String status;
+  final bool isPublished;
+  final DateTime? updatedAt;
+
+  const HpjPublicEvent({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.startAt,
+    required this.endAt,
+    required this.locationName,
+    required this.status,
+    required this.isPublished,
+    required this.updatedAt,
+  });
+
+  factory HpjPublicEvent.fromSupabase(Map<String, dynamic> data) {
+    return HpjPublicEvent(
+      id: (data['id'] ?? '').toString(),
+      title: (data['title'] ?? 'HPJ Event').toString().trim(),
+      description: (data['description'] ?? '').toString().trim(),
+      startAt: DateTime.tryParse((data['start_at'] ?? '').toString()) ??
+          DateTime.now(),
+      endAt: DateTime.tryParse((data['end_at'] ?? '').toString()),
+      locationName: (data['location_name'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'scheduled').toString().trim().toLowerCase(),
+      isPublished: data['is_published'] == true,
+      updatedAt: DateTime.tryParse((data['updated_at'] ?? '').toString()),
+    );
+  }
+
+  bool get isClosed => status == 'cancelled' || status == 'completed';
+}
+
+String hpjEventDateTimeLabel(DateTime value) {
+  final local = value.toLocal();
+  const months = <String>[
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour >= 12 ? 'PM' : 'AM';
+  return '${local.day} ${months[local.month - 1]} ${local.year} • '
+      '$hour:$minute $period';
+}
+
+Future<List<HpjPublicEvent>> fetchHpjPublicEvents({
+  bool includeUnpublished = false,
+}) async {
+  try {
+    final response = includeUnpublished
+        ? await supabase
+            .from('hpj_public_events')
+            .select(
+              'id,title,description,start_at,end_at,location_name,status,'
+              'is_published,updated_at',
+            )
+            .order('start_at', ascending: true)
+        : await supabase
+            .from('hpj_public_events')
+            .select(
+              'id,title,description,start_at,end_at,location_name,status,'
+              'is_published,updated_at',
+            )
+            .eq('is_published', true)
+            .order('start_at', ascending: true);
+
+    return (response as List)
+        .map(
+          (row) => HpjPublicEvent.fromSupabase(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList();
+  } catch (error) {
+    farmDebugLog('HPJ events unavailable: $error');
+    return const <HpjPublicEvent>[];
+  }
+}
+
+Future<HpjPublicEvent?> fetchHpjPublicEventById(String eventId) async {
+  final cleanId = eventId.trim();
+  if (cleanId.isEmpty) return null;
+  try {
+    final response = await supabase
+        .from('hpj_public_events')
+        .select(
+          'id,title,description,start_at,end_at,location_name,status,'
+          'is_published,updated_at',
+        )
+        .eq('id', cleanId)
+        .maybeSingle();
+    if (response == null) return null;
+    return HpjPublicEvent.fromSupabase(
+      Map<String, dynamic>.from(response),
+    );
+  } catch (error) {
+    farmDebugLog('HPJ event unavailable: $error');
+    return null;
+  }
+}
+
+Future<Set<String>> fetchHpjFollowedEventIds() async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return <String>{};
+  try {
+    final response = await supabase
+        .from('hpj_event_follows')
+        .select('event_id')
+        .eq('user_id', user.id);
+
+    return (response as List)
+        .map((row) => (row['event_id'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  } catch (error) {
+    farmDebugLog('Event follows unavailable: $error');
+    return <String>{};
+  }
+}
+
+Future<void> setHpjEventFollow({
+  required String eventId,
+  required bool follow,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) throw Exception('Please sign in first.');
+  final cleanId = eventId.trim();
+  if (cleanId.isEmpty) return;
+
+  if (follow) {
+    await supabase.from('hpj_event_follows').upsert(
+      <String, dynamic>{
+        'user_id': user.id,
+        'event_id': cleanId,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'user_id,event_id',
+    );
+  } else {
+    await supabase
+        .from('hpj_event_follows')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('event_id', cleanId);
+  }
+}
+
+class HpjEventAlertsScreen extends StatefulWidget {
+  const HpjEventAlertsScreen({super.key});
+
+  @override
+  State<HpjEventAlertsScreen> createState() => _HpjEventAlertsScreenState();
+}
+
+class _HpjEventAlertsScreenState extends State<HpjEventAlertsScreen> {
+  bool loading = true;
+  List<HpjPublicEvent> events = const <HpjPublicEvent>[];
+  Set<String> followedIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final values = await Future.wait<dynamic>([
+      fetchHpjPublicEvents(),
+      fetchHpjFollowedEventIds(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      events = values[0] as List<HpjPublicEvent>;
+      followedIds = values[1] as Set<String>;
+      loading = false;
+    });
+  }
+
+  Future<void> _toggle(HpjPublicEvent event, bool value) async {
+    final previous = Set<String>.from(followedIds);
+    setState(() {
+      if (value) {
+        followedIds.add(event.id);
+      } else {
+        followedIds.remove(event.id);
+      }
+    });
+
+    try {
+      await setHpjEventFollow(eventId: event.id, follow: value);
+    } catch (error) {
+      farmDebugLog('Could not update event follow: $error');
+      if (!mounted) return;
+      setState(() => followedIds = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update this event alert.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('Event Alerts'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: loading
+            ? ListView(
+                physics: AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(
+                    height: 360,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ],
+              )
+            : events.isEmpty
+                ? ListView(
+                    physics: AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.all(24),
+                    children: [
+                      SizedBox(height: 100),
+                      Icon(
+                        Icons.event_busy_outlined,
+                        size: 48,
+                        color: FarmColors.mutedText,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'No HPJ events are published right now.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
+                    itemCount: events.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final event = events[index];
+                      final followed = followedIds.contains(event.id);
+                      return Material(
+                        color: FarmColors.card,
+                        borderRadius: BorderRadius.circular(22),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(22),
+                          onTap: () {
+                            Navigator.of(context).push<void>(
+                              MaterialPageRoute<void>(
+                                builder: (_) => HpjEventDetailsScreen(
+                                  eventId: event.id,
+                                  initialEvent: event,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(15),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(color: FarmColors.line),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 45,
+                                  height: 45,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: FarmColors.primarySoft,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Icon(
+                                    Icons.event_outlined,
+                                    color: FarmColors.green,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        event.title,
+                                        style: const TextStyle(
+                                          color: FarmColors.ink,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        hpjEventDateTimeLabel(event.startAt),
+                                        style: const TextStyle(
+                                          color: FarmColors.green,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      if (event.locationName.isNotEmpty) ...[
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          event.locationName,
+                                          style: const TextStyle(
+                                            color: FarmColors.mutedText,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          const Expanded(
+                                            child: Text(
+                                              'Notify me',
+                                              style: TextStyle(
+                                                color: FarmColors.ink,
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                          ),
+                                          Switch.adaptive(
+                                            value: followed,
+                                            onChanged: event.isClosed
+                                                ? null
+                                                : (value) =>
+                                                    _toggle(event, value),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+      ),
+    );
+  }
+}
+
+class HpjEventDetailsScreen extends StatefulWidget {
+  final String eventId;
+  final HpjPublicEvent? initialEvent;
+
+  const HpjEventDetailsScreen({
+    super.key,
+    required this.eventId,
+    this.initialEvent,
+  });
+
+  @override
+  State<HpjEventDetailsScreen> createState() => _HpjEventDetailsScreenState();
+}
+
+class _HpjEventDetailsScreenState extends State<HpjEventDetailsScreen> {
+  HpjPublicEvent? event;
+  bool loading = true;
+  bool followed = false;
+  bool changingFollow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    event = widget.initialEvent;
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final values = await Future.wait<dynamic>([
+      fetchHpjPublicEventById(widget.eventId),
+      fetchHpjFollowedEventIds(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      event = (values[0] as HpjPublicEvent?) ?? event;
+      followed = (values[1] as Set<String>).contains(widget.eventId);
+      loading = false;
+    });
+  }
+
+  Future<void> _toggleFollow() async {
+    final current = event;
+    if (current == null || current.isClosed || changingFollow) return;
+    final next = !followed;
+    setState(() => changingFollow = true);
+    try {
+      await setHpjEventFollow(eventId: current.id, follow: next);
+      if (mounted) setState(() => followed = next);
+    } finally {
+      if (mounted) setState(() => changingFollow = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = event;
+
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(title: const Text('HPJ Event')),
+      body: loading && current == null
+          ? const Center(child: CircularProgressIndicator())
+          : current == null
+              ? const Center(
+                  child: Text(
+                    'This event is no longer available.',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: FarmColors.card,
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(color: FarmColors.line),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            current.title,
+                            style: const TextStyle(
+                              color: FarmColors.deepGreen,
+                              fontSize: 24,
+                              height: 1.05,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            hpjEventDateTimeLabel(current.startAt),
+                            style: const TextStyle(
+                              color: FarmColors.green,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          if (current.locationName.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on_outlined,
+                                  color: FarmColors.mutedText,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    current.locationName,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (current.description.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              current.description,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                height: 1.45,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          FilledButton.icon(
+                            onPressed:
+                                current.isClosed || changingFollow
+                                    ? null
+                                    : _toggleFollow,
+                            icon: Icon(
+                              followed
+                                  ? Icons.notifications_active_rounded
+                                  : Icons.notifications_none_rounded,
+                            ),
+                            label: Text(
+                              current.isClosed
+                                  ? 'Event ${current.status}'
+                                  : followed
+                                      ? 'Notifications on'
+                                      : 'Notify me',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+    );
+  }
+}
+
+
 class FarmNotificationButton extends StatelessWidget {
   final double size;
   final bool showBadge;
@@ -18166,11 +20465,14 @@ class FarmNotificationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<int>(
-      future: showBadge ? fetchUnreadNotificationCount() : null,
-      builder: (context, snapshot) {
-        final count = snapshot.data ?? 0;
-        return Container(
+    return ValueListenableBuilder<int>(
+      valueListenable: hpjNotificationBadgeRefreshVersion,
+      builder: (context, _, __) {
+        return FutureBuilder<int>(
+          future: showBadge ? fetchUnreadNotificationCount() : null,
+          builder: (context, snapshot) {
+            final count = snapshot.data ?? 0;
+            return Container(
           height: size,
           width: size,
           decoration: BoxDecoration(
@@ -18192,11 +20494,10 @@ class FarmNotificationButton extends StatelessWidget {
                 child: IconButton(
                   padding: EdgeInsets.zero,
                   tooltip: 'Notifications',
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsScreen(),
-                      ),
+                  onPressed: () async {
+                    await openHpjNotificationHubMenu(
+                      context,
+                      unreadCount: count,
                     );
                   },
                   icon: const Icon(
@@ -18235,6 +20536,8 @@ class FarmNotificationButton extends StatelessWidget {
                 ),
             ],
           ),
+        );
+          },
         );
       },
     );
@@ -18276,52 +20579,47 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
-  Future<void> deleteNotificationsByIds(
+  Future<int> archiveNotificationsByIds(
     Set<String> notificationIds,
   ) async {
-    final user = supabase.auth.currentUser;
+    if (notificationIds.isEmpty) return 0;
 
-    if (user == null || notificationIds.isEmpty) {
-      return;
-    }
-
-    final ids = notificationIds.where((id) => id.trim().isNotEmpty).toList();
-
-    if (ids.isEmpty) return;
-
-    await supabase.from('notifications').delete().inFilter('id', ids);
+    final archived =
+        await archiveNotificationsByIdsForCurrentUser(notificationIds);
 
     FarmDataCache.notifications = null;
+    refreshHpjNotificationBadges();
+    return archived;
   }
 
-
-  Future<void> deleteSelectedNotifications() async {
+  Future<void> archiveSelectedNotifications() async {
     if (selectedNotificationIds.isEmpty) return;
 
-    final count = selectedNotificationIds.length;
+    final ids = Set<String>.from(selectedNotificationIds);
+    final count = ids.length;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           title: Text(
-            count == 1 ? 'Delete update?' : 'Delete $count updates?',
+            count == 1
+                ? 'Clear this notification?'
+                : 'Clear $count notifications?',
           ),
           content: const Text(
-            'The selected updates will be removed from your inbox.',
+            'These notification cards will move to Recently cleared. '
+            'Orders, payments, deliveries, chats and all source records stay intact.',
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel'),
             ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('Delete'),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.archive_outlined),
+              label: const Text('Clear'),
             ),
           ],
         );
@@ -18330,10 +20628,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     if (confirmed != true) return;
 
-    final ids = Set<String>.from(selectedNotificationIds);
-
     try {
-      await deleteNotificationsByIds(ids);
+      final archived = await archiveNotificationsByIds(ids);
 
       if (!mounted) return;
 
@@ -18345,21 +20641,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            count == 1 ? 'Update deleted' : '$count updates deleted',
+            archived == 1
+                ? 'Notification moved to Recently cleared.'
+                : '$archived notifications moved to Recently cleared.',
+          ),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              unawaited(
+                restoreNotificationsByIdsForCurrentUser(ids).then((_) {
+                  if (mounted) setState(() => refreshKey++);
+                }),
+              );
+            },
           ),
         ),
       );
     } catch (error) {
-      debugPrint(
-        'DELETE NOTIFICATION ERROR: $error',
-      );
-
+      farmDebugLog('Archive selected notifications failed: $error');
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
-            'Delete failed: $error',
+            'Those notifications could not be cleared. Nothing else was changed.',
           ),
         ),
       );
@@ -18383,7 +20687,282 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (mounted) setState(() => refreshKey++);
   }
 
-  Future<void> _openNotification(FarmNotification notice) async {
+  Future<void> _clearReadNotifications() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clear read notifications?'),
+        content: const Text(
+          'Read notification cards will move to Recently cleared and can be restored. '
+          'No order, payment, delivery, chat or source record will be deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.archive_outlined),
+            label: const Text('Clear read'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final count = await archiveReadNotificationsForCurrentUser();
+      if (!mounted) return;
+      setState(() => refreshKey++);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 0
+                ? 'No read notifications needed clearing.'
+                : '$count read notification${count == 1 ? '' : 's'} moved to Recently cleared.',
+          ),
+        ),
+      );
+    } catch (error) {
+      farmDebugLog('Archive read notifications failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Read notifications could not be cleared. Source records were not changed.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _clearAllNotifications() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clear all notifications?'),
+        content: const Text(
+          'All notification cards will move to Recently cleared and can be restored. '
+          'Your orders, payments, delivery history, chats, products and other records stay exactly where they are.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.archive_outlined),
+            label: const Text('Clear notifications'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final count = await archiveAllNotificationsForCurrentUser();
+      if (!mounted) return;
+      setState(() {
+        selectedNotificationIds.clear();
+        selectedFilter = 'all';
+        refreshKey++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 0
+                ? 'Your notification inbox was already clear.'
+                : '$count notification${count == 1 ? '' : 's'} moved to Recently cleared.',
+          ),
+        ),
+      );
+    } catch (error) {
+      farmDebugLog('Archive all notifications failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Notifications could not be cleared. No source record was changed.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openRecentlyCleared() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const ArchivedNotificationsScreen(),
+      ),
+    );
+
+    if (!mounted) return;
+    FarmDataCache.notifications = null;
+    refreshHpjNotificationBadges();
+    setState(() => refreshKey++);
+  }
+
+  bool _isExistingChatNotification(FarmNotification notice) {
+    final action = hpjCanonicalNotificationActionType(notice.actionType);
+    final type = notice.type.trim().toLowerCase();
+
+    return type == 'support' &&
+            const <String>{
+              'support_chat',
+              'customer_care',
+              'customer_care_chat',
+              'chat',
+            }.contains(action) ||
+        const <String>{
+          'support_chat',
+          'customer_care',
+          'customer_care_chat',
+          'chat',
+          'admin_support_chat',
+          'staff_support_chat',
+        }.contains(action);
+  }
+
+  bool _canStartNewChatFromNotice(FarmNotification notice) {
+    final action = hpjCanonicalNotificationActionType(notice.actionType);
+    if (_isExistingChatNotification(notice)) return false;
+
+    // Admin/staff operational alerts should continue to their secured admin
+    // destination rather than opening a personal Customer Care request.
+    if (action.startsWith('admin_') ||
+        action == 'staff_support_chat') {
+      return false;
+    }
+
+    return isLoggedIn;
+  }
+
+  String _notificationChatSubject(FarmNotification notice) {
+    final type = _noticeType(notice);
+    final action = _noticeAction(notice);
+    final shortOrder = notificationOrderShortId(notice)?.trim() ?? '';
+
+    if (shortOrder.isNotEmpty) {
+      return 'Order #$shortOrder';
+    }
+
+    if (type == 'payment' || action.contains('payment')) {
+      return 'Payment help';
+    }
+
+    if (type == 'delivery' || action.contains('delivery')) {
+      return 'Delivery help';
+    }
+
+    if (_isFarmerNotice(notice)) {
+      return 'Farmer support';
+    }
+
+    if (_isWholesaleNotice(notice)) {
+      return 'Business support';
+    }
+
+    if (_isStockNotice(notice) || action.contains('product')) {
+      return 'Product help';
+    }
+
+    return 'Notification help';
+  }
+
+  String _notificationChatMessage(FarmNotification notice) {
+    final title = notice.title.trim();
+    final message = notice.message.trim();
+    final shortOrder = notificationOrderShortId(notice)?.trim() ?? '';
+
+    final parts = <String>[
+      'I need help with this HPJ update:',
+      if (shortOrder.isNotEmpty) 'Order #$shortOrder',
+      if (title.isNotEmpty) title,
+      if (message.isNotEmpty) message,
+      '',
+      'My question: ',
+    ];
+
+    var result = parts.join('\n').trimRight();
+
+    // Keep generous space available for the user's own question while staying
+    // comfortably below the 4000-character private-message limit.
+    if (result.length > 1200) {
+      result = '${result.substring(0, 1197)}...';
+    }
+
+    return result;
+  }
+
+  Future<void> _markOneNotificationRead(
+    FarmNotification notice,
+  ) async {
+    final id = notice.id.trim();
+    if (id.isEmpty || notice.isRead) return;
+
+    await supabase
+        .from('notifications')
+        .update({'is_read': true})
+        .eq('id', id);
+
+    FarmDataCache.notifications = null;
+    refreshHpjNotificationBadges();
+
+    if (mounted) {
+      setState(() => refreshKey++);
+    }
+  }
+
+  Future<void> _dismissOneNotification(
+    FarmNotification notice,
+  ) async {
+    final id = notice.id.trim();
+    if (id.isEmpty) return;
+
+    try {
+      await archiveNotificationsByIds(<String>{id});
+
+      if (!mounted) return;
+      setState(() {
+        selectedNotificationIds.remove(id);
+        refreshKey++;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Notification moved to Recently cleared.',
+          ),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              unawaited(
+                restoreNotificationsByIdsForCurrentUser(<String>{id}).then((_) {
+                  if (mounted) setState(() => refreshKey++);
+                }),
+              );
+            },
+          ),
+        ),
+      );
+    } catch (error) {
+      farmDebugLog('Notification dismiss failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'That update could not be dismissed. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _viewNotificationDestination(
+    FarmNotification notice,
+  ) async {
     final opened = await PushNotificationService.openFarmNotification(
       notice,
       context: context,
@@ -18402,10 +20981,241 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'This update is still unread because its destination could not be opened.',
+          'This update could not open its destination. You can still start a chat with HPJ for help.',
         ),
       ),
     );
+  }
+
+  Future<void> _startChatFromNotification(
+    FarmNotification notice,
+  ) async {
+    try {
+      await _markOneNotificationRead(notice);
+    } catch (error) {
+      farmDebugLog('Notification read-before-chat skipped: $error');
+    }
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SupportScreen(
+          initialSubject: _notificationChatSubject(notice),
+          initialMessage: _notificationChatMessage(notice),
+        ),
+      ),
+    );
+
+    if (mounted) {
+      FarmDataCache.notifications = null;
+      setState(() => refreshKey++);
+    }
+  }
+
+  Future<void> _openNotification(FarmNotification notice) async {
+    // A message notification should always open the existing private
+    // conversation directly. Starting a second chat would fragment support.
+    if (_isExistingChatNotification(notice)) {
+      await _viewNotificationDestination(notice);
+      return;
+    }
+
+    final canChat = _canStartNewChatFromNotice(notice);
+    final hasDestination = notice.hasAction || notice.hasOrderLink;
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: FarmColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(26),
+        ),
+      ),
+      builder: (sheetContext) {
+        final accent = farmNotificationAccent(notice);
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: FarmColors.line,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Icon(
+                      notice.icon,
+                      color: accent,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          notice.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        if (notice.message.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            notice.message.trim(),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 11.5,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (hasDestination)
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  tileColor: Colors.white,
+                  leading: const Icon(
+                    Icons.open_in_new_rounded,
+                    color: FarmColors.green,
+                  ),
+                  title: const Text(
+                    'View details',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Open the order, product, delivery or related HPJ screen.',
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'view'),
+                ),
+              if (hasDestination && canChat)
+                const SizedBox(height: 7),
+              if (canChat)
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  tileColor: FarmColors.primarySoft,
+                  leading: const Icon(
+                    Icons.add_comment_rounded,
+                    color: FarmColors.green,
+                  ),
+                  title: const Text(
+                    'Start new chat with HPJ',
+                    style: TextStyle(
+                      color: FarmColors.deepGreen,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'The update details will be added to your new private message.',
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'chat'),
+                ),
+              const SizedBox(height: 7),
+              if (!notice.isRead)
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  leading: const Icon(
+                    Icons.done_rounded,
+                    color: FarmColors.green,
+                  ),
+                  title: const Text(
+                    'Mark as read',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'read'),
+                ),
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                leading: const Icon(
+                  Icons.archive_outlined,
+                  color: FarmColors.mutedText,
+                ),
+                title: const Text(
+                  'Clear notification',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Moves this card to Recently cleared. The source record stays intact.',
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'dismiss'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) return;
+
+    switch (action) {
+      case 'view':
+        await _viewNotificationDestination(notice);
+        break;
+      case 'chat':
+        await _startChatFromNotification(notice);
+        break;
+      case 'read':
+        try {
+          await _markOneNotificationRead(notice);
+        } catch (error) {
+          farmDebugLog('Notification mark-read failed: $error');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not mark this update as read.'),
+            ),
+          );
+        }
+        break;
+      case 'dismiss':
+        await _dismissOneNotification(notice);
+        break;
+    }
   }
 
   String _noticeType(FarmNotification notice) =>
@@ -18524,13 +21334,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         actions: [
           if (isSelecting)
             IconButton(
-              tooltip: 'Delete selected',
-              onPressed: deleteSelectedNotifications,
+              tooltip: 'Clear selected',
+              onPressed: archiveSelectedNotifications,
               icon: const Icon(
-                Icons.delete_outline_rounded,
+                Icons.archive_outlined,
               ),
             )
-          else
+          else ...[
             IconButton(
               tooltip: 'Refresh',
               onPressed: refreshNotifications,
@@ -18538,6 +21348,68 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 Icons.restart_alt_rounded,
               ),
             ),
+            PopupMenuButton<String>(
+              tooltip: 'Notification cleanup',
+              onSelected: (value) {
+                switch (value) {
+                  case 'mark_read':
+                    unawaited(markReadAndRefresh());
+                    break;
+                  case 'recently_cleared':
+                    unawaited(_openRecentlyCleared());
+                    break;
+                  case 'clear_read':
+                    unawaited(_clearReadNotifications());
+                    break;
+                  case 'clear_all':
+                    unawaited(_clearAllNotifications());
+                    break;
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'mark_read',
+                  child: Row(
+                    children: [
+                      Icon(Icons.done_all_rounded),
+                      SizedBox(width: 10),
+                      Text('Mark all read'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'recently_cleared',
+                  child: Row(
+                    children: [
+                      Icon(Icons.history_rounded),
+                      SizedBox(width: 10),
+                      Text('Recently cleared'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'clear_read',
+                  child: Row(
+                    children: [
+                      Icon(Icons.archive_outlined),
+                      SizedBox(width: 10),
+                      Text('Clear read'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'clear_all',
+                  child: Row(
+                    children: [
+                      Icon(Icons.inventory_2_outlined),
+                      SizedBox(width: 10),
+                      Text('Clear all'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
       body: FarmPage(
@@ -18650,6 +21522,246 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 toggleNotificationSelection(notice);
                               }
                             : () => _openNotification(notice),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+
+class ArchivedNotificationsScreen extends StatefulWidget {
+  const ArchivedNotificationsScreen({super.key});
+
+  @override
+  State<ArchivedNotificationsScreen> createState() =>
+      _ArchivedNotificationsScreenState();
+}
+
+class _ArchivedNotificationsScreenState
+    extends State<ArchivedNotificationsScreen> {
+  int refreshKey = 0;
+  bool restoringAll = false;
+
+  Future<void> _restoreOne(FarmNotification notice) async {
+    final id = notice.id.trim();
+    if (id.isEmpty) return;
+
+    try {
+      final count = await restoreNotificationsByIdsForCurrentUser(
+        <String>{id},
+      );
+      if (!mounted) return;
+      setState(() => refreshKey++);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 1
+                ? 'Notification restored.'
+                : 'Nothing needed restoring.',
+          ),
+        ),
+      );
+    } catch (error) {
+      farmDebugLog('Restore notification failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not restore that notification.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _restoreAll() async {
+    if (restoringAll) return;
+    setState(() => restoringAll = true);
+
+    try {
+      final count = await restoreAllArchivedNotificationsForCurrentUser();
+      if (!mounted) return;
+      setState(() => refreshKey++);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 0
+                ? 'There were no cleared notifications to restore.'
+                : '$count notification${count == 1 ? '' : 's'} restored.',
+          ),
+        ),
+      );
+    } catch (error) {
+      farmDebugLog('Restore all notifications failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not restore cleared notifications.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => restoringAll = false);
+    }
+  }
+
+  Future<void> _viewSource(FarmNotification notice) async {
+    final opened = await PushNotificationService.openFarmNotification(
+      notice,
+      context: context,
+    );
+
+    if (!mounted || opened) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'The source screen could not be opened, but no record was deleted.',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        backgroundColor: FarmColors.background,
+        title: const Text('Recently cleared'),
+        actions: [
+          TextButton.icon(
+            onPressed: restoringAll ? null : _restoreAll,
+            icon: restoringAll
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.restore_rounded),
+            label: const Text('Restore all'),
+          ),
+          const SizedBox(width: 6),
+        ],
+      ),
+      body: FarmPage(
+        child: FutureBuilder<List<FarmNotification>>(
+          key: ValueKey(refreshKey),
+          future: fetchArchivedFarmNotifications(
+            forceRefresh: true,
+          ),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const SkeletonList(count: 3, height: 104);
+            }
+
+            final notifications =
+                snapshot.data ?? const <FarmNotification>[];
+
+            return RefreshIndicator(
+              onRefresh: () async {
+                if (mounted) setState(() => refreshKey++);
+              },
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 120),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: FarmColors.primarySoft,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: FarmColors.green.withOpacity(0.14),
+                      ),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.shield_outlined,
+                          color: FarmColors.green,
+                        ),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Clearing notifications only hides notification cards. '
+                            'Orders, payments, deliveries, chats and other source records remain untouched.',
+                            style: TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 11.5,
+                              height: 1.4,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  if (notifications.isEmpty)
+                    const FarmCard(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 22),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.inventory_2_outlined,
+                              color: FarmColors.green,
+                              size: 34,
+                            ),
+                            SizedBox(height: 9),
+                            Text(
+                              'Nothing recently cleared',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 5),
+                            Text(
+                              'Notifications you clear will appear here so you can restore them.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 11.5,
+                                height: 1.35,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    ...notifications.map(
+                      (notice) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FarmNotificationTile(
+                            notice: notice,
+                            onTap: notice.hasAction || notice.hasOrderLink
+                                ? () => unawaited(_viewSource(notice))
+                                : null,
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: () => unawaited(_restoreOne(notice)),
+                              icon: const Icon(
+                                Icons.restore_rounded,
+                                size: 17,
+                              ),
+                              label: const Text('Restore'),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                       ),
                     ),
                 ],
@@ -19101,11 +22213,13 @@ class FarmNotificationTile extends StatelessWidget {
 // HPJ PREMIUM REFERENCE — PHASE 9 CUSTOMER CARE, TRUST & SAVED SHOPPING
 class SupportScreen extends StatefulWidget {
   final String initialSubject;
+  final String initialMessage;
   final bool embedded;
 
   const SupportScreen({
     super.key,
     this.initialSubject = '',
+    this.initialMessage = '',
     this.embedded = false,
   });
 
@@ -19116,6 +22230,7 @@ class SupportScreen extends StatefulWidget {
 class _SupportScreenState extends State<SupportScreen> {
   int refreshKey = 0;
   bool autoOpenedComposer = false;
+  bool showArchived = false;
 
   @override
   void initState() {
@@ -19137,7 +22252,9 @@ class _SupportScreenState extends State<SupportScreen> {
     final subjectController = TextEditingController(
       text: widget.initialSubject.trim(),
     );
-    final messageController = TextEditingController();
+    final messageController = TextEditingController(
+      text: widget.initialMessage.trim(),
+    );
     var sending = false;
 
     final createdTicketId = await showModalBottomSheet<String>(
@@ -19355,22 +22472,54 @@ class _SupportScreenState extends State<SupportScreen> {
                 const SupportHeroCard(),
                 const SizedBox(height: 14),
                 PrimaryFarmButton(
-                  label: 'New Message',
-                  icon: Icons.chat_rounded,
+                  label: 'Start New Chat',
+                  icon: Icons.add_comment_rounded,
                   onPressed: openNewConversation,
                 ),
               ],
               const SizedBox(height: 10),
               const _SupportPrivacyNote(),
               const SizedBox(height: 22),
-              const SectionHeader(
-                title: 'Messages',
-                subtitle: 'Private conversations with HPJ',
+              Row(
+                children: [
+                  const Expanded(
+                    child: SectionHeader(
+                      title: 'Messages',
+                      subtitle: 'Private conversations with HPJ',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Active'),
+                    selected: !showArchived,
+                    onSelected: (_) {
+                      if (showArchived) {
+                        setState(() {
+                          showArchived = false;
+                          refreshKey++;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  ChoiceChip(
+                    label: const Text('Archived'),
+                    selected: showArchived,
+                    onSelected: (_) {
+                      if (!showArchived) {
+                        setState(() {
+                          showArchived = true;
+                          refreshKey++;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               FutureBuilder<List<SupportTicket>>(
-                key: ValueKey(refreshKey),
-                future: fetchMySupportTickets(),
+                key: ValueKey('${refreshKey}_$showArchived'),
+                future: fetchMySupportTickets(archived: showArchived),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting &&
                       !snapshot.hasData) {
@@ -19380,12 +22529,17 @@ class _SupportScreenState extends State<SupportScreen> {
                   final tickets = snapshot.data ?? const <SupportTicket>[];
                   if (tickets.isEmpty) {
                     return FarmEmptyState(
-                      icon: Icons.forum_outlined,
-                      title: 'No conversations yet',
-                      message:
-                          'Start a private chat whenever you need help with an order, payment, supply, collection, or your account.',
-                      actionLabel: 'Start Chat',
-                      onAction: openNewConversation,
+                      icon: showArchived
+                          ? Icons.archive_outlined
+                          : Icons.forum_outlined,
+                      title: showArchived
+                          ? 'No archived conversations'
+                          : 'No conversations yet',
+                      message: showArchived
+                          ? 'Archived conversations will stay here until you restore them.'
+                          : 'Start a private chat whenever you need help with an order, payment, supply, collection, or your account.',
+                      actionLabel: showArchived ? null : 'Start Chat',
+                      onAction: showArchived ? null : openNewConversation,
                       compact: true,
                     );
                   }
@@ -19429,6 +22583,22 @@ class _SupportScreenState extends State<SupportScreen> {
           desktopWeb ? 'Customer Care' : 'Inbox',
         ),
         backgroundColor: FarmColors.background,
+        actions: [
+          TextButton.icon(
+            onPressed: openNewConversation,
+            icon: const Icon(
+              Icons.add_comment_rounded,
+              size: 18,
+            ),
+            label: const Text(
+              'New Chat',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
       ),
       body: supportContent,
     );
@@ -19788,6 +22958,398 @@ class _PremiumTicketMeta extends StatelessWidget {
   }
 }
 
+Future<String?> _showHpjSupportReactionPicker(
+  BuildContext context, {
+  String current = '',
+}) {
+  const reactions = <String>['👍', '❤️', '✅', '🙏', '😂', '😮'];
+  return showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: FarmColors.background,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (sheetContext) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'React to message',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (final reaction in reactions)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.pop(sheetContext, reaction),
+                      child: Container(
+                        width: 46,
+                        height: 46,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: reaction == current
+                              ? FarmColors.primarySoft
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: reaction == current
+                                ? FarmColors.green
+                                : FarmColors.line,
+                          ),
+                        ),
+                        child: Text(
+                          reaction,
+                          style: const TextStyle(fontSize: 23),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (current.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Tap $current again to remove your reaction.',
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _HpjSupportAttachmentView extends StatelessWidget {
+  final SupportMessage message;
+  final bool fromStaff;
+
+  const _HpjSupportAttachmentView({
+    required this.message,
+    required this.fromStaff,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!message.hasAttachment || message.isDeletedForEveryone) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<String?>(
+      future: createSupportChatMediaSignedUrl(message.attachmentPath),
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            height: 118,
+            width: 190,
+            margin: const EdgeInsets.only(bottom: 8),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: fromStaff
+                  ? FarmColors.background
+                  : Colors.white.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            ),
+          );
+        }
+
+        if (url == null || url.trim().isEmpty) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: fromStaff
+                  ? FarmColors.background
+                  : Colors.white.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.broken_image_outlined,
+                  size: 18,
+                  color: fromStaff
+                      ? FarmColors.mutedText
+                      : Colors.white.withOpacity(0.85),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  'Attachment unavailable',
+                  style: TextStyle(
+                    color: fromStaff
+                        ? FarmColors.mutedText
+                        : Colors.white.withOpacity(0.85),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (message.isPhoto) {
+          return GestureDetector(
+            onTap: () {
+              showDialog<void>(
+                context: context,
+                builder: (_) => Dialog(
+                  backgroundColor: Colors.black,
+                  insetPadding: const EdgeInsets.all(12),
+                  child: InteractiveViewer(
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const SizedBox(
+                        height: 240,
+                        child: Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minWidth: 150,
+                  maxWidth: 230,
+                  maxHeight: 260,
+                ),
+                child: Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 130,
+                    width: 190,
+                    alignment: Alignment.center,
+                    color: FarmColors.background,
+                    child: const Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _HpjSupportVideoScreen(
+                  url: url,
+                  title: message.attachmentName.trim().isEmpty
+                      ? 'Private video'
+                      : message.attachmentName.trim(),
+                ),
+              ),
+            );
+          },
+          child: Container(
+            width: 205,
+            height: 125,
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF14241C),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const Icon(
+                  Icons.play_circle_fill_rounded,
+                  color: Colors.white,
+                  size: 48,
+                ),
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 9,
+                  child: Text(
+                    message.attachmentName.trim().isEmpty
+                        ? 'Private video'
+                        : message.attachmentName.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HpjSupportVideoScreen extends StatefulWidget {
+  final String url;
+  final String title;
+
+  const _HpjSupportVideoScreen({
+    required this.url,
+    required this.title,
+  });
+
+  @override
+  State<_HpjSupportVideoScreen> createState() => _HpjSupportVideoScreenState();
+}
+
+class _HpjSupportVideoScreenState extends State<_HpjSupportVideoScreen> {
+  VideoPlayerController? controller;
+  Object? error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_prepare());
+  }
+
+  Future<void> _prepare() async {
+    try {
+      final next = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await next.initialize();
+      await next.setLooping(false);
+      if (!mounted) {
+        await next.dispose();
+        return;
+      }
+      setState(() => controller = next);
+    } catch (e) {
+      if (mounted) setState(() => error = e);
+    }
+  }
+
+  @override
+  void dispose() {
+    controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final video = controller;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(
+          widget.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: Center(
+        child: error != null
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'This private video could not be opened.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              )
+            : video == null || !video.value.isInitialized
+                ? const CircularProgressIndicator(color: Colors.white)
+                : GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (video.value.isPlaying) {
+                          video.pause();
+                        } else {
+                          video.play();
+                        }
+                      });
+                    },
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        AspectRatio(
+                          aspectRatio: video.value.aspectRatio,
+                          child: VideoPlayer(video),
+                        ),
+                        if (!video.value.isPlaying)
+                          const Icon(
+                            Icons.play_circle_fill_rounded,
+                            color: Colors.white,
+                            size: 64,
+                          ),
+                      ],
+                    ),
+                  ),
+      ),
+    );
+  }
+}
+
+class _HpjSupportTypingIndicator extends StatelessWidget {
+  final String label;
+
+  const _HpjSupportTypingIndicator(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 3, 16, 6),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.7,
+              color: FarmColors.green,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 10.8,
+              fontStyle: FontStyle.italic,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class SupportConversationScreen extends StatefulWidget {
   final SupportTicket ticket;
 
@@ -19803,9 +23365,22 @@ class SupportConversationScreen extends StatefulWidget {
 
 class _SupportConversationScreenState extends State<SupportConversationScreen> {
   final messageController = TextEditingController();
+  final messageFocusNode = FocusNode();
   final scrollController = ScrollController();
+
   bool sending = false;
+  bool uploadingMedia = false;
+  bool searching = false;
+  String searchQuery = '';
   String? lastReadMessageId;
+  SupportMessage? replyingTo;
+  SupportMessage? editingMessage;
+  List<SupportMessage> latestMessages = const <SupportMessage>[];
+
+  Timer? typingTimer;
+  DateTime? lastTypingSentAt;
+
+  String get _currentUserId => supabase.auth.currentUser?.id ?? '';
 
   @override
   void initState() {
@@ -19815,36 +23390,586 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
 
   @override
   void dispose() {
+    typingTimer?.cancel();
+    unawaited(
+      setSupportTyping(
+        ticketId: widget.ticket.id,
+        typing: false,
+      ),
+    );
     messageController.dispose();
+    messageFocusNode.dispose();
     scrollController.dispose();
     super.dispose();
   }
 
+  bool _isMine(SupportMessage message) =>
+      _currentUserId.isNotEmpty && message.senderUserId == _currentUserId;
+
+  bool _withinChangeWindow(SupportMessage message) {
+    final createdAt = message.createdAt;
+    if (createdAt == null) return false;
+    return DateTime.now().difference(createdAt).inMinutes < 15;
+  }
+
+  bool _matchesSearch(SupportMessage message) {
+    final query = searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return message.displayMessage.toLowerCase().contains(query) ||
+        message.replyPreview.toLowerCase().contains(query) ||
+        message.attachmentName.toLowerCase().contains(query) ||
+        (message.isPhoto && 'photo'.contains(query)) ||
+        (message.isVideo && 'video'.contains(query));
+  }
+
+  void _handleTyping(String value) {
+    typingTimer?.cancel();
+
+    final hasText = value.trim().isNotEmpty;
+    if (!hasText) {
+      unawaited(
+        setSupportTyping(ticketId: widget.ticket.id, typing: false),
+      );
+      return;
+    }
+
+    final now = DateTime.now();
+    if (lastTypingSentAt == null ||
+        now.difference(lastTypingSentAt!).inSeconds >= 2) {
+      lastTypingSentAt = now;
+      unawaited(
+        setSupportTyping(ticketId: widget.ticket.id, typing: true),
+      );
+    }
+
+    typingTimer = Timer(const Duration(seconds: 3), () {
+      unawaited(
+        setSupportTyping(ticketId: widget.ticket.id, typing: false),
+      );
+    });
+  }
+
   Future<void> sendMessage() async {
     final message = messageController.text.trim();
-    if (message.isEmpty || sending) return;
+    if (message.isEmpty || sending || uploadingMedia) return;
 
     setState(() => sending = true);
     try {
-      await sendSupportMessage(
-        ticketId: widget.ticket.id,
-        message: message,
-      );
+      final editing = editingMessage;
+      if (editing != null) {
+        await editSupportMessage(
+          messageId: editing.id,
+          message: message,
+        );
+      } else {
+        await sendSupportMessage(
+          ticketId: widget.ticket.id,
+          message: message,
+          replyToMessageId: replyingTo?.id,
+        );
+      }
+
       messageController.clear();
+      unawaited(
+        setSupportTyping(ticketId: widget.ticket.id, typing: false),
+      );
       if (mounted) {
-        FocusScope.of(context).unfocus();
+        setState(() {
+          editingMessage = null;
+          replyingTo = null;
+        });
+        messageFocusNode.unfocus();
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not send message: ${friendlyAppError(error)}'),
+            content: Text('Could not save message: ${friendlyAppError(error)}'),
           ),
         );
       }
     } finally {
       if (mounted) setState(() => sending = false);
     }
+  }
+
+  Future<void> _sendAttachment(String type) async {
+    if (sending || uploadingMedia) return;
+
+    final picker = ImagePicker();
+    XFile? file;
+    try {
+      if (type == 'image') {
+        file = await picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 88,
+          maxWidth: 1800,
+        );
+      } else {
+        file = await picker.pickVideo(
+          source: ImageSource.gallery,
+          maxDuration: const Duration(minutes: 2),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open media picker: ${friendlyAppError(error)}')),
+      );
+      return;
+    }
+
+    if (file == null || !mounted) return;
+
+    setState(() => uploadingMedia = true);
+    String uploadedPath = '';
+    try {
+      uploadedPath = await uploadSupportChatMedia(
+        ticketId: widget.ticket.id,
+        file: file,
+        attachmentType: type,
+      );
+
+      await sendSupportMessage(
+        ticketId: widget.ticket.id,
+        message: messageController.text.trim(),
+        replyToMessageId: replyingTo?.id,
+        attachmentPath: uploadedPath,
+        attachmentType: type,
+        attachmentName: file.name,
+      );
+
+      messageController.clear();
+      uploadedPath = '';
+      unawaited(
+        setSupportTyping(ticketId: widget.ticket.id, typing: false),
+      );
+      if (mounted) {
+        setState(() {
+          replyingTo = null;
+          editingMessage = null;
+        });
+      }
+    } catch (error) {
+      // If Storage accepted the media but the message row failed, remove the
+      // orphaned object so failed chat sends do not accumulate private files.
+      if (uploadedPath.isNotEmpty) {
+        await deleteOwnSupportChatMedia(uploadedPath);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not send attachment: ${friendlyAppError(error)}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => uploadingMedia = false);
+    }
+  }
+
+  Future<void> _showAttachmentMenu() async {
+    final type = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: FarmColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_outlined, color: FarmColors.green),
+              title: const Text('Photo'),
+              subtitle: const Text('Send a private photo from your device'),
+              onTap: () => Navigator.pop(sheetContext, 'image'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam_outlined, color: FarmColors.green),
+              title: const Text('Video'),
+              subtitle: const Text('Send a private video up to 15 MB'),
+              onTap: () => Navigator.pop(sheetContext, 'video'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || type == null) return;
+    await _sendAttachment(type);
+  }
+
+  void _startReply(SupportMessage message) {
+    setState(() {
+      replyingTo = message;
+      editingMessage = null;
+    });
+    messageFocusNode.requestFocus();
+  }
+
+  void _startEdit(SupportMessage message) {
+    setState(() {
+      editingMessage = message;
+      replyingTo = null;
+      messageController.text = message.message;
+      messageController.selection = TextSelection.fromPosition(
+        TextPosition(offset: messageController.text.length),
+      );
+    });
+    messageFocusNode.requestFocus();
+  }
+
+  void _cancelComposeContext() {
+    final wasEditing = editingMessage != null;
+    setState(() {
+      replyingTo = null;
+      editingMessage = null;
+      if (wasEditing) messageController.clear();
+    });
+  }
+
+  Future<void> _hideForMe(SupportMessage message) async {
+    try {
+      await hideSupportMessageForMe(message.id);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not hide message: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _deleteForEveryone(SupportMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete for everyone?'),
+        content: const Text(
+          'The message will be replaced with “This message was deleted”. '
+          'HPJ keeps the protected record for support and transaction integrity.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await deleteSupportMessageForEveryone(message.id);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete message: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _react(SupportMessage message) async {
+    final current = message.reactionForUser(_currentUserId);
+    final reaction = await _showHpjSupportReactionPicker(
+      context,
+      current: current,
+    );
+    if (!mounted || reaction == null) return;
+
+    try {
+      await toggleSupportMessageReaction(
+        messageId: message.id,
+        reaction: reaction,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save reaction: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _toggleStar(SupportMessage message) async {
+    try {
+      await toggleSupportMessageStar(message.id);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update star: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _togglePin(
+    SupportTicket ticket,
+    SupportMessage message,
+  ) async {
+    final isPinned = ticket.pinnedMessageId == message.id;
+    try {
+      await setSupportPinnedMessage(
+        ticketId: ticket.id,
+        messageId: isPinned ? null : message.id,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update pinned message: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _showMessageActions(
+    SupportTicket ticket,
+    SupportMessage message,
+  ) async {
+    if (message.isDeletedForEveryone) {
+      await _hideForMe(message);
+      return;
+    }
+
+    final mine = _isMine(message);
+    final canChange = mine && _withinChangeWindow(message);
+    final isStarred = message.isStarredFor(_currentUserId);
+    final isPinned = ticket.pinnedMessageId == message.id;
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: FarmColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.reply_rounded),
+                title: const Text('Reply'),
+                onTap: () => Navigator.pop(sheetContext, 'reply'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.add_reaction_outlined),
+                title: const Text('React'),
+                onTap: () => Navigator.pop(sheetContext, 'react'),
+              ),
+              ListTile(
+                leading: Icon(
+                  isStarred ? Icons.star_rounded : Icons.star_border_rounded,
+                ),
+                title: Text(isStarred ? 'Remove star' : 'Star message'),
+                onTap: () => Navigator.pop(sheetContext, 'star'),
+              ),
+              ListTile(
+                leading: Icon(
+                  isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                ),
+                title: Text(isPinned ? 'Unpin message' : 'Pin for this chat'),
+                onTap: () => Navigator.pop(sheetContext, 'pin'),
+              ),
+              if (canChange && message.message.trim().isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Edit'),
+                  subtitle: const Text('Available for 15 minutes after sending'),
+                  onTap: () => Navigator.pop(sheetContext, 'edit'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.visibility_off_outlined),
+                title: const Text('Delete for me'),
+                subtitle: const Text('Only hides this message from your view'),
+                onTap: () => Navigator.pop(sheetContext, 'hide'),
+              ),
+              if (canChange)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded),
+                  title: const Text('Delete for everyone'),
+                  subtitle: const Text('Available for 15 minutes after sending'),
+                  onTap: () => Navigator.pop(sheetContext, 'delete'),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'reply':
+        _startReply(message);
+        break;
+      case 'react':
+        await _react(message);
+        break;
+      case 'star':
+        await _toggleStar(message);
+        break;
+      case 'pin':
+        await _togglePin(ticket, message);
+        break;
+      case 'edit':
+        _startEdit(message);
+        break;
+      case 'hide':
+        await _hideForMe(message);
+        break;
+      case 'delete':
+        await _deleteForEveryone(message);
+        break;
+    }
+  }
+
+  Future<void> _archiveConversation(SupportTicket ticket) async {
+    try {
+      await setSupportConversationArchived(
+        ticketId: ticket.id,
+        archived: !ticket.isArchivedForUser,
+      );
+      if (!mounted) return;
+      if (!ticket.isArchivedForUser) {
+        Navigator.pop(context);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update archive: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _markUnread(SupportTicket ticket) async {
+    try {
+      await setSupportConversationMarkedUnread(
+        ticketId: ticket.id,
+        marked: true,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not mark unread: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  Future<void> _setMute(SupportTicket ticket, Duration? duration) async {
+    try {
+      await setSupportConversationMuted(
+        ticketId: ticket.id,
+        mutedUntil: duration == null ? null : DateTime.now().add(duration),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            duration == null
+                ? 'Conversation notifications unmuted.'
+                : 'Conversation push notifications muted.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update mute: ${friendlyAppError(error)}')),
+      );
+    }
+  }
+
+  void _showStarredMessages() {
+    final starred = latestMessages
+        .where((message) =>
+            !message.isDeletedForEveryone &&
+            message.isStarredFor(_currentUserId))
+        .toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: FarmColors.background,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.62,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 18, 18, 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.star_rounded, color: FarmColors.green),
+                    SizedBox(width: 8),
+                    Text(
+                      'Starred messages',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: starred.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No starred messages in this conversation.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: starred.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final message = starred[index];
+                          final label = message.message.trim().isNotEmpty
+                              ? message.message.trim()
+                              : message.isPhoto
+                                  ? 'Photo'
+                                  : message.isVideo
+                                      ? 'Video'
+                                      : 'Message';
+                          return ListTile(
+                            leading: const Icon(
+                              Icons.star_rounded,
+                              color: FarmColors.green,
+                            ),
+                            title: Text(
+                              label,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              message.createdAt == null
+                                  ? ''
+                                  : formatCustomerDateTime(message.createdAt!),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void markReadIfNeeded(List<SupportMessage> messages) {
@@ -19870,38 +23995,162 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
       initialData: widget.ticket,
       builder: (context, ticketSnapshot) {
         final ticket = ticketSnapshot.data ?? widget.ticket;
+
         return Scaffold(
           backgroundColor: FarmColors.background,
           appBar: AppBar(
             backgroundColor: FarmColors.background,
-            titleSpacing: 0,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'HPJ Inbox',
-                      style: TextStyle(fontWeight: FontWeight.w900),
+            titleSpacing: searching ? 12 : 0,
+            title: searching
+                ? TextField(
+                    autofocus: true,
+                    onChanged: (value) => setState(() => searchQuery = value),
+                    decoration: const InputDecoration(
+                      hintText: 'Search this chat...',
+                      border: InputBorder.none,
                     ),
-                    SizedBox(width: 5),
-                    Icon(Icons.verified_rounded,
-                        size: 17, color: FarmColors.green),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'HPJ Inbox',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          SizedBox(width: 5),
+                          Icon(Icons.verified_rounded,
+                              size: 17, color: FarmColors.green),
+                        ],
+                      ),
+                      Text(
+                        ticket.subject,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+            actions: [
+              if (searching)
+                IconButton(
+                  tooltip: 'Close search',
+                  onPressed: () {
+                    setState(() {
+                      searching = false;
+                      searchQuery = '';
+                    });
+                  },
+                  icon: const Icon(Icons.close_rounded),
+                )
+              else ...[
+                IconButton(
+                  tooltip: 'Search chat',
+                  onPressed: () => setState(() => searching = true),
+                  icon: const Icon(Icons.search_rounded),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Conversation options',
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'starred':
+                        _showStarredMessages();
+                        break;
+                      case 'mark_unread':
+                        unawaited(_markUnread(ticket));
+                        break;
+                      case 'archive':
+                        unawaited(_archiveConversation(ticket));
+                        break;
+                      case 'mute8':
+                        unawaited(_setMute(ticket, const Duration(hours: 8)));
+                        break;
+                      case 'mute7':
+                        unawaited(_setMute(ticket, const Duration(days: 7)));
+                        break;
+                      case 'unmute':
+                        unawaited(_setMute(ticket, null));
+                        break;
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'starred',
+                      child: Row(
+                        children: [
+                          Icon(Icons.star_outline_rounded),
+                          SizedBox(width: 10),
+                          Text('Starred messages'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'mark_unread',
+                      child: Row(
+                        children: [
+                          Icon(Icons.mark_email_unread_outlined),
+                          SizedBox(width: 10),
+                          Text('Mark unread'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'archive',
+                      child: Row(
+                        children: [
+                          Icon(ticket.isArchivedForUser
+                              ? Icons.unarchive_outlined
+                              : Icons.archive_outlined),
+                          const SizedBox(width: 10),
+                          Text(ticket.isArchivedForUser
+                              ? 'Restore chat'
+                              : 'Archive chat'),
+                        ],
+                      ),
+                    ),
+                    if (ticket.isMutedForUser)
+                      const PopupMenuItem(
+                        value: 'unmute',
+                        child: Row(
+                          children: [
+                            Icon(Icons.notifications_active_outlined),
+                            SizedBox(width: 10),
+                            Text('Unmute'),
+                          ],
+                        ),
+                      )
+                    else ...[
+                      const PopupMenuItem(
+                        value: 'mute8',
+                        child: Row(
+                          children: [
+                            Icon(Icons.notifications_off_outlined),
+                            SizedBox(width: 10),
+                            Text('Mute for 8 hours'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'mute7',
+                        child: Row(
+                          children: [
+                            Icon(Icons.notifications_off_outlined),
+                            SizedBox(width: 10),
+                            Text('Mute for 1 week'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                Text(
-                  ticket.subject,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
               ],
-            ),
+            ],
           ),
           body: SafeArea(
             top: false,
@@ -19937,6 +24186,15 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
                           ),
                         ),
                       ),
+                      if (ticket.isMutedForUser)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 6),
+                          child: Icon(
+                            Icons.notifications_off_outlined,
+                            size: 17,
+                            color: FarmColors.mutedText,
+                          ),
+                        ),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -19983,18 +24241,34 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
                   child: StreamBuilder<List<SupportMessage>>(
                     stream: watchSupportMessages(ticket.id),
                     builder: (context, snapshot) {
-                      final messages =
-                          snapshot.data ?? const <SupportMessage>[];
-                      markReadIfNeeded(messages);
+                      final userId = _currentUserId;
+                      final allMessages = (snapshot.data ?? const <SupportMessage>[])
+                          .where((message) => !message.isHiddenFor(userId))
+                          .toList();
+                      latestMessages = allMessages;
+                      markReadIfNeeded(allMessages);
+
+                      final messages = allMessages.where(_matchesSearch).toList();
+
+                      SupportMessage? pinned;
+                      if (ticket.pinnedMessageId.trim().isNotEmpty) {
+                        for (final message in allMessages) {
+                          if (message.id == ticket.pinnedMessageId &&
+                              !message.isDeletedForEveryone) {
+                            pinned = message;
+                            break;
+                          }
+                        }
+                      }
 
                       if (snapshot.connectionState == ConnectionState.waiting &&
-                          messages.isEmpty) {
+                          allMessages.isEmpty) {
                         return const Center(
                           child: CircularProgressIndicator(),
                         );
                       }
 
-                      if (messages.isEmpty) {
+                      if (allMessages.isEmpty) {
                         return const Center(
                           child: Padding(
                             padding: EdgeInsets.all(24),
@@ -20010,26 +24284,95 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
                       }
 
                       final reversed = messages.reversed.toList();
-                      return ListView.builder(
-                        controller: scrollController,
-                        reverse: true,
-                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
-                        itemCount: reversed.length,
-                        itemBuilder: (context, index) {
-                          final message = reversed[index];
-                          return _CustomerSupportBubble(
-                            message: message,
-                            ticket: ticket,
-                          );
-                        },
+
+                      return Column(
+                        children: [
+                          if (pinned != null)
+                            _HpjPinnedSupportMessage(
+                              message: pinned,
+                              onUnpin: () => unawaited(
+                                setSupportPinnedMessage(
+                                  ticketId: ticket.id,
+                                  messageId: null,
+                                ),
+                              ),
+                            ),
+                          if (searchQuery.trim().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${messages.length} matching message${messages.length == 1 ? '' : 's'}',
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          Expanded(
+                            child: messages.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      'No messages match your search.',
+                                      style: TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    controller: scrollController,
+                                    reverse: true,
+                                    padding: const EdgeInsets.fromLTRB(
+                                      14,
+                                      10,
+                                      14,
+                                      18,
+                                    ),
+                                    itemCount: reversed.length,
+                                    itemBuilder: (context, index) {
+                                      final message = reversed[index];
+                                      return _CustomerSupportBubble(
+                                        message: message,
+                                        ticket: ticket,
+                                        currentUserId: userId,
+                                        onLongPress: () =>
+                                            _showMessageActions(ticket, message),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
                       );
                     },
                   ),
                 ),
+                if (ticket.staffIsTyping)
+                  const _HpjSupportTypingIndicator(
+                    'HPJ Customer Care is typing…',
+                  ),
+                if (replyingTo != null || editingMessage != null)
+                  _HpjSupportComposerContext(
+                    title: editingMessage != null ? 'Editing message' : 'Replying to',
+                    preview: editingMessage?.message ??
+                        replyingTo?.displayMessage ??
+                        '',
+                    icon: editingMessage != null
+                        ? Icons.edit_outlined
+                        : Icons.reply_rounded,
+                    onCancel: _cancelComposeContext,
+                  ),
                 _SupportMessageComposer(
                   controller: messageController,
-                  sending: sending,
+                  focusNode: messageFocusNode,
+                  sending: sending || uploadingMedia,
                   onSend: sendMessage,
+                  onChanged: _handleTyping,
+                  onAttach: editingMessage == null ? _showAttachmentMenu : null,
+                  uploadingMedia: uploadingMedia,
                 ),
               ],
             ),
@@ -20040,13 +24383,136 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
   }
 }
 
+class _HpjPinnedSupportMessage extends StatelessWidget {
+  final SupportMessage message;
+  final VoidCallback onUnpin;
+
+  const _HpjPinnedSupportMessage({
+    required this.message,
+    required this.onUnpin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = message.message.trim().isNotEmpty
+        ? message.message.trim()
+        : message.isPhoto
+            ? 'Photo'
+            : message.isVideo
+                ? 'Video'
+                : 'Pinned message';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+      padding: const EdgeInsets.fromLTRB(11, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: FarmColors.line),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.push_pin_rounded, size: 17, color: FarmColors.green),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              preview,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.ink,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Unpin',
+            visualDensity: VisualDensity.compact,
+            onPressed: onUnpin,
+            icon: const Icon(Icons.close_rounded, size: 17),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HpjSupportComposerContext extends StatelessWidget {
+  final String title;
+  final String preview;
+  final IconData icon;
+  final VoidCallback onCancel;
+
+  const _HpjSupportComposerContext({
+    required this.title,
+    required this.preview,
+    required this.icon,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: FarmColors.primarySoft,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: Border.all(color: FarmColors.green.withOpacity(0.12)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: FarmColors.green),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: FarmColors.green,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Cancel',
+            onPressed: onCancel,
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CustomerSupportBubble extends StatelessWidget {
   final SupportMessage message;
   final SupportTicket ticket;
+  final String currentUserId;
+  final VoidCallback onLongPress;
 
   const _CustomerSupportBubble({
     required this.message,
     required this.ticket,
+    required this.currentUserId,
+    required this.onLongPress,
   });
 
   @override
@@ -20057,114 +24523,234 @@ class _CustomerSupportBubble extends StatelessWidget {
         createdAt != null &&
         ticket.staffLastReadAt != null &&
         !createdAt.isAfter(ticket.staffLastReadAt!);
+    final reactions = message.reactionCounts;
+    final isStarred = message.isStarredFor(currentUserId);
 
-    return Align(
-      alignment: fromStaff ? Alignment.centerLeft : Alignment.centerRight,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
+    final bubble = Container(
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
+      decoration: BoxDecoration(
+        gradient: fromStaff || message.isDeletedForEveryone
+            ? null
+            : const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF2F6B45), Color(0xFF1D5135)],
+              ),
+        color: fromStaff
+            ? Colors.white
+            : message.isDeletedForEveryone
+                ? const Color(0xFFEFF3EE)
+                : null,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(22),
+          topRight: const Radius.circular(22),
+          bottomLeft: Radius.circular(fromStaff ? 6 : 22),
+          bottomRight: Radius.circular(fromStaff ? 22 : 6),
         ),
-        margin: const EdgeInsets.only(bottom: 11),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (fromStaff) ...[
-              Container(
-                height: 32,
-                width: 32,
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: FarmColors.line),
-                ),
-                child: const Icon(
-                  Icons.support_agent_rounded,
-                  size: 18,
-                  color: FarmColors.green,
+        border: fromStaff || message.isDeletedForEveryone
+            ? Border.all(color: FarmColors.line)
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: FarmColors.shadow.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment:
+            fromStaff ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+        children: [
+          if (fromStaff)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'HPJ Customer Care',
+                    style: TextStyle(
+                      color: FarmColors.green,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(width: 4),
+                  Icon(Icons.verified_rounded,
+                      size: 13, color: FarmColors.green),
+                ],
+              ),
+            ),
+          if (message.replyPreview.trim().isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+              margin: const EdgeInsets.only(bottom: 7),
+              decoration: BoxDecoration(
+                color: fromStaff
+                    ? FarmColors.primarySoft
+                    : Colors.white.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(10),
+                border: Border(
+                  left: BorderSide(
+                    color: fromStaff
+                        ? FarmColors.green
+                        : Colors.white.withOpacity(0.72),
+                    width: 3,
+                  ),
                 ),
               ),
-              const SizedBox(width: 7),
-            ],
-            Flexible(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
-                decoration: BoxDecoration(
-                  gradient: fromStaff
-                      ? null
-                      : const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF2F6B45), Color(0xFF1D5135)],
-                        ),
-                  color: fromStaff ? Colors.white : null,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(22),
-                    topRight: const Radius.circular(22),
-                    bottomLeft: Radius.circular(fromStaff ? 6 : 22),
-                    bottomRight: Radius.circular(fromStaff ? 22 : 6),
-                  ),
-                  border: fromStaff ? Border.all(color: FarmColors.line) : null,
-                  boxShadow: [
-                    BoxShadow(
-                      color: FarmColors.shadow.withOpacity(0.06),
-                      blurRadius: 12,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment:
-                      fromStaff ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-                  children: [
-                    if (fromStaff)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 5),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'HPJ Customer Care',
-                              style: TextStyle(
-                                color: FarmColors.green,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(width: 4),
-                            Icon(Icons.verified_rounded,
-                                size: 13, color: FarmColors.green),
-                          ],
-                        ),
-                      ),
-                    Text(
-                      message.message,
-                      style: TextStyle(
-                        color: fromStaff ? FarmColors.ink : Colors.white,
-                        height: 1.38,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      createdAt == null
-                          ? (fromStaff ? 'HPJ' : 'Sent securely')
-                          : fromStaff
-                              ? formatCustomerDateTime(createdAt)
-                              : '${formatCustomerDateTime(createdAt)} • ${seenByStaff ? 'Seen by HPJ' : 'Sent securely'}',
-                      style: TextStyle(
-                        color: fromStaff
-                            ? FarmColors.mutedText
-                            : Colors.white.withOpacity(0.76),
-                        fontSize: 9.6,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+              child: Text(
+                message.replyPreview,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: fromStaff
+                      ? FarmColors.deepGreen
+                      : Colors.white.withOpacity(0.90),
+                  fontSize: 10.5,
+                  height: 1.25,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ],
+          _HpjSupportAttachmentView(
+            message: message,
+            fromStaff: fromStaff,
+          ),
+          if (message.displayMessage.trim().isNotEmpty)
+            Text(
+              message.displayMessage,
+              style: TextStyle(
+                color: fromStaff || message.isDeletedForEveryone
+                    ? message.isDeletedForEveryone
+                        ? FarmColors.mutedText
+                        : FarmColors.ink
+                    : Colors.white,
+                height: 1.38,
+                fontWeight: FontWeight.w600,
+                fontStyle: message.isDeletedForEveryone
+                    ? FontStyle.italic
+                    : FontStyle.normal,
+              ),
+            ),
+          if (reactions.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            Wrap(
+              spacing: 5,
+              runSpacing: 4,
+              children: reactions.entries
+                  .map(
+                    (entry) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: fromStaff
+                            ? FarmColors.background
+                            : Colors.white.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${entry.key} ${entry.value}',
+                        style: TextStyle(
+                          color: fromStaff
+                              ? FarmColors.ink
+                              : Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isStarred) ...[
+                Icon(
+                  Icons.star_rounded,
+                  size: 12,
+                  color: fromStaff
+                      ? FarmColors.green
+                      : Colors.white.withOpacity(0.86),
+                ),
+                const SizedBox(width: 4),
+              ],
+              if (message.isEdited) ...[
+                Text(
+                  'Edited',
+                  style: TextStyle(
+                    color: fromStaff
+                        ? FarmColors.mutedText
+                        : Colors.white.withOpacity(0.70),
+                    fontSize: 9.2,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 5),
+              ],
+              Flexible(
+                child: Text(
+                  createdAt == null
+                      ? (fromStaff ? 'HPJ' : 'Sent securely')
+                      : fromStaff
+                          ? formatCustomerDateTime(createdAt)
+                          : '${formatCustomerDateTime(createdAt)} • ${seenByStaff ? 'Seen by HPJ' : 'Sent securely'}',
+                  style: TextStyle(
+                    color: fromStaff || message.isDeletedForEveryone
+                        ? FarmColors.mutedText
+                        : Colors.white.withOpacity(0.76),
+                    fontSize: 9.6,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return Align(
+      alignment: fromStaff ? Alignment.centerLeft : Alignment.centerRight,
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.82,
+          ),
+          margin: const EdgeInsets.only(bottom: 11),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (fromStaff) ...[
+                Container(
+                  height: 32,
+                  width: 32,
+                  decoration: BoxDecoration(
+                    color: FarmColors.primarySoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: FarmColors.line),
+                  ),
+                  child: const Icon(
+                    Icons.support_agent_rounded,
+                    size: 18,
+                    color: FarmColors.green,
+                  ),
+                ),
+                const SizedBox(width: 7),
+              ],
+              Flexible(child: bubble),
+            ],
+          ),
         ),
       ),
     );
@@ -20173,23 +24759,31 @@ class _CustomerSupportBubble extends StatelessWidget {
 
 class _SupportMessageComposer extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
   final bool sending;
+  final bool uploadingMedia;
   final VoidCallback onSend;
+  final ValueChanged<String> onChanged;
+  final VoidCallback? onAttach;
 
   const _SupportMessageComposer({
     required this.controller,
+    required this.focusNode,
     required this.sending,
+    required this.uploadingMedia,
     required this.onSend,
+    required this.onChanged,
+    required this.onAttach,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.fromLTRB(
-        12,
+        8,
+        8,
         10,
-        12,
-        10 + MediaQuery.of(context).padding.bottom,
+        8 + MediaQuery.of(context).padding.bottom,
       ),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFEFC),
@@ -20205,14 +24799,27 @@ class _SupportMessageComposer extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          IconButton(
+            tooltip: 'Attach photo or video',
+            onPressed: sending || onAttach == null ? null : onAttach,
+            icon: uploadingMedia
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.attach_file_rounded),
+          ),
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
               enabled: !sending,
               minLines: 1,
               maxLines: 5,
               maxLength: 4000,
               textCapitalization: TextCapitalization.sentences,
+              onChanged: onChanged,
               decoration: InputDecoration(
                 hintText: 'Message HPJ Customer Care...',
                 counterText: '',
@@ -22252,9 +26859,97 @@ class _ProductNutritionHighlightsCardState
       return const SizedBox.shrink();
     }
 
-    final canExpand = nutrients.length > 3;
+    final collapsedCount = nutrients.length < 4 ? nutrients.length : 4;
+    final canExpand = nutrients.length > collapsedCount;
+    final visibleNutrients = expanded
+        ? nutrients
+        : nutrients.take(collapsedCount).toList(growable: false);
 
-    final visibleNutrients = expanded ? nutrients : nutrients.take(3).toList();
+    Widget buildNutrientTile(_DetailNutrientBadge item) {
+      final canTap = widget.onNutrientTap != null;
+
+      return Tooltip(
+        message: canTap
+            ? 'View similar products with ${item.nutrient}'
+            : item.label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: canTap ? () => widget.onNutrientTap!(item.nutrient) : null,
+            child: Ink(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              decoration: BoxDecoration(
+                color: item.backgroundColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: item.borderColor,
+                  width: item.level == 'Strong' ? 1.2 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.72),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.eco_outlined,
+                      size: 16,
+                      color: item.foregroundColor,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          item.level,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: item.foregroundColor.withOpacity(0.88),
+                            fontSize: 10,
+                            height: 1.05,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          item.nutrient,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: item.foregroundColor,
+                            fontSize: 12.6,
+                            height: 1.1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (canTap) ...[
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 16,
+                      color: item.foregroundColor,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Container(
       width: double.infinity,
@@ -22270,6 +26965,7 @@ class _ProductNutritionHighlightsCardState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 width: 36,
@@ -22316,73 +27012,38 @@ class _ProductNutritionHighlightsCardState
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: visibleNutrients.map((item) {
-              final canTap = widget.onNutrientTap != null;
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final twoColumns = constraints.maxWidth >= 280;
 
-              return Tooltip(
-                message: canTap
-                    ? 'View similar products with ${item.nutrient}'
-                    : item.label,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: canTap
-                        ? () => widget.onNutrientTap!(item.nutrient)
-                        : null,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: item.backgroundColor,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: item.borderColor,
-                          width: item.level == 'Strong' ? 1.2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.eco_outlined,
-                            size: 14,
-                            color: item.foregroundColor,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            item.label,
-                            style: TextStyle(
-                              color: item.foregroundColor,
-                              fontSize: 12,
-                              fontWeight: item.level == 'Strong'
-                                  ? FontWeight.w900
-                                  : FontWeight.w800,
-                            ),
-                          ),
-                          if (canTap) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 14,
-                              color: item.foregroundColor,
-                            ),
-                          ],
-                        ],
-                      ),
+              if (!twoColumns) {
+                return Column(
+                  children: [
+                    for (var index = 0; index < visibleNutrients.length; index++) ...[
+                      if (index > 0) const SizedBox(height: 8),
+                      buildNutrientTile(visibleNutrients[index]),
+                    ],
+                  ],
+                );
+              }
+
+              final tileWidth = (constraints.maxWidth - 10) / 2;
+
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final item in visibleNutrients)
+                    SizedBox(
+                      width: tileWidth,
+                      child: buildNutrientTile(item),
                     ),
-                  ),
-                ),
+                ],
               );
-            }).toList(),
+            },
           ),
           if (canExpand) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () {
                 setState(() {
@@ -22396,7 +27057,7 @@ class _ProductNutritionHighlightsCardState
                 size: 18,
               ),
               label: Text(
-                expanded ? 'Show less' : '+${nutrients.length - 3} more',
+                expanded ? 'Show less' : '+${nutrients.length - collapsedCount} more',
               ),
               style: TextButton.styleFrom(
                 foregroundColor: FarmColors.green,
@@ -23219,30 +27880,69 @@ class ProductDetailScreen extends StatelessWidget {
               SubscribeSaveButton(product: product),
             ],
             const SizedBox(height: 14),
-            if (nativeMobile)
-              _HpjMobileProductMoreCard(
-                icon: Icons.auto_awesome_outlined,
-                title: 'Complete your box',
-                subtitle: 'Pairs well with this item and more fresh picks',
-                children: [
-                  FrequentlyBoughtTogetherSection(
-                    product: product,
-                    onAddProduct: onAddProduct,
-                    onViewed: onViewed,
-                    onViewMyBox: onViewMyBox,
-                    onCheckout: onCheckout,
-                  ),
-                  const SizedBox(height: 12),
-                  RecommendedForYouDetailSection(
-                    currentProduct: product,
-                    onAddProduct: onAddProduct,
-                    onViewed: onViewed,
-                    onViewMyBox: onViewMyBox,
-                    onCheckout: onCheckout,
-                  ),
-                ],
-              )
-            else ...[
+            if (nativeMobile) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFEFB),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE1E7DF)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_outlined,
+                      color: FarmColors.green,
+                      size: 20,
+                    ),
+                    SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Complete your box',
+                            style: TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Pairs well with this item and more fresh picks',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 9.2,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              FrequentlyBoughtTogetherSection(
+                product: product,
+                onAddProduct: onAddProduct,
+                onViewed: onViewed,
+                onViewMyBox: onViewMyBox,
+                onCheckout: onCheckout,
+              ),
+              const SizedBox(height: 12),
+              RecommendedForYouDetailSection(
+                currentProduct: product,
+                onAddProduct: onAddProduct,
+                onViewed: onViewed,
+                onViewMyBox: onViewMyBox,
+                onCheckout: onCheckout,
+              ),
+            ] else ...[
               FrequentlyBoughtTogetherSection(
                 product: product,
                 onAddProduct: onAddProduct,
@@ -24764,6 +29464,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
+      widget.onInventoryChanged?.call();
 
       if (!mounted) return;
 

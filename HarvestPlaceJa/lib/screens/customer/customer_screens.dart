@@ -3665,24 +3665,24 @@ String _hpjMealPulseErrorMessage(Object error) {
       (lower.contains('not found') ||
           lower.contains('pgrst202') ||
           lower.contains('could not find'))) {
-    return 'Meal Pulse database update is not installed yet. Run the Meal Pulse MASTER REPAIR SQL, refresh HPJ, then try again.';
+    return 'Meal Pulse is temporarily unavailable. Please refresh HPJ and try again. If the problem continues, contact HPJ support.';
   }
 
   if (lower.contains('display_name') &&
       (lower.contains('does not exist') ||
           lower.contains('column'))) {
-    return 'Meal Pulse is still using an older database schema. Run the Meal Pulse MASTER REPAIR SQL, then refresh HPJ.';
+    return 'Meal Pulse needs a quick service refresh. Please reload HPJ and try again. If the problem continues, contact HPJ support.';
   }
 
   if (lower.contains('meal-pulse-media') ||
       (lower.contains('storage') && lower.contains('bucket'))) {
-    return 'Meal photo/video storage is not ready yet. Run the Meal Pulse MASTER REPAIR SQL and try again.';
+    return 'Meal photo/video uploads are temporarily unavailable. Please try again later.';
   }
 
   if (lower.contains('row level security') ||
       lower.contains('42501') ||
       lower.contains('permission denied')) {
-    return 'Meal Pulse permissions need to be refreshed. Run the Meal Pulse MASTER REPAIR SQL, then sign out and back in.';
+    return 'Meal Pulse could not verify your access. Please sign out, sign back in and try again.';
   }
 
   if (lower.contains('jwt') ||
@@ -3702,7 +3702,7 @@ String _hpjMealPulseErrorMessage(Object error) {
 
   if (clean.isNotEmpty && clean.length <= 220) return clean;
 
-  return 'Meal Pulse could not save this post. Run the MASTER REPAIR SQL, refresh HPJ and try again.';
+  return 'Meal Pulse could not save this post. Please refresh HPJ and try again. If the problem continues, contact HPJ support.';
 }
 
 class _HpjMealComposerSheet extends StatefulWidget {
@@ -4900,78 +4900,113 @@ Future<String?> findOrderIdForNotification(
   return null;
 }
 
-Future<List<FarmNotification>> _fetchFarmNotificationsUncached() async {
+Future<List<FarmNotification>> _fetchFarmNotificationsUncached({
+  bool archived = false,
+}) async {
   final user = supabase.auth.currentUser;
   if (user == null) return const [];
 
   List<FarmNotification> cleanRows(List<Map<String, dynamic>> rows) {
-    final seen = <String>{};
+    final seenIds = <String>{};
+    final seenFallbackKeys = <String>{};
     final output = <FarmNotification>[];
 
     for (final row in rows) {
       final notice = FarmNotification.fromSupabase(row);
-      final key = [
+      final id = notice.id.trim();
+      final fallbackKey = [
         notice.title.trim().toLowerCase(),
         notice.message.trim().toLowerCase(),
         notice.type.trim().toLowerCase(),
         notice.orderId?.trim().toLowerCase() ?? '',
       ].join('|');
 
-      if (seen.add(key)) output.add(notice);
+      if (id.isNotEmpty) {
+        if (!seenIds.add(id)) continue;
+      } else if (!seenFallbackKeys.add(fallbackKey)) {
+        continue;
+      }
+
+      output.add(notice);
     }
 
-    return output;
+    output.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+
+    return output.take(50).toList();
   }
 
+  final rows = <Map<String, dynamic>>[];
+
+  // Modern notifications are addressed to the authenticated user id.
   try {
-    final response = await supabase
+    var query = supabase
         .from('notifications')
         .select(
-            'id, user_id, user_email, title, message, type, is_read, created_at, order_id, action_type, action_id, dedupe_key')
-        .eq('user_id', user.id)
-        .order('created_at', ascending: false)
-        .limit(50);
+            'id, user_id, user_email, title, message, type, is_read, created_at, order_id, action_type, action_id, dedupe_key, dismissed_at, dismissed_reason')
+        .eq('user_id', user.id);
 
-    final rows = (response as List)
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+    final response = archived
+        ? await query
+            .not('dismissed_at', 'is', null)
+            .order('dismissed_at', ascending: false)
+            .limit(100)
+        : await query
+            .isFilter('dismissed_at', null)
+            .order('created_at', ascending: false)
+            .limit(50);
 
-    final notices = cleanRows(rows);
-    if (notices.isNotEmpty) return notices;
-  } catch (userIdError) {
+    rows.addAll(
+      (response as List)
+          .map((item) => Map<String, dynamic>.from(item as Map)),
+    );
+  } catch (error) {
     debugPrintOnce(
       'notification_lookup_user_id_unavailable',
-      'Notification lookup by user_id unavailable. Continuing without notification list.',
+      'Notification lookup by user id was unavailable. HPJ will try the compatibility lookup.',
     );
   }
 
-  try {
-    final userEmail = (user.email ?? '').trim().toLowerCase();
-    if (userEmail.isEmpty) return const [];
+  // Keep compatibility with older HPJ rows that were addressed by email only.
+  // De-duplication by notification id prevents rows containing both fields from
+  // appearing twice.
+  final userEmail = (user.email ?? '').trim().toLowerCase();
+  if (userEmail.isNotEmpty) {
+    try {
+      var query = supabase
+          .from('notifications')
+          .select(
+              'id, user_id, user_email, title, message, type, is_read, created_at, order_id, action_type, action_id, dedupe_key, dismissed_at, dismissed_reason')
+          .eq('user_email', userEmail);
 
-    final response = await supabase
-        .from('notifications')
-        .select(
-            'id, user_email, title, message, type, is_read, created_at, order_id, action_type, action_id, dedupe_key')
-        .eq('user_email', userEmail)
-        .order('created_at', ascending: false)
-        .limit(50);
+      final response = archived
+          ? await query
+              .not('dismissed_at', 'is', null)
+              .order('dismissed_at', ascending: false)
+              .limit(100)
+          : await query
+              .isFilter('dismissed_at', null)
+              .order('created_at', ascending: false)
+              .limit(50);
 
-    final rows = (response as List)
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-
-    return cleanRows(rows);
-  } catch (emailError) {
-    debugPrintOnce(
-      'notification_lookup_email_unavailable',
-      'Notification lookup by email unavailable. Continuing without notification list.',
-    );
+      rows.addAll(
+        (response as List)
+            .map((item) => Map<String, dynamic>.from(item as Map)),
+      );
+    } catch (error) {
+      debugPrintOnce(
+        'notification_lookup_email_unavailable',
+        'Notification compatibility lookup was unavailable. Modern notifications will continue to work.',
+      );
+    }
   }
 
   // Do not create repeated order/admin-style notifications from dashboard data.
   // Only show records that actually exist in the notifications table.
-  return const [];
+  return cleanRows(rows);
 }
 
 bool canAddToWeeklyBox(Product product) {
@@ -10679,11 +10714,11 @@ String _hpjJourneyStageLabel(String stage) {
     case 'planted':
       return 'Planted';
     case 'established':
-      return 'Crop established';
+      return 'Seedling';
     case 'flowering':
       return 'Flowering';
     case 'fruiting':
-      return 'Producing';
+      return 'Fruiting';
     case 'harvest_ready':
       return 'Harvest ready';
     case 'harvesting':
@@ -10732,17 +10767,216 @@ class HpjHarvestJourneyScreen extends StatefulWidget {
 
 class _HpjHarvestJourneyScreenState extends State<HpjHarvestJourneyScreen> {
   late Future<List<HpjHarvestJourneyUpdate>> future;
+  late HpjHarvestCircle _circle;
+  bool _savingFollow = false;
 
   @override
   void initState() {
     super.initState();
+    _circle = widget.circle;
     future = fetchHpjHarvestJourney(widget.circle.id);
+  }
+
+  Future<bool> _requireLogin() async {
+    if (isLoggedIn) return true;
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => const LoginScreen(returnToPrevious: true),
+      ),
+    );
+    return result == true || isLoggedIn;
+  }
+
+  Future<void> _refreshCircle() async {
+    try {
+      final circles = await fetchHpjHarvestCircles(limit: 60);
+      HpjHarvestCircle? match;
+      for (final item in circles) {
+        if (item.id == widget.circle.id) {
+          match = item;
+          break;
+        }
+      }
+      if (match != null && mounted) {
+        setState(() => _circle = match!);
+      }
+    } catch (error) {
+      farmDebugLog('Crop Journey circle refresh skipped: $error');
+    }
   }
 
   Future<void> _refresh() async {
     final next = fetchHpjHarvestJourney(widget.circle.id);
     if (mounted) setState(() => future = next);
-    await next;
+    await Future.wait<void>([
+      next.then((_) {}),
+      _refreshCircle(),
+    ]);
+  }
+
+  Future<void> _toggleFollow() async {
+    if (_savingFollow) return;
+    if (!await _requireLogin()) return;
+    if (!mounted) return;
+
+    if (_circle.isReserved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Your ${_circle.productName} reservation already follows this crop.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _savingFollow = true);
+    try {
+      if (_circle.isFollowing) {
+        await cancelHpjHarvestCircleCommitment(_circle.id);
+      } else {
+        await saveHpjHarvestCircleCommitment(
+          circleId: _circle.id,
+          commitmentType: 'follow',
+        );
+      }
+      await _refreshCircle();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _circle.isFollowing
+                ? 'Following ${_circle.productName}. We will keep you updated.'
+                : 'Crop follow preference updated.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _savingFollow = false);
+    }
+  }
+
+  Future<void> _reserve() async {
+    if (!await _requireLogin()) return;
+    if (!mounted) return;
+
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _HpjHarvestCommitmentSheet(circle: _circle),
+    );
+
+    if (changed == true && mounted) {
+      await _refreshCircle();
+    }
+  }
+
+  void _showLearnMore() {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(22, 4, 22, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'How Crop Journey works',
+              style: TextStyle(
+                color: Color(0xFF153E2F),
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Approved HPJ farmers share real crop-stage photos and field updates as produce moves from planting toward harvest. Harvest dates are estimates and can change with weather and growing conditions.',
+              style: TextStyle(
+                color: Color(0xFF5F7168),
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Following keeps you connected to updates. Reserving tells HPJ there is real customer demand before harvest; payment is not collected until the produce is ready for ordering.',
+              style: TextStyle(
+                color: Color(0xFF5F7168),
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAllUpdates(List<HpjHarvestJourneyUpdate> updates) {
+    if (updates.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: const Color(0xFFF6F8F2),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .88,
+        minChildSize: .55,
+        maxChildSize: .95,
+        builder: (context, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+          children: [
+            const Text(
+              'Crop updates',
+              style: TextStyle(
+                color: Color(0xFF153E2F),
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Photos and progress updates from ${_circle.farmName.isEmpty ? 'the farm' : _circle.farmName}.',
+              style: const TextStyle(
+                color: Color(0xFF66766D),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            ...updates.map(
+              (update) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _HpjJourneyUpdateCard(update: update, compact: false),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<HpjHarvestJourneyUpdate> _sortedUpdates(
+    List<HpjHarvestJourneyUpdate> source,
+  ) {
+    final rows = List<HpjHarvestJourneyUpdate>.from(source);
+    rows.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+    return rows;
   }
 
   @override
@@ -10750,28 +10984,52 @@ class _HpjHarvestJourneyScreenState extends State<HpjHarvestJourneyScreen> {
     final desktop = kIsWeb && MediaQuery.sizeOf(context).width >= 980;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8F2),
+      backgroundColor: const Color(0xFFF5F8F2),
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        title: const Text(
-          'Harvest Journey',
-          style: TextStyle(fontWeight: FontWeight.w900),
+        backgroundColor: const Color(0xFFFFFEFB),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: Color(0xFF0D5B3D),
+          ),
         ),
+        title: const Text(
+          'Crop Journey',
+          style: TextStyle(
+            color: Color(0xFF111A16),
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        actions: const [
+          FarmNotificationButton(size: 38),
+          SizedBox(width: 6),
+          HpjMobileAccountPortalButton(
+            currentPortal: 'customer',
+            compact: true,
+          ),
+          SizedBox(width: 10),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: FutureBuilder<List<HpjHarvestJourneyUpdate>>(
           future: future,
           builder: (context, snapshot) {
-            final updates = snapshot.data ?? const <HpjHarvestJourneyUpdate>[];
+            final updates = _sortedUpdates(
+              snapshot.data ?? const <HpjHarvestJourneyUpdate>[],
+            );
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(
-                desktop ? 34 : 16,
-                desktop ? 28 : 16,
-                desktop ? 34 : 16,
-                48,
+                desktop ? 34 : 12,
+                desktop ? 24 : 10,
+                desktop ? 34 : 12,
+                42,
               ),
               children: [
                 Center(
@@ -10780,55 +11038,41 @@ class _HpjHarvestJourneyScreenState extends State<HpjHarvestJourneyScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _HpjHarvestJourneyHero(circle: widget.circle),
-                        const SizedBox(height: 15),
-                        HpjHarvestDropJourneyCard(
-                          circleId: widget.circle.id,
-                        ),
-                        const SizedBox(height: 15),
-                        _HpjJourneyMilestones(
-                          circle: widget.circle,
+                        _HpjCropJourneyHero(
+                          circle: _circle,
                           updates: updates,
                         ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'From the field',
-                                style: TextStyle(
-                                  color: Color(0xFF173C2F),
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              '${updates.length} update${updates.length == 1 ? '' : 's'}',
-                              style: const TextStyle(
-                                color: Color(0xFF758178),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
+                        const SizedBox(height: 10),
+                        _HpjCropJourneySummaryStrip(
+                          circle: _circle,
+                          updates: updates,
                         ),
                         const SizedBox(height: 10),
-                        if (snapshot.connectionState == ConnectionState.waiting &&
-                            updates.isEmpty)
-                          const SizedBox(
-                            height: 190,
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else if (updates.isEmpty)
-                          _HpjJourneyEmpty(circle: widget.circle)
-                        else
-                          ...updates.map(
-                            (update) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _HpjJourneyUpdateCard(update: update),
-                            ),
-                          ),
+                        _HpjCropJourneyTrackerCard(
+                          circle: _circle,
+                          updates: updates,
+                          savingFollow: _savingFollow,
+                          onFollow: _toggleFollow,
+                          onReserve: _reserve,
+                          onLearnMore: _showLearnMore,
+                        ),
+                        const SizedBox(height: 10),
+                        _HpjCropJourneyUpdatesSection(
+                          circle: _circle,
+                          updates: updates,
+                          loading: snapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              updates.isEmpty,
+                          onSeeAll: () => _showAllUpdates(updates),
+                        ),
+                        const SizedBox(height: 10),
+                        const _HpjCropJourneyTrustCard(),
+                        const SizedBox(height: 10),
+                        _HpjCropJourneyForecastCard(
+                          circle: _circle,
+                          savingFollow: _savingFollow,
+                          onNotify: _toggleFollow,
+                        ),
                       ],
                     ),
                   ),
@@ -10842,230 +11086,338 @@ class _HpjHarvestJourneyScreenState extends State<HpjHarvestJourneyScreen> {
   }
 }
 
-class _HpjHarvestJourneyHero extends StatelessWidget {
-  final HpjHarvestCircle circle;
+String _hpjCropJourneyDate(DateTime? date) {
+  if (date == null) return 'TBC';
+  const months = <String>[
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${months[date.month - 1]} ${date.day}';
+}
 
-  const _HpjHarvestJourneyHero({required this.circle});
+String _hpjCropJourneyHarvestRange(HpjHarvestCircle circle) {
+  final start = circle.harvestStart;
+  final end = circle.harvestEnd;
+  if (start == null && end == null) return 'Date TBC';
+  if (start == null) return _hpjCropJourneyDate(end);
+  if (end == null) return _hpjCropJourneyDate(start);
+  if (start.year == end.year && start.month == end.month) {
+    const months = <String>[
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[start.month - 1]} ${start.day} – ${end.day}';
+  }
+  return '${_hpjCropJourneyDate(start)} – ${_hpjCropJourneyDate(end)}';
+}
+
+int _hpjCropJourneyRank(String stage) {
+  switch (stage.trim().toLowerCase()) {
+    case 'planted':
+      return 0;
+    case 'established':
+      return 1;
+    case 'growing':
+      return 2;
+    case 'flowering':
+      return 3;
+    case 'fruiting':
+      return 4;
+    case 'harvest_ready':
+    case 'harvesting':
+    case 'collected':
+      return 5;
+    default:
+      return 2;
+  }
+}
+
+String _hpjCropJourneyStageLabel(String stage) {
+  switch (stage.trim().toLowerCase()) {
+    case 'planted':
+      return 'Planted';
+    case 'established':
+      return 'Seedling';
+    case 'flowering':
+      return 'Flowering';
+    case 'fruiting':
+      return 'Fruiting';
+    case 'harvest_ready':
+      return 'Harvest ready';
+    case 'harvesting':
+      return 'Harvesting';
+    case 'collected':
+      return 'Collected';
+    case 'growing':
+    default:
+      return 'Growing';
+  }
+}
+
+HpjHarvestJourneyUpdate? _hpjCropJourneyLatestUpdate(
+  List<HpjHarvestJourneyUpdate> updates,
+) {
+  if (updates.isEmpty) return null;
+  return updates.first;
+}
+
+DateTime? _hpjCropJourneyPlantedDate(List<HpjHarvestJourneyUpdate> updates) {
+  HpjHarvestJourneyUpdate? planted;
+  for (final update in updates.reversed) {
+    if (update.stage == 'planted') {
+      planted = update;
+      break;
+    }
+  }
+  if (planted?.createdAt != null) return planted!.createdAt;
+  if (updates.isEmpty) return null;
+  return updates.last.createdAt;
+}
+
+DateTime? _hpjCropJourneyStageDate(
+  List<HpjHarvestJourneyUpdate> updates,
+  int stageRank,
+) {
+  for (final update in updates.reversed) {
+    if (_hpjCropJourneyRank(update.stage) == stageRank &&
+        update.createdAt != null) {
+      return update.createdAt;
+    }
+  }
+  return null;
+}
+
+class _HpjCropJourneyHero extends StatelessWidget {
+  final HpjHarvestCircle circle;
+  final List<HpjHarvestJourneyUpdate> updates;
+
+  const _HpjCropJourneyHero({
+    required this.circle,
+    required this.updates,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final image = cleanHostedImageUrl(circle.imageUrl);
+    final verifiedLabel = circle.farmerCount > 1
+        ? 'HPJ Verified Farmers'
+        : 'HPJ Verified Farmer';
+
     return Container(
+      height: 242,
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF073F2C), Color(0xFF176044)],
-        ),
-        borderRadius: BorderRadius.circular(27),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF073F2C).withOpacity(.14),
-            blurRadius: 25,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        color: const Color(0xFF1A6A47),
+        borderRadius: BorderRadius.circular(22),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 700;
-          final image = _HpjHarvestImage(
-            imageUrl: circle.imageUrl,
-            size: wide ? 116 : 82,
-          );
-          final details = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'YOUR HARVEST JOURNEY',
-                style: TextStyle(
-                  color: Color(0xFFFFD65B),
-                  fontSize: 8.8,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .8,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                circle.productName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  height: 1.08,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                [
-                  if (circle.farmName.isNotEmpty) circle.farmName,
-                  if (circle.parish.isNotEmpty) circle.parish,
-                  _hpjHarvestWindow(circle),
-                ].join(' • '),
-                style: TextStyle(
-                  color: Colors.white.withOpacity(.72),
-                  fontSize: 10.2,
-                  height: 1.35,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (circle.isReserved) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.10),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white.withOpacity(.13)),
-                  ),
-                  child: Text(
-                    'Your share • ${_hpjHarvestNumber(circle.myQuantity)} ${circle.unit}${circle.myCommitmentType == 'repeat' ? ' weekly × ${circle.myRepeatWeeks}' : ''}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9.2,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          );
-
-          if (!wide) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [image, const SizedBox(width: 13), Expanded(child: details)],
-            );
-          }
-
-          return Row(
-            children: [
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (image != null)
+            Image.network(
               image,
-              const SizedBox(width: 20),
-              Expanded(child: details),
-              Container(
-                width: 185,
-                padding: const EdgeInsets.all(15),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.085),
-                  borderRadius: BorderRadius.circular(18),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const _HpjCropJourneyHeroFallback(),
+            )
+          else
+            const _HpjCropJourneyHeroFallback(),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x08000000),
+                  Color(0x26000000),
+                  Color(0xB8000000),
+                ],
+                stops: [0, .48, 1],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 18,
+            right: 18,
+            bottom: 16,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  circle.productName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 31,
+                    height: 1.02,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.6,
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${(circle.demandProgress * 100).round()}%',
-                      style: const TextStyle(
+                const SizedBox(height: 9),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF087849),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.check_circle_rounded,
                         color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
+                        size: 17,
                       ),
-                    ),
-                    Text(
-                      'customer demand reached',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(.68),
-                        fontSize: 8.6,
-                        fontWeight: FontWeight.w700,
+                      const SizedBox(width: 6),
+                      Text(
+                        verifiedLabel,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_rounded,
+                      color: Colors.white,
+                      size: 18,
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${circle.farmerCount} farmer${circle.farmerCount == 1 ? '' : 's'} supplying',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(.85),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        [
+                          if (circle.farmName.isNotEmpty) circle.farmName,
+                          if (circle.parish.isNotEmpty) circle.parish,
+                        ].join('  •  '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _HpjJourneyMilestones extends StatelessWidget {
+class _HpjCropJourneyHeroFallback extends StatelessWidget {
+  const _HpjCropJourneyHeroFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF79A96F), Color(0xFF0C6745)],
+        ),
+      ),
+      child: Center(
+        child: Icon(Icons.eco_rounded, color: Colors.white70, size: 88),
+      ),
+    );
+  }
+}
+
+class _HpjCropJourneySummaryStrip extends StatelessWidget {
   final HpjHarvestCircle circle;
   final List<HpjHarvestJourneyUpdate> updates;
 
-  const _HpjJourneyMilestones({
+  const _HpjCropJourneySummaryStrip({
     required this.circle,
     required this.updates,
   });
 
-  bool get hasGrowingUpdate => updates.any(
-        (item) => const <String>{
-          'planted', 'established', 'growing', 'flowering', 'fruiting',
-          'harvest_ready', 'harvesting', 'collected',
-        }.contains(item.stage),
-      );
-
-  bool get hasHarvestUpdate => updates.any(
-        (item) => const <String>{'harvest_ready', 'harvesting', 'collected'}
-            .contains(item.stage),
-      );
-
   @override
   Widget build(BuildContext context) {
-    final milestones = <({String title, String subtitle, bool done, IconData icon})>[
+    final latest = _hpjCropJourneyLatestUpdate(updates);
+    final planted = _hpjCropJourneyPlantedDate(updates);
+    final stage = latest == null
+        ? (circle.status == 'harvesting' ? 'harvest_ready' : 'growing')
+        : latest.stage;
+    final followers = circle.followerCount > 0
+        ? circle.followerCount
+        : circle.householdCount;
+
+    final items = <({IconData icon, String label, String value, Color color})>[
       (
-        title: 'Demand is building',
-        subtitle: '${circle.householdCount} household${circle.householdCount == 1 ? '' : 's'} joined',
-        done: circle.reservedQuantity > 0,
-        icon: Icons.groups_2_outlined,
+        icon: Icons.eco_rounded,
+        label: 'Planted',
+        value: planted == null ? 'TBC' : _hpjCropJourneyDate(planted),
+        color: const Color(0xFF158B55),
       ),
       (
-        title: 'Farmers committed',
-        subtitle: '${_hpjHarvestNumber(circle.supplyCommitted)} ${circle.unit} planned',
-        done: circle.supplyCommitted > 0,
-        icon: Icons.agriculture_outlined,
+        icon: Icons.spa_rounded,
+        label: 'Current stage',
+        value: _hpjCropJourneyStageLabel(stage),
+        color: const Color(0xFF168553),
       ),
       (
-        title: 'Growing in the field',
-        subtitle: hasGrowingUpdate ? 'Field updates are live' : 'Waiting for the first crop update',
-        done: hasGrowingUpdate,
-        icon: Icons.eco_outlined,
+        icon: Icons.calendar_month_rounded,
+        label: 'Expected harvest',
+        value: _hpjCropJourneyHarvestRange(circle),
+        color: const Color(0xFFB97709),
       ),
       (
-        title: 'Harvest window',
-        subtitle: _hpjHarvestWindow(circle),
-        done: hasHarvestUpdate || circle.status == 'harvesting',
-        icon: Icons.inventory_2_outlined,
+        icon: Icons.groups_rounded,
+        label: 'Followers',
+        value: '$followers',
+        color: const Color(0xFF176B47),
       ),
     ];
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(23),
-        border: Border.all(color: const Color(0xFFDDE5DA)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1E8DE)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 700;
-          if (!wide) {
-            return Column(
-              children: milestones
-                  .map((item) => _HpjJourneyMilestoneTile(item: item))
+          if (constraints.maxWidth < 340) {
+            return Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: items
+                  .map(
+                    (item) => SizedBox(
+                      width: (constraints.maxWidth - 6) / 2,
+                      child: _HpjCropJourneySummaryCell(item: item),
+                    ),
+                  )
                   .toList(growable: false),
             );
           }
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: milestones
+            children: items
                 .map(
                   (item) => Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      child: _HpjJourneyMilestoneTile(item: item),
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: _HpjCropJourneySummaryCell(item: item),
                     ),
                   ),
                 )
@@ -11077,54 +11429,64 @@ class _HpjJourneyMilestones extends StatelessWidget {
   }
 }
 
-class _HpjJourneyMilestoneTile extends StatelessWidget {
-  final ({String title, String subtitle, bool done, IconData icon}) item;
+class _HpjCropJourneySummaryCell extends StatelessWidget {
+  final ({IconData icon, String label, String value, Color color}) item;
 
-  const _HpjJourneyMilestoneTile({required this.item});
+  const _HpjCropJourneySummaryCell({required this.item});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(11),
+      constraints: const BoxConstraints(minHeight: 72),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 9),
       decoration: BoxDecoration(
-        color: item.done ? const Color(0xFFF0F7EC) : const Color(0xFFF8F9F6),
-        borderRadius: BorderRadius.circular(15),
+        color: const Color(0xFFFFFEFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE7ECE4)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            item.done ? Icons.check_circle_rounded : item.icon,
-            color: item.done ? const Color(0xFF168A58) : const Color(0xFF8A958E),
-            size: 19,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  style: const TextStyle(
-                    color: Color(0xFF244639),
-                    fontSize: 9.3,
-                    fontWeight: FontWeight.w900,
-                  ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 27,
+                height: 27,
+                decoration: BoxDecoration(
+                  color: item.color.withOpacity(.09),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  item.subtitle,
+                child: Icon(item.icon, color: item.color, size: 17),
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  item.label,
                   maxLines: 2,
+                  textAlign: TextAlign.left,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF78837D),
-                    fontSize: 7.8,
-                    height: 1.25,
+                    color: Color(0xFF51635B),
+                    fontSize: 8.6,
+                    height: 1.05,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              item.value,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Color(0xFF111A16),
+                fontSize: 13.2,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ],
@@ -11133,20 +11495,562 @@ class _HpjJourneyMilestoneTile extends StatelessWidget {
   }
 }
 
-class _HpjJourneyUpdateCard extends StatelessWidget {
-  final HpjHarvestJourneyUpdate update;
+class _HpjCropJourneyTrackerCard extends StatelessWidget {
+  final HpjHarvestCircle circle;
+  final List<HpjHarvestJourneyUpdate> updates;
+  final bool savingFollow;
+  final VoidCallback onFollow;
+  final VoidCallback onReserve;
+  final VoidCallback onLearnMore;
 
-  const _HpjJourneyUpdateCard({required this.update});
+  const _HpjCropJourneyTrackerCard({
+    required this.circle,
+    required this.updates,
+    required this.savingFollow,
+    required this.onFollow,
+    required this.onReserve,
+    required this.onLearnMore,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final clean = cleanHostedImageUrl(update.imageUrl);
+    var currentRank = 2;
+    for (final update in updates) {
+      final rank = _hpjCropJourneyRank(update.stage);
+      if (rank > currentRank) currentRank = rank;
+    }
+    if (circle.status == 'harvesting') currentRank = 5;
+
+    final stages = <({String title, IconData icon})>[
+      (title: 'Planted', icon: Icons.check_rounded),
+      (title: 'Seedling', icon: Icons.check_rounded),
+      (title: 'Growing', icon: Icons.check_rounded),
+      (title: 'Flowering', icon: Icons.local_florist_rounded),
+      (title: 'Fruiting', icon: Icons.spa_rounded),
+      (title: 'Harvest Ready', icon: Icons.shopping_basket_rounded),
+    ];
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.fromLTRB(13, 13, 13, 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1E8DE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF5E8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.bar_chart_rounded,
+                  color: Color(0xFF087A4D),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Track this crop',
+                      style: TextStyle(
+                        color: Color(0xFF111A16),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'Follow the journey from planting to harvest.',
+                      style: TextStyle(
+                        color: Color(0xFF617269),
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: onLearnMore,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Learn more'),
+                    SizedBox(width: 2),
+                    Icon(Icons.chevron_right_rounded, size: 17),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(stages.length, (index) {
+              final item = stages[index];
+              final done = index < currentRank;
+              final current = index == currentRank;
+              final date = _hpjCropJourneyStageDate(updates, index);
+              return Expanded(
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        if (index > 0)
+                          Expanded(
+                            child: Container(
+                              height: 3,
+                              color: index <= currentRank
+                                  ? const Color(0xFF108553)
+                                  : const Color(0xFFD7DDD8),
+                            ),
+                          ),
+                        Container(
+                          width: current ? 38 : 31,
+                          height: current ? 38 : 31,
+                          decoration: BoxDecoration(
+                            color: done || current
+                                ? const Color(0xFF0D7F4E)
+                                : const Color(0xFFF0F2F0),
+                            shape: BoxShape.circle,
+                            border: current
+                                ? Border.all(color: Colors.white, width: 3)
+                                : null,
+                            boxShadow: current
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF0D7F4E)
+                                          .withOpacity(.22),
+                                      blurRadius: 0,
+                                      spreadRadius: 4,
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Icon(
+                            done ? Icons.check_rounded : item.icon,
+                            color: done || current
+                                ? Colors.white
+                                : const Color(0xFF8B928E),
+                            size: current ? 19 : 16,
+                          ),
+                        ),
+                        if (index < stages.length - 1)
+                          Expanded(
+                            child: Container(
+                              height: 3,
+                              color: index < currentRank
+                                  ? const Color(0xFF108553)
+                                  : const Color(0xFFD7DDD8),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: current
+                            ? const Color(0xFF0A6E45)
+                            : const Color(0xFF1C2923),
+                        fontSize: 8.4,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      date == null
+                          ? (index > currentRank ? 'Upcoming' : '')
+                          : _hpjCropJourneyDate(date),
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF718078),
+                        fontSize: 7.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 390;
+              final followLabel = circle.isReserved || circle.isFollowing
+                  ? 'Following this crop'
+                  : 'Follow this crop';
+              final reserveLabel =
+                  circle.isReserved ? 'Edit my reservation' : 'Reserve from this harvest';
+
+              final follow = FilledButton.icon(
+                onPressed: savingFollow ? null : onFollow,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF087A49),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(54),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: Icon(
+                  circle.isReserved || circle.isFollowing
+                      ? Icons.notifications_active_rounded
+                      : Icons.notifications_rounded,
+                  size: 20,
+                ),
+                label: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      savingFollow ? 'Saving...' : followLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    if (!compact)
+                      const Text(
+                        'Get updates as it grows',
+                        style: TextStyle(
+                          fontSize: 8.7,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+
+              final reserve = OutlinedButton.icon(
+                onPressed: onReserve,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0C6845),
+                  backgroundColor: const Color(0xFFF8FBF5),
+                  minimumSize: const Size.fromHeight(54),
+                  side: const BorderSide(color: Color(0xFFD7E6D8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.shopping_cart_rounded, size: 20),
+                label: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      reserveLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    if (!compact)
+                      const Text(
+                        'Be the first to shop',
+                        style: TextStyle(
+                          fontSize: 8.7,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  children: [
+                    SizedBox(width: double.infinity, child: follow),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: reserve),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: follow),
+                  const SizedBox(width: 8),
+                  Expanded(child: reserve),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HpjCropJourneyUpdatesSection extends StatelessWidget {
+  final HpjHarvestCircle circle;
+  final List<HpjHarvestJourneyUpdate> updates;
+  final bool loading;
+  final VoidCallback onSeeAll;
+
+  const _HpjCropJourneyUpdatesSection({
+    required this.circle,
+    required this.updates,
+    required this.loading,
+    required this.onSeeAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1E8DE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF5E8),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.receipt_long_rounded,
+                  color: Color(0xFF087A49),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Latest farm updates',
+                      style: TextStyle(
+                        color: Color(0xFF111A16),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'Photos and updates from ${circle.farmName.isEmpty ? 'the farm' : circle.farmName}.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF65756D),
+                        fontSize: 9.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (updates.isNotEmpty)
+                TextButton(
+                  onPressed: onSeeAll,
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('See all updates'),
+                      SizedBox(width: 2),
+                      Icon(Icons.chevron_right_rounded, size: 17),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (loading)
+            const SizedBox(
+              height: 120,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (updates.isEmpty)
+            _HpjJourneyEmpty(circle: circle)
+          else
+            ...updates.take(3).map(
+                  (update) => Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: _HpjJourneyUpdateCard(
+                      update: update,
+                      compact: true,
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HpjJourneyUpdateCard extends StatelessWidget {
+  final HpjHarvestJourneyUpdate update;
+  final bool compact;
+
+  const _HpjJourneyUpdateCard({
+    required this.update,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final image = cleanHostedImageUrl(update.imageUrl);
+    final date = _hpjCropJourneyDate(update.createdAt);
+    final stage = _hpjCropJourneyStageLabel(update.stage);
+    final badgeColor = update.stage == 'fruiting'
+        ? const Color(0xFFB76C00)
+        : const Color(0xFF0A7B49);
+
+    if (compact) {
+      return Container(
+        constraints: const BoxConstraints(minHeight: 88),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFEFC),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3E9E0)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 116,
+              height: 88,
+              child: image == null
+                  ? const ColoredBox(
+                      color: Color(0xFFEAF4E5),
+                      child: Center(
+                        child: Icon(
+                          Icons.eco_rounded,
+                          color: Color(0xFF2B7658),
+                          size: 32,
+                        ),
+                      ),
+                    )
+                  : Image.network(
+                      image,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const ColoredBox(
+                        color: Color(0xFFEAF4E5),
+                        child: Center(
+                          child: Icon(
+                            Icons.eco_rounded,
+                            color: Color(0xFF2B7658),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 9, 7, 9),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          date,
+                          style: const TextStyle(
+                            color: Color(0xFF32483E),
+                            fontSize: 9.6,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: badgeColor.withOpacity(.09),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _hpjJourneyStageIcon(update.stage),
+                                  color: badgeColor,
+                                  size: 13,
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    stage,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: badgeColor,
+                                      fontSize: 8.6,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      update.message.isEmpty
+                          ? '$stage at ${update.farmName}.'
+                          : update.message,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF374B42),
+                        fontSize: 10.2,
+                        height: 1.28,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.only(right: 8),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFF087A49),
+                  size: 19,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFDDE5DA)),
       ),
       child: Column(
@@ -11155,37 +12059,36 @@ class _HpjJourneyUpdateCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 39,
-                height: 39,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEAF4E5),
-                  borderRadius: BorderRadius.circular(13),
+                  color: badgeColor.withOpacity(.09),
+                  borderRadius: BorderRadius.circular(11),
                 ),
                 child: Icon(
                   _hpjJourneyStageIcon(update.stage),
-                  color: const Color(0xFF15734F),
-                  size: 20,
+                  color: badgeColor,
+                  size: 19,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _hpjJourneyStageLabel(update.stage),
+                      stage,
                       style: const TextStyle(
                         color: Color(0xFF183E30),
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      '${update.farmName}${update.createdAt == null ? '' : ' • ${formatCustomerDateTime(update.createdAt!)}'}',
+                      '${update.farmName} • $date',
                       style: const TextStyle(
                         color: Color(0xFF7A867F),
-                        fontSize: 8.7,
+                        fontSize: 8.8,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -11194,30 +12097,328 @@ class _HpjJourneyUpdateCard extends StatelessWidget {
               ),
             ],
           ),
-          if (clean != null) ...[
-            const SizedBox(height: 12),
+          if (image != null) ...[
+            const SizedBox(height: 10),
             ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
               child: Image.network(
-                clean,
+                image,
                 width: double.infinity,
-                height: 260,
+                height: 220,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),
               ),
             ),
           ],
-          const SizedBox(height: 11),
-          Text(
-            update.message,
-            style: const TextStyle(
-              color: Color(0xFF41584D),
-              fontSize: 10.8,
-              height: 1.45,
-              fontWeight: FontWeight.w700,
+          if (update.message.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              update.message,
+              style: const TextStyle(
+                color: Color(0xFF41584D),
+                fontSize: 10.8,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
             ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HpjCropJourneyTrustCard extends StatelessWidget {
+  const _HpjCropJourneyTrustCard();
+
+  Widget _benefit({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Expanded(
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 104),
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFEFC),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: const Color(0xFFE5EAE2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF5E8),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, color: const Color(0xFF087A49), size: 20),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFF111A16),
+                fontSize: 9.2,
+                height: 1.08,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: Color(0xFF68776F),
+                fontSize: 7.8,
+                height: 1.24,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1E8DE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.verified_user_rounded,
+                color: Color(0xFF087A49),
+                size: 26,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Why customers follow Crop Journey',
+                      style: TextStyle(
+                        color: Color(0xFF111A16),
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'Transparency. Fresh food. Stronger farmers.',
+                      style: TextStyle(
+                        color: Color(0xFF65756D),
+                        fontSize: 9.2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _benefit(
+                icon: Icons.location_on_rounded,
+                title: 'See where your food comes from',
+                subtitle: 'Real farms. Real people. Real progress.',
+              ),
+              const SizedBox(width: 6),
+              _benefit(
+                icon: Icons.notifications_rounded,
+                title: 'Get harvest-ready alerts',
+                subtitle: 'Know when your favourite produce is available.',
+              ),
+              const SizedBox(width: 6),
+              _benefit(
+                icon: Icons.shopping_cart_rounded,
+                title: 'Shop when produce becomes available',
+                subtitle: 'Be among the first to access fresh local harvests.',
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HpjCropJourneyForecastCard extends StatelessWidget {
+  final HpjHarvestCircle circle;
+  final bool savingFollow;
+  final VoidCallback onNotify;
+
+  const _HpjCropJourneyForecastCard({
+    required this.circle,
+    required this.savingFollow,
+    required this.onNotify,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final available = circle.supplyCommitted > 0
+        ? circle.supplyCommitted
+        : circle.targetQuantity;
+    final interested = circle.householdCount > 0
+        ? circle.householdCount
+        : circle.followerCount;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E7),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF1E3B7)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final metrics = Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF5E8),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.bar_chart_rounded,
+                  color: Color(0xFF087A49),
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Harvest forecast',
+                      style: TextStyle(
+                        color: Color(0xFF151B17),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Estimated available quantity',
+                      style: TextStyle(
+                        color: const Color(0xFF67746D).withOpacity(.95),
+                        fontSize: 8.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${_hpjHarvestNumber(available)} ${circle.unit}',
+                      style: const TextStyle(
+                        color: Color(0xFF101713),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 45,
+                color: const Color(0xFFD9CFAD),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Interested customers',
+                    style: TextStyle(
+                      color: Color(0xFF67746D),
+                      fontSize: 8.3,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        '$interested',
+                        style: const TextStyle(
+                          color: Color(0xFF101713),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.groups_rounded,
+                        color: Color(0xFF087A49),
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          );
+
+          final button = FilledButton.icon(
+            onPressed: savingFollow ? null : onNotify,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF087A49),
+              foregroundColor: Colors.white,
+              minimumSize: const Size(0, 50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: Icon(
+              circle.isFollowing || circle.isReserved
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_rounded,
+              size: 19,
+            ),
+            label: Text(
+              circle.isFollowing || circle.isReserved
+                  ? 'Notifications on'
+                  : 'Get notified when ready',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          );
+
+          if (constraints.maxWidth < 520) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                metrics,
+                const SizedBox(height: 10),
+                button,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: metrics),
+              const SizedBox(width: 14),
+              button,
+            ],
+          );
+        },
       ),
     );
   }
@@ -11232,25 +12433,25 @@ class _HpjJourneyEmpty extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFDDE5DA)),
+        color: const Color(0xFFF8FAF6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE3E9E0)),
       ),
       child: Column(
         children: [
-          const Icon(Icons.eco_outlined, size: 38, color: Color(0xFF2B7658)),
-          const SizedBox(height: 9),
+          const Icon(Icons.eco_outlined, size: 32, color: Color(0xFF2B7658)),
+          const SizedBox(height: 7),
           const Text(
             'The story is just beginning',
             style: TextStyle(
               color: Color(0xFF183E30),
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 4),
           Text(
             circle.supplyCommitted > 0
                 ? 'Farmers have committed supply. Their field photos and crop-stage updates will appear here as the harvest develops.'
@@ -11258,7 +12459,7 @@ class _HpjJourneyEmpty extends StatelessWidget {
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF738078),
-              fontSize: 10,
+              fontSize: 9.5,
               height: 1.4,
               fontWeight: FontWeight.w700,
             ),
@@ -11268,6 +12469,7 @@ class _HpjJourneyEmpty extends StatelessWidget {
     );
   }
 }
+
 
 class HpjRescueHarvest {
   final String circleId;
@@ -12538,6 +13740,15 @@ class AccountScreen extends StatelessWidget {
                           onTap: () => _open(
                             context,
                             const NotificationsScreen(),
+                          ),
+                        ),
+                        AccountActionItem(
+                          icon: Icons.notifications_active_outlined,
+                          title: 'Notification Preferences',
+                          subtitle: 'Choose your alerts',
+                          onTap: () => _open(
+                            context,
+                            const HpjNotificationPreferencesScreen(),
                           ),
                         ),
                         AccountActionItem(
@@ -17558,10 +18769,8 @@ class _HpjCustomerHeaderActions extends StatelessWidget {
   }
 
   void _openNotifications(BuildContext context) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => const NotificationsScreen(),
-      ),
+    unawaited(
+      openHpjNotificationHubMenu(context),
     );
   }
 
@@ -18781,7 +19990,10 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
     if (!mounted) return;
 
     setState(() {
-      if (budget != null && budgetOptions.contains(budget)) {
+      // MVP budget upgrade: preserve both quick-pick and customer-entered
+      // budgets. The Fresh Box planner already handles arbitrary positive
+      // budgets, so custom values do not need to be forced back to a preset.
+      if (budget != null && budget >= 100 && budget <= 250000) {
         selectedBudget = budget;
       }
       if (family != null && familySizeOptions.contains(family)) {
@@ -18803,6 +20015,312 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
         selectedNutrients,
       ),
     ]);
+  }
+
+  bool get _isCustomFreshBoxBudget =>
+      !budgetOptions.contains(selectedBudget);
+
+  Future<void> _openCustomFreshBoxBudget({
+    required BuildContext context,
+    required void Function(VoidCallback action) updateView,
+  }) async {
+    final controller = TextEditingController(
+      text: selectedBudget.round().toString(),
+    );
+
+    final nextBudget = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) {
+        String? errorText;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void submit() {
+              final raw = controller.text
+                  .trim()
+                  .replaceAll(',', '')
+                  .replaceAll(r'J$', '')
+                  .replaceAll(r'$', '');
+
+              final parsed = double.tryParse(raw);
+
+              if (parsed == null || parsed < 100 || parsed > 250000) {
+                setDialogState(() {
+                  errorText =
+                      'Enter an amount from J\$100 to J\$250,000.';
+                });
+                return;
+              }
+
+              Navigator.of(dialogContext).pop(parsed);
+            }
+
+            return AlertDialog(
+              backgroundColor: FarmColors.card,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(26),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+              contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 4),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+              title: const Row(
+                children: [
+                  Icon(
+                    Icons.account_balance_wallet_outlined,
+                    color: FarmColors.deepGreen,
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Set your budget',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 380,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Enter the most you want HPJ to use when building this Fresh Box.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 12,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: false,
+                      ),
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => submit(),
+                      decoration: InputDecoration(
+                        labelText: 'Your budget',
+                        prefixText: 'J\$ ',
+                        hintText: 'e.g. 4200',
+                        errorText: errorText,
+                        helperText:
+                            'HPJ will build the best available mix without exceeding this amount.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  onPressed: submit,
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Use budget'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (nextBudget == null) return;
+
+    updateView(() {
+      selectedBudget = nextBudget;
+    });
+
+    await _saveSmartFreshBoxDefaults();
+  }
+
+  Widget _buildFreshBoxBudgetPicker({
+    required BuildContext context,
+    required void Function(VoidCallback action) updateView,
+    required bool compact,
+  }) {
+    final custom = _isCustomFreshBoxBudget;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(compact ? 12 : 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F8F0),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: const Color(0xFFD5E3D0),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: compact ? 38 : 42,
+                height: compact ? 38 : 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: const Color(0xFFDDE8D8),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: FarmColors.deepGreen,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your Fresh Box budget',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formatJmd(selectedBudget),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.deepGreen,
+                        fontSize: compact ? 18 : 20,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (custom)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF1D6),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'CUSTOM',
+                    style: TextStyle(
+                      color: Color(0xFF8A5A00),
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .6,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Quick amounts',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 7),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: budgetOptions.map((budget) {
+            final selected = selectedBudget == budget;
+            return ChoiceChip(
+              selected: selected,
+              label: Text(formatJmd(budget)),
+              avatar: selected
+                  ? const Icon(
+                      Icons.check_rounded,
+                      size: 15,
+                    )
+                  : null,
+              onSelected: (_) {
+                updateView(() {
+                  selectedBudget = budget;
+                });
+                unawaited(_saveSmartFreshBoxDefaults());
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              unawaited(
+                _openCustomFreshBoxBudget(
+                  context: context,
+                  updateView: updateView,
+                ),
+              );
+            },
+            style: OutlinedButton.styleFrom(
+              minimumSize: Size(0, compact ? 45 : 48),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 11,
+              ),
+              side: const BorderSide(
+                color: Color(0xFFBFD4B9),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            icon: const Icon(
+              Icons.edit_outlined,
+              size: 18,
+            ),
+            label: const Text(
+              'Enter your own budget',
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'You can change this anytime. HPJ will stay within the amount you choose.',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 9.2,
+            height: 1.3,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 
   int get _minimumDistinctItems {
@@ -19523,22 +21041,10 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: budgetOptions.map((budget) {
-                          final selected = selectedBudget == budget;
-                          return ChoiceChip(
-                            selected: selected,
-                            label: Text(formatJmd(budget)),
-                            onSelected: (_) {
-                              updateDialog(() {
-                                selectedBudget = budget;
-                              });
-                              unawaited(_saveSmartFreshBoxDefaults());
-                            },
-                          );
-                        }).toList(),
+                      _buildFreshBoxBudgetPicker(
+                        context: context,
+                        updateView: updateDialog,
+                        compact: false,
                       ),
                       const SizedBox(height: 18),
                       Row(
@@ -19757,9 +21263,22 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
+                        height: 48,
                         child: OutlinedButton.icon(
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Try another budget'),
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            size: 17,
+                          ),
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Try another budget',
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
                           onPressed: () {
                             updateDialog(() {
                               if (selectedBudget == 2000) {
@@ -19772,6 +21291,7 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
                                 selectedBudget = 2000;
                               }
                             });
+                            unawaited(_saveSmartFreshBoxDefaults());
                           },
                         ),
                       ),
@@ -19874,22 +21394,10 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
             ),
           ),
           const SizedBox(height: 9),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: budgetOptions.map((budget) {
-              final selected = selectedBudget == budget;
-              return ChoiceChip(
-                selected: selected,
-                label: Text(formatJmd(budget)),
-                onSelected: (_) {
-                  updateInline(() {
-                    selectedBudget = budget;
-                  });
-                  unawaited(_saveSmartFreshBoxDefaults());
-                },
-              );
-            }).toList(),
+          _buildFreshBoxBudgetPicker(
+            context: context,
+            updateView: updateInline,
+            compact: !desktopWeb,
           ),
 
           const SizedBox(height: 20),
@@ -20171,13 +21679,21 @@ class _FreshBoxBuilderCardState extends State<FreshBoxBuilderCard> {
 
           SizedBox(
             width: double.infinity,
+            height: 46,
             child: TextButton.icon(
               icon: const Icon(
                 Icons.refresh_rounded,
                 size: 15,
               ),
-              label: const Text(
-                'Try another budget',
+              label: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Try another budget',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
               onPressed: () {
                 updateInline(() {
@@ -21740,7 +23256,39 @@ bool _isSafeSponsorExternalUrl(String value) {
       uri.scheme.toLowerCase() == 'http';
 }
 
-Future<HpjSponsorCampaign?> fetchActiveCustomerHomeSponsor() async {
+const String hpjSponsorPlacementAllHomes = 'all_home';
+const String hpjSponsorPlacementCustomerHome = 'customer_home';
+const String hpjSponsorPlacementFarmerHome = 'farmer_home';
+const String hpjSponsorPlacementBusinessHome = 'business_home';
+const String hpjSponsorPlacementShop = 'shop';
+
+final ValueNotifier<int> hpjSponsorCampaignRefreshVersion =
+    ValueNotifier<int>(0);
+
+void notifyHpjSponsorCampaignChanged() {
+  hpjSponsorCampaignRefreshVersion.value++;
+}
+
+String hpjSponsorPlacementLabel(String placement) {
+  switch (placement.trim().toLowerCase()) {
+    case hpjSponsorPlacementAllHomes:
+      return 'All Home Workspaces';
+    case hpjSponsorPlacementFarmerHome:
+      return 'Farmer Home';
+    case hpjSponsorPlacementBusinessHome:
+      return 'Business Home';
+    case hpjSponsorPlacementShop:
+      return 'Customer Shop';
+    case hpjSponsorPlacementCustomerHome:
+    default:
+      return 'Customer Home';
+  }
+}
+
+Future<HpjSponsorCampaign?> _fetchActiveSponsorExact(
+  String placement,
+) async {
+  final cleanPlacement = placement.trim().toLowerCase();
   try {
     final nowUtc = DateTime.now().toUtc().toIso8601String();
     final response = await supabase
@@ -21748,11 +23296,9 @@ Future<HpjSponsorCampaign?> fetchActiveCustomerHomeSponsor() async {
         .select(
           'id, sponsor_name, headline, description, cta_label, cta_type, cta_url, target_farmer_id, placement, logo_url, image_url, is_published, is_archived, priority, starts_at, ends_at, created_at, updated_at',
         )
-        .eq('placement', 'customer_home')
+        .eq('placement', cleanPlacement)
         .eq('is_published', true)
         .eq('is_archived', false)
-        // Filter date eligibility BEFORE limiting ranked results. Otherwise
-        // ten expired/future high-priority sponsors can hide a live campaign.
         .or('and(starts_at.is.null,ends_at.is.null),'
             'and(starts_at.is.null,ends_at.gte.$nowUtc),'
             'and(starts_at.lte.$nowUtc,ends_at.is.null),'
@@ -21768,15 +23314,68 @@ Future<HpjSponsorCampaign?> fetchActiveCustomerHomeSponsor() async {
           ),
         )
         .where((campaign) => campaign.isActiveNow)
-        .toList();
+        .toList(growable: false);
 
     return campaigns.isEmpty ? null : campaigns.first;
   } catch (error) {
-    // Sponsor content is optional. HPJ Home must remain usable if the
-    // sponsor table has not been installed or is temporarily unavailable.
-    farmDebugLog('Customer sponsor lookup skipped: $error');
+    farmDebugLog(
+      'Sponsor lookup skipped for $cleanPlacement: $error',
+    );
     return null;
   }
+}
+
+Future<HpjSponsorCampaign?> fetchActiveSponsorForPlacement(
+  String placement,
+) async {
+  final cleanPlacement = placement.trim().toLowerCase();
+  const allowed = <String>{
+    hpjSponsorPlacementAllHomes,
+    hpjSponsorPlacementCustomerHome,
+    hpjSponsorPlacementFarmerHome,
+    hpjSponsorPlacementBusinessHome,
+    hpjSponsorPlacementShop,
+  };
+  if (!allowed.contains(cleanPlacement)) return null;
+
+  final exact = await _fetchActiveSponsorExact(cleanPlacement);
+  if (exact != null) return exact;
+
+  final homePlacement = <String>{
+    hpjSponsorPlacementCustomerHome,
+    hpjSponsorPlacementFarmerHome,
+    hpjSponsorPlacementBusinessHome,
+  }.contains(cleanPlacement);
+
+  if (homePlacement) {
+    final network = await _fetchActiveSponsorExact(hpjSponsorPlacementAllHomes);
+    if (network != null) return network;
+
+    // Backward compatibility: Business/Farmer previously reused the Customer
+    // Home sponsor. Keep existing live campaigns visible until Admin moves
+    // them to All Home Workspaces or a workspace-specific placement.
+    if (cleanPlacement != hpjSponsorPlacementCustomerHome) {
+      return _fetchActiveSponsorExact(hpjSponsorPlacementCustomerHome);
+    }
+  }
+
+  return null;
+}
+
+Future<HpjSponsorCampaign?> fetchActiveCustomerHomeSponsor() {
+  return fetchActiveSponsorForPlacement(hpjSponsorPlacementCustomerHome);
+}
+
+Future<HpjSponsorCampaign?> fetchActiveFarmerHomeSponsor() {
+  return fetchActiveSponsorForPlacement(hpjSponsorPlacementFarmerHome);
+}
+
+Future<HpjSponsorCampaign?> fetchActiveBusinessHomeSponsor() {
+  return fetchActiveSponsorForPlacement(hpjSponsorPlacementBusinessHome);
+}
+
+Future<HpjSponsorCampaign?> fetchActiveCustomerShopSponsor() {
+  return fetchActiveSponsorForPlacement(hpjSponsorPlacementShop);
 }
 
 // ================================================================
@@ -22102,6 +23701,7 @@ class _HpjCustomerHomeSocialVisibility {
   );
 }
 
+
 class HomeScreen extends StatefulWidget {
   final VoidCallback onShopTap;
   final ValueChanged<String> onCategoryTap;
@@ -22238,6 +23838,7 @@ class _HomeScreenState extends State<HomeScreen> {
     buyAgainProductsFuture = fetchBuyAgainProductsForCustomerUi();
     homeOrdersFuture = fetchOrders();
     sponsoredCampaignFuture = fetchActiveCustomerHomeSponsor();
+    hpjSponsorCampaignRefreshVersion.addListener(_reloadHomeSponsorCampaign);
     socialFarmsFuture = fetchPublishedFarmPublicProfiles(limit: 12);
     unawaited(_reloadCustomerHomeSocialVisibility());
     unawaited(_loadHomeRecentlyViewed());
@@ -22257,6 +23858,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     homeSearchFocusNode.addListener(() {
       if (mounted) setState(() {});
+    });
+  }
+
+  void _reloadHomeSponsorCampaign() {
+    if (!mounted) return;
+    setState(() {
+      sponsoredCampaignFuture = fetchActiveCustomerHomeSponsor();
     });
   }
 
@@ -22714,12 +24322,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         if (isLoggedIn) ...[
           IconButton(
-            tooltip: 'Notifications',
+            tooltip: 'Notifications & help',
             onPressed: () {
-              Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => const NotificationsScreen(),
-                ),
+              unawaited(
+                openHpjNotificationHubMenu(context),
               );
             },
             icon: const Icon(
@@ -23807,6 +25413,63 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ],
+
+                  // ===========================================================
+                  // MOBILE HOME — CUSTOMER FEED / NEWS
+                  // Keep the same audience rules as the standard Home branch.
+                  // ===========================================================
+                  if (userPreferences.showAgricultureNews) ...[
+                    const SizedBox(height: 12),
+                    HpjAgricultureUpdatesSection(
+                      audience: 'customer',
+                      workspace: 'customer',
+                      limit: 2,
+                      refreshKey: agricultureFeedRefreshKey,
+                      title: 'Latest from HPJ',
+                      subtitle:
+                          'Useful Jamaican agriculture news, opportunities and HPJ updates.',
+                      socialStyle: true,
+                      showImages: userPreferences.showFeedImages,
+                      onAction: _handleAgricultureFeedAction,
+                    ),
+                  ],
+
+                  // ===========================================================
+                  // MOBILE HOME — FRESH REELS
+                  // Keep the existing customer preference + placement rules.
+                  // ===========================================================
+                  if (userPreferences.showFreshReels) ...[
+                    const SizedBox(height: 12),
+                    FreshReelFeedPreviewCard(
+                      preferences: userPreferences,
+                      audience: 'customer',
+                      placement: freshReelPlacementCustomerFeed,
+                      refreshKey: agricultureFeedRefreshKey,
+                      onAddToCart: _addProductToCart,
+                    ),
+                  ],
+
+                  // ===========================================================
+                  // MOBILE HOME — SPONSORED
+                  // Reuse the same active Customer Home campaign and CTA logic
+                  // already used by the standard Home branch.
+                  // ===========================================================
+                  if (userPreferences.showPromotions)
+                    FutureBuilder<HpjSponsorCampaign?>(
+                      future: sponsoredCampaignFuture,
+                      builder: (context, sponsorSnapshot) {
+                        final campaign = sponsorSnapshot.data;
+                        if (campaign == null) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: _sponsoredHomeCard(campaign),
+                        );
+                      },
+                    ),
+
                   const SizedBox(height: 12),
                   _premiumHomeSectionHeader(
                     title: 'Shop by Category',
@@ -24046,6 +25709,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     hpjCustomerParishPreference.removeListener(
       _applySharedCustomerParishPreference,
+    );
+    hpjSponsorCampaignRefreshVersion.removeListener(
+      _reloadHomeSponsorCampaign,
     );
     homeSearchController.dispose();
     homeSearchFocusNode.dispose();
@@ -28354,8 +30020,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
 
-                          if (!nativeApp &&
-                              userPreferences.showAgricultureNews) ...[
+                          if (userPreferences.showAgricultureNews) ...[
                             const SizedBox(height: 18),
                             HpjAgricultureUpdatesSection(
                               audience: 'customer',
@@ -28370,8 +30035,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
 
-                          if (!nativeApp &&
-                              userPreferences.showFreshReels) ...[
+                          if (userPreferences.showFreshReels) ...[
                             const SizedBox(height: 22),
                             if (desktopWeb)
                               _premiumDesktopFreshReelsSection(

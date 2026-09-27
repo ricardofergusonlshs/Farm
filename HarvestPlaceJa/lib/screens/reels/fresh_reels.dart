@@ -844,6 +844,38 @@ Future<void> setFreshReelFeatured({
   }).eq('id', reelId);
 }
 
+Future<void> deleteFreshReelPermanently(HpjFreshReel reel) async {
+  await requireAdminAccess();
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (role != 'owner') {
+    throw Exception('Only Owner can permanently delete a Fresh Reel.');
+  }
+  if (!const <String>{'archived', 'rejected'}.contains(reel.status)) {
+    throw Exception('Archive or reject the reel before permanent deletion.');
+  }
+
+  final deleted = await supabase
+      .from('fresh_reels')
+      .delete()
+      .eq('id', reel.id)
+      .select('id')
+      .maybeSingle();
+  if (deleted == null) {
+    throw Exception('Reel was not deleted. Check Owner permissions.');
+  }
+
+  final storagePath = reel.storagePath.trim();
+  if (storagePath.isNotEmpty) {
+    try {
+      await supabase.storage.from(_freshReelsBucket).remove([storagePath]);
+    } catch (error) {
+      // The database row is already gone. Keep deletion successful and log
+      // storage cleanup separately so an orphan file never blocks Admin.
+      farmDebugLog('Fresh Reel storage cleanup skipped: $error');
+    }
+  }
+}
+
 class FreshReelFeedPreviewCard extends StatefulWidget {
   final UserExperiencePreferences preferences;
   final String audience;
@@ -2996,6 +3028,64 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
     }
   }
 
+  Future<void> _deletePermanently(HpjFreshReel reel) async {
+    if (!const <String>{'archived', 'rejected'}.contains(reel.status)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Archive or reject the reel before deleting it.')),
+      );
+      return;
+    }
+
+    final role = normalizeStaffRole(await fetchCurrentStaffRole());
+    if (!mounted) return;
+    if (role != 'owner') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Only Owner can permanently delete reels. Managers can archive them.'),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Permanently delete reel?'),
+        content: Text(
+          '“${reel.title}” and its placements, likes and view history will be permanently removed. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: FarmColors.danger),
+            child: const Text('Delete permanently'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await deleteFreshReelPermanently(reel);
+      _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fresh Reel permanently deleted.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete reel: $error')),
+      );
+    }
+  }
+
   Future<String?> _requestModerationNote() async {
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -3133,6 +3223,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
                       onPublish: () => _setStatus(reel, 'published'),
                       onReject: () => _setStatus(reel, 'rejected'),
                       onArchive: () => _setStatus(reel, 'archived'),
+                      onDelete: () => _deletePermanently(reel),
                       onFeature: () => _toggleFeatured(reel),
                       onPlacement: () => _editPlacements(reel),
                     ),
@@ -3151,6 +3242,7 @@ class _AdminFreshReelCard extends StatelessWidget {
   final VoidCallback onPublish;
   final VoidCallback onReject;
   final VoidCallback onArchive;
+  final VoidCallback onDelete;
   final VoidCallback onFeature;
   final VoidCallback onPlacement;
 
@@ -3159,6 +3251,7 @@ class _AdminFreshReelCard extends StatelessWidget {
     required this.onPublish,
     required this.onReject,
     required this.onArchive,
+    required this.onDelete,
     required this.onFeature,
     required this.onPlacement,
   });
@@ -3334,6 +3427,19 @@ class _AdminFreshReelCard extends StatelessWidget {
                   onPressed: onArchive,
                   icon: const Icon(Icons.archive_outlined, size: 17),
                   label: const Text('Archive'),
+                ),
+              if (const <String>{'archived', 'rejected'}.contains(reel.status))
+                TextButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(
+                    Icons.delete_forever_outlined,
+                    size: 17,
+                    color: FarmColors.error,
+                  ),
+                  label: const Text(
+                    'Delete',
+                    style: TextStyle(color: FarmColors.error),
+                  ),
                 ),
             ],
           ),

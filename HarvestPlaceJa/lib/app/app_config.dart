@@ -3,7 +3,7 @@ part of harvest_place_app;
 class AppConfig {
   static const appName = 'The Harvest Place Ja';
   static const appVersion = '1.0.4';
-  static const appBuildNumber = '24';
+  static const appBuildNumber = '43';
   static const supportPhoneDisplay = '876-339-1395';
   static const supportPhoneDial = '+18763391395';
   static const supportWhatsAppNumber = '18763391395';
@@ -60,6 +60,11 @@ class AppConfig {
   // The public website is the primary destination for referrals and shares.
   // Keep Android Play Store downloads separate from web invitations.
   static const publicShareUrl = 'https://harvestplaceja.com';
+  static const publicInviteUrl = 'https://harvestplaceja.com/invite';
+  static const publicStaffInviteUrl = 'https://harvestplaceja.com/staff-invite';
+  static const publicFarmerUrl = 'https://harvestplaceja.com/farmer';
+  static const publicBusinessUrl = 'https://harvestplaceja.com/business';
+  static const publicContactUrl = 'https://harvestplaceja.com/contact';
   static const supabaseUrl = 'https://zvgvvsgjzfygbsqwawoh.supabase.co';
   static const supabaseAnonKey =
       'sb_publishable_fBvBBFqJMlIOm1I3d5Oy-w_AbBGuJKH';

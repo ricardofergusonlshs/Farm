@@ -1292,22 +1292,17 @@ class FamilyFarmApp extends StatelessWidget {
       builder: (context, child) {
         final media = MediaQuery.of(context);
         final mobilePresentation = hpjUseMobileAppPresentation(context);
-        final systemTextScale = media.textScaler.scale(1.0);
 
-        // Native/mobile HPJ uses a slightly larger baseline so Farmer,
-        // Business, Staff and Customer screens remain easy to read on a phone.
-        // Desktop/tablet Web keeps the frozen website typography unchanged.
-        var appTextScale = systemTextScale;
-        if (mobilePresentation) {
-          appTextScale = systemTextScale * 1.12;
-          if (systemTextScale < 1.45 && appTextScale > 1.45) {
-            appTextScale = 1.45;
-          }
-        }
+        // Improve phone readability non-linearly: small labels and helper text
+        // receive more help than headings, while the user's Android text-size
+        // accessibility preference remains fully respected.
+        final appTextScaler = mobilePresentation
+            ? HpjTypography.mobileTextScaler(media.textScaler)
+            : media.textScaler;
 
         return MediaQuery(
           data: media.copyWith(
-            textScaler: TextScaler.linear(appTextScale),
+            textScaler: appTextScaler,
           ),
           child: Listener(
             behavior: HitTestBehavior.translucent,
@@ -1331,7 +1326,7 @@ class FamilyFarmApp extends StatelessWidget {
           onSecondary: FarmColors.ink,
           onSurface: FarmColors.ink,
         ),
-        fontFamily: 'Roboto',
+        textTheme: HpjTypography.textTheme,
         visualDensity: VisualDensity.adaptivePlatformDensity,
         cardTheme: CardThemeData(
           color: FarmColors.card,
@@ -1359,7 +1354,8 @@ class FamilyFarmApp extends StatelessWidget {
           actionsIconTheme: IconThemeData(color: FarmColors.ink),
           titleTextStyle: TextStyle(
             color: FarmColors.ink,
-            fontSize: 22,
+            fontSize: HpjTypography.appBarTitle,
+            height: 1.15,
             fontWeight: FontWeight.w900,
             letterSpacing: -0.3,
           ),
@@ -1371,8 +1367,30 @@ class FamilyFarmApp extends StatelessWidget {
             horizontal: 18,
             vertical: 16,
           ),
-          labelStyle: const TextStyle(color: FarmColors.muted),
-          hintStyle: const TextStyle(color: FarmColors.muted),
+          labelStyle: const TextStyle(
+            color: FarmColors.muted,
+            fontSize: HpjTypography.label,
+            height: 1.25,
+            fontWeight: FontWeight.w600,
+          ),
+          hintStyle: const TextStyle(
+            color: FarmColors.muted,
+            fontSize: HpjTypography.label,
+            height: 1.3,
+            fontWeight: FontWeight.w500,
+          ),
+          helperStyle: const TextStyle(
+            color: FarmColors.muted,
+            fontSize: HpjTypography.helper,
+            height: 1.4,
+            fontWeight: FontWeight.w500,
+          ),
+          errorStyle: const TextStyle(
+            color: FarmColors.error,
+            fontSize: HpjTypography.helper,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+          ),
           prefixIconColor: FarmColors.primary,
           suffixIconColor: FarmColors.muted,
           border: OutlineInputBorder(
@@ -1409,15 +1427,30 @@ class FamilyFarmApp extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             textStyle: const TextStyle(
+              fontSize: HpjTypography.button,
+              height: 1.15,
               fontWeight: FontWeight.w900,
               letterSpacing: 0.1,
+            ),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            textStyle: const TextStyle(
+              fontSize: HpjTypography.button,
+              height: 1.15,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ),
         textButtonTheme: TextButtonThemeData(
           style: TextButton.styleFrom(
             foregroundColor: FarmColors.primary,
-            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+            textStyle: const TextStyle(
+              fontSize: HpjTypography.button,
+              height: 1.15,
+              fontWeight: FontWeight.w800,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -1427,10 +1460,28 @@ class FamilyFarmApp extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: FarmColors.primary,
             side: BorderSide(color: FarmColors.primary.withOpacity(0.45)),
-            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+            textStyle: const TextStyle(
+              fontSize: HpjTypography.button,
+              height: 1.15,
+              fontWeight: FontWeight.w800,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
+          ),
+        ),
+        listTileTheme: const ListTileThemeData(
+          titleTextStyle: TextStyle(
+            color: FarmColors.ink,
+            fontSize: HpjTypography.body,
+            height: 1.3,
+            fontWeight: FontWeight.w700,
+          ),
+          subtitleTextStyle: TextStyle(
+            color: FarmColors.muted,
+            fontSize: HpjTypography.helper,
+            height: 1.4,
+            fontWeight: FontWeight.w500,
           ),
         ),
         chipTheme: ChipThemeData(
@@ -1438,8 +1489,18 @@ class FamilyFarmApp extends StatelessWidget {
           selectedColor: FarmColors.chipBackground,
           secondarySelectedColor: FarmColors.chipBackground,
           disabledColor: FarmColors.line,
-          labelStyle: const TextStyle(color: FarmColors.ink),
-          secondaryLabelStyle: const TextStyle(color: FarmColors.green),
+          labelStyle: const TextStyle(
+            color: FarmColors.ink,
+            fontSize: HpjTypography.label,
+            height: 1.2,
+            fontWeight: FontWeight.w700,
+          ),
+          secondaryLabelStyle: const TextStyle(
+            color: FarmColors.green,
+            fontSize: HpjTypography.label,
+            height: 1.2,
+            fontWeight: FontWeight.w800,
+          ),
           brightness: Brightness.light,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           shape: RoundedRectangleBorder(
@@ -1454,7 +1515,8 @@ class FamilyFarmApp extends StatelessWidget {
           indicatorColor: FarmColors.primarySoft,
           labelTextStyle: MaterialStateProperty.resolveWith(
             (states) => TextStyle(
-              fontSize: 11.5,
+              fontSize: 12.5,
+              height: 1.15,
               fontWeight: states.contains(MaterialState.selected)
                   ? FontWeight.w900
                   : FontWeight.w700,
@@ -1476,6 +1538,8 @@ class FamilyFarmApp extends StatelessWidget {
           backgroundColor: FarmColors.deepGreen,
           contentTextStyle: const TextStyle(
             color: Colors.white,
+            fontSize: 14.5,
+            height: 1.35,
             fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
@@ -1533,6 +1597,85 @@ class _AuthGateState extends State<AuthGate> {
   String? _authUserId;
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _deepLinkSubscription;
+  bool _referralCaptureScheduled = false;
+
+  String get _normalizedWebsitePath {
+    if (!kIsWeb) return '';
+    var path = Uri.base.path.trim().toLowerCase();
+    if (path.isEmpty) return '/';
+    if (!path.startsWith('/')) path = '/$path';
+    while (path.length > 1 && path.endsWith('/')) {
+      path = path.substring(0, path.length - 1);
+    }
+    return path;
+  }
+
+  Widget? _buildPublicWebsitePathRoute() {
+    if (!kIsWeb) return null;
+
+    final path = _normalizedWebsitePath;
+
+    switch (path) {
+      case '/shop':
+        return const MainNavigation(initialIndex: 1);
+      case '/farms':
+        return const PublicFarmDirectoryScreen();
+      case '/dinner':
+      case '/recipes':
+        return const WeeklyMealIdeasScreen();
+      case '/nutrition':
+        return const HpjWebsiteNutrientBoxScreen();
+      case '/contact':
+        return const ContactHpjScreen();
+      case '/about':
+        return const AboutHpjScreen();
+      case '/trust':
+        return const TrustCenterScreen();
+      case '/terms':
+        return const TermsOfServiceScreen();
+      case '/privacy':
+        return const PrivacyPolicyScreen();
+      case '/refund':
+      case '/refunds':
+        return const RefundPolicyScreen();
+      case '/faq':
+      case '/help':
+        return const HpjFaqScreen();
+      case '/farmer':
+        if (isLoggedIn) return const FarmerAccessGate();
+        return const LoginScreen(
+          startInRegister: true,
+          initialRegistrationAudience: 'farmer',
+          lockRegistrationAudience: true,
+        );
+      case '/business':
+        if (isLoggedIn) return const BusinessWholesaleHubScreen();
+        return const LoginScreen(
+          startInRegister: true,
+          initialRegistrationAudience: 'business',
+          lockRegistrationAudience: true,
+        );
+      case '/invite':
+        if (!isLoggedIn) {
+          return const LoginScreen(
+            startInRegister: true,
+          );
+        }
+
+        if (!_referralCaptureScheduled) {
+          _referralCaptureScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            unawaited(recordIncomingReferralForCurrentUser());
+          });
+        }
+        return const MainNavigation(initialIndex: 1);
+      case '/staff-invite':
+        if (isLoggedIn) return const AdminDashboardScreen();
+        return const LoginScreen();
+      default:
+        return null;
+    }
+  }
 
   @override
   void initState() {
@@ -2092,6 +2235,14 @@ class _AuthGateState extends State<AuthGate> {
       return const LoginScreen();
     }
 
+    // Public website paths now resolve to real HPJ screens instead of silently
+    // falling back to the generic landing page. Auth callback flows above keep
+    // priority, so password recovery / OAuth behavior is unchanged.
+    final publicWebsiteRoute = _buildPublicWebsitePathRoute();
+    if (publicWebsiteRoute != null) {
+      return publicWebsiteRoute;
+    }
+
     // The welcome page is only the first splash screen. Once the user enters
     // the market, stay in the market even if auth later becomes null.
     if (!hasEnteredMarket) {
@@ -2125,34 +2276,210 @@ class _SmartEntryLoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: FarmColors.background,
+    // FEATURE FREEZE:
+    // This widget is visual-only. It does not add a timer, network request,
+    // animation dependency, navigation change, auth change or startup delay.
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7FAF2),
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 390;
+            final logoWidth = compact ? 235.0 : 285.0;
+
+            return Stack(
+              fit: StackFit.expand,
               children: [
-                SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
+                // Soft brand glow behind the official HPJ logo.
+                Positioned(
+                  top: -95,
+                  right: -85,
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 250,
+                      height: 250,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            const Color(0xFFFFA000).withOpacity(.12),
+                            const Color(0xFFFFA000).withOpacity(0),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                SizedBox(height: 14),
-                Text(
-                  'Opening HPJ…',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
+
+                // Lightweight leaf accents. These are Flutter icons only —
+                // no additional image/network loading is introduced.
+                Positioned(
+                  top: compact ? 34 : 48,
+                  right: compact ? -18 : 10,
+                  child: IgnorePointer(
+                    child: Transform.rotate(
+                      angle: -.48,
+                      child: Icon(
+                        Icons.eco_rounded,
+                        size: compact ? 86 : 112,
+                        color: const Color(0xFF2F7D32).withOpacity(.10),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: compact ? -34 : -20,
+                  bottom: compact ? -18 : -8,
+                  child: IgnorePointer(
+                    child: Transform.rotate(
+                      angle: .42,
+                      child: Icon(
+                        Icons.eco_rounded,
+                        size: compact ? 132 : 168,
+                        color: const Color(0xFF1F6B3B).withOpacity(.09),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Warm lower corner accent inspired by the HPJ orange.
+                Positioned(
+                  left: -78,
+                  bottom: -95,
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 230,
+                      height: 230,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            const Color(0xFFFF9800).withOpacity(.08),
+                            const Color(0xFFFF9800).withOpacity(0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                Center(
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 26 : 36,
+                      vertical: 28,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: 430,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Official HPJ logo already bundled locally.
+                          SizedBox(
+                            width: logoWidth,
+                            child: Image.asset(
+                              'lib/assets/images/logo.png',
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                              errorBuilder: (_, __, ___) => Container(
+                                width: compact ? 104 : 118,
+                                height: compact ? 104 : 118,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(28),
+                                  border: Border.all(
+                                    color: const Color(0xFFDCE7D9),
+                                  ),
+                                ),
+                                child: Text(
+                                  'HPJ',
+                                  style: TextStyle(
+                                    color: const Color(0xFF1F6B3B),
+                                    fontSize: compact ? 38 : 44,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(height: compact ? 30 : 36),
+
+                          SizedBox(
+                            width: compact ? 42 : 46,
+                            height: compact ? 42 : 46,
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 3.2,
+                              color: Color(0xFF1F6B3B),
+                              backgroundColor: Color(0xFFDDE9D9),
+                              strokeCap: StrokeCap.round,
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          Text(
+                            'Opening HPJ…',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: const Color(0xFF174C2E),
+                              fontSize: compact ? 19 : 21,
+                              height: 1.1,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -.25,
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          Text(
+                            'Preparing fresh Jamaican goodness',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: const Color(0xFF6F7D70),
+                              fontSize: compact ? 12 : 13,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+
+                          SizedBox(height: compact ? 26 : 30),
+
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(.72),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0xFFDDE8D8),
+                              ),
+                            ),
+                            child: const Text(
+                              'FRESH  •  LOCAL  •  JAMAICAN',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Color(0xFF2F6B3C),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.25,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -2367,9 +2694,11 @@ class _PostLoginWorkspaceSelectorState
                                     initialSubject: 'Account help',
                                   ),
                                 ),
-                                onOpenNotifications: () => _openUtility(
-                                  const NotificationsScreen(),
-                                ),
+                                onOpenNotifications: () {
+                                  unawaited(
+                                    openHpjNotificationHubMenu(context),
+                                  );
+                                },
                               ),
                               const SizedBox(height: 24),
                               const _PremiumWorkspaceHeading(),
@@ -9622,588 +9951,12 @@ class _JamaicaParishDropdownState extends State<JamaicaParishDropdown> {
 }
 
 // =====================================================
-// TEMPORARY FARMER EARLY ACCESS WELCOME
+// FARMER WELCOME — CURRENT MVP
 //
-// Launch-phase onboarding screen shown immediately after a NEW farmer account
-// is created. It is intentionally non-dismissible: the farmer must reach the
-// end of the message and acknowledge it before continuing.
-//
-// Remove the signup call to this screen once full customer/business ordering
-// is live. The screen itself can then be deleted safely.
+// HPJ MVP FINAL CONSOLIDATION: retired Farmer Early Access UI removed.
+// Current Farmer onboarding is handled by the shared Admin-managed welcome
+// system so Customer, Farmer and Business onboarding stay consistent.
 // =====================================================
-class FarmerEarlyAccessWelcomeScreen extends StatefulWidget {
-  final String farmerName;
-
-  const FarmerEarlyAccessWelcomeScreen({
-    super.key,
-    this.farmerName = '',
-  });
-
-  @override
-  State<FarmerEarlyAccessWelcomeScreen> createState() =>
-      _FarmerEarlyAccessWelcomeScreenState();
-}
-
-class _FarmerEarlyAccessWelcomeScreenState
-    extends State<FarmerEarlyAccessWelcomeScreen> {
-  final ScrollController _scrollController = ScrollController();
-
-  bool _reachedBottom = false;
-  bool _understood = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_checkScrollPosition);
-
-    // On a large phone/tablet the whole message may fit without scrolling.
-    // In that case, treat the end as reached after layout completes.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkScrollPosition();
-    });
-  }
-
-  void _checkScrollPosition() {
-    if (!mounted || !_scrollController.hasClients || _reachedBottom) return;
-
-    final position = _scrollController.position;
-    final isAtBottom = position.maxScrollExtent <= 12 ||
-        position.pixels >= position.maxScrollExtent - 24;
-
-    if (isAtBottom) {
-      setState(() {
-        _reachedBottom = true;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController
-      ..removeListener(_checkScrollPosition)
-      ..dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cleanName = widget.farmerName.trim();
-
-    return PopScope(
-      canPop: false,
-      child: Scaffold(
-        backgroundColor: FarmColors.background,
-        body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 680),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Center(
-                            child: Container(
-                              width: 78,
-                              height: 78,
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(24),
-                                border: Border.all(color: FarmColors.line),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.06),
-                                    blurRadius: 18,
-                                    offset: const Offset(0, 7),
-                                  ),
-                                ],
-                              ),
-                              child: Image.asset(
-                                'lib/assets/images/logo.png',
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) => const Icon(
-                                  Icons.agriculture_rounded,
-                                  color: FarmColors.primary,
-                                  size: 40,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          const Text(
-                            'THE HARVEST PLACE JA',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: FarmColors.primary,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.35,
-                            ),
-                          ),
-                          const SizedBox(height: 9),
-                          Container(
-                            alignment: Alignment.center,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 13,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                color: FarmColors.primarySoft,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: const Text(
-                                'FARMER EARLY ACCESS',
-                                style: TextStyle(
-                                  color: FarmColors.primary,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.7,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 17),
-                          Text(
-                            cleanName.isEmpty
-                                ? 'Welcome to HPJ'
-                                : 'Welcome to HPJ, $cleanName',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 28,
-                              height: 1.08,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.7,
-                            ),
-                          ),
-                          const SizedBox(height: 13),
-                          const Text(
-                            'Thank you for joining The Harvest Place Ja. '
-                            'You are joining during our farmer onboarding phase, '
-                            'ahead of full customer and business ordering.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: FarmColors.muted,
-                              fontSize: 14,
-                              height: 1.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 22),
-                          const _FarmerEarlyAccessNoticeCard(
-                            icon: Icons.agriculture_rounded,
-                            title: 'What to do now',
-                            items: [
-                              'Complete your farmer profile.',
-                              'Add the produce you grow or can supply.',
-                              'Upload clear farm and produce photos.',
-                              'Add expected quantities and availability.',
-                              'Check that your phone number and location are correct.',
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          const _FarmerEarlyAccessNoticeCard(
-                            icon: Icons.storefront_rounded,
-                            title: 'Customer ordering begins soon',
-                            body:
-                                'HPJ is building the farmer supply side first. '
-                                'Full customer and business ordering will open soon. '
-                                'We will notify farmers before marketplace operations '
-                                'begin so you have time to update your produce, '
-                                'quantities and availability.',
-                          ),
-                          const SizedBox(height: 14),
-                          const _FarmerEarlyAccessNoticeCard(
-                            icon: Icons.handshake_rounded,
-                            title: 'Why you are joining early',
-                            body:
-                                'This early-access period gives you time to become '
-                                'familiar with HPJ and prepare your farm information '
-                                'before marketplace demand begins. Thank you for '
-                                'helping us build a stronger connection between '
-                                'Jamaican farms, homes and businesses.',
-                          ),
-                          const SizedBox(height: 18),
-                          Container(
-                            padding: const EdgeInsets.all(15),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFF8E8),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: const Color(0xFFE8D8A7),
-                              ),
-                            ),
-                            child: const Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.info_outline_rounded,
-                                  color: Color(0xFF7A5A08),
-                                  size: 21,
-                                ),
-                                SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'You do not need to rush. Use this period to get '
-                                    'your farmer account ready. HPJ will let you know '
-                                    'before full ordering starts.',
-                                    style: TextStyle(
-                                      color: Color(0xFF654B0B),
-                                      fontSize: 12.5,
-                                      height: 1.4,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          if (!_reachedBottom)
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 16),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    color: FarmColors.primary,
-                                  ),
-                                  SizedBox(width: 5),
-                                  Text(
-                                    'Scroll to the end to continue',
-                                    style: TextStyle(
-                                      color: FarmColors.primary,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: FarmColors.card,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: FarmColors.line),
-                            ),
-                            child: CheckboxListTile(
-                              value: _understood,
-                              enabled: _reachedBottom,
-                              controlAffinity: ListTileControlAffinity.leading,
-                              activeColor: FarmColors.primary,
-                              contentPadding: const EdgeInsets.fromLTRB(
-                                10,
-                                8,
-                                14,
-                                8,
-                              ),
-                              title: const Text(
-                                'I have read and understand that HPJ is currently '
-                                'onboarding farmers and that full customer and '
-                                'business ordering will begin soon.',
-                                style: TextStyle(
-                                  color: FarmColors.ink,
-                                  fontSize: 13,
-                                  height: 1.4,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              onChanged: _reachedBottom
-                                  ? (value) {
-                                      setState(() {
-                                        _understood = value ?? false;
-                                      });
-                                    }
-                                  : null,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
-                decoration: BoxDecoration(
-                  color: FarmColors.card,
-                  border: const Border(
-                    top: BorderSide(color: FarmColors.line),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 12,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 680),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: _reachedBottom && _understood
-                              ? () => Navigator.of(context).pop()
-                              : null,
-                          icon: const Icon(Icons.arrow_forward_rounded),
-                          label: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 3),
-                            child: Text('Continue to HPJ'),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FarmerEarlyAccessNoticeCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String? body;
-  final List<String> items;
-
-  const _FarmerEarlyAccessNoticeCard({
-    required this.icon,
-    required this.title,
-    this.body,
-    this.items = const [],
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: FarmColors.card,
-        borderRadius: BorderRadius.circular(21),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(
-                  icon,
-                  color: FarmColors.primary,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (body != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              body!,
-              style: const TextStyle(
-                color: FarmColors.muted,
-                fontSize: 13,
-                height: 1.45,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          if (items.isNotEmpty) ...[
-            const SizedBox(height: 13),
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 9),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 1),
-                      child: Icon(
-                        Icons.check_circle_rounded,
-                        color: FarmColors.primary,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        item,
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 13,
-                          height: 1.35,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// =====================================================
-// ADMIN PREVIEW — FARMER EARLY ACCESS WELCOME
-//
-// This card can be placed inside the Admin > Farmers screen so HPJ staff can
-// preview the exact temporary onboarding screen shown to a newly registered
-// farmer. Previewing does not create, approve, update, or acknowledge a farmer
-// account; it only opens the existing welcome UI.
-// =====================================================
-class AdminFarmerWelcomePreviewCard extends StatelessWidget {
-  const AdminFarmerWelcomePreviewCard({super.key});
-
-  void _openPreview(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const FarmerEarlyAccessWelcomeScreen(
-          farmerName: 'Preview Farmer',
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: FarmColors.card,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: FarmColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.campaign_outlined,
-                  color: FarmColors.primary,
-                  size: 23,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Farmer Early Access Welcome',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Temporary new-farmer onboarding screen',
-                      style: TextStyle(
-                        color: FarmColors.muted,
-                        fontSize: 11.5,
-                        height: 1.3,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Text(
-                  'ACTIVE',
-                  style: TextStyle(
-                    color: FarmColors.primary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Preview the exact information screen shown to new farmers after '
-            'successful registration. Preview mode does not create or change '
-            'any farmer account or application data.',
-            style: TextStyle(
-              color: FarmColors.muted,
-              fontSize: 12.5,
-              height: 1.45,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 15),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => _openPreview(context),
-              icon: const Icon(Icons.visibility_outlined),
-              label: const Text('Preview Farmer Welcome'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class LoginScreen extends StatefulWidget {
   final bool returnToPrevious;
@@ -10694,9 +10447,8 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
 
         // Managed MVP welcome onboarding. Customer, Farmer and Business each
-        // use the Admin-controlled Welcome Screen configuration. The existing
-        // Farmer Early Access screen remains the fallback if the new SQL has
-        // not been installed yet.
+        // use the Admin-controlled Welcome Screen configuration, with current
+        // marketplace-safe fallback copy if remote configuration is unavailable.
         final welcomeAudience = isBusinessRegistration
             ? 'business'
             : selectedRole == 'farmer'
@@ -13854,10 +13606,6 @@ class _HpjCustomerWebStorefrontShell extends StatelessWidget {
                                     active: homeActive,
                                   ),
                                   _navLink(
-                                    label: 'Meal Pulse',
-                                    onTap: onFeed,
-                                  ),
-                                  _navLink(
                                     label: 'Shop',
                                     onTap: onShop,
                                     active: shopActive,
@@ -13873,104 +13621,133 @@ class _HpjCustomerWebStorefrontShell extends StatelessWidget {
                                     ),
                                   if (!compact)
                                     _navLink(
-                                      label: 'GrowTogether',
-                                      onTap: onDemand,
+                                      label: 'Farmer',
+                                      onTap: onFarmer,
                                     ),
-                                  if (compact)
-                                    PopupMenuButton<String>(
-                                      tooltip: 'More',
-                                      onSelected: (value) {
-                                        if (value == 'recipes') {
-                                          onRecipes();
-                                        } else if (value == 'demand') {
-                                          onDemand();
-                                        } else if (value == 'farmer') {
-                                          onFarmer();
-                                        } else if (value == 'business') {
-                                          onBusiness();
-                                        }
-                                      },
-                                      itemBuilder: (_) => const [
-                                        PopupMenuItem<String>(
-                                          value: 'recipes',
-                                          child: Text('Recipes'),
-                                        ),
-                                        PopupMenuItem<String>(
-                                          value: 'demand',
-                                          child: Text(
-                                            'GrowTogether',
-                                          ),
-                                        ),
-                                        PopupMenuItem<String>(
-                                          value: 'farmer',
-                                          child: Text('Farmer'),
-                                        ),
-                                        PopupMenuItem<String>(
-                                          value: 'business',
-                                          child: Text('Business'),
-                                        ),
-                                      ],
-                                      child: const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 9,
-                                          vertical: 9,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.more_horiz_rounded,
-                                              size: 18,
-                                              color: _forest,
-                                            ),
-                                            SizedBox(width: 4),
-                                            Text(
-                                              'More',
-                                              style: TextStyle(
-                                                color: _forest,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w900,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                  if (!compact)
+                                    _navLink(
+                                      label: 'Business',
+                                      onTap: onBusiness,
                                     ),
-                                  const Spacer(),
-                                  InkWell(
-                                    onTap: onShop,
-                                    borderRadius: BorderRadius.circular(999),
-                                    child: Container(
-                                      width: compact ? 190 : 285,
-                                      height: 42,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
+                                  PopupMenuButton<String>(
+                                    tooltip: 'More',
+                                    onSelected: (value) {
+                                      if (value == 'meal') {
+                                        onFeed();
+                                      } else if (value == 'demand') {
+                                        onDemand();
+                                      } else if (value == 'recipes') {
+                                        onRecipes();
+                                      } else if (value == 'farmer') {
+                                        onFarmer();
+                                      } else if (value == 'business') {
+                                        onBusiness();
+                                      }
+                                    },
+                                    itemBuilder: (_) => const [
+                                      PopupMenuItem<String>(
+                                        value: 'meal',
+                                        child: Text('Meal Pulse'),
                                       ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF3F5F1),
-                                        borderRadius:
-                                            BorderRadius.circular(999),
+                                      PopupMenuItem<String>(
+                                        value: 'demand',
+                                        child: Text('GrowTogether'),
                                       ),
-                                      child: const Row(
+                                      PopupMenuItem<String>(
+                                        value: 'recipes',
+                                        child: Text('Recipes'),
+                                      ),
+                                      PopupMenuItem<String>(
+                                        value: 'farmer',
+                                        child: Text('Farmer'),
+                                      ),
+                                      PopupMenuItem<String>(
+                                        value: 'business',
+                                        child: Text('Business'),
+                                      ),
+                                    ],
+                                    child: const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 9,
+                                      ),
+                                      child: Row(
                                         children: [
                                           Icon(
-                                            Icons.search_rounded,
+                                            Icons.more_horiz_rounded,
                                             size: 18,
                                             color: _forest,
                                           ),
-                                          SizedBox(width: 9),
-                                          Expanded(
-                                            child: Text(
-                                              'Search produce, farms, meals, or recipes...',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: Color(0xFF718078),
-                                                fontSize: 9.2,
-                                                fontWeight: FontWeight.w600,
-                                              ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'More',
+                                            style: TextStyle(
+                                              color: _forest,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
                                             ),
                                           ),
                                         ],
+                                      ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  SizedBox(
+                                    width: compact ? 190 : 285,
+                                    height: 42,
+                                    child: TextField(
+                                      textInputAction: TextInputAction.search,
+                                      onSubmitted: (value) {
+                                        final query = value.trim();
+                                        if (query.isNotEmpty) {
+                                          hpjWebsiteShopSearchRequest.value =
+                                              query;
+                                          hpjWebsiteShopCategoryRequest.value =
+                                              null;
+                                        }
+                                        onShop();
+                                      },
+                                      style: const TextStyle(
+                                        color: _forest,
+                                        fontSize: 10.2,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: 'Search fresh produce...',
+                                        hintStyle: const TextStyle(
+                                          color: Color(0xFF718078),
+                                          fontSize: 9.2,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        prefixIcon: const Icon(
+                                          Icons.search_rounded,
+                                          size: 18,
+                                          color: _forest,
+                                        ),
+                                        filled: true,
+                                        fillColor: const Color(0xFFF3F5F1),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          borderSide: const BorderSide(
+                                            color: Color(0xFFBCD2C0),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -15161,13 +14938,33 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
   Future<List<FarmNotification>>? _notificationsFuture;
   Future<int>? _inboxUnreadFuture;
   Future<OwnerWorkspaceAccessSnapshot>? _accessFuture;
+  Future<FarmerProfile?>? _farmerProfileFuture;
 
   @override
   void initState() {
     super.initState();
     _nameFuture = _resolveHpjWebsiteSignedInName();
+    hpjNotificationBadgeRefreshVersion.addListener(
+      _handleNotificationBadgeRefresh,
+    );
     _reloadPrivateFutures();
     unawaited(_restoreParish());
+  }
+
+  void _handleNotificationBadgeRefresh() {
+    if (!mounted) return;
+    setState(() {
+      _notificationsFuture =
+          isLoggedIn ? fetchFarmNotifications(forceRefresh: true) : null;
+    });
+  }
+
+  @override
+  void dispose() {
+    hpjNotificationBadgeRefreshVersion.removeListener(
+      _handleNotificationBadgeRefresh,
+    );
+    super.dispose();
   }
 
   void _reloadPrivateFutures() {
@@ -15186,10 +14983,15 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
             })()
           : null;
       _accessFuture = fetchOwnerWorkspaceAccessSnapshot();
+      _farmerProfileFuture =
+          widget.currentPortal.trim().toLowerCase() == 'farmer'
+              ? fetchCurrentFarmerProfile()
+              : null;
     } else {
       _notificationsFuture = null;
       _inboxUnreadFuture = null;
       _accessFuture = null;
+      _farmerProfileFuture = null;
     }
   }
 
@@ -15335,13 +15137,25 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
       return;
     }
 
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
-    );
+    await openHpjNotificationHubMenu(context);
 
     if (!mounted) return;
     setState(() {
-      _notificationsFuture = fetchFarmNotifications();
+      _notificationsFuture = fetchFarmNotifications(
+        forceRefresh: true,
+      );
+      if (widget.includeInbox) {
+        _inboxUnreadFuture = (() async {
+          try {
+            final tickets = await fetchMySupportTickets();
+            return tickets
+                .where((ticket) => ticket.hasUnreadForCustomer)
+                .length;
+          } catch (_) {
+            return 0;
+          }
+        })();
+      }
     });
   }
 
@@ -15701,6 +15515,115 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
     );
   }
 
+  Widget _farmerFarmSelector() {
+    final future = _farmerProfileFuture;
+    if (future == null) return const SizedBox.shrink();
+
+    return FutureBuilder<FarmerProfile?>(
+      future: future,
+      builder: (context, snapshot) {
+        final profile = snapshot.data;
+        final farmName = profile?.farmName.trim().isNotEmpty == true
+            ? profile!.farmName.trim()
+            : 'My Farm';
+        final parish = profile?.parish.trim().isNotEmpty == true
+            ? profile!.parish.trim()
+            : _parish;
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: profile == null
+                ? () => unawaited(_pickParish())
+                : () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => FarmerPublicProfileEditorScreen(
+                          farmer: profile,
+                        ),
+                      ),
+                    );
+                  },
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              height: 44,
+              constraints: const BoxConstraints(minWidth: 112, maxWidth: 176),
+              padding: const EdgeInsets.fromLTRB(8, 4, 6, 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFEFB),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: const Color(0xFFDDE5DA)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x0A123C28),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE9F3E6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.location_on_rounded,
+                      color: FarmColors.deepGreen,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          farmName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 10.4,
+                            height: 1.05,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          parish,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 8.3,
+                            height: 1,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: FarmColors.deepGreen,
+                    size: 17,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!hpjUseMobileAppPresentation(context)) {
@@ -15721,7 +15644,9 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
                 onTap: () => openHpjCustomerHomeFromLogo(context),
                 borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
-                  width: 82,
+                  width: widget.currentPortal.trim().toLowerCase() == 'farmer'
+                      ? 68
+                      : 82,
                   height: 36,
                   child: Image.asset(
                     'lib/assets/images/logo.png',
@@ -15745,35 +15670,41 @@ class _HpjPortalUtilityHeaderState extends State<HpjPortalUtilityHeader> {
               ),
             ),
           ),
-          const Spacer(),
-          Semantics(
-            button: true,
-            label: 'Parish: $_parish',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => unawaited(_pickParish()),
-                customBorder: const CircleBorder(),
-                child: Ink(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF4F7F1),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFDDE5DA)),
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.location_on_rounded,
-                      color: FarmColors.deepGreen,
-                      size: 19,
+          const SizedBox(width: 4),
+          if (widget.currentPortal.trim().toLowerCase() == 'farmer') ...[
+            Expanded(child: _farmerFarmSelector()),
+            const SizedBox(width: 6),
+          ] else ...[
+            const Spacer(),
+            Semantics(
+              button: true,
+              label: 'Parish: $_parish',
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => unawaited(_pickParish()),
+                  customBorder: const CircleBorder(),
+                  child: Ink(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F7F1),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFFDDE5DA)),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.location_on_rounded,
+                        color: FarmColors.deepGreen,
+                        size: 19,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 6),
+            const SizedBox(width: 6),
+          ],
           FutureBuilder<List<FarmNotification>>(
             future: _notificationsFuture,
             builder: (context, snapshot) {
@@ -16161,6 +16092,11 @@ class _MainNavigationState extends State<MainNavigation>
   String selectedShopCategory = 'All';
   int shopCategorySelectionVersion = 0;
   int myBoxRefreshVersion = 0;
+  int homeRefreshVersion = 0;
+  int shopRefreshVersion = 0;
+  int ordersRefreshVersion = 0;
+  final Map<int, DateTime> _customerTabLastRefresh = <int, DateTime>{};
+  static const Duration _customerTabRefreshAge = Duration(seconds: 20);
   final List<Product> cart = [];
   final Set<String> favoriteProductIds = <String>{};
   final Map<String, Product> favoriteProductCache = <String, Product>{};
@@ -16206,6 +16142,7 @@ class _MainNavigationState extends State<MainNavigation>
     // The public HPJ homepage remains accessible from the HPJ logo.
     selectedIndex = requestedInitialIndex;
     mobileSelectedIndex = requestedInitialIndex;
+    _customerTabLastRefresh[requestedInitialIndex] = DateTime.now();
 
     unawaited(
       saveHpjNavigationPreference(
@@ -16458,6 +16395,7 @@ class _MainNavigationState extends State<MainNavigation>
               realtimeNotificationCooldowns[cooldownKey] = now;
 
               FarmDataCache.notifications = null;
+              refreshHpjNotificationBadges();
 
               showBrowserNotification(
                 title: notice.title,
@@ -16877,13 +16815,48 @@ class _MainNavigationState extends State<MainNavigation>
 
   void removeFromCart(Product product) => decreaseProductQuantity(product);
 
+  bool _customerTabRefreshIsDue(int index) {
+    if (index != homeTabIndex &&
+        index != shopTabIndex &&
+        index != ordersTabIndex) {
+      return false;
+    }
+
+    final now = DateTime.now();
+    final last = _customerTabLastRefresh[index];
+    if (last != null && now.difference(last) < _customerTabRefreshAge) {
+      return false;
+    }
+
+    _customerTabLastRefresh[index] = now;
+    return true;
+  }
+
+  void _prepareCustomerTabRefresh(int index) {
+    if (index == homeTabIndex || index == shopTabIndex) {
+      FarmDataCache.clearProducts();
+    }
+    if (index == ordersTabIndex) {
+      FarmDataCache.clearOrders();
+    }
+  }
+
   void _selectCustomerTab(int index) {
     if (!mounted) return;
     final safeIndex = index.clamp(0, 4).toInt();
+    final changedTab = safeIndex != selectedIndex;
+    final refreshDue = changedTab && _customerTabRefreshIsDue(safeIndex);
+    if (refreshDue) _prepareCustomerTabRefresh(safeIndex);
+
     setState(() {
       selectedIndex = safeIndex;
       if (safeIndex == myBoxTabIndex && isLoggedIn) {
         myBoxRefreshVersion++;
+      }
+      if (refreshDue) {
+        if (safeIndex == homeTabIndex) homeRefreshVersion++;
+        if (safeIndex == shopTabIndex) shopRefreshVersion++;
+        if (safeIndex == ordersTabIndex) ordersRefreshVersion++;
       }
     });
     unawaited(
@@ -16897,11 +16870,20 @@ class _MainNavigationState extends State<MainNavigation>
   void _selectMobileCustomerTab(int index) {
     if (!mounted) return;
     final safeIndex = index.clamp(0, 4).toInt();
+    final changedTab = safeIndex != mobileSelectedIndex;
+    final refreshDue = changedTab && _customerTabRefreshIsDue(safeIndex);
+    if (refreshDue) _prepareCustomerTabRefresh(safeIndex);
+
     setState(() {
       mobileSelectedIndex = safeIndex;
       selectedIndex = safeIndex;
       if (safeIndex == myBoxTabIndex && isLoggedIn) {
         myBoxRefreshVersion++;
+      }
+      if (refreshDue) {
+        if (safeIndex == homeTabIndex) homeRefreshVersion++;
+        if (safeIndex == shopTabIndex) shopRefreshVersion++;
+        if (safeIndex == ordersTabIndex) ordersRefreshVersion++;
       }
     });
 
@@ -16986,6 +16968,12 @@ class _MainNavigationState extends State<MainNavigation>
       if (!mounted) return;
 
       final cleanCategory = category?.trim();
+      final changedTab = selectedIndex != shopTabIndex ||
+          (hpjUseMobileAppPresentation(context) &&
+              mobileSelectedIndex != shopTabIndex);
+      final refreshDue = changedTab && _customerTabRefreshIsDue(shopTabIndex);
+      if (refreshDue) _prepareCustomerTabRefresh(shopTabIndex);
+
       setState(() {
         if (cleanCategory != null && cleanCategory.isNotEmpty) {
           selectedShopCategory = normalizeProductCategory(cleanCategory);
@@ -16993,6 +16981,7 @@ class _MainNavigationState extends State<MainNavigation>
         }
         selectedIndex = shopTabIndex;
         if (hpjUseMobileAppPresentation(context)) mobileSelectedIndex = 1;
+        if (refreshDue) shopRefreshVersion++;
       });
       unawaited(
         saveHpjNavigationPreference(
@@ -17005,11 +16994,18 @@ class _MainNavigationState extends State<MainNavigation>
     void goToShopHome() {
       if (!mounted) return;
 
+      final changedTab = selectedIndex != shopTabIndex ||
+          (hpjUseMobileAppPresentation(context) &&
+              mobileSelectedIndex != shopTabIndex);
+      final refreshDue = changedTab && _customerTabRefreshIsDue(shopTabIndex);
+      if (refreshDue) _prepareCustomerTabRefresh(shopTabIndex);
+
       setState(() {
         selectedShopCategory = 'All';
         shopCategorySelectionVersion++;
         selectedIndex = shopTabIndex;
         if (hpjUseMobileAppPresentation(context)) mobileSelectedIndex = 1;
+        if (refreshDue) shopRefreshVersion++;
       });
 
       unawaited(
@@ -17102,7 +17098,7 @@ class _MainNavigationState extends State<MainNavigation>
 
     final pages = <Widget>[
       HomeScreen(
-        key: ValueKey('home-$authViewKey'),
+        key: ValueKey('home-$authViewKey-$homeRefreshVersion'),
         onShopTap: goToShopHome,
         onCategoryTap: (category) => goToShop(category: category),
         onCartTap: openFloatingCart,
@@ -17131,7 +17127,7 @@ class _MainNavigationState extends State<MainNavigation>
         onToggleFavorite: toggleFavorite,
       ),
       ShopScreen(
-        key: ValueKey('shop-$authViewKey'),
+        key: ValueKey('shop-$authViewKey-$shopRefreshVersion'),
         onAddToCart: increaseProductQuantity,
         onRemoveFromCart: decreaseProductQuantity,
         quantityForProduct: quantityForProduct,
@@ -17172,7 +17168,7 @@ class _MainNavigationState extends State<MainNavigation>
         refreshVersion: myBoxRefreshVersion,
       ),
       OrdersScreen(
-        key: ValueKey('orders-$authViewKey'),
+        key: ValueKey('orders-$authViewKey-$ordersRefreshVersion'),
         onAddToCart: increaseProductQuantity,
         onOpenMyBox: () {
           if (!mounted) return;

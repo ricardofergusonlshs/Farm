@@ -1,5 +1,15 @@
 part of harvest_place_app;
 
+// Shared invalidation signal for every notification badge in the app.
+// Bumping this value never changes notification data; it only asks visible
+// badges to fetch the latest unread count from Supabase.
+final ValueNotifier<int> hpjNotificationBadgeRefreshVersion =
+    ValueNotifier<int>(0);
+
+void refreshHpjNotificationBadges() {
+  hpjNotificationBadgeRefreshVersion.value++;
+}
+
 String _safeProductImageFileName(String fileName) {
   final clean = fileName.trim().toLowerCase();
   final sanitized = clean
@@ -510,6 +520,22 @@ class HpjCompanySettings {
     if (digits.isNotEmpty) return digits;
     return AppConfig.supportWhatsAppNumber.replaceAll(RegExp(r'[^0-9]'), '');
   }
+}
+
+String hpjCompanyContactLine(HpjCompanySettings settings) {
+  final parts = <String>[
+    settings.address.trim(),
+    if (settings.supportPhone.trim().isNotEmpty)
+      'Tel: ${settings.supportPhone.trim()}',
+  ].where((value) => value.trim().isNotEmpty).toList();
+
+  if (parts.isNotEmpty) return parts.join(' | ');
+
+  return [
+    AppConfig.businessLocation.trim(),
+    if (AppConfig.supportPhoneDisplay.trim().isNotEmpty)
+      'Tel: ${AppConfig.supportPhoneDisplay.trim()}',
+  ].where((value) => value.trim().isNotEmpty).join(' | ');
 }
 
 Future<HpjCompanySettings> fetchHpjCompanySettings({
@@ -1154,8 +1180,11 @@ String buildCustomerReferralLink({
   required String referralCode,
   required String referrerId,
 }) {
-  final base = AppConfig.shareableAppLink.trim();
-  final safeBase = base.isEmpty ? AppConfig.appName : base;
+  final inviteBase = AppConfig.publicInviteUrl.trim();
+  final fallbackBase = AppConfig.shareableAppLink.trim();
+  final safeBase = inviteBase.isNotEmpty
+      ? inviteBase
+      : (fallbackBase.isEmpty ? AppConfig.appName : fallbackBase);
   final code = cleanReferralCode(referralCode);
   final cleanReferrerId = referrerId.trim();
 
@@ -1962,11 +1991,23 @@ Future<List<Product>> fetchProducts({bool forceRefresh = false}) async {
   return products;
 }
 
+List<Product> _customerPricedProducts(
+  Iterable<Product> products,
+) {
+  return products
+      .where((product) => product.hasCustomerPrice)
+      .toList(growable: false);
+}
+
 Future<List<Product>> fetchProductsForCustomerUi({
   bool forceRefresh = false,
   Duration timeout = const Duration(seconds: 12),
 }) async {
-  final cached = FarmDataCache.products;
+  final rawCached = FarmDataCache.products;
+  final cached = rawCached == null
+      ? const <Product>[]
+      : _customerPricedProducts(rawCached);
+
   Object? lastError;
 
   for (var attempt = 1; attempt <= 2; attempt++) {
@@ -1979,17 +2020,22 @@ Future<List<Product>> fetchProductsForCustomerUi({
           farmDebugLog(
             'Product load timed out after ${timeout.inSeconds}s on attempt $attempt.',
           );
-          if (cached != null && cached.isNotEmpty) return cached;
+          if (cached.isNotEmpty) return cached;
           throw TimeoutException('Product load timed out.');
         },
       );
 
-      if (products.isNotEmpty) {
-        return products;
+      final customerProducts =
+          _customerPricedProducts(products);
+
+      if (customerProducts.isNotEmpty) {
+        return customerProducts;
       }
 
-      if (cached != null && cached.isNotEmpty) {
-        farmDebugLog('Product load returned empty, using cached products.');
+      if (cached.isNotEmpty) {
+        farmDebugLog(
+          'Product load returned no customer-priced products, using safe cached products.',
+        );
         return cached;
       }
     } catch (error) {
@@ -1997,14 +2043,19 @@ Future<List<Product>> fetchProductsForCustomerUi({
       farmDebugLog('Product load attempt $attempt failed: $error');
 
       if (attempt < 2) {
-        await Future<void>.delayed(const Duration(milliseconds: 700));
+        await Future<void>.delayed(
+          const Duration(milliseconds: 700),
+        );
       }
     }
   }
 
   farmDebugLog(
-      'Product load fallback used: ${lastError ?? 'No products returned'}');
-  return cached ?? const <Product>[];
+    'Product load safe fallback used: '
+    '${lastError ?? 'No customer-priced products returned'}',
+  );
+
+  return cached;
 }
 
 Future<List<Product>> _fetchProductsUncached() async {
@@ -2745,6 +2796,7 @@ Future<void> createFarmNotification({
     'message': message,
     'type': cleanType,
     'is_read': false,
+    if (currentUser?.id != null) 'created_by_user_id': currentUser!.id,
     if (cleanOrderId != null && cleanOrderId.isNotEmpty)
       'order_id': cleanOrderId,
     if (resolvedActionType.isNotEmpty) 'action_type': resolvedActionType,
@@ -2781,8 +2833,14 @@ Future<void> createFarmNotification({
   try {
     await supabase.from('notifications').insert(notificationPayload);
 
-    // Notification data changed — force the inbox to reload next time.
+    // Notification data changed — force the inbox and unread badges to reload.
     FarmDataCache.notifications = null;
+    if (notificationTargetsCurrentUser(
+      userId: targetUserId,
+      userEmail: targetEmail,
+    )) {
+      refreshHpjNotificationBadges();
+    }
 
     await dispatchStoredPushNotificationByDedupeKey(dispatchDedupeKey);
 
@@ -2817,6 +2875,12 @@ Future<void> createFarmNotification({
       await supabase.from('notifications').insert(legacyPayload);
 
       FarmDataCache.notifications = null;
+      if (notificationTargetsCurrentUser(
+        userId: null,
+        userEmail: targetEmail,
+      )) {
+        refreshHpjNotificationBadges();
+      }
 
       showBrowserNotificationForTarget(
         title: title,
@@ -3105,75 +3169,219 @@ Future<int> fetchUnreadNotificationCount() async {
 
   if (user == null || boundary.userId == null) return 0;
 
+  // HPJ has a small amount of legacy notification data addressed by email
+  // only. Modern rows use user_id. Read both forms and de-duplicate by id so
+  // the badge always matches what the Notification Center can show.
+  final unreadIds = <String>{};
+  var hadSuccessfulLookup = false;
+
   try {
     final response = await supabase
         .from('notifications')
         .select('id')
         .eq('user_id', user.id)
-        .eq('is_read', false);
+        .eq('is_read', false)
+        .isFilter('dismissed_at', null);
 
-    if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
-      return 0;
+    if (!isHpjPrivateOperationBoundaryCurrent(boundary)) return 0;
+
+    for (final row in response as List) {
+      final id = (row['id'] ?? '').toString().trim();
+      if (id.isNotEmpty) unreadIds.add(id);
     }
+    hadSuccessfulLookup = true;
+  } catch (error) {
+    farmDebugLog('Unread notification user-id lookup skipped: $error');
+  }
 
-    return (response as List).length;
-  } catch (userIdError) {
-    final userEmail = (user.email ?? '').trim().toLowerCase();
-
-    if (userEmail.isEmpty) return 0;
-
+  final userEmail = (user.email ?? '').trim().toLowerCase();
+  if (userEmail.isNotEmpty) {
     try {
       final response = await supabase
           .from('notifications')
           .select('id')
           .eq('user_email', userEmail)
-          .eq('is_read', false);
+          .eq('is_read', false)
+          .isFilter('dismissed_at', null);
 
-      if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
-        return 0;
+      if (!isHpjPrivateOperationBoundaryCurrent(boundary)) return 0;
+
+      for (final row in response as List) {
+        final id = (row['id'] ?? '').toString().trim();
+        if (id.isNotEmpty) unreadIds.add(id);
       }
-
-      return (response as List).length;
-    } catch (emailError) {
-      farmDebugLog(
-        'Unread notification count skipped: $emailError',
-      );
-
-      return 0;
+      hadSuccessfulLookup = true;
+    } catch (error) {
+      farmDebugLog('Unread notification email lookup skipped: $error');
     }
   }
+
+  return hadSuccessfulLookup ? unreadIds.length : 0;
 }
 
 Future<void> markNotificationsRead() async {
   final user = supabase.auth.currentUser;
   if (user == null) return;
 
+  var updated = false;
+
+  // Update modern user_id rows.
   try {
     await supabase
         .from('notifications')
-        .update({'is_read': true}).eq('user_id', user.id);
+        .update({'is_read': true})
+        .eq('user_id', user.id)
+        .isFilter('dismissed_at', null);
+    updated = true;
+  } catch (error) {
+    farmDebugLog('Mark user-id notifications read skipped: $error');
+  }
 
-    // Force notification screen to reload fresh data.
-    FarmDataCache.notifications = null;
-  } catch (userIdError) {
+  // Also update legacy email-addressed rows. Rows containing both fields may
+  // be touched twice, which is harmless, while email-only legacy rows no
+  // longer remain permanently unread.
+  final userEmail = (user.email ?? '').trim().toLowerCase();
+  if (userEmail.isNotEmpty) {
     try {
-      final userEmail = (user.email ?? '').trim().toLowerCase();
-
-      if (userEmail.isEmpty) return;
-
       await supabase
           .from('notifications')
-          .update({'is_read': true}).eq('user_email', userEmail);
-
-      // Force notification screen to reload fresh data.
-      FarmDataCache.notifications = null;
-    } catch (emailError) {
-      debugPrintOnce(
-        'mark_notifications_read_skipped',
-        'Mark notifications read skipped safely.',
-      );
+          .update({'is_read': true})
+          .eq('user_email', userEmail)
+          .isFilter('dismissed_at', null);
+      updated = true;
+    } catch (error) {
+      farmDebugLog('Mark email notifications read skipped: $error');
     }
   }
+
+  if (updated) {
+    FarmDataCache.notifications = null;
+    refreshHpjNotificationBadges();
+  } else {
+    debugPrintOnce(
+      'mark_notifications_read_skipped',
+      'Mark notifications read skipped safely.',
+    );
+  }
+}
+
+
+int _hpjNotificationRpcCount(dynamic response) {
+  if (response is num) return response.toInt();
+  return int.tryParse(response?.toString() ?? '') ?? 0;
+}
+
+Future<int> archiveNotificationsByIdsForCurrentUser(
+  Set<String> notificationIds,
+) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || notificationIds.isEmpty) return 0;
+
+  final ids = notificationIds
+      .map((id) => id.trim())
+      .where((id) => id.isNotEmpty)
+      .toList(growable: false);
+
+  if (ids.isEmpty) return 0;
+
+  final response = await supabase.rpc(
+    'hpj_archive_notifications',
+    params: <String, dynamic>{
+      'p_notification_ids': ids,
+    },
+  );
+
+  FarmDataCache.notifications = null;
+  refreshHpjNotificationBadges();
+  return _hpjNotificationRpcCount(response);
+}
+
+Future<int> archiveReadNotificationsForCurrentUser() async {
+  if (supabase.auth.currentUser == null) return 0;
+
+  final response = await supabase.rpc(
+    'hpj_archive_read_notifications',
+  );
+
+  FarmDataCache.notifications = null;
+  refreshHpjNotificationBadges();
+  return _hpjNotificationRpcCount(response);
+}
+
+Future<int> archiveAllNotificationsForCurrentUser() async {
+  if (supabase.auth.currentUser == null) return 0;
+
+  final response = await supabase.rpc(
+    'hpj_archive_all_notifications',
+  );
+
+  FarmDataCache.notifications = null;
+  refreshHpjNotificationBadges();
+  return _hpjNotificationRpcCount(response);
+}
+
+Future<int> restoreNotificationsByIdsForCurrentUser(
+  Set<String> notificationIds,
+) async {
+  final user = supabase.auth.currentUser;
+  if (user == null || notificationIds.isEmpty) return 0;
+
+  final ids = notificationIds
+      .map((id) => id.trim())
+      .where((id) => id.isNotEmpty)
+      .toList(growable: false);
+
+  if (ids.isEmpty) return 0;
+
+  final response = await supabase.rpc(
+    'hpj_restore_notifications',
+    params: <String, dynamic>{
+      'p_notification_ids': ids,
+    },
+  );
+
+  FarmDataCache.notifications = null;
+  refreshHpjNotificationBadges();
+  return _hpjNotificationRpcCount(response);
+}
+
+Future<int> restoreAllArchivedNotificationsForCurrentUser() async {
+  if (supabase.auth.currentUser == null) return 0;
+
+  final response = await supabase.rpc(
+    'hpj_restore_all_notifications',
+  );
+
+  FarmDataCache.notifications = null;
+  refreshHpjNotificationBadges();
+  return _hpjNotificationRpcCount(response);
+}
+
+Future<List<FarmNotification>> fetchArchivedFarmNotifications({
+  bool forceRefresh = true,
+}) async {
+  final boundary = captureHpjPrivateOperationBoundary();
+  if (boundary.userId == null) return const <FarmNotification>[];
+
+  final notifications = await _fetchFarmNotificationsUncached(
+    archived: true,
+  );
+
+  if (!isHpjPrivateOperationBoundaryCurrent(boundary)) {
+    return const <FarmNotification>[];
+  }
+
+  return notifications;
+}
+
+// Compatibility aliases: older UI code that still calls "delete" now archives.
+// No notification row is physically deleted by these helpers.
+Future<void> deleteReadNotificationsForCurrentUser() async {
+  await archiveReadNotificationsForCurrentUser();
+}
+
+Future<void> deleteAllNotificationsForCurrentUser() async {
+  await archiveAllNotificationsForCurrentUser();
 }
 
 Future<bool> subscribeToProductReadyAlert(Product product) async {
@@ -3206,7 +3414,7 @@ Future<bool> subscribeToProductReadyAlert(Product product) async {
   } catch (error) {
     farmDebugLog('Product ready subscription skipped: $error');
     throw Exception(
-        'Ready alerts are not set up yet. Please run the Supabase SQL migration first.');
+        'Ready alerts are temporarily unavailable. Please try again later or contact HPJ support.');
   }
 }
 
@@ -3331,7 +3539,7 @@ Future<bool> subscribeToSaveProduct(
   } catch (error) {
     farmDebugLog('Fresh Box Plan setup skipped: $error');
     throw Exception(
-        'Fresh Box Plan is not set up yet. Please run the Supabase SQL migration first.');
+        'Fresh Box Plan is temporarily unavailable. Please try again later or contact HPJ support.');
   }
 }
 
@@ -5680,9 +5888,13 @@ Future<String> createSupportTicket({
 const String _supportTicketSelectFields =
     'id, user_id, email, subject, message, status, admin_reply, '
     'last_message_preview, last_sender_role, assigned_staff_id, priority, '
-    'created_at, updated_at, last_message_at, customer_last_read_at, staff_last_read_at';
+    'created_at, updated_at, last_message_at, customer_last_read_at, staff_last_read_at, '
+    'user_archived_at, user_muted_until, pinned_message_id, user_marked_unread, '
+    'customer_typing_at, staff_typing_at';
 
-Future<List<SupportTicket>> fetchMySupportTickets() async {
+Future<List<SupportTicket>> fetchMySupportTickets({
+  bool archived = false,
+}) async {
   final user = supabase.auth.currentUser;
   if (user == null) return const <SupportTicket>[];
 
@@ -5693,12 +5905,17 @@ Future<List<SupportTicket>> fetchMySupportTickets() async {
         .eq('user_id', user.id)
         .order('last_message_at', ascending: false)
         .order('created_at', ascending: false)
-        .limit(50);
+        .limit(80);
 
-    return (response as List)
+    final tickets = (response as List)
         .map((item) =>
             SupportTicket.fromSupabase(Map<String, dynamic>.from(item as Map)))
         .toList();
+
+    return tickets
+        .where((ticket) =>
+            archived ? ticket.isArchivedForUser : !ticket.isArchivedForUser)
+        .toList(growable: false);
   } catch (error) {
     farmDebugLog('Failed to fetch this user support conversations: $error');
     return const <SupportTicket>[];
@@ -5762,31 +5979,180 @@ Stream<List<SupportMessage>> watchSupportMessages(String ticketId) {
       );
 }
 
+const String _supportChatMediaBucket = 'support-chat-media';
+const int _supportChatMediaMaxBytes = 15 * 1024 * 1024;
+
+String _safeSupportMediaFileName(String raw) {
+  final clean = raw
+      .trim()
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_')
+      .replaceAll(RegExp(r'_+'), '_');
+  if (clean.isEmpty) return 'attachment';
+  return clean.length > 90 ? clean.substring(clean.length - 90) : clean;
+}
+
+String _supportMediaContentType(XFile file, String attachmentType) {
+  final explicit = (file.mimeType ?? '').trim().toLowerCase();
+  if (explicit.isNotEmpty) return explicit;
+
+  final lower = file.name.trim().toLowerCase();
+  if (attachmentType == 'image') {
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  if (lower.endsWith('.mov')) return 'video/quicktime';
+  return 'video/mp4';
+}
+
+Future<String> uploadSupportChatMedia({
+  required String ticketId,
+  required XFile file,
+  required String attachmentType,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    throw Exception('Please sign in again before attaching media.');
+  }
+
+  final cleanTicketId = ticketId.trim();
+  final cleanType = attachmentType.trim().toLowerCase();
+  if (cleanTicketId.isEmpty ||
+      !const <String>{'image', 'video'}.contains(cleanType)) {
+    throw Exception('Choose a valid private chat attachment.');
+  }
+
+  final bytes = await file.readAsBytes();
+  if (bytes.isEmpty) {
+    throw Exception('The selected attachment is empty.');
+  }
+  if (bytes.length > _supportChatMediaMaxBytes) {
+    throw Exception('Keep chat photos/videos under 15 MB.');
+  }
+
+  final safeName = _safeSupportMediaFileName(file.name);
+  final path =
+      '$cleanTicketId/${user.id}/${DateTime.now().microsecondsSinceEpoch}_$safeName';
+
+  await supabase.storage.from(_supportChatMediaBucket).uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: _supportMediaContentType(file, cleanType),
+          upsert: false,
+        ),
+      );
+
+  return path;
+}
+
+Future<void> deleteOwnSupportChatMedia(String path) async {
+  final cleanPath = path.trim();
+  if (cleanPath.isEmpty) return;
+  try {
+    await supabase.storage.from(_supportChatMediaBucket).remove([cleanPath]);
+  } catch (error) {
+    farmDebugLog('Support media cleanup skipped: $error');
+  }
+}
+
+Future<String?> createSupportChatMediaSignedUrl(String path) async {
+  final cleanPath = path.trim();
+  if (cleanPath.isEmpty) return null;
+  try {
+    return await supabase.storage
+        .from(_supportChatMediaBucket)
+        .createSignedUrl(cleanPath, 60 * 60);
+  } catch (error) {
+    farmDebugLog('Support media signed URL unavailable: $error');
+    return null;
+  }
+}
+
 Future<void> sendSupportMessage({
   required String ticketId,
-  required String message,
+  String message = '',
   bool internal = false,
+  String? replyToMessageId,
+  String? attachmentPath,
+  String? attachmentType,
+  String? attachmentName,
 }) async {
   final cleanId = ticketId.trim();
   final cleanMessage = message.trim();
-  if (cleanId.isEmpty || cleanMessage.isEmpty) {
-    throw Exception('Please enter a message.');
+  final cleanReplyTo = replyToMessageId?.trim() ?? '';
+  final cleanAttachmentPath = attachmentPath?.trim() ?? '';
+  final cleanAttachmentType = attachmentType?.trim().toLowerCase() ?? '';
+  final cleanAttachmentName = attachmentName?.trim() ?? '';
+
+  if (cleanId.isEmpty ||
+      (cleanMessage.isEmpty && cleanAttachmentPath.isEmpty)) {
+    throw Exception('Please enter a message or attach a photo/video.');
   }
 
-  await supabase.rpc(
-    'hpj_send_support_message',
-    params: {
-      'p_ticket_id': cleanId,
-      'p_message': cleanMessage,
-      'p_internal': internal,
-    },
-  );
+  var usedModernRpc = false;
+  try {
+    await supabase.rpc(
+      'hpj_send_support_message_v3',
+      params: {
+        'p_ticket_id': cleanId,
+        'p_message': cleanMessage,
+        'p_internal': internal,
+        'p_reply_to_message_id':
+            cleanReplyTo.isEmpty ? null : cleanReplyTo,
+        'p_attachment_path':
+            cleanAttachmentPath.isEmpty ? null : cleanAttachmentPath,
+        'p_attachment_type':
+            cleanAttachmentType.isEmpty ? null : cleanAttachmentType,
+        'p_attachment_name':
+            cleanAttachmentName.isEmpty ? null : cleanAttachmentName,
+      },
+    );
+    usedModernRpc = true;
+  } catch (v3Error) {
+    final lower = v3Error.toString().toLowerCase();
+    final missingV3 = lower.contains('hpj_send_support_message_v3') ||
+        lower.contains('function') && lower.contains('does not exist');
+    if (!missingV3) rethrow;
+
+    if (cleanAttachmentPath.isNotEmpty) {
+      throw Exception(
+        'Private photo/video chat is not installed yet. Run the final HPJ chat SQL.',
+      );
+    }
+
+    try {
+      await supabase.rpc(
+        'hpj_send_support_message_v2',
+        params: {
+          'p_ticket_id': cleanId,
+          'p_message': cleanMessage,
+          'p_internal': internal,
+          'p_reply_to_message_id':
+              cleanReplyTo.isEmpty ? null : cleanReplyTo,
+        },
+      );
+      usedModernRpc = true;
+    } catch (v2Error) {
+      final lowerV2 = v2Error.toString().toLowerCase();
+      final missingV2 = lowerV2.contains('hpj_send_support_message_v2') ||
+          lowerV2.contains('function') && lowerV2.contains('does not exist');
+      if (!missingV2) rethrow;
+
+      await supabase.rpc(
+        'hpj_send_support_message',
+        params: {
+          'p_ticket_id': cleanId,
+          'p_message': cleanMessage,
+          'p_internal': internal,
+        },
+      );
+    }
+  }
 
   if (internal) return;
 
-  // Create the recipient notification server-side. The RPC determines whether
-  // the sender is the ticket owner or HPJ staff and writes the correct private
-  // notification row(s) with exact action_type/action_id metadata.
   try {
     final response = await supabase.rpc(
       'hpj_create_support_message_notifications',
@@ -5804,8 +6170,20 @@ Future<void> sendSupportMessage({
       if (id.isNotEmpty) ids.add(id);
     }
 
-    for (final id in ids.toSet()) {
-      await dispatchStoredPushNotification(id);
+    var suppressPush = false;
+    final ticket = await fetchSupportTicket(cleanId);
+    final currentUserId = supabase.auth.currentUser?.id ?? '';
+    if (ticket != null &&
+        currentUserId.isNotEmpty &&
+        ticket.userId.trim() != currentUserId &&
+        ticket.isMutedForUser) {
+      suppressPush = true;
+    }
+
+    if (!suppressPush) {
+      for (final id in ids.toSet()) {
+        await dispatchStoredPushNotification(id);
+      }
     }
     return;
   } catch (error) {
@@ -5815,8 +6193,6 @@ Future<void> sendSupportMessage({
     );
   }
 
-  // Compatibility path for a database that has not received migration 009
-  // yet. Keep this narrow and private; the normal path above is preferred.
   final ticket = await fetchSupportTicket(cleanId);
   if (ticket == null) return;
 
@@ -5834,7 +6210,9 @@ Future<void> sendSupportMessage({
   if (senderIsStaff) {
     await createFarmNotification(
       title: 'HPJ Inbox reply',
-      message: 'You have a new private reply from The Harvest Place Ja.',
+      message: cleanAttachmentPath.isNotEmpty && cleanMessage.isEmpty
+          ? 'You have a new private attachment from The Harvest Place Ja.'
+          : 'You have a new private reply from The Harvest Place Ja.',
       type: 'support',
       userId: ticket.userId.trim().isEmpty ? null : ticket.userId.trim(),
       userEmail: ticket.email.trim().isEmpty ? null : ticket.email.trim(),
@@ -5844,11 +6222,175 @@ Future<void> sendSupportMessage({
   } else {
     await createAdminNotification(
       title: 'New HPJ Inbox message',
-      message: 'Conversation #${ticket.shortId} has a new private reply.',
+      message: cleanAttachmentPath.isNotEmpty && cleanMessage.isEmpty
+          ? 'Conversation #${ticket.shortId} has a new private attachment.'
+          : 'Conversation #${ticket.shortId} has a new private reply.',
       type: 'support',
       actionType: 'admin_support_chat',
       actionId: cleanId,
     );
+  }
+
+  if (!usedModernRpc &&
+      (cleanReplyTo.isNotEmpty || cleanAttachmentPath.isNotEmpty)) {
+    farmDebugLog(
+      'Support message used a legacy RPC; modern reply/media metadata was skipped.',
+    );
+  }
+}
+
+
+Future<void> editSupportMessage({
+  required String messageId,
+  required String message,
+}) async {
+  final cleanId = messageId.trim();
+  final cleanMessage = message.trim();
+  if (cleanId.isEmpty || cleanMessage.isEmpty) {
+    throw Exception('Please enter a message.');
+  }
+
+  await supabase.rpc(
+    'hpj_edit_support_message',
+    params: {
+      'p_message_id': cleanId,
+      'p_message': cleanMessage,
+    },
+  );
+}
+
+Future<void> deleteSupportMessageForEveryone(String messageId) async {
+  final cleanId = messageId.trim();
+  if (cleanId.isEmpty) return;
+
+  await supabase.rpc(
+    'hpj_delete_support_message_for_everyone',
+    params: {'p_message_id': cleanId},
+  );
+}
+
+Future<void> hideSupportMessageForMe(String messageId) async {
+  final cleanId = messageId.trim();
+  if (cleanId.isEmpty) return;
+
+  await supabase.rpc(
+    'hpj_hide_support_message_for_me',
+    params: {'p_message_id': cleanId},
+  );
+}
+
+Future<void> toggleSupportMessageReaction({
+  required String messageId,
+  required String reaction,
+}) async {
+  final cleanId = messageId.trim();
+  final cleanReaction = reaction.trim();
+  if (cleanId.isEmpty || cleanReaction.isEmpty) return;
+
+  await supabase.rpc(
+    'hpj_toggle_support_message_reaction',
+    params: {
+      'p_message_id': cleanId,
+      'p_reaction': cleanReaction,
+    },
+  );
+}
+
+Future<void> setSupportConversationArchived({
+  required String ticketId,
+  required bool archived,
+}) async {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return;
+
+  await supabase.rpc(
+    'hpj_set_support_conversation_archived',
+    params: {
+      'p_ticket_id': cleanId,
+      'p_archived': archived,
+    },
+  );
+}
+
+Future<void> setSupportConversationMuted({
+  required String ticketId,
+  DateTime? mutedUntil,
+}) async {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return;
+
+  await supabase.rpc(
+    'hpj_set_support_conversation_muted',
+    params: {
+      'p_ticket_id': cleanId,
+      'p_muted_until': mutedUntil?.toUtc().toIso8601String(),
+    },
+  );
+}
+
+Future<bool> toggleSupportMessageStar(String messageId) async {
+  final cleanId = messageId.trim();
+  if (cleanId.isEmpty) return false;
+
+  final response = await supabase.rpc(
+    'hpj_toggle_support_message_star',
+    params: {'p_message_id': cleanId},
+  );
+  return response == true;
+}
+
+Future<void> setSupportPinnedMessage({
+  required String ticketId,
+  String? messageId,
+}) async {
+  final cleanTicketId = ticketId.trim();
+  if (cleanTicketId.isEmpty) return;
+
+  final cleanMessageId = messageId?.trim() ?? '';
+  await supabase.rpc(
+    'hpj_set_support_pinned_message',
+    params: {
+      'p_ticket_id': cleanTicketId,
+      'p_message_id': cleanMessageId.isEmpty ? null : cleanMessageId,
+    },
+  );
+}
+
+Future<void> setSupportConversationMarkedUnread({
+  required String ticketId,
+  required bool marked,
+}) async {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return;
+
+  await supabase.rpc(
+    'hpj_set_support_marked_unread',
+    params: {
+      'p_ticket_id': cleanId,
+      'p_marked': marked,
+    },
+  );
+}
+
+Future<void> setSupportTyping({
+  required String ticketId,
+  required bool typing,
+}) async {
+  final cleanId = ticketId.trim();
+  if (cleanId.isEmpty) return;
+
+  try {
+    await supabase.rpc(
+      'hpj_set_support_typing',
+      params: {
+        'p_ticket_id': cleanId,
+        'p_typing': typing,
+      },
+    );
+  } catch (error) {
+    // Typing presence is intentionally best-effort and must never interrupt
+    // sending or reading the private conversation.
+    farmDebugLog('Support typing presence skipped: $error');
   }
 }
 
@@ -7050,10 +7592,15 @@ Future<List<AgricultureFeedUpdate>> fetchAgricultureFeedUpdates({
   }
 
   try {
+    final nowUtc = DateTime.now().toUtc().toIso8601String();
     final response = await supabase
         .from('agriculture_feed_updates')
         .select(_agricultureFeedSelectFields)
         .eq('is_active', true)
+        // Filter schedules server-side BEFORE limiting. Future/expired items
+        // could otherwise crowd the first 100 rows and hide active updates.
+        .lte('publish_at', nowUtc)
+        .or('expires_at.is.null,expires_at.gt.$nowUtc')
         .order('publish_at', ascending: false)
         .limit(100);
 
@@ -7088,7 +7635,9 @@ Future<List<AgricultureFeedUpdate>> fetchAgricultureFeedUpdates({
     return rows.take(limit.clamp(1, 20).toInt()).toList(growable: false);
   } catch (error) {
     farmDebugLog('Agriculture feed unavailable: $error');
-    return const <AgricultureFeedUpdate>[];
+    // The Updates widget already handles FutureBuilder errors with a Retry
+    // state. Do not report a backend failure as an empty published feed.
+    rethrow;
   }
 }
 
@@ -7293,9 +7842,15 @@ Future<void> setAgricultureFeedUpdateActive({
   final cleanId = id.trim();
   if (cleanId.isEmpty) return;
 
-  await supabase
+  final updated = await supabase
       .from('agriculture_feed_updates')
-      .update({'is_active': isActive}).eq('id', cleanId);
+      .update({'is_active': isActive})
+      .eq('id', cleanId)
+      .select('id')
+      .maybeSingle();
+  if (updated == null) {
+    throw Exception('Feed status was not saved. Check admin permissions.');
+  }
 }
 
 Future<void> deleteAgricultureFeedUpdate(String id) async {

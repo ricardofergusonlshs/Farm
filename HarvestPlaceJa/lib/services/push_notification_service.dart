@@ -728,6 +728,7 @@ class PushNotificationService {
           .from('notifications')
           .update({'is_read': true}).eq('id', notice.id.trim());
       FarmDataCache.notifications = null;
+      refreshHpjNotificationBadges();
     } catch (error) {
       farmDebugLog('Notification read update skipped: $error');
     }
@@ -868,6 +869,47 @@ class PushNotificationService {
           context: context,
         );
         return true;
+
+      case 'event':
+      case 'event_update':
+      case 'event_reminder':
+        if (actionId.isNotEmpty) {
+          await _pushPage(
+            HpjEventDetailsScreen(eventId: actionId),
+            context: context,
+          );
+          return true;
+        }
+        await _pushPage(
+          const HpjEventAlertsScreen(),
+          context: context,
+        );
+        return true;
+
+      case 'service_status':
+      case 'workspace_status':
+        switch (actionId.trim().toLowerCase()) {
+          case 'farmer':
+            await _pushPage(
+              const FarmerAccessGate(initialTab: 0),
+              context: context,
+            );
+            return true;
+          case 'business':
+          case 'wholesale':
+            await _pushPage(
+              const BusinessWholesaleHubScreen(initialTab: 0),
+              context: context,
+            );
+            return true;
+          case 'customer':
+          default:
+            await _pushPage(
+              const MainNavigation(initialIndex: 0),
+              context: context,
+            );
+            return true;
+        }
 
       case 'customer_product':
       case 'product':
@@ -1165,6 +1207,28 @@ class PushNotificationService {
     }
 
     switch (notice.type.trim().toLowerCase()) {
+      case 'event':
+      case 'event_update':
+      case 'event_reminder':
+        if (actionId.isNotEmpty) {
+          await _pushPage(
+            HpjEventDetailsScreen(eventId: actionId),
+            context: context,
+          );
+        } else {
+          await _pushPage(
+            const HpjEventAlertsScreen(),
+            context: context,
+          );
+        }
+        return true;
+      case 'service_status':
+      case 'workspace_status':
+        await _pushPage(
+          const MainNavigation(initialIndex: 0),
+          context: context,
+        );
+        return true;
       case 'support':
         await _pushPage(const SupportScreen(), context: context);
         return true;

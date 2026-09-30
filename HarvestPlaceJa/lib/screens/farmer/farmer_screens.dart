@@ -32275,7 +32275,15 @@ class _HpjFarmerSupplyMobileMvp extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: HpjContextHelpButton(
+            topic: HpjContextHelpTopic.farmerSupply,
+            showLabel: true,
+          ),
+        ),
+        const SizedBox(height: 10),
 
         // Keep the numbers operational and easy to understand.
         Row(
@@ -38007,14 +38015,24 @@ class _HpjFarmerOperationsMobileMvp extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 118),
       children: [
-        const Text(
-          'Operations',
-          style: TextStyle(
-            color: FarmColors.ink,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -.4,
-          ),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Operations',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -.4,
+                ),
+              ),
+            ),
+            const HpjContextHelpButton(
+              topic: HpjContextHelpTopic.farmerOperations,
+              showLabel: true,
+            ),
+          ],
         ),
         const SizedBox(height: 2),
         const Text(

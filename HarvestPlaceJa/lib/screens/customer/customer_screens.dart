@@ -2047,28 +2047,29 @@ class _HpjMobileMealPulseHeader extends StatelessWidget {
 
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(15, 14, 14, 14),
+          padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xFFE1E7DE)),
           ),
           child: Row(
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: const Color(0xFFEAF3E9),
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: const Icon(
                   Icons.restaurant_menu_rounded,
                   color: FarmColors.green,
-                  size: 23,
+                  size: 20,
                 ),
               ),
-              const SizedBox(width: 11),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2077,37 +2078,41 @@ class _HpjMobileMealPulseHeader extends StatelessWidget {
                       'What is Jamaica eating?',
                       style: TextStyle(
                         color: FarmColors.deepGreen,
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
                     Text(
                       habit.postedToday
-                          ? 'You posted today • ${habit.streakDays} day streak'
-                          : 'Share your plate or discover a fresh idea.',
-                      maxLines: 2,
+                          ? '${habit.streakDays} day streak • You posted today'
+                          : 'Share a plate or discover a fresh idea.',
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: FarmColors.mutedText,
-                        fontSize: 9.6,
-                        height: 1.3,
+                        fontSize: 8.8,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              IconButton.filledTonal(
-                tooltip: 'Post a meal',
-                onPressed: onPost,
-                icon: Icon(
-                  habit.postedToday
-                      ? Icons.add_a_photo_outlined
-                      : Icons.add_rounded,
-                  color: FarmColors.green,
-                  size: 20,
+              const SizedBox(width: 7),
+              SizedBox(
+                width: 38,
+                height: 38,
+                child: IconButton.filledTonal(
+                  tooltip: 'Post a meal',
+                  padding: EdgeInsets.zero,
+                  onPressed: onPost,
+                  icon: Icon(
+                    habit.postedToday
+                        ? Icons.add_a_photo_outlined
+                        : Icons.add_rounded,
+                    color: FarmColors.green,
+                    size: 19,
+                  ),
                 ),
               ),
             ],
@@ -4497,6 +4502,41 @@ List<HomeHeroSlide> _cleanHomeHeroSlides(List<HomeHeroSlide> slides) {
 
   if (clean.isEmpty) return defaultHomeHeroSlides();
   return clean.take(4).toList();
+}
+
+
+// Customer Home intentionally does NOT use default hero artwork while the
+// Admin-managed image is loading. This prevents the visible
+// fallback-image -> uploaded-image flash on app start.
+Future<List<HomeHeroSlide>> _fetchCustomerHomeUploadedHeroSlides() async {
+  try {
+    final response = await supabase
+        .from('home_hero_slides')
+        .select(
+          'id, position, image_url, title, subtitle, is_active, updated_at',
+        )
+        .eq('is_active', true)
+        .order('position', ascending: true)
+        .limit(4);
+
+    final slides = (response as List)
+        .map(
+          (row) => HomeHeroSlide.fromSupabase(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .where((slide) => cleanHostedImageUrl(slide.imageUrl) != null)
+        .toList()
+      ..sort((a, b) => a.position.compareTo(b.position));
+
+    return slides.take(4).toList(growable: false);
+  } catch (error) {
+    farmDebugLog(
+      'Customer Home uploaded hero unavailable; keeping neutral placeholder: '
+      '$error',
+    );
+    return const <HomeHeroSlide>[];
+  }
 }
 
 final Set<String> _shownBrowserNotificationTags = <String>{};
@@ -16540,7 +16580,10 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
   @override
   void initState() {
     super.initState();
-    _slidesFuture = fetchHomeHeroSlides();
+
+    // Customer Home waits for the real Admin-managed hero image.
+    // It never seeds the carousel with default/fallback artwork.
+    _slidesFuture = _fetchCustomerHomeUploadedHeroSlides();
 
     unawaited(
       fetchPublicWeeklyMealIdeas().then((_) {
@@ -16615,17 +16658,12 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
       fit: BoxFit.cover,
       alignment: Alignment.centerRight,
       cacheWidth: 1000,
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return Container(color: FarmColors.primarySoft);
+      },
       errorBuilder: (_, __, ___) {
-        return Container(
-          color: FarmColors.primarySoft,
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: 34),
-          child: Icon(
-            Icons.eco_rounded,
-            size: 44,
-            color: FarmColors.green.withOpacity(0.34),
-          ),
-        );
+        return Container(color: FarmColors.primarySoft);
       },
     );
   }
@@ -17066,13 +17104,42 @@ class _HomeHeroImageSlideshowState extends State<HomeHeroImageSlideshow> {
           );
         }
 
-        final existingSlides = _cleanHomeHeroSlides(
-          snapshot.data ?? const <HomeHeroSlide>[],
-        );
+        // Use only real Admin-managed/uploaded slides on Customer Home.
+        // Never promote defaultHomeHeroSlides() into the live carousel.
+        final existingSlides =
+            (snapshot.data ?? const <HomeHeroSlide>[])
+                .where(
+                  (slide) =>
+                      !slide.id.trim().toLowerCase().startsWith('default-') &&
+                      cleanHostedImageUrl(slide.imageUrl) != null,
+                )
+                .toList()
+              ..sort((a, b) => a.position.compareTo(b.position));
 
-        final firstSlide = existingSlides.isNotEmpty
-            ? existingSlides.first
-            : defaultHomeHeroSlides().first;
+        // If the Admin image is not available yet (or the request failed),
+        // keep the neutral card instead of flashing a fallback photo.
+        if (existingSlides.isEmpty) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(heroRadius),
+            child: Container(
+              height: heroHeight,
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                borderRadius: BorderRadius.circular(heroRadius),
+                border: Border.all(color: FarmColors.line),
+                boxShadow: [
+                  BoxShadow(
+                    color: FarmColors.shadow.withOpacity(0.06),
+                    blurRadius: desktopWeb ? 24 : 18,
+                    offset: Offset(0, desktopWeb ? 10 : 8),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final firstSlide = existingSlides.first;
 
         final differentSlides = existingSlides.where((slide) {
           return slide.imageUrl.trim() != firstSlide.imageUrl.trim();
@@ -18353,7 +18420,15 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
           const SizedBox(height: 10),
           Flexible(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              // PHONE SAFE:
+              // Keep the final Shop/Add button above Android's system
+              // navigation area, including edge-to-edge gesture/button bars.
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                24 + MediaQuery.viewPaddingOf(context).bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -18604,12 +18679,16 @@ class _EliteMealDetailsSheetState extends State<_EliteMealDetailsSheet> {
                                         : Icons.shopping_basket_rounded
                                     : Icons.check_rounded,
                               ),
-                              label: Text(
-                                showShopAction
-                                    ? selectedProducts.isNotEmpty
-                                        ? 'Add ${selectedProducts.length} Selected to My Box'
-                                        : 'Shop Fresh Ingredients'
-                                    : 'Done',
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  showShopAction
+                                      ? selectedProducts.isNotEmpty
+                                          ? 'Add ${selectedProducts.length} Selected to My Box'
+                                          : 'Shop Fresh Ingredients'
+                                      : 'Done',
+                                  maxLines: 1,
+                                ),
                               ),
                               style: FilledButton.styleFrom(
                                 backgroundColor: FarmColors.green,

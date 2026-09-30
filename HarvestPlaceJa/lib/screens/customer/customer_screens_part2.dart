@@ -22249,6 +22249,16 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   Future<void> openNewConversation() async {
+    try {
+      await hpjRequireSupportStartAllowed();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+      return;
+    }
+
     final subjectController = TextEditingController(
       text: widget.initialSubject.trim(),
     );
@@ -22282,7 +22292,7 @@ class _SupportScreenState extends State<SupportScreen> {
 
               setSheetState(() => sending = true);
               try {
-                final ticketId = await createSupportTicket(
+                final ticketId = await hpjCreateControlledSupportTicket(
                   subject: subject,
                   message: message,
                 );
@@ -23462,7 +23472,7 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
           message: message,
         );
       } else {
-        await sendSupportMessage(
+        await hpjSendControlledSupportMessage(
           ticketId: widget.ticket.id,
           message: message,
           replyToMessageId: replyingTo?.id,
@@ -23495,6 +23505,16 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
 
   Future<void> _sendAttachment(String type) async {
     if (sending || uploadingMedia) return;
+
+    try {
+      await hpjRequireMessagingAttachmentAllowed();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+      return;
+    }
 
     final picker = ImagePicker();
     XFile? file;
@@ -23530,7 +23550,7 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
         attachmentType: type,
       );
 
-      await sendSupportMessage(
+      await hpjSendControlledSupportMessage(
         ticketId: widget.ticket.id,
         message: messageController.text.trim(),
         replyToMessageId: replyingTo?.id,

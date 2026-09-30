@@ -6173,7 +6173,7 @@ class _FarmerPublicProfileEditorScreenState
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 110),
             children: [
               FarmCard(
                 padding: EdgeInsets.zero,
@@ -6181,7 +6181,7 @@ class _FarmerPublicProfileEditorScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(
-                      height: 170,
+                      height: 148,
                       width: double.infinity,
                       child: Stack(
                         fit: StackFit.expand,
@@ -6237,8 +6237,8 @@ class _FarmerPublicProfileEditorScreenState
                             child: Row(
                               children: [
                                 Container(
-                                  width: 54,
-                                  height: 54,
+                                  width: 48,
+                                  height: 48,
                                   clipBehavior: Clip.antiAlias,
                                   decoration: BoxDecoration(
                                     color: Colors.white,
@@ -6273,7 +6273,7 @@ class _FarmerPublicProfileEditorScreenState
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 18,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
@@ -6323,8 +6323,8 @@ class _FarmerPublicProfileEditorScreenState
                               Expanded(
                                 child: Text(
                                   isLive
-                                      ? 'Customers and businesses can see this page.'
-                                      : 'Build your page. HPJ controls publishing and verification.',
+                                      ? 'Visible on HPJ'
+                                      : 'Not published yet',
                                   style: const TextStyle(
                                     color: FarmColors.mutedText,
                                     fontSize: 10.4,
@@ -6339,9 +6339,7 @@ class _FarmerPublicProfileEditorScreenState
                             children: [
                               Expanded(
                                 child: _photoButton(
-                                  label: cover == null
-                                      ? 'Add Cover'
-                                      : 'Change Cover',
+                                  label: cover == null ? 'Add cover' : 'Cover',
                                   icon: Icons.add_photo_alternate_outlined,
                                   busy: uploadingCover,
                                   onPressed: _uploadCover,
@@ -6350,9 +6348,8 @@ class _FarmerPublicProfileEditorScreenState
                               const SizedBox(width: 9),
                               Expanded(
                                 child: _photoButton(
-                                  label: logo == null
-                                      ? 'Add Profile'
-                                      : 'Change Profile',
+                                  label:
+                                      logo == null ? 'Add profile' : 'Profile',
                                   icon: Icons.account_circle_outlined,
                                   busy: uploadingLogo,
                                   onPressed: _uploadLogo,
@@ -6382,7 +6379,7 @@ class _FarmerPublicProfileEditorScreenState
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Keep it simple — customers mainly need to know who you are, where you farm and what makes your farm special.',
+                      'A short introduction for customers and businesses.',
                       style: TextStyle(
                         color: FarmColors.mutedText,
                         fontSize: 10.5,
@@ -6408,8 +6405,7 @@ class _FarmerPublicProfileEditorScreenState
                       controller: _communityController,
                       decoration: InputDecoration(
                         labelText: 'Community',
-                        hintText: 'Example: Mountainside',
-                        helperText: 'Parish: ${widget.farmer.parish}',
+                        hintText: 'Mountainside',
                         prefixIcon: const Icon(Icons.location_on_outlined),
                       ),
                     ),
@@ -6464,7 +6460,7 @@ class _FarmerPublicProfileEditorScreenState
                           ),
                           const SizedBox(height: 3),
                           const Text(
-                            'Your public page uses My Supply automatically. Update what you are growing once — HPJ reuses it here.',
+                            'Uses your My Crops listings.',
                             style: TextStyle(
                               color: FarmColors.mutedText,
                               fontSize: 10.4,
@@ -6488,7 +6484,7 @@ class _FarmerPublicProfileEditorScreenState
                               Icons.grass_rounded,
                               size: 17,
                             ),
-                            label: const Text('Manage My Supply'),
+                            label: const Text('Manage Produce'),
                           ),
                         ],
                       ),

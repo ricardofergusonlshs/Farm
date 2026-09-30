@@ -115,50 +115,85 @@ class _FreshReelPlacementSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FarmCard(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFDDE6DA),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.place_outlined, color: FarmColors.green, size: 21),
-              SizedBox(width: 8),
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Color(0xFFEAF5E9),
+                  borderRadius: BorderRadius.all(Radius.circular(11)),
+                ),
+                child: Icon(
+                  Icons.place_outlined,
+                  color: FarmColors.green,
+                  size: 19,
+                ),
+              ),
+              SizedBox(width: 9),
               Expanded(
-                child: Text(
-                  'Where should this reel show?',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Show this reel in',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 1),
+                    Text(
+                      'Choose one or more places.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          const Text(
-            'Select one or more placements. You can change them later from Reels management.',
-            style: TextStyle(
-              color: FarmColors.mutedText,
-              fontSize: 11,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 7,
+            runSpacing: 7,
             children: _freshReelPlacementOrder.map((placement) {
               final isSelected = selected.contains(placement);
               return FilterChip(
                 selected: isSelected,
+                showCheckmark: true,
                 avatar: Icon(
                   freshReelPlacementIcon(placement),
-                  size: 17,
+                  size: 15,
                   color: isSelected ? FarmColors.green : FarmColors.mutedText,
                 ),
-                label: Text(freshReelPlacementLabel(placement)),
+                label: Text(
+                  freshReelPlacementLabel(placement),
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 onSelected:
                     enabled ? (value) => onChanged(placement, value) : null,
               );
@@ -1166,212 +1201,209 @@ class _FreshReelInlineFeedPostState extends State<_FreshReelInlineFeedPost> {
     final product = _linkedProduct;
     final customerView = widget.audience == 'customer';
 
-    return FarmCard(
-      padding: EdgeInsets.zero,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Material(
-          color: Colors.white,
-          child: InkWell(
-            onTap: _openReel,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(15, 14, 12, 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: FarmColors.lightGreen,
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: const Icon(
-                          Icons.smart_display_outlined,
-                          color: FarmColors.green,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.reel.creatorLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${widget.reel.typeLabel} • Fresh Reel',
-                              style: TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFDDE6DA),
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openReel,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _media(),
+                    if (!_autoplay || !_videoReady)
+                      const Center(
+                        child: Icon(
+                          Icons.play_circle_fill_rounded,
+                          color: Colors.white,
+                          size: 48,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black45,
+                              blurRadius: 10,
                             ),
                           ],
                         ),
                       ),
-                      TextButton(
-                        onPressed: _openReel,
-                        child: const Text('Watch'),
-                      ),
-                    ],
-                  ),
-                ),
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _media(),
-                      if (!_autoplay || !_videoReady)
-                        const Center(
-                          child: Icon(
-                            Icons.play_circle_fill_rounded,
+                    Positioned(
+                      top: 9,
+                      left: 9,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(.55),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          widget.reel.typeLabel,
+                          style: const TextStyle(
                             color: Colors.white,
-                            size: 52,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black45,
-                                blurRadius: 12,
-                              ),
-                            ],
+                            fontSize: 8.7,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
-                      Positioned(
-                        left: 12,
-                        bottom: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.58),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: const Text(
-                            'FRESH REEL',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.7,
+                      ),
+                    ),
+                    Positioned(
+                      left: 10,
+                      right: 10,
+                      bottom: 8,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.reel.creatorLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
+                          Container(
+                            width: 30,
+                            height: 30,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(.92),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.play_arrow_rounded,
+                              color: FarmColors.primary,
+                              size: 18,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(15, 13, 15, 15),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.reel.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 16,
-                          height: 1.2,
-                          fontWeight: FontWeight.w900,
-                        ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.reel.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          if (widget.reel.caption.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.reel.caption,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (widget.reel.caption.isNotEmpty) ...[
-                        const SizedBox(height: 5),
+                    ),
+                    const SizedBox(width: 10),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.visibility_outlined,
+                          size: 14,
+                          color: FarmColors.mutedText,
+                        ),
+                        const SizedBox(width: 3),
                         Text(
-                          widget.reel.caption,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          '${widget.reel.viewCount}',
+                          style: const TextStyle(
                             color: FarmColors.mutedText,
-                            fontSize: 12,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        const Icon(
+                          Icons.favorite_border_rounded,
+                          size: 14,
+                          color: FarmColors.mutedText,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${widget.reel.likeCount}',
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
-                      const SizedBox(height: 11),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.visibility_outlined,
-                            size: 16,
-                            color: FarmColors.mutedText,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${widget.reel.viewCount}',
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(width: 13),
-                          Icon(
-                            Icons.favorite_border_rounded,
-                            size: 16,
-                            color: FarmColors.mutedText,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${widget.reel.likeCount}',
-                            style: TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (customerView &&
-                              product != null &&
-                              product.canAddToCart &&
-                              widget.onAddToCart != null)
-                            FilledButton.icon(
-                              onPressed: () {
-                                widget.onAddToCart!(product);
-                              },
-                              icon: const Icon(
-                                Icons.add_shopping_cart_rounded,
-                                size: 17,
-                              ),
-                              label: const Text('Add to Box'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: FarmColors.green,
-                                foregroundColor: Colors.white,
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            )
-                          else
-                            TextButton.icon(
-                              onPressed: _openReel,
-                              icon: const Icon(
-                                Icons.play_arrow_rounded,
-                                size: 18,
-                              ),
-                              label: const Text('Open Reels'),
-                            ),
-                        ],
+                    ),
+                  ],
+                ),
+              ),
+              if (customerView &&
+                  product != null &&
+                  product.canAddToCart &&
+                  widget.onAddToCart != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 11),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 38,
+                    child: FilledButton.icon(
+                      onPressed: () => widget.onAddToCart!(product),
+                      icon: const Icon(
+                        Icons.add_shopping_cart_rounded,
+                        size: 16,
                       ),
-                    ],
+                      label: const Text('Add to Box'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: FarmColors.green,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
@@ -1394,10 +1426,12 @@ class HpjFreshReelsEntryScreen extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            backgroundColor: Colors.black,
+            backgroundColor: Color(0xFFF7F9F5),
             body: SafeArea(
               child: Center(
-                child: CircularProgressIndicator(color: Colors.white),
+                child: CircularProgressIndicator(
+                  color: FarmColors.primary,
+                ),
               ),
             ),
           );
@@ -1478,7 +1512,7 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
-                child: CircularProgressIndicator(color: Colors.white),
+                child: CircularProgressIndicator(color: FarmColors.primary),
               );
             }
 
@@ -1531,31 +1565,61 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
                   ),
                 ),
                 Positioned(
-                  top: 12,
-                  left: 64,
-                  right: 64,
+                  top: 8,
+                  left: 58,
+                  right: 58,
                   child: IgnorePointer(
-                    child: Column(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text(
-                          'Fresh Reels',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            shadows: [
-                              Shadow(blurRadius: 8, color: Colors.black54)
-                            ],
+                        Container(
+                          width: 34,
+                          height: 34,
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(.94),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(.78),
+                            ),
+                          ),
+                          child: Image.asset(
+                            'lib/assets/images/logo.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.eco_rounded,
+                              color: FarmColors.primary,
+                              size: 18,
+                            ),
                           ),
                         ),
-                        Text(
-                          '${_activeIndex + 1} of ${reels.length}',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'HPJ Feed',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                shadows: [
+                                  Shadow(
+                                    blurRadius: 8,
+                                    color: Colors.black54,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '${_activeIndex + 1} of ${reels.length}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1574,63 +1638,213 @@ class _FreshReelsEmptyState extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final String? message;
 
-  const _FreshReelsEmptyState({required this.onRefresh, this.message});
+  const _FreshReelsEmptyState({
+    required this.onRefresh,
+    this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = (message ?? '').trim().isNotEmpty;
+
+    return ColoredBox(
+      color: const Color(0xFFF7F9F5),
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: FarmColors.ink,
+                    ),
+                  ),
+                  Container(
+                    width: 38,
+                    height: 38,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: const Color(0xFFDDE6DA),
+                      ),
+                    ),
+                    child: Image.asset(
+                      'lib/assets/images/logo.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.eco_rounded,
+                        color: FarmColors.primary,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'HPJ Feed',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 1),
+                        Text(
+                          'Fresh from Jamaican farms',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 8.7,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFFDDE6DA),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 62,
+                          height: 62,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEAF3E6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            hasError
+                                ? Icons.refresh_rounded
+                                : Icons.play_arrow_rounded,
+                            color: FarmColors.primary,
+                            size: 34,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          hasError ? 'Feed unavailable' : 'No reels yet',
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          hasError
+                              ? message!
+                              : 'New farm videos, harvests and HPJ updates will appear here.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 9.2,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 40,
+                          child: FilledButton.icon(
+                            onPressed: () => onRefresh(),
+                            icon: const Icon(
+                              Icons.refresh_rounded,
+                              size: 17,
+                            ),
+                            label: Text(
+                              hasError ? 'Try again' : 'Refresh feed',
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: FarmColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FreshFeedTypeCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color background;
+
+  const _FreshFeedTypeCard({
+    required this.icon,
+    required this.label,
+    required this.background,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: FarmColors.deepGreen,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.video_library_outlined,
-                color: Colors.white.withOpacity(0.88),
-                size: 54,
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Fresh Reels are coming in.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message ??
-                    'Approved farm, harvest and recipe videos will appear here.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  height: 1.4,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 18),
-              OutlinedButton.icon(
-                onPressed: onRefresh,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Refresh'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white54),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.arrow_back_rounded),
-                label: const Text('Back'),
-                style: TextButton.styleFrom(foregroundColor: Colors.white),
-              ),
-            ],
-          ),
+      height: 74,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: const Color(0xFFE1E8DE),
         ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            color: FarmColors.primary,
+            size: 22,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 9.2,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1800,6 +2014,13 @@ class _FreshReelPageState extends State<_FreshReelPage> {
     final controller = _controller;
     final product = _linkedProduct;
     final canShop = product != null && product.canAddToCart;
+    final creator = widget.reel.creatorLabel.trim().isEmpty
+        ? 'The Harvest Place Ja'
+        : widget.reel.creatorLabel.trim();
+
+    final captionText = widget.reel.caption.trim().isNotEmpty
+        ? widget.reel.caption.trim()
+        : widget.reel.title.trim();
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1808,8 +2029,11 @@ class _FreshReelPageState extends State<_FreshReelPage> {
         fit: StackFit.expand,
         children: [
           Container(color: Colors.black),
+
           if (_loading)
-            const Center(child: CircularProgressIndicator(color: Colors.white))
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            )
           else if (_videoFailed ||
               controller == null ||
               !controller.value.isInitialized)
@@ -1829,23 +2053,27 @@ class _FreshReelPageState extends State<_FreshReelPage> {
                 ),
               ),
             ),
+
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
+                  Color(0x66000000),
                   Colors.transparent,
                   Colors.transparent,
-                  Colors.black87
+                  Color(0xDD000000),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                stops: [0.0, 0.55, 1.0],
+                stops: [0, .20, .55, 1],
               ),
             ),
           ),
+
+          // Right-side reel actions.
           Positioned(
             right: 12,
-            bottom: canShop ? 156 : 118,
+            bottom: canShop ? 178 : 118,
             child: Column(
               children: [
                 _ReelActionButton(
@@ -1875,101 +2103,155 @@ class _FreshReelPageState extends State<_FreshReelPage> {
               ],
             ),
           ),
+
+          // Creator + caption area.
           Positioned(
-            left: 16,
-            right: 76,
-            bottom: canShop ? 100 : 28,
+            left: 14,
+            right: 72,
+            bottom: canShop ? 112 : 48,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 5),
+                      width: 38,
+                      height: 38,
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: FarmColors.green.withOpacity(0.92),
-                        borderRadius: BorderRadius.circular(999),
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 1.5,
+                        ),
                       ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'lib/assets/images/logo.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.eco_rounded,
+                            color: FarmColors.primary,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
                       child: Text(
-                        widget.reel.typeLabel,
+                        creator,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 10,
+                          fontSize: 13.2,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                    if (widget.reel.isFeatured) ...[
-                      const SizedBox(width: 7),
+                    if (widget.reel.isFeatured)
                       Container(
+                        margin: const EdgeInsets.only(left: 6),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 5),
+                          horizontal: 7,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.16),
+                          color: Colors.white.withOpacity(.18),
                           borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(.55),
+                          ),
                         ),
                         child: const Text(
                           'FEATURED',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 9,
+                            fontSize: 7.2,
                             fontWeight: FontWeight.w900,
-                            letterSpacing: 0.6,
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 9),
-                Text(
-                  widget.reel.creatorLabel,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  widget.reel.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    height: 1.12,
-                  ),
-                ),
-                if (widget.reel.caption.isNotEmpty) ...[
-                  const SizedBox(height: 6),
+                if (captionText.isNotEmpty)
                   Text(
-                    widget.reel.caption,
+                    captionText,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      fontSize: 12.2,
+                      height: 1.25,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ],
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.music_note_rounded,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Original sound • $creator',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(.90),
+                          fontSize: 9.0,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
+
+          // Product action remains when a linked product can be bought.
           if (canShop)
             Positioned(
-              left: 16,
-              right: 16,
-              bottom: 24,
+              left: 14,
+              right: 14,
+              bottom: 42,
               child: _ReelProductBar(
                 product: product,
                 onAdd: _addProduct,
               ),
             ),
+
+          // Video progress bar across the bottom.
+          if (!_loading &&
+              !_videoFailed &&
+              controller != null &&
+              controller.value.isInitialized)
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 12,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: VideoProgressIndicator(
+                  controller,
+                  allowScrubbing: true,
+                  padding: EdgeInsets.zero,
+                  colors: const VideoProgressColors(
+                    playedColor: Colors.white,
+                    bufferedColor: Colors.white38,
+                    backgroundColor: Colors.white24,
+                  ),
+                ),
+              ),
+            ),
+
           if (!_loading &&
               !_videoFailed &&
               controller != null &&
@@ -1977,14 +2259,21 @@ class _FreshReelPageState extends State<_FreshReelPage> {
               !controller.value.isPlaying)
             Center(
               child: Container(
-                width: 64,
-                height: 64,
+                width: 66,
+                height: 66,
                 decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(32),
+                  color: Colors.black.withOpacity(.42),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withOpacity(.75),
+                    width: 1.4,
+                  ),
                 ),
-                child: const Icon(Icons.play_arrow_rounded,
-                    color: Colors.white, size: 42),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 44,
+                ),
               ),
             ),
         ],
@@ -2614,9 +2903,8 @@ class _FarmerFreshReelSubmissionScreenState
               return DropdownButtonFormField<String>(
                 value: _linkedProductId,
                 decoration: const InputDecoration(
-                  labelText: 'Linked produce (optional)',
-                  helperText:
-                      'Customers can add linked produce to My Box from the reel.',
+                  labelText: 'Link produce (optional)',
+                  helperText: 'Customers can add this produce from the reel.',
                 ),
                 items: [
                   const DropdownMenuItem(
@@ -2854,9 +3142,8 @@ class _AdminFreshReelSubmissionScreenState
               return DropdownButtonFormField<String>(
                 value: _linkedProductId,
                 decoration: const InputDecoration(
-                  labelText: 'Linked produce (optional)',
-                  helperText:
-                      'Customers can add linked produce to My Box from the reel.',
+                  labelText: 'Link produce (optional)',
+                  helperText: 'Customers can add this produce from the reel.',
                 ),
                 items: [
                   const DropdownMenuItem(
@@ -2892,7 +3179,7 @@ class _AdminFreshReelSubmissionScreenState
                     ),
                   )
                 : const Icon(Icons.publish_rounded),
-            label: Text(_submitting ? 'Publishing...' : 'Publish Reel'),
+            label: Text(_submitting ? 'Publishing…' : 'Publish reel'),
           ),
         ],
       ),
@@ -3005,7 +3292,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
       initial: reel.placements.isEmpty
           ? _defaultPlacementsForReel(reel)
           : reel.placements,
-      title: 'Where should this reel show?',
+      title: 'Show this reel in',
     );
     if (!mounted || next == null) return;
 

@@ -264,6 +264,7 @@ class Product {
   final DateTime? discountEndsAt;
   final bool isDiscountActive;
   final String productStatus;
+  final String customerBadge;
   final bool readySoon;
   final DateTime? estimatedReadyDate;
   final int? expectedStockQuantity;
@@ -308,6 +309,7 @@ class Product {
     this.discountEndsAt,
     this.isDiscountActive = false,
     this.productStatus = 'available',
+    this.customerBadge = 'none',
     this.readySoon = false,
     this.estimatedReadyDate,
     this.expectedStockQuantity,
@@ -370,6 +372,39 @@ class Product {
       : 'Price unavailable';
 
   String get originLabel => isLocal ? 'Local' : 'Not Local';
+
+  String get customerBadgeKey {
+    final clean = customerBadge.trim().toLowerCase().replaceAll('-', '_');
+    const allowed = <String>{
+      'sample',
+      'coming_soon',
+      'new',
+      'limited',
+      'seasonal',
+    };
+    return allowed.contains(clean) ? clean : 'none';
+  }
+
+  bool get isSampleProduct => customerBadgeKey == 'sample';
+  bool get isComingSoonProduct =>
+      customerBadgeKey == 'coming_soon' || isReadySoon;
+
+  String get customerBadgeLabel {
+    switch (customerBadgeKey) {
+      case 'sample':
+        return 'SAMPLE';
+      case 'coming_soon':
+        return 'COMING SOON';
+      case 'new':
+        return 'NEW';
+      case 'limited':
+        return 'LIMITED';
+      case 'seasonal':
+        return 'SEASONAL';
+      default:
+        return '';
+    }
+  }
 
   int get discountPercentDisplay {
     if (!hasActiveDiscount || originalPriceValue <= 0) return 0;
@@ -537,6 +572,7 @@ class Product {
       discountEndsAt: parseProductDate(data['discount_ends_at']),
       isDiscountActive: data['is_discount_active'] == true,
       productStatus: status,
+      customerBadge: (data['customer_badge'] ?? 'none').toString(),
       readySoon: readySoonValue,
       estimatedReadyDate: parseProductDate(data['estimated_ready_date']),
       expectedStockQuantity: data['expected_stock_quantity'] == null

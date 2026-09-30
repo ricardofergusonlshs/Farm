@@ -3,6 +3,7 @@ description: Fresh local food ordering and farm updates for The Harvest Place Ja
 publish_to: 'none'
 
 version: 1.0.4+43
+
 environment:
   sdk: '>=3.6.0 <4.0.0'
 
@@ -22,9 +23,16 @@ dependencies:
   firebase_messaging: ^16.4.3
 
   # =====================================================
-  # FOREGROUND ANDROID NOTIFICATIONS
+  # FOREGROUND + SCHEDULED LOCAL NOTIFICATIONS
+  # Used for HPJ alerts and Farmer Calendar reminders.
   # =====================================================
   flutter_local_notifications: 19.5.0
+
+  # =====================================================
+  # TIMEZONE
+  # Used for Farmer Calendar scheduled reminders.
+  # =====================================================
+  timezone: ^0.10.1
 
   # =====================================================
   # APP FEATURES
@@ -49,6 +57,7 @@ dependencies:
 
   # =====================================================
   # SMART LOCAL PREFERENCES / RESUME MEMORY
+  # Also stores Farmer Calendar reminder records locally.
   # =====================================================
   shared_preferences: ^2.3.5
 

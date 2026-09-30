@@ -2,6 +2,389 @@
 // Business UI separated from wholesale_management.dart, but intentionally
 // kept in ONE Dart part so FlutLab only needs one new part declaration.
 part of harvest_place_app;
+
+
+// ============================================================================
+// HPJ CONTEXTUAL PAGE HELP — MVP
+// ============================================================================
+
+enum HpjContextHelpTopic {
+  businessNeeds,
+  businessOrders,
+  businessSuppliers,
+  farmerSupply,
+  farmerOperations,
+  farmerDemand,
+  farmerCollections,
+  customerMyBox,
+  customerOrders,
+}
+
+class HpjContextHelpContent {
+  final String title;
+  final String description;
+  final List<String> steps;
+  final String supportSubject;
+
+  const HpjContextHelpContent({
+    required this.title,
+    required this.description,
+    required this.steps,
+    required this.supportSubject,
+  });
+}
+
+HpjContextHelpContent hpjContextHelpContent(HpjContextHelpTopic topic) {
+  switch (topic) {
+    case HpjContextHelpTopic.businessNeeds:
+      return const HpjContextHelpContent(
+        title: 'How Business Needs works',
+        description:
+            'Tell HPJ what your business expects to buy so supply can be planned before you need it.',
+        steps: [
+          'Add the produce your business expects to need.',
+          'Enter the quantity, unit and needed-by date.',
+          'Keep dates and quantities current when your plan changes.',
+          'Review available produce and supplier matches.',
+          'Use HPJ messaging when a supplier conversation is available.',
+        ],
+        supportSubject: 'Help with Business Needs',
+      );
+
+    case HpjContextHelpTopic.businessOrders:
+      return const HpjContextHelpContent(
+        title: 'How Business Orders works',
+        description:
+            'Track current and previous wholesale orders from submission through delivery or collection.',
+        steps: [
+          'Open a current order to see its latest HPJ status.',
+          'Check the scheduled delivery or collection information.',
+          'Review invoice and payment details when available.',
+          'Confirm receipt only after your business checks the produce.',
+          'Use Order Again when you need a similar basket.',
+        ],
+        supportSubject: 'Help with Business Orders',
+      );
+
+    case HpjContextHelpTopic.businessSuppliers:
+      return const HpjContextHelpContent(
+        title: 'How Suppliers works',
+        description:
+            'Find approved Jamaican farms and build reliable sourcing relationships through HPJ.',
+        steps: [
+          'Search by farm name, parish or produce.',
+          'Open a farm profile to review its information.',
+          'Mark useful farms as Preferred Suppliers.',
+          'Send a sourcing request when you need produce from that farm.',
+          'Use HPJ messaging when the conversation option is available.',
+        ],
+        supportSubject: 'Help finding Business suppliers',
+      );
+
+    case HpjContextHelpTopic.farmerSupply:
+      return const HpjContextHelpContent(
+        title: 'How My Supply works',
+        description:
+            'Keep HPJ updated with what you are growing, how much you expect and when it should be ready.',
+        steps: [
+          'Tap Add crop when you have new produce to report.',
+          'Enter the expected quantity and harvest date.',
+          'Update a crop whenever quantity or ready date changes.',
+          'Use Manage to review current, needs-update and past crop reports.',
+          'HPJ confirmed means the supply has been confirmed in an HPJ workflow.',
+        ],
+        supportSubject: 'Help with Farmer Supply',
+      );
+
+    case HpjContextHelpTopic.farmerOperations:
+      return const HpjContextHelpContent(
+        title: 'How Farmer Operations works',
+        description:
+            'Follow produce from the order through collection, receiving and payment.',
+        steps: [
+          'Orders shows farm order lines assigned to you.',
+          'Collections shows scheduled and completed pickups.',
+          'Receiving tracks produce that still needs confirmation.',
+          'Payments shows pending and released farmer payouts.',
+          'Activity gives you a broader record of the workflow.',
+        ],
+        supportSubject: 'Help with Farmer Operations',
+      );
+
+    case HpjContextHelpTopic.farmerDemand:
+      return const HpjContextHelpContent(
+        title: 'How Market Demand works',
+        description:
+            'Use HPJ demand information to see what buyers need and where more produce may be required.',
+        steps: [
+          'Review crops buyers are currently requesting.',
+          'Check how much more supply is still needed.',
+          'Compare demand with what you expect to harvest.',
+          'Show interest only when you can realistically supply the crop.',
+          'Keep My Supply current so HPJ can make better matches.',
+        ],
+        supportSubject: 'Help with Farmer Market Demand',
+      );
+
+    case HpjContextHelpTopic.farmerCollections:
+      return const HpjContextHelpContent(
+        title: 'How Collections works',
+        description:
+            'See when HPJ plans to collect produce and what is expected for each pickup.',
+        steps: [
+          'Open an upcoming collection to check the date and produce.',
+          'Review the expected quantity before collection day.',
+          'Update your supply if the available quantity changes.',
+          'Follow collection status through pickup and receiving.',
+        ],
+        supportSubject: 'Help with Farmer Collections',
+      );
+
+    case HpjContextHelpTopic.customerMyBox:
+      return const HpjContextHelpContent(
+        title: 'How My Box works',
+        description:
+            'Build and adjust a fresh produce box before checkout.',
+        steps: [
+          'Add produce you want to buy.',
+          'Adjust quantities before checkout.',
+          'Review availability and prices.',
+          'Choose delivery or pickup during checkout.',
+        ],
+        supportSubject: 'Help with My Box',
+      );
+
+    case HpjContextHelpTopic.customerOrders:
+      return const HpjContextHelpContent(
+        title: 'How Customer Orders works',
+        description:
+            'Follow your HPJ order after checkout and see important updates in one place.',
+        steps: [
+          'Open an order to see its current status.',
+          'Check delivery or pickup information.',
+          'Review HPJ updates attached to the order.',
+          'Use HPJ Support if something needs attention.',
+        ],
+        supportSubject: 'Help with Customer Orders',
+      );
+  }
+}
+
+Future<void> showHpjContextHelp(
+  BuildContext context,
+  HpjContextHelpTopic topic,
+) async {
+  final help = hpjContextHelpContent(topic);
+
+  await showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) {
+      return Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.88,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(28),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: FarmColors.line,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.help_outline_rounded,
+                        color: FarmColors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        help.title,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 13),
+                Text(
+                  help.description,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11.5,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 17),
+                ...help.steps.asMap().entries.map(
+                  (entry) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 27,
+                          height: 27,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: FarmColors.primarySoft,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${entry.key + 1}',
+                            style: const TextStyle(
+                              color: FarmColors.green,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              entry.value,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 11.2,
+                                height: 1.35,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const Text('Got it'),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => HpjAccountHelpInfoScreen(
+                            supportSubject: help.supportSubject,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.support_agent_outlined),
+                    label: const Text('Need more help? Contact HPJ'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class HpjContextHelpButton extends StatelessWidget {
+  final HpjContextHelpTopic topic;
+  final bool showLabel;
+
+  const HpjContextHelpButton({
+    super.key,
+    required this.topic,
+    this.showLabel = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (showLabel) {
+      return TextButton.icon(
+        onPressed: () => showHpjContextHelp(context, topic),
+        style: TextButton.styleFrom(
+          foregroundColor: FarmColors.green,
+          backgroundColor: FarmColors.primarySoft,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 7,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        icon: const Icon(Icons.help_outline_rounded, size: 17),
+        label: const Text(
+          'Help',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      );
+    }
+
+    return IconButton(
+      tooltip: 'Help with this page',
+      visualDensity: VisualDensity.compact,
+      onPressed: () => showHpjContextHelp(context, topic),
+      style: IconButton.styleFrom(
+        foregroundColor: FarmColors.green,
+        backgroundColor: FarmColors.primarySoft,
+      ),
+      icon: const Icon(
+        Icons.help_outline_rounded,
+        size: 19,
+      ),
+    );
+  }
+}
 // HPJ BUSINESS HOME PERSONALISATION — HERO + LOGO — 2026-09-25
 // HPJ BUSINESS SOURCING RESILIENCE MVP — 2026-09-13
 // HPJ BUSINESS WHOLESALE PRODUCT CARD — COMPACT MOBILE MVP FIX — 2026-09-13
@@ -849,6 +1232,17 @@ class _WholesaleWorkspaceShellState
                           ],
                         ),
                       ),
+                      const SizedBox(width: 4),
+                      if (mobileSectionIndex >= 1 &&
+                          mobileSectionIndex <= 3)
+                        HpjContextHelpButton(
+                          topic: switch (mobileSectionIndex) {
+                            1 => HpjContextHelpTopic.businessNeeds,
+                            2 => HpjContextHelpTopic.businessOrders,
+                            3 => HpjContextHelpTopic.businessSuppliers,
+                            _ => HpjContextHelpTopic.businessOrders,
+                          },
+                        ),
                     ],
                   ),
                 ),
@@ -7033,6 +7427,7 @@ class _HpjBusinessMvpPageHeader extends StatelessWidget {
   final String subtitle;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final HpjContextHelpTopic? helpTopic;
 
   const _HpjBusinessMvpPageHeader({
     required this.icon,
@@ -7040,6 +7435,7 @@ class _HpjBusinessMvpPageHeader extends StatelessWidget {
     required this.subtitle,
     this.actionLabel,
     this.onAction,
+    this.helpTopic,
   });
 
   @override
@@ -7097,8 +7493,12 @@ class _HpjBusinessMvpPageHeader extends StatelessWidget {
               ],
             ),
           ),
+          if (helpTopic != null) ...[
+            const SizedBox(width: 6),
+            HpjContextHelpButton(topic: helpTopic!),
+          ],
           if (onAction != null && (actionLabel ?? '').trim().isNotEmpty) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             TextButton(
               onPressed: onAction,
               child: Text(actionLabel!),
@@ -25091,6 +25491,7 @@ class _WholesalePlanningAheadScreenState
                       icon: Icons.event_note_outlined,
                       title: 'Plan Ahead',
                       subtitle: 'Tell HPJ what your business will need.',
+                      helpTopic: HpjContextHelpTopic.businessNeeds,
                       actionLabel:
                           _showPlanningForm ? 'Close' : 'Add',
                       onAction: _savingPlanning
@@ -29780,6 +30181,7 @@ class _WholesaleSupplierDiscoveryScreenState
                     _HpjBusinessMvpPageHeader(
                       icon: Icons.groups_2_outlined,
                       title: 'Suppliers',
+                      helpTopic: HpjContextHelpTopic.businessSuppliers,
                       subtitle:
                           '${allFarms.length} farms • $verifiedCount verified • $parishCount parishes',
                     )

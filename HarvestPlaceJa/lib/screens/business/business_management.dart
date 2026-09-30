@@ -663,7 +663,7 @@ class _WholesaleWorkspaceShellState
       FarmBottomOption(
         icon: Icon(Icons.eco_outlined, size: 27),
         selectedIcon: Icon(Icons.eco_rounded, size: 27),
-        label: 'Supply',
+        label: 'Needs',
       ),
       FarmBottomOption(
         icon: Icon(Icons.receipt_long_outlined, size: 27),
@@ -676,9 +676,9 @@ class _WholesaleWorkspaceShellState
         label: 'Suppliers',
       ),
       FarmBottomOption(
-        icon: Icon(Icons.grid_view_outlined, size: 27),
-        selectedIcon: Icon(Icons.grid_view_rounded, size: 27),
-        label: 'More',
+        icon: Icon(Icons.business_outlined, size: 27),
+        selectedIcon: Icon(Icons.business_rounded, size: 27),
+        label: 'Account',
       ),
     ];
 
@@ -790,10 +790,10 @@ class _WholesaleWorkspaceShellState
             }
 
             final sectionTitle = switch (mobileSectionIndex) {
-              1 => selectedIndex == 2 ? 'Planning Ahead' : 'Source Produce',
+              1 => selectedIndex == 2 ? 'Planning Ahead' : 'Needs',
               2 => 'Orders',
               3 => 'Suppliers',
-              4 => 'More',
+              4 => 'Business Account',
               _ => 'Business Home',
             };
 
@@ -1060,7 +1060,7 @@ class _WholesaleSettingsScreenState
       backgroundColor: FarmColors.background,
       appBar: _businessChildAppBar(
         context,
-        'Wholesale Settings',
+        'Business Settings',
       ),
       body: FarmPage(
         child: loading
@@ -1111,15 +1111,15 @@ class _WholesaleSettingsScreenState
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
                     children: [
-                      const HpjCompactAccountHero(
-                        icon: Icons.tune_rounded,
-                        title: 'Business preferences',
-                        subtitle:
-                            'Choose the updates and market information most useful to your team.',
-                        badge: 'Wholesale',
-                        badgeColor: FarmColors.success,
+                      const Text(
+                        'Notifications',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       FarmCard(
                         padding: EdgeInsets.zero,
                         child: Column(
@@ -1127,8 +1127,7 @@ class _WholesaleSettingsScreenState
                             _preferenceSwitch(
                               icon: Icons.local_shipping_outlined,
                               title: 'Order & delivery alerts',
-                              subtitle:
-                                  'Updates about wholesale orders, preparation and delivery.',
+                              subtitle: 'Orders, preparation and delivery.',
                               value: preferences.pushOrderUpdates,
                               onChanged: (value) {
                                 setState(() {
@@ -1141,8 +1140,7 @@ class _WholesaleSettingsScreenState
                             _preferenceSwitch(
                               icon: Icons.chat_bubble_outline_rounded,
                               title: 'Messages',
-                              subtitle:
-                                  'Alerts when HPJ sends a business or support message.',
+                              subtitle: 'Business and support messages.',
                               value: preferences.pushMessages,
                               onChanged: (value) {
                                 setState(() {
@@ -1155,8 +1153,7 @@ class _WholesaleSettingsScreenState
                             _preferenceSwitch(
                               icon: Icons.price_change_outlined,
                               title: 'Price & availability alerts',
-                              subtitle:
-                                  'Useful changes in product price or availability.',
+                              subtitle: 'Price and stock changes.',
                               value: preferences.pushPriceDrops,
                               onChanged: (value) {
                                 setState(() {
@@ -1169,8 +1166,7 @@ class _WholesaleSettingsScreenState
                             _preferenceSwitch(
                               icon: Icons.insights_outlined,
                               title: 'Market intelligence',
-                              subtitle:
-                                  'Show agriculture and market intelligence in the Wholesale workspace.',
+                              subtitle: 'Show useful market updates.',
                               value: preferences.showAgricultureNews,
                               isLast: true,
                               onChanged: (value) {
@@ -1184,34 +1180,10 @@ class _WholesaleSettingsScreenState
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      const FarmCard(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.info_outline_rounded,
-                              color: FarmColors.primary,
-                              size: 20,
-                            ),
-                            SizedBox(width: 9),
-                            Expanded(
-                              child: Text(
-                                'These are convenience preferences. Critical account, payment or security information remains available in HPJ Updates.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 10.5,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+
                       const SizedBox(height: 16),
                       PrimaryFarmButton(
-                        label: saving ? 'Saving...' : 'Save Settings',
+                        label: saving ? 'Saving...' : 'Save',
                         icon: Icons.save_outlined,
                         onPressed: saving ? null : _save,
                       ),
@@ -1274,6 +1246,281 @@ class _WholesaleAccountWorkspacePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (hpjUseMobileAppPresentation(context)) {
+      final businessMeta = <String>[
+        if (account.businessType.trim().isNotEmpty)
+          account.businessType.trim(),
+        if (account.parish.trim().isNotEmpty)
+          account.parish.trim(),
+      ].join(' • ');
+
+      return FarmPage(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 118),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFFDDE7DD)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF5E9),
+                      borderRadius: BorderRadius.circular(17),
+                    ),
+                    child: const Icon(
+                      Icons.business_rounded,
+                      color: FarmColors.primary,
+                      size: 27,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          account.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        if (businessMeta.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            businessMeta,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 7),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEAF5E9),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'HPJ Business',
+                            style: TextStyle(
+                              color: FarmColors.deepGreen,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Edit business',
+                    onPressed: () => _editBusiness(context),
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: FarmColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 15),
+
+            const Text(
+              'Business',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 9),
+            FarmCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  AccountListTile(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'Orders',
+                    subtitle: 'Current and past orders',
+                    onTap: onOpenOrders,
+                  ),
+                  AccountListTile(
+                    icon: Icons.payments_outlined,
+                    title: 'Invoices & Payments',
+                    subtitle: 'Balances and payment records',
+                    onTap: () => _open(
+                      context,
+                      BusinessWholesaleInvoicesScreen(account: account),
+                    ),
+                  ),
+                  AccountListTile(
+                    icon: Icons.event_note_outlined,
+                    title: 'Plan Ahead',
+                    subtitle: 'Future produce needs',
+                    onTap: onOpenPlan,
+                  ),
+                  AccountListTile(
+                    icon: Icons.groups_2_outlined,
+                    title: 'Suppliers',
+                    subtitle: 'Find verified farms',
+                    isLast: true,
+                    onTap: () => _open(
+                      context,
+                      WholesaleSupplierDiscoveryScreen(account: account),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 14),
+            const HpjInviteGrowthShortcut(audience: 'business'),
+
+            const SizedBox(height: 12),
+            ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+              childrenPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.apps_rounded,
+                color: FarmColors.primary,
+              ),
+              title: const Text(
+                'More business tools',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              children: [
+                AccountListTile(
+                  icon: Icons.repeat_rounded,
+                  title: 'Repeat & Standing Orders',
+                  subtitle: 'Regular purchasing',
+                  onTap: () => _open(
+                    context,
+                    WholesaleRepeatStandingOrdersScreen(account: account),
+                  ),
+                ),
+                AccountListTile(
+                  icon: Icons.star_outline_rounded,
+                  title: 'Preferred Suppliers',
+                  subtitle: 'Saved farm partners',
+                  onTap: () => _open(
+                    context,
+                    WholesaleSupplierDiscoveryScreen(
+                      account: account,
+                      initialPreferredOnly: true,
+                    ),
+                  ),
+                ),
+                AccountListTile(
+                  icon: Icons.hub_outlined,
+                  title: 'Post a Need',
+                  subtitle: 'Business produce needs',
+                  onTap: () => _open(
+                    context,
+                    HpjBusinessDemandNetworkScreen(account: account),
+                  ),
+                ),
+                AccountListTile(
+                  icon: Icons.account_balance_outlined,
+                  title: 'Account Statement',
+                  subtitle: 'Credit and account record',
+                  onTap: () => _open(
+                    context,
+                    const BusinessWholesaleStatementScreen(),
+                  ),
+                ),
+                AccountListTile(
+                  icon: Icons.description_outlined,
+                  title: 'Activity Statement',
+                  subtitle: 'Orders, invoices and payments',
+                  onTap: () => _open(
+                    context,
+                    _WholesaleActivityStatementScreen(account: account),
+                  ),
+                ),
+                AccountListTile(
+                  icon: Icons.photo_size_select_actual_outlined,
+                  title: 'Home Appearance',
+                  subtitle: 'Business image and logo',
+                  onTap: () => _editHomeAppearance(context),
+                ),
+                AccountListTile(
+                  icon: Icons.tune_rounded,
+                  title: 'Settings',
+                  subtitle: 'Alerts and preferences',
+                  onTap: () => _open(
+                    context,
+                    const _WholesaleSettingsScreen(),
+                  ),
+                ),
+                AccountListTile(
+                  icon: Icons.help_outline_rounded,
+                  title: 'Help & Support',
+                  subtitle: 'Get help from HPJ',
+                  isLast: true,
+                  onTap: () => _open(
+                    context,
+                    const HpjAccountHelpInfoScreen(
+                      supportSubject: 'Wholesale support',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+            const _WholesaleWorkspaceSwitchCard(
+              currentWorkspace: 'wholesale',
+            ),
+            const SizedBox(height: 12),
+
+            TextButton.icon(
+              onPressed: () async {
+                await clearPrivateSessionStateForGuestBrowsing();
+                if (context.mounted) {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MainNavigation(),
+                    ),
+                    (_) => false,
+                  );
+                }
+              },
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Sign out'),
+              style: TextButton.styleFrom(
+                foregroundColor: FarmColors.danger,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+
     return FarmPage(
       child: FutureBuilder<WholesaleOrderingControl>(
         future: fetchWholesaleOrderingControl(
@@ -1645,266 +1892,205 @@ class _HpjBusinessMobileHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const forest = Color(0xFF0B5B3D);
-    const forest2 = Color(0xFF28784F);
-    const gold = Color(0xFFF0C451);
-
     return Container(
       width: double.infinity,
-      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            forest,
-            Color(0xFF126A46),
-            forest2,
-          ],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFDDE6DA),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: forest.withOpacity(.16),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
       ),
-      child: Stack(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Positioned(
-            right: -34,
-            top: 36,
-            child: Icon(
-              Icons.eco_rounded,
-              size: 178,
-              color: Colors.white.withOpacity(.055),
-            ),
-          ),
-          Positioned(
-            right: 12,
-            top: 18,
-            child: Transform.rotate(
-              angle: -.12,
-              child: Text(
-                eyebrow == 'BUSINESS HOME'
-                    ? 'Source • Plan • Grow'
-                    : 'HPJ Business',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(.18),
-                  fontSize: 16,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
-                  fontStyle: FontStyle.italic,
-                  letterSpacing: -.4,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF5E9),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: FarmColors.primary,
+                  size: 21,
                 ),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(.12),
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(.15),
-                        ),
-                      ),
-                      child: Icon(
-                        icon,
-                        color: Colors.white,
-                        size: 22,
+                    Text(
+                      eyebrow,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.2,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
                       ),
                     ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            eyebrow,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(.70),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.05,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 23,
-                              height: 1.04,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -.55,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 2),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 17,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.25,
                       ),
                     ),
-                    if ((status ?? '').trim().isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(.10),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(.20),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.verified_rounded,
-                              size: 12,
-                              color: gold,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              status!.trim(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: .25,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-                if (subtitle.trim().isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 300),
-                    child: Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(.83),
-                        fontSize: 11.5,
-                        height: 1.35,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+              ),
+              if ((status ?? '').trim().isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
                   ),
-                ],
-                if (metrics.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF5E9),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (var index = 0; index < metrics.length; index++) ...[
-                        Expanded(
-                          child: Container(
-                            constraints: const BoxConstraints(minHeight: 68),
-                            padding: const EdgeInsets.fromLTRB(10, 10, 8, 9),
-                            decoration: BoxDecoration(
-                              color: metrics[index].warning
-                                  ? const Color(0xFFFFD972).withOpacity(.14)
-                                  : Colors.white.withOpacity(.10),
-                              borderRadius: BorderRadius.circular(15),
-                              border: Border.all(
-                                color: metrics[index].warning
-                                    ? gold.withOpacity(.42)
-                                    : Colors.white.withOpacity(.14),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  metrics[index].value,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: metrics[index].warning
-                                        ? const Color(0xFFFFE29A)
-                                        : Colors.white,
-                                    fontSize: metrics.length >= 4 ? 13.4 : 15,
-                                    height: 1,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  metrics[index].label,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(.72),
-                                    fontSize: metrics.length >= 4 ? 7.1 : 7.8,
-                                    height: 1.15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (index < metrics.length - 1)
-                          const SizedBox(width: 6),
-                      ],
-                    ],
-                  ),
-                ],
-                if (onAction != null &&
-                    (actionLabel ?? '').trim().isNotEmpty) ...[
-                  const SizedBox(height: 11),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 42,
-                    child: FilledButton.icon(
-                      onPressed: onAction,
-                      icon: Icon(actionIcon, size: 17),
-                      label: Text(actionLabel!),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: forest,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 11.5,
+                      const Icon(
+                        Icons.verified_rounded,
+                        size: 12,
+                        color: FarmColors.primary,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        status!.trim(),
+                        style: const TextStyle(
+                          color: FarmColors.deepGreen,
+                          fontSize: 7.8,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+            ],
           ),
+          if (subtitle.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 9.2,
+                height: 1.3,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (metrics.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 64,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: metrics.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 7),
+                itemBuilder: (context, index) {
+                  final metric = metrics[index];
+                  final warning = metric.warning;
+                  return Container(
+                    width: 104,
+                    padding: const EdgeInsets.fromLTRB(10, 9, 9, 8),
+                    decoration: BoxDecoration(
+                      color: warning
+                          ? const Color(0xFFFFF4DE)
+                          : const Color(0xFFF8FBF6),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(
+                        color: warning
+                            ? const Color(0xFFF2D8A4)
+                            : const Color(0xFFDDE6DA),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          metric.value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: warning
+                                ? const Color(0xFFA46B00)
+                                : FarmColors.ink,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          metric.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 7.8,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          if (onAction != null &&
+              (actionLabel ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 40,
+              child: FilledButton.icon(
+                onPressed: onAction,
+                icon: Icon(actionIcon, size: 16),
+                label: Text(actionLabel!),
+                style: FilledButton.styleFrom(
+                  backgroundColor: FarmColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
+
+
 
 class _PremiumBusinessAccountHero extends StatelessWidget {
   final BusinessAccount account;
@@ -1931,10 +2117,10 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: const Color(0xFFDDE6DA),
           ),
         ),
         child: Column(
@@ -1942,7 +2128,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
@@ -1951,7 +2137,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 13.5,
                 fontWeight: FontWeight.w900,
               ),
@@ -1962,7 +2148,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.6,
                 fontWeight: FontWeight.w800,
               ),
@@ -2039,23 +2225,16 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -2070,10 +2249,10 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
                 height: 52,
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.14),
+                  color: const Color(0xFFF3F8F1),
                   borderRadius: BorderRadius.circular(17),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.20),
+                    color: const Color(0xFFDDE6DA),
                   ),
                 ),
                 child: Image.asset(
@@ -2081,7 +2260,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(
                     Icons.business_rounded,
-                    color: Colors.white,
+                    color: FarmColors.ink,
                     size: 28,
                   ),
                 ),
@@ -2094,7 +2273,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
                     Text(
                       'BUSINESS ACCOUNT',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(.72),
+                        color: FarmColors.mutedText,
                         fontSize: 10.3,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .9,
@@ -2106,7 +2285,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: FarmColors.ink,
                         fontSize: 21,
                         height: 1.05,
                         fontWeight: FontWeight.w900,
@@ -2119,7 +2298,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(.78),
+                          color: FarmColors.mutedText,
                           fontSize: 10.2,
                           fontWeight: FontWeight.w700,
                         ),
@@ -2134,16 +2313,16 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.11),
+                  color: const Color(0xFFF3F8F1),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.15),
+                    color: const Color(0xFFDDE6DA),
                   ),
                 ),
                 child: Text(
                   statusLabel,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: FarmColors.ink,
                     fontSize: 8.2,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .35,
@@ -2186,17 +2365,17 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
               vertical: 9,
             ),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.10),
+              color: const Color(0xFFF3F8F1),
               borderRadius: BorderRadius.circular(15),
               border: Border.all(
-                color: Colors.white.withOpacity(.14),
+                color: const Color(0xFFDDE6DA),
               ),
             ),
             child: Row(
               children: [
                 const Icon(
                   Icons.verified_rounded,
-                  color: Color(0xFFE8C768),
+                  color: FarmColors.primary,
                   size: 17,
                 ),
                 const SizedBox(width: 7),
@@ -2206,7 +2385,7 @@ class _PremiumBusinessAccountHero extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.84),
+                      color: FarmColors.mutedText,
                       fontSize: 9.5,
                       fontWeight: FontWeight.w800,
                     ),
@@ -3485,34 +3664,28 @@ class _WholesaleHeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-          ],
-        ),
-        borderRadius: BorderRadius.circular(28),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.storefront_outlined, color: Colors.white, size: 34),
+          Icon(Icons.storefront_outlined, color: FarmColors.ink, size: 34),
           SizedBox(height: 16),
           Text(
-            'Fresh produce for your business.',
+            'Produce available now.',
             style: TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 25,
               fontWeight: FontWeight.w900,
               height: 1.05,
@@ -5372,10 +5545,10 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
         vertical: 10,
       ),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.12),
+        color: const Color(0xFFF3F8F1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.white.withOpacity(.16),
+          color: const Color(0xFFDDE6DA),
         ),
       ),
       child: Column(
@@ -5383,7 +5556,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
         children: [
           Icon(
             icon,
-            color: const Color(0xFFE8C768),
+            color: FarmColors.primary,
             size: 17,
           ),
           const SizedBox(height: 7),
@@ -5392,7 +5565,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
@@ -5403,7 +5576,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.white.withOpacity(.72),
+              color: FarmColors.mutedText,
               fontSize: 8.7,
               fontWeight: FontWeight.w800,
             ),
@@ -5476,23 +5649,16 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -5507,10 +5673,10 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                 height: 52,
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.14),
+                  color: const Color(0xFFF3F8F1),
                   borderRadius: BorderRadius.circular(17),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.20),
+                    color: const Color(0xFFDDE6DA),
                   ),
                 ),
                 child: Image.asset(
@@ -5518,7 +5684,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(
                     Icons.business_rounded,
-                    color: Colors.white,
+                    color: FarmColors.ink,
                     size: 28,
                   ),
                 ),
@@ -5531,7 +5697,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                     Text(
                       'BUSINESS HQ',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(.72),
+                        color: FarmColors.mutedText,
                         fontSize: 10.3,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .9,
@@ -5543,7 +5709,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: FarmColors.ink,
                         fontSize: 21,
                         height: 1.05,
                         fontWeight: FontWeight.w900,
@@ -5556,7 +5722,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(.78),
+                          color: FarmColors.mutedText,
                           fontSize: 10.2,
                           fontWeight: FontWeight.w700,
                         ),
@@ -5574,7 +5740,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                   color: const Color(0xFF1D7B46).withOpacity(.35),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.18),
+                    color: const Color(0xFFDDE6DA),
                   ),
                 ),
                 child: const Row(
@@ -5583,13 +5749,13 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                     Icon(
                       Icons.verified_rounded,
                       size: 13,
-                      color: Color(0xFFE8C768),
+                      color: FarmColors.primary,
                     ),
                     SizedBox(width: 4),
                     Text(
                       'APPROVED',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: FarmColors.ink,
                         fontSize: 8.5,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .35,
@@ -5605,7 +5771,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
             'Order fresh Jamaican produce, plan future demand and keep '
             'purchasing activity moving through HPJ.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.84),
+              color: FarmColors.mutedText,
               fontSize: 11.2,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -5651,10 +5817,10 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
               vertical: 9,
             ),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.10),
+              color: const Color(0xFFF3F8F1),
               borderRadius: BorderRadius.circular(15),
               border: Border.all(
-                color: Colors.white.withOpacity(.14),
+                color: const Color(0xFFDDE6DA),
               ),
             ),
             child: Row(
@@ -5663,7 +5829,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                   deliveriesToday > 0
                       ? Icons.local_shipping_outlined
                       : Icons.storefront_outlined,
-                  color: const Color(0xFFE8C768),
+                  color: FarmColors.primary,
                   size: 17,
                 ),
                 const SizedBox(width: 7),
@@ -5675,7 +5841,7 @@ class _PremiumBusinessHeadquartersHero extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.84),
+                      color: FarmColors.mutedText,
                       fontSize: 9.6,
                       fontWeight: FontWeight.w800,
                     ),
@@ -5731,7 +5897,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.11),
+        color: const Color(0xFFF3F8F1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: warning
@@ -5744,7 +5910,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
         children: [
           Icon(
             icon,
-            color: const Color(0xFFE8C768),
+            color: FarmColors.primary,
             size: 18,
           ),
           const SizedBox(height: 8),
@@ -5753,7 +5919,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 16,
               fontWeight: FontWeight.w900,
             ),
@@ -5764,7 +5930,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.white.withOpacity(.72),
+              color: FarmColors.mutedText,
               fontSize: 8.7,
               fontWeight: FontWeight.w800,
             ),
@@ -5870,15 +6036,8 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(30),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.14),
@@ -5902,10 +6061,10 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                       height: 46,
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(.13),
+                        color: const Color(0xFFF3F8F1),
                         borderRadius: BorderRadius.circular(15),
                         border: Border.all(
-                          color: Colors.white.withOpacity(.18),
+                          color: const Color(0xFFDDE6DA),
                         ),
                       ),
                       child: Image.asset(
@@ -5914,7 +6073,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                         errorBuilder: (_, __, ___) =>
                             const Icon(
                           Icons.business_outlined,
-                          color: Colors.white,
+                          color: FarmColors.ink,
                         ),
                       ),
                     ),
@@ -5922,7 +6081,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                     const Text(
                       'HPJ BUSINESS',
                       style: TextStyle(
-                        color: Color(0xFFCFE0CF),
+                        color: FarmColors.mutedText,
                         fontSize: 10.2,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .9,
@@ -5935,10 +6094,10 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(.10),
+                        color: const Color(0xFFF3F8F1),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
-                          color: Colors.white.withOpacity(.14),
+                          color: const Color(0xFFDDE6DA),
                         ),
                       ),
                       child: Text(
@@ -5946,7 +6105,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                             ? 'PARTIAL DATA'
                             : 'BUSINESS READY',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: FarmColors.ink,
                           fontSize: 7.8,
                           fontWeight: FontWeight.w900,
                         ),
@@ -5960,7 +6119,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: FarmColors.ink,
                     fontSize: 28,
                     height: 1.02,
                     letterSpacing: -.6,
@@ -5972,7 +6131,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                   Text(
                     businessLine,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.70),
+                      color: FarmColors.mutedText,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                     ),
@@ -5984,7 +6143,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                   child: Text(
                     'Order fresh produce, plan future requirements, discover verified farms and follow fulfilment from one purchasing workspace.',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.82),
+                      color: FarmColors.mutedText,
                       fontSize: 12.3,
                       height: 1.45,
                       fontWeight: FontWeight.w600,
@@ -6077,17 +6236,17 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.all(11),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.09),
+                    color: const Color(0xFFF3F8F1),
                     borderRadius: BorderRadius.circular(15),
                     border: Border.all(
-                      color: Colors.white.withOpacity(.14),
+                      color: const Color(0xFFDDE6DA),
                     ),
                   ),
                   child: Row(
                     children: [
                       const Icon(
                         Icons.verified_outlined,
-                        color: Color(0xFFE8C768),
+                        color: FarmColors.primary,
                         size: 17,
                       ),
                       const SizedBox(width: 7),
@@ -6097,7 +6256,7 @@ class _PremiumWebBusinessMvpHero extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(.80),
+                            color: FarmColors.mutedText,
                             fontSize: 8.8,
                             height: 1.3,
                             fontWeight: FontWeight.w700,
@@ -6867,6 +7026,906 @@ class _HpjBusinessReferenceHomeSkeleton extends StatelessWidget {
 }
 
 
+
+class _HpjBusinessMvpPageHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _HpjBusinessMvpPageHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(color: const Color(0xFFDDE7DD)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF5E9),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              icon,
+              color: FarmColors.primary,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.4,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onAction != null && (actionLabel ?? '').trim().isNotEmpty) ...[
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: onAction,
+              child: Text(actionLabel!),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+
+class _HpjBusinessMvpQuickActions extends StatelessWidget {
+  final List<String> imageUrls;
+  final VoidCallback onRequest;
+  final VoidCallback onOrders;
+  final VoidCallback onSuppliers;
+
+  const _HpjBusinessMvpQuickActions({
+    required this.imageUrls,
+    required this.onRequest,
+    required this.onOrders,
+    required this.onSuppliers,
+  });
+
+  Widget _action({
+    required BuildContext context,
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+    String? imageUrl,
+    required Color iconSoft,
+  }) {
+    return Expanded(
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(17),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(
+                color: const Color(0xFFE1E8DE),
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0B244C35),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 78,
+                  width: double.infinity,
+                  child: imageUrl == null || imageUrl.trim().isEmpty
+                      ? Container(
+                          color: iconSoft,
+                          child: Icon(
+                            icon,
+                            color: FarmColors.primary,
+                            size: 31,
+                          ),
+                        )
+                      : Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: iconSoft,
+                            child: Icon(
+                              icon,
+                              color: FarmColors.primary,
+                              size: 31,
+                            ),
+                          ),
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    9,
+                    8,
+                    7,
+                    8,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: iconSoft,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          icon,
+                          color: FarmColors.primary,
+                          size: 15,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 10.1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: FarmColors.ink,
+                        size: 17,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String? imageAt(int index) =>
+        index < imageUrls.length ? imageUrls[index] : null;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _action(
+          context: context,
+          label: 'Request',
+          icon: Icons.description_outlined,
+          onTap: onRequest,
+          imageUrl: imageAt(0),
+          iconSoft: const Color(0xFFFFF3DD),
+        ),
+        const SizedBox(width: 8),
+        _action(
+          context: context,
+          label: 'Orders',
+          icon: Icons.inventory_2_outlined,
+          onTap: onOrders,
+          imageUrl: imageAt(1),
+          iconSoft: const Color(0xFFF1F4F8),
+        ),
+        const SizedBox(width: 8),
+        _action(
+          context: context,
+          label: 'Suppliers',
+          icon: Icons.groups_2_outlined,
+          onTap: onSuppliers,
+          imageUrl: imageAt(2),
+          iconSoft: const Color(0xFFEAF5E9),
+        ),
+      ],
+    );
+  }
+}
+
+
+class _HpjBusinessSectionTitle extends StatelessWidget {
+  final String title;
+  final VoidCallback? onSeeAll;
+
+  const _HpjBusinessSectionTitle({
+    required this.title,
+    this.onSeeAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: FarmColors.deepGreen,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -.2,
+            ),
+          ),
+        ),
+        if (onSeeAll != null)
+          TextButton.icon(
+            onPressed: onSeeAll,
+            iconAlignment: IconAlignment.end,
+            icon: const Icon(
+              Icons.chevron_right_rounded,
+              size: 16,
+            ),
+            label: const Text('See all'),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFB27300),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 4,
+                vertical: 4,
+              ),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: const TextStyle(
+                fontSize: 9.2,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+
+class _HpjBusinessSourcingNowSection extends StatelessWidget {
+  final List<WholesaleDemandForecast> activeForecasts;
+  final List<WholesaleProduct> catalogue;
+  final List<WholesaleProduct> recommendedProducts;
+  final VoidCallback onSeeAll;
+  final VoidCallback onTapProduct;
+
+  const _HpjBusinessSourcingNowSection({
+    required this.activeForecasts,
+    required this.catalogue,
+    required this.recommendedProducts,
+    required this.onSeeAll,
+    required this.onTapProduct,
+  });
+
+  WholesaleProduct? _findProduct(String name) {
+    final clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return null;
+
+    for (final item in <WholesaleProduct>[
+      ...recommendedProducts,
+      ...catalogue,
+    ]) {
+      final productName = item.product.name.trim().toLowerCase();
+      if (productName == clean ||
+          productName.contains(clean) ||
+          clean.contains(productName)) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  Widget _card({
+    required String name,
+    required String status,
+    required String detail,
+    required String location,
+    String? imageUrl,
+    required VoidCallback onTap,
+    required Color statusColor,
+    required Color statusSoft,
+  }) {
+    return SizedBox(
+      width: 152,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFFE1E8DE),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  height: 88,
+                  width: double.infinity,
+                  child: imageUrl == null || imageUrl.trim().isEmpty
+                      ? Container(
+                          color: const Color(0xFFF0F5EC),
+                          child: const Icon(
+                            Icons.eco_rounded,
+                            color: FarmColors.primary,
+                            size: 34,
+                          ),
+                        )
+                      : Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: const Color(0xFFF0F5EC),
+                            child: const Icon(
+                              Icons.eco_rounded,
+                              color: FarmColors.primary,
+                              size: 34,
+                            ),
+                          ),
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusSoft,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          status,
+                          style: TextStyle(
+                            color: statusColor,
+                            fontSize: 7.7,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        detail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 8.2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (location.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          location,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 7.7,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final forecasts = activeForecasts.take(6).toList(growable: false);
+    final fallback = (recommendedProducts.isEmpty
+            ? catalogue
+            : recommendedProducts)
+        .take(6)
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HpjBusinessSectionTitle(
+          title: 'Buying Now',
+          onSeeAll: onSeeAll,
+        ),
+        const SizedBox(height: 8),
+        if (forecasts.isEmpty && fallback.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFFE1E8DE),
+              ),
+            ),
+            child: const Text(
+              'No active sourcing needs.',
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            height: 198,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount:
+                  forecasts.isNotEmpty ? forecasts.length : fallback.length,
+              separatorBuilder: (_, __) =>
+                  const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                if (forecasts.isNotEmpty) {
+                  final forecast = forecasts[index];
+                  final product = _findProduct(forecast.productName);
+                  final detail =
+                      '${_farmerPartnerNumber(forecast.quantity)} ${forecast.unit}'
+                          .trim();
+
+                  return _card(
+                    name: forecast.productName,
+                    status: 'Needed',
+                    detail: detail,
+                    location: 'By ${_wholesaleSimpleDate(forecast.needByDate)}',
+                    imageUrl: product?.product.imageUrl,
+                    onTap: onTapProduct,
+                    statusColor: const Color(0xFF9B3D2E),
+                    statusSoft: const Color(0xFFFFE8E4),
+                  );
+                }
+
+                final product = fallback[index];
+                return _card(
+                  name: product.product.name,
+                  status: 'Available',
+                  detail: product.wholesalePrice > 0
+                      ? formatJmd(product.wholesalePrice)
+                      : product.product.category,
+                  location: 'Jamaican supply',
+                  imageUrl: product.product.imageUrl,
+                  onTap: onTapProduct,
+                  statusColor: const Color(0xFF1D7042),
+                  statusSoft: const Color(0xFFEAF5E9),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+
+class _HpjBusinessSupplierMatchesMvp extends StatelessWidget {
+  final VoidCallback onSeeAll;
+
+  const _HpjBusinessSupplierMatchesMvp({
+    required this.onSeeAll,
+  });
+
+  Widget _supplierRow(
+    FarmPublicProfileRecord farm,
+    VoidCallback onTap,
+  ) {
+    final imageUrl =
+        cleanHostedImageUrl(farm.coverImageUrl) ??
+            cleanHostedImageUrl(farm.logoImageUrl);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(15),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(
+              color: const Color(0xFFE1E8DE),
+            ),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: SizedBox(
+                  width: 78,
+                  height: 58,
+                  child: imageUrl == null
+                      ? Container(
+                          color: const Color(0xFFEAF5E9),
+                          child: const Icon(
+                            Icons.agriculture_rounded,
+                            color: FarmColors.primary,
+                            size: 27,
+                          ),
+                        )
+                      : Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: const Color(0xFFEAF5E9),
+                            child: const Icon(
+                              Icons.agriculture_rounded,
+                              color: FarmColors.primary,
+                              size: 27,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            farm.publicName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 11.3,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        if (farm.hpjVerified)
+                          const Icon(
+                            Icons.verified_rounded,
+                            color: FarmColors.primary,
+                            size: 15,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_rounded,
+                          color: Color(0xFFD39A23),
+                          size: 13,
+                        ),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Text(
+                            farm.locationLine,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 8.2,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (farm.tags.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        farm.tags.take(2).join(' • '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 7.8,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: FarmColors.ink,
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<FarmPublicProfileRecord>>(
+      future: fetchPublishedFarmPublicProfiles(limit: 4),
+      builder: (context, snapshot) {
+        final farms =
+            snapshot.data ?? const <FarmPublicProfileRecord>[];
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            farms.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _HpjBusinessSectionTitle(
+                title: 'Supplier Matches',
+                onSeeAll: onSeeAll,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                height: 78,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5EE),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (farms.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _HpjBusinessSectionTitle(
+              title: 'Supplier Matches',
+              onSeeAll: onSeeAll,
+            ),
+            const SizedBox(height: 8),
+            ...farms.take(2).map(
+              (farm) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _supplierRow(
+                  farm,
+                  onSeeAll,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+
+class _HpjBusinessMarketImageStrip extends StatelessWidget {
+  final List<WholesaleProduct> catalogue;
+  final List<WholesaleProduct> recommendedProducts;
+  final List<WholesaleDemandForecast> activeForecasts;
+  final List<WholesaleDemandGapLine> gapLines;
+  final VoidCallback onSeeAll;
+  final VoidCallback onTap;
+
+  const _HpjBusinessMarketImageStrip({
+    required this.catalogue,
+    required this.recommendedProducts,
+    required this.activeForecasts,
+    required this.gapLines,
+    required this.onSeeAll,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final products = (recommendedProducts.isEmpty
+            ? catalogue
+            : recommendedProducts)
+        .where((item) => (item.product.imageUrl?.trim() ?? '').isNotEmpty)
+        .take(3)
+        .toList(growable: false);
+
+    if (products.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final gapCount = gapLines.where((line) => line.hasGap).length;
+
+    final badges = <String>[
+      activeForecasts.isNotEmpty ? 'High demand' : 'Market',
+      gapCount > 0 ? '$gapCount gaps' : 'Supply good',
+      'This week',
+    ];
+
+    final badgeColors = <Color>[
+      const Color(0xFFFFE8E4),
+      const Color(0xFFFFF1D5),
+      const Color(0xFFEAF5E9),
+    ];
+
+    final badgeText = <Color>[
+      const Color(0xFF9B3D2E),
+      const Color(0xFFA66B00),
+      const Color(0xFF1D7042),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HpjBusinessSectionTitle(
+          title: 'Featured Produce',
+          onSeeAll: onSeeAll,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < products.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onTap,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: const Color(0xFFE1E8DE),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            height: 76,
+                            width: double.infinity,
+                            child: Image.network(
+                              products[i].product.imageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: const Color(0xFFF0F5EC),
+                                child: const Icon(
+                                  Icons.bar_chart_rounded,
+                                  color: FarmColors.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(7, 6, 7, 7),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: badgeColors[
+                                        i.clamp(0, badgeColors.length - 1)],
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    badges[i.clamp(0, badges.length - 1)],
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: badgeText[
+                                          i.clamp(0, badgeText.length - 1)],
+                                      fontSize: 6.9,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        products[i].product.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: FarmColors.ink,
+                                          fontSize: 9.4,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 15,
+                                      color: FarmColors.ink,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+
 class _HpjBusinessReferenceMobileHome extends StatelessWidget {
   final BusinessAccount account;
   final HpjBusinessHomeBranding? branding;
@@ -6925,37 +7984,44 @@ class _HpjBusinessReferenceMobileHome extends StatelessWidget {
   List<String> _imagePool() {
     final seen = <String>{};
     final urls = <String>[];
-
     final candidates = <WholesaleProduct>[
       ...recommendedProducts,
       ...catalogue,
     ];
 
-    const preferred = <String>[
-      'vegetable',
+    const jamaicanPriority = <String>[
+      'ackee',
       'callaloo',
-      'carrot',
       'pepper',
+      'scotch bonnet',
+      'breadfruit',
+      'plantain',
+      'yam',
+      'banana',
       'tomato',
       'cabbage',
-      'lettuce',
-      'pak choi',
-      'bundle',
+      'pumpkin',
+      'carrot',
       'produce',
+      'vegetable',
     ];
 
-    for (final word in preferred) {
+    for (final word in jamaicanPriority) {
       for (final item in candidates) {
-        final haystack = '${item.product.name} ${item.product.category}'.toLowerCase();
+        final haystack =
+            '${item.product.name} ${item.product.category}'.toLowerCase();
         final url = item.product.imageUrl?.trim() ?? '';
-        if (haystack.contains(word) && url.isNotEmpty && seen.add(url)) {
+        if (url.isNotEmpty && haystack.contains(word) && seen.add(url)) {
           urls.add(url);
         }
       }
     }
+
     for (final item in candidates) {
       final url = item.product.imageUrl?.trim() ?? '';
-      if (url.isNotEmpty && seen.add(url)) urls.add(url);
+      if (url.isNotEmpty && seen.add(url)) {
+        urls.add(url);
+      }
     }
     return urls;
   }
@@ -6981,72 +8047,272 @@ class _HpjBusinessReferenceMobileHome extends StatelessWidget {
     final reviewCount = activeForecasts
         .where((item) => _wholesaleForecastNeedsReview(item))
         .length;
-    final images = _imagePool();
+    final matchedCount = activeForecasts
+        .where((item) => item.isMatched || item.isReserved)
+        .length;
+
+    Widget metricCard({
+      required IconData icon,
+      required String label,
+      required String value,
+      required Color soft,
+      required Color accent,
+      required VoidCallback onTap,
+      String? helper,
+    }) {
+      return Expanded(
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(15),
+            child: Container(
+              height: 78,
+              padding: const EdgeInsets.fromLTRB(9, 9, 8, 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: const Color(0xFFE1E8DE)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: soft,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Icon(icon, size: 18, color: accent),
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 7.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 17,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        if (helper != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            helper,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: accent,
+                              fontSize: 7.0,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _HpjReferenceBusinessHero(
-          account: account,
-          branding: branding,
-          imageUrls: images.take(4).toList(growable: false),
-          onOpenShop: onOpenShop,
+        const Text(
+          'Welcome Back',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 24,
+            height: 1.03,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -.5,
+          ),
         ),
+        const SizedBox(height: 3),
+        const Text(
+          'Source fresh local produce for your business.',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 10.2,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 11),
+
+        Row(
+          children: [
+            Expanded(
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  onTap: onOpenShop,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    height: 46,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFDDE6DA)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.search_rounded,
+                          color: FarmColors.primary,
+                          size: 21,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Search produce, farms or suppliers...',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 46,
+              child: FilledButton.icon(
+                onPressed: onFindSuppliers,
+                icon: const Icon(Icons.agriculture_outlined, size: 17),
+                label: const Text(
+                  'Find Farms',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: FarmColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 11),
+
+        Row(
+          children: [
+            metricCard(
+              icon: Icons.assignment_outlined,
+              label: 'Active Needs',
+              value: '$activeNeeds',
+              helper: 'items',
+              soft: const Color(0xFFEAF5E9),
+              accent: FarmColors.primary,
+              onTap: onOpenPlan,
+            ),
+            const SizedBox(width: 7),
+            metricCard(
+              icon: Icons.warning_amber_rounded,
+              label: 'Needs Review',
+              value: '$reviewCount',
+              helper: 'items',
+              soft: const Color(0xFFFFF1D5),
+              accent: const Color(0xFFD88908),
+              onTap: onOpenPlan,
+            ),
+            const SizedBox(width: 7),
+            metricCard(
+              icon: Icons.groups_2_outlined,
+              label: 'Supplier Matches',
+              value: '$matchedCount',
+              helper: 'matches',
+              soft: const Color(0xFFEAF5E9),
+              accent: FarmColors.primary,
+              onTap: onFindSuppliers,
+            ),
+          ],
+        ),
+
         if (hasLoadIssues) ...[
-          const SizedBox(height: 9),
+          const SizedBox(height: 10),
           _EliteBusinessLoadWarning(
             unavailableSections: unavailableSections,
             onRetry: onRetry,
           ),
         ],
-        const SizedBox(height: 10),
-        const _HpjBusinessStartNewChatCard(),
-        const SizedBox(height: 10),
-        _HpjReferenceKpiRow(
-          activeNeeds: activeNeeds,
-          supplyGaps: supplyGaps,
-          amountDue: amountDue,
-          deliveriesToday: deliveriesToday,
-          onOpenPlan: onOpenPlan,
-          onOpenOrders: onOpenOrders,
-        ),
-        if (reviewCount > 0) ...[
-          const SizedBox(height: 10),
-          _HpjReferenceActionNeeded(
-            count: reviewCount,
-            onTap: onOpenPlan,
-          ),
-        ] else if (attentionRows.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          FarmCard(
-            padding: const EdgeInsets.all(12),
-            child: attentionRows.first,
-          ),
-        ],
-        const SizedBox(height: 12),
-        _HpjReferenceFreshSupply(
-          products: recommendedProducts.isEmpty
-              ? catalogue
-              : recommendedProducts,
-          onOpenShop: onOpenShop,
-        ),
-        const SizedBox(height: 12),
-        _HpjReferenceMarketIntelligence(
-          catalogue: catalogue,
-          activeForecasts: activeForecasts,
-          gapLines: gapLines,
-          onOpenShop: onOpenShop,
-          onOpenPlan: onOpenPlan,
-          onViewInsights: () => _openInsights(context),
-        ),
-        const SizedBox(height: 12),
+
+        const SizedBox(height: 17),
+
         _HpjReferenceNetworkSection(
           account: account,
           onOpenShop: onOpenShop,
           onAgricultureAction: onAgricultureAction,
         ),
-        const SizedBox(height: 12),
-        _HpjReferenceDemandNetworkCard(onTap: onOpenDemandNetwork),
+
+        const SizedBox(height: 17),
+
+        _HpjBusinessMarketImageStrip(
+          catalogue: catalogue,
+          recommendedProducts: recommendedProducts,
+          activeForecasts: activeForecasts,
+          gapLines: gapLines,
+          onSeeAll: onOpenShop,
+          onTap: onOpenShop,
+        ),
+
+        // Keep the deeper sourcing tools below the clean MVP overview.
+        const SizedBox(height: 18),
+        _HpjBusinessSupplierMatchesMvp(
+          onSeeAll: onFindSuppliers,
+        ),
+
+        const SizedBox(height: 18),
+        _HpjBusinessSourcingNowSection(
+          activeForecasts: activeForecasts,
+          catalogue: catalogue,
+          recommendedProducts: recommendedProducts,
+          onSeeAll: onOpenPlan,
+          onTapProduct: onOpenPlan,
+        ),
+
+        const SizedBox(height: 16),
+        _HpjReferenceDemandNetworkCard(
+          onTap: onOpenDemandNetwork,
+        ),
       ],
     );
   }
@@ -7066,297 +8332,182 @@ class _HpjReferenceBusinessHero extends StatelessWidget {
     required this.onOpenShop,
   });
 
-  Widget _networkImage(
-    String url, {
-    required BoxFit fit,
-    Alignment alignment = Alignment.center,
-  }) {
-    return Image.network(
-      url,
-      fit: fit,
-      alignment: alignment,
-      filterQuality: FilterQuality.medium,
-      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    const deep = Color(0xFF064A31);
-    final cleanName = account.displayName.trim();
-    final heroName = cleanName.isEmpty
+    final businessName = account.displayName.trim().isEmpty
         ? 'HPJ Business'
-        : cleanName.toLowerCase() == 'hpj'
-            ? 'HPJ Business'
-            : cleanName;
+        : account.displayName.trim();
 
-    final customHero =
-        cleanHostedImageUrl(branding?.publishedHeroImageUrl);
-    final customLogo =
-        cleanHostedImageUrl(branding?.publishedLogoUrl);
-    final heroAlignment =
-        branding?.heroAlignment ?? Alignment.centerRight;
+    final heroUrl =
+        cleanHostedImageUrl(branding?.publishedHeroImageUrl) ??
+            (imageUrls.isNotEmpty ? imageUrls.first : null);
 
-    return SizedBox(
-      height: 232,
-      width: double.infinity,
-      child: Material(
-        color: deep,
-        borderRadius: BorderRadius.circular(24),
-        clipBehavior: Clip.antiAlias,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF064A31), Color(0xFF23764B)],
-                    ),
-                  ),
+    Widget image() {
+      if (heroUrl == null || heroUrl.trim().isEmpty) {
+        return Container(
+          color: const Color(0xFFEFF5EB),
+          child: const Center(
+            child: Icon(
+              Icons.local_florist_rounded,
+              color: FarmColors.primary,
+              size: 38,
+            ),
+          ),
+        );
+      }
+
+      return Image.network(
+        heroUrl,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) => Container(
+          color: const Color(0xFFEFF5EB),
+          child: const Center(
+            child: Icon(
+              Icons.shopping_basket_rounded,
+              color: FarmColors.primary,
+              size: 36,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget chip({
+      required IconData icon,
+      required String label,
+      required Color background,
+      required Color foreground,
+    }) {
+      return Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 5,
+        ),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 12,
+              color: foreground,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 8.2,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onOpenShop,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFDDE6DA),
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D244C35),
+                blurRadius: 14,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: SizedBox(
+                  width: 92,
+                  height: 92,
+                  child: image(),
                 ),
-                if (customHero != null)
-                  Positioned.fill(
-                    child: _networkImage(
-                      customHero,
-                      fit: BoxFit.cover,
-                      alignment: heroAlignment,
-                    ),
-                  )
-                else if (imageUrls.isNotEmpty)
-                  Positioned.fill(
-                    child: _networkImage(
-                      imageUrls.first,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.centerRight,
-                    ),
-                  ),
-                if (customHero == null && imageUrls.length > 1)
-                  Positioned(
-                    right: -18,
-                    top: 2,
-                    width: constraints.maxWidth * .46,
-                    height: 116,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(70),
-                      child: _networkImage(
-                        imageUrls[1],
-                        fit: BoxFit.cover,
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Welcome back,',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.2,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                if (customHero == null && imageUrls.length > 2)
-                  Positioned(
-                    right: 68,
-                    bottom: -22,
-                    width: constraints.maxWidth * .34,
-                    height: 120,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(70),
-                      child: _networkImage(
-                        imageUrls[2],
-                        fit: BoxFit.cover,
+                    const SizedBox(height: 2),
+                    Text(
+                      businessName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 17,
+                        height: 1.04,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.3,
                       ),
                     ),
-                  ),
-                if (customLogo != null)
-                  Positioned(
-                    right: 18,
-                    top: 16,
-                    child: Container(
-                      width: 46,
-                      height: 46,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(.96),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 5,
+                      children: [
+                        chip(
+                          icon: Icons.circle,
+                          label: 'Active',
+                          background: const Color(0xFFEAF5E9),
+                          foreground: const Color(0xFF1D7042),
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(.18),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: Image.network(
-                          customLogo,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const SizedBox.shrink(),
+                        chip(
+                          icon: Icons.verified_user_rounded,
+                          label: 'Verified',
+                          background: const Color(0xFFEAF5E9),
+                          foreground: const Color(0xFF1D7042),
                         ),
-                      ),
-                    ),
-                  ),
-                Positioned(
-                  right: 12,
-                  bottom: 12,
-                  width: constraints.maxWidth * .31,
-                  height: 70,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFFD6A269), Color(0xFF9F6C35)],
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF7A4B22).withOpacity(.45)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(.18),
-                          blurRadius: 14,
-                          offset: const Offset(0, 6),
+                        chip(
+                          icon: Icons.shopping_cart_rounded,
+                          label: 'Buying',
+                          background: const Color(0xFFFFF1D5),
+                          foreground: const Color(0xFFA66B00),
                         ),
                       ],
                     ),
-                    alignment: Alignment.center,
-                    child: Image.asset(
-                      'lib/assets/images/logo.png',
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (_, __, ___) => const Text(
-                        'HPJ',
-                        style: TextStyle(
-                          color: Color(0xFF0B5B3D),
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  ),
+                  ],
                 ),
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        Color(0xFF023D29),
-                        Color(0xF2055036),
-                        Color(0xB3055036),
-                        Color(0x22055036),
-                      ],
-                      stops: [0, .43, .70, 1],
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 14, 15),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Welcome back,',
-                        style: TextStyle(
-                          color: Color(0xFFF1F6F2),
-                          fontSize: 12.6,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              heroName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 26.2,
-                                height: 1,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -.62,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 7),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0A61B),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.check_circle_rounded, size: 12, color: Colors.white),
-                                SizedBox(width: 3),
-                                Text(
-                                  'APPROVED',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 8.2,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      const SizedBox(
-                        width: 245,
-                        child: Text(
-                          'Your sourcing workspace for fresh, local Jamaican produce.',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12.3,
-                            height: 1.28,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      SizedBox(
-                        width: 212,
-                        height: 44,
-                        child: FilledButton.icon(
-                          onPressed: onOpenShop,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: deep,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                          icon: const Icon(Icons.near_me_rounded, size: 18),
-                          label: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Source produce',
-                                style: TextStyle(fontSize: 12.7, fontWeight: FontWeight.w900),
-                              ),
-                              SizedBox(width: 9),
-                              Icon(Icons.arrow_forward_rounded, size: 17),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: FarmColors.ink,
+                size: 22,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
-
 
 class _HpjReferenceKpiRow extends StatelessWidget {
   final int activeNeeds;
@@ -8172,6 +9323,177 @@ class _HpjReferenceNetworkSection extends StatefulWidget {
 }
 
 
+
+class _HpjBusinessReelPreviewFrame extends StatefulWidget {
+  final HpjFreshReel reel;
+
+  const _HpjBusinessReelPreviewFrame({
+    required this.reel,
+  });
+
+  @override
+  State<_HpjBusinessReelPreviewFrame> createState() =>
+      _HpjBusinessReelPreviewFrameState();
+}
+
+
+class _HpjBusinessReelPreviewFrameState
+    extends State<_HpjBusinessReelPreviewFrame> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepare();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HpjBusinessReelPreviewFrame oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reel.id != widget.reel.id ||
+        oldWidget.reel.videoUrl != widget.reel.videoUrl ||
+        oldWidget.reel.thumbnailUrl != widget.reel.thumbnailUrl) {
+      _disposeController();
+      _ready = false;
+      _failed = false;
+      _prepare();
+    }
+  }
+
+  Future<void> _prepare() async {
+    // A real uploaded thumbnail always wins.
+    if (cleanHostedImageUrl(widget.reel.thumbnailUrl) != null) {
+      return;
+    }
+
+    final videoUrl = widget.reel.videoUrl.trim();
+    if (videoUrl.isEmpty) {
+      if (mounted) {
+        setState(() => _failed = true);
+      }
+      return;
+    }
+
+    try {
+      final controller =
+          VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      _controller = controller;
+
+      await controller.initialize();
+      await controller.setLooping(false);
+      await controller.setVolume(0);
+
+      // Move slightly into the clip so the preview is less likely to be a
+      // black opening frame.
+      final duration = controller.value.duration;
+      var previewPosition = const Duration(milliseconds: 500);
+      if (duration.inMilliseconds > 0 &&
+          duration < previewPosition) {
+        previewPosition = Duration(
+          milliseconds: (duration.inMilliseconds * .25).round(),
+        );
+      }
+
+      if (previewPosition > Duration.zero) {
+        await controller.seekTo(previewPosition);
+      }
+      await controller.pause();
+
+      if (!mounted) return;
+      setState(() => _ready = true);
+    } catch (error) {
+      farmDebugLog(
+        'Business reel preview frame unavailable for '
+        '${widget.reel.id}: $error',
+      );
+      if (!mounted) return;
+      setState(() => _failed = true);
+    }
+  }
+
+  void _disposeController() {
+    final controller = _controller;
+    _controller = null;
+    if (controller != null) {
+      controller.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeController();
+    super.dispose();
+  }
+
+  Widget _fallback() {
+    return Container(
+      color: const Color(0xFFE7F0E3),
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.agriculture_rounded,
+        color: FarmColors.primary,
+        size: 30,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final thumbnail =
+        cleanHostedImageUrl(widget.reel.thumbnailUrl);
+
+    if (thumbnail != null) {
+      return Image.network(
+        thumbnail,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (_, __, ___) => _fallback(),
+      );
+    }
+
+    final controller = _controller;
+    if (_ready &&
+        !_failed &&
+        controller != null &&
+        controller.value.isInitialized) {
+      final size = controller.value.size;
+
+      return SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: size.width <= 0 ? 360 : size.width,
+            height: size.height <= 0 ? 640 : size.height,
+            child: VideoPlayer(controller),
+          ),
+        ),
+      );
+    }
+
+    if (_failed) {
+      return _fallback();
+    }
+
+    return Container(
+      color: const Color(0xFFE7F0E3),
+      alignment: Alignment.center,
+      child: const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: FarmColors.primary,
+        ),
+      ),
+    );
+  }
+}
+
+
 class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection> {
   late Future<List<HpjFreshReel>> _reelsFuture;
   late Future<List<AgricultureFeedUpdate>> _newsFuture;
@@ -8240,7 +9562,10 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
         builder: (_) => FreshReelsScreen(
           preferences: hpjCurrentUserExperiencePreferences,
           initialReelId: initialReelId,
-          placement: freshReelPlacementWholesaleFeed,
+          // The Business Home preview can fall back to any published HPJ reel
+          // when there are no wholesale-targeted reels. Open the full feed with
+          // the same broad pool so the tapped preview never leads to an empty page.
+          placement: '',
         ),
       ),
     );
@@ -8336,12 +9661,25 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
     required String title,
     required VoidCallback onTap,
   }) {
-    return SizedBox(
-      height: 27,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
       child: Row(
         children: [
-          Icon(icon, color: const Color(0xFF0B5B3D), size: 14),
-          const SizedBox(width: 4),
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF5E9),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: const Color(0xFF0B5B3D),
+              size: 13,
+            ),
+          ),
+          const SizedBox(width: 7),
           Expanded(
             child: Text(
               title,
@@ -8349,30 +9687,30 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: FarmColors.ink,
-                fontSize: 9.6,
+                fontSize: 11.2,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
-          InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(999),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'View all',
-                    style: TextStyle(
-                      color: Color(0xFF0B5B3D),
-                      fontSize: 6.8,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(width: 2),
-                  Icon(Icons.arrow_forward_rounded, color: Color(0xFF0B5B3D), size: 10),
-                ],
+          TextButton.icon(
+            onPressed: onTap,
+            iconAlignment: IconAlignment.end,
+            icon: const Icon(
+              Icons.chevron_right_rounded,
+              size: 15,
+            ),
+            label: const Text('View all'),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF0B5B3D),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 2,
+                vertical: 2,
+              ),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: const TextStyle(
+                fontSize: 8.2,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -8382,84 +9720,91 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
   }
 
   Widget _reelTile(HpjFreshReel reel) {
-    final image = cleanHostedImageUrl(reel.thumbnailUrl);
+    final farm = reel.farmName.trim().isNotEmpty
+        ? reel.farmName.trim()
+        : reel.creatorLabel.trim();
+
     return Expanded(
       child: Material(
-        color: const Color(0xFFEDF3E9),
-        borderRadius: BorderRadius.circular(10),
+        color: const Color(0xFFF0F5EC),
+        borderRadius: BorderRadius.circular(14),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _openReels(reel.id),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (image != null)
-                Image.network(
-                  image,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: const Color(0xFFDBEAD7),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.eco_rounded, color: Color(0xFF0B5B3D), size: 18),
-                  ),
-                )
-              else
-                Container(
-                  color: const Color(0xFFDBEAD7),
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.eco_rounded, color: Color(0xFF0B5B3D), size: 18),
-                ),
+              _HpjBusinessReelPreviewFrame(
+                reel: reel,
+              ),
               const DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Color(0xE6002D1E)],
-                    stops: [.36, 1],
+                    colors: [
+                      Colors.transparent,
+                      Colors.transparent,
+                      Color(0xD1112B20),
+                    ],
+                    stops: [0, .46, 1],
                   ),
                 ),
               ),
               Center(
                 child: Container(
-                  width: 26,
-                  height: 26,
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(.45),
+                    color: Colors.black.withOpacity(.40),
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(.85)),
+                    border: Border.all(
+                      color: Colors.white,
+                      width: 1.5,
+                    ),
                   ),
-                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 17),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 27,
+                  ),
                 ),
               ),
               Positioned(
-                left: 4,
-                right: 4,
-                bottom: 5,
+                left: 8,
+                right: 8,
+                bottom: 8,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      reel.title,
+                      reel.title.trim().isEmpty
+                          ? 'Fresh from the farm'
+                          : reel.title.trim(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 6.8,
-                        height: 1.05,
+                        fontSize: 9.2,
+                        height: 1.02,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 1),
-                    Text(
-                      reel.farmName.trim().isNotEmpty ? reel.farmName : reel.creatorLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(.82),
-                        fontSize: 5.9,
-                        fontWeight: FontWeight.w600,
+                    if (farm.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        farm,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 7.2,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -8472,94 +9817,68 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
 
   Widget _newsTile(AgricultureFeedUpdate update) {
     final image = cleanHostedImageUrl(update.imageUrl);
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(9),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => unawaited(_openNews(update)),
-        child: SizedBox(
-          height: 59,
-          child: Row(
+    return Expanded(
+      child: Material(
+        color: const Color(0xFFF2F6EF),
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openNews(update),
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              SizedBox(
-                width: 46,
-                height: double.infinity,
-                child: image == null
-                    ? Container(
-                        color: const Color(0xFFEDF4EA),
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.newspaper_rounded, size: 16, color: Color(0xFF0B5B3D)),
-                      )
-                    : Image.network(
-                        image,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFFEDF4EA),
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.newspaper_rounded, size: 16, color: Color(0xFF0B5B3D)),
-                        ),
-                      ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(5, 4, 4, 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEAF4E6),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          update.categoryLabel.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF0B6A43),
-                            fontSize: 5.2,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Expanded(
-                        child: Text(
-                          update.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 6.8,
-                            height: 1.05,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _dateLabel(update.publishAt),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: FarmColors.mutedText,
-                                fontSize: 5.6,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Color(0xFF0B5B3D),
-                            size: 11,
-                          ),
-                        ],
-                      ),
+              if (image != null)
+                Image.network(
+                  image,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: const Color(0xFFE8F0E4),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.newspaper_rounded,
+                      color: Color(0xFF0B5B3D),
+                      size: 24,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  color: const Color(0xFFE8F0E4),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.newspaper_rounded,
+                    color: Color(0xFF0B5B3D),
+                    size: 24,
+                  ),
+                ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Color(0xCC09271B),
                     ],
+                    stops: [.30, 1],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 9,
+                right: 9,
+                bottom: 8,
+                child: Text(
+                  update.title.trim().isEmpty
+                      ? 'HPJ update'
+                      : update.title.trim(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.6,
+                    height: 1.08,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
@@ -8690,114 +10009,15 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
 
   @override
   Widget build(BuildContext context) {
-    Widget reelsPanel() {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _miniHeader(
-            icon: Icons.video_library_rounded,
-            title: 'Reels',
-            onTap: _openReels,
-          ),
-          FutureBuilder<List<HpjFreshReel>>(
-            future: _reelsFuture,
-            builder: (context, snapshot) {
-              final reels = snapshot.data ?? const <HpjFreshReel>[];
-              if (reels.isEmpty) {
-                return Container(
-                  height: 132,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF2F6EF),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'Fresh reels will appear here.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 7.0,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                );
-              }
-
-              final visible = reels.take(3).toList(growable: false);
-              return SizedBox(
-                height: 136,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < visible.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 6),
-                      _reelTile(visible[i]),
-                    ],
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      );
-    }
-
-    Widget newsPanel() {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _miniHeader(
-            icon: Icons.newspaper_rounded,
-            title: 'Latest News',
-            onTap: _openAllNews,
-          ),
-          FutureBuilder<List<AgricultureFeedUpdate>>(
-            future: _newsFuture,
-            builder: (context, snapshot) {
-              final news =
-                  snapshot.data ?? const <AgricultureFeedUpdate>[];
-              if (news.isEmpty) {
-                return Container(
-                  height: 128,
-                  padding: const EdgeInsets.all(8),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F9F5),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'No new updates right now.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 7.0,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                );
-              }
-
-              return Column(
-                children: [
-                  _newsTile(news.first),
-                  if (news.length > 1) ...[
-                    const SizedBox(height: 7),
-                    _newsTile(news[1]),
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
-      );
-    }
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFEFA),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE4E0D3)),
+        border: Border.all(
+          color: const Color(0xFFE4E0D3),
+        ),
         boxShadow: const [
           BoxShadow(
             color: Color(0x0A5A4822),
@@ -8812,40 +10032,45 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF07583A),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.groups_2_rounded,
+                width: 40,
+                height: 40,
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
                   color: Colors.white,
-                  size: 17,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFDDE6DA),
+                  ),
+                ),
+                child: Image.asset(
+                  'lib/assets/images/logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.eco_rounded,
+                    color: FarmColors.primary,
+                    size: 22,
+                  ),
                 ),
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 9),
               const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'From the HPJ Network',
+                      'HPJ Feed',
                       style: TextStyle(
                         color: FarmColors.ink,
-                        fontSize: 15.0,
+                        fontSize: 15.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     SizedBox(height: 1),
                     Text(
-                      'Real people. Real stories. A stronger Jamaican food system.',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      'Farm reels • Sponsors • Updates',
                       style: TextStyle(
                         color: FarmColors.mutedText,
-                        fontSize: 8.1,
+                        fontSize: 8.2,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -8854,69 +10079,117 @@ class _HpjReferenceNetworkSectionState extends State<_HpjReferenceNetworkSection
               ),
             ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 8),
+
+          _miniHeader(
+            icon: Icons.video_library_rounded,
+            title: 'Reels',
+            onTap: _openReels,
+          ),
+          FutureBuilder<List<HpjFreshReel>>(
+            future: _reelsFuture,
+            builder: (context, snapshot) {
+              final reels = snapshot.data ?? const <HpjFreshReel>[];
+
+              if (reels.isEmpty) {
+                return Container(
+                  height: 148,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2F6EF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'Fresh farm reels will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 8.2,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                );
+              }
+
+              final visible = reels.take(3).toList(growable: false);
+              return SizedBox(
+                height: 166,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < visible.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 7),
+                      _reelTile(visible[i]),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 10),
+
           FutureBuilder<HpjSponsorCampaign?>(
             future: _sponsorFuture,
-            builder: (context, sponsorSnapshot) {
+            builder: (context, snapshot) {
               final sponsor =
                   hpjCurrentUserExperiencePreferences.showPromotions
-                      ? sponsorSnapshot.data
+                      ? snapshot.data
                       : null;
 
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  const gap = 8.0;
-                  final narrow = constraints.maxWidth < 390;
+              if (sponsor == null) {
+                return const SizedBox.shrink();
+              }
 
-                  if (narrow) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        reelsPanel(),
-                        const SizedBox(height: 9),
-                        if (sponsor == null)
-                          newsPanel()
-                        else
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 6,
-                                child: newsPanel(),
-                              ),
-                              const SizedBox(width: gap),
-                              Expanded(
-                                flex: 5,
-                                child: _sponsorTile(sponsor),
-                              ),
-                            ],
-                          ),
-                      ],
-                    );
-                  }
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _sponsorTile(sponsor),
+              );
+            },
+          ),
 
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: sponsor == null ? 6 : 5,
-                        child: reelsPanel(),
-                      ),
-                      const SizedBox(width: gap),
-                      Expanded(
-                        flex: sponsor == null ? 4 : 3,
-                        child: newsPanel(),
-                      ),
-                      if (sponsor != null) ...[
-                        const SizedBox(width: gap),
-                        Expanded(
-                          flex: 3,
-                          child: _sponsorTile(sponsor),
-                        ),
-                      ],
+          _miniHeader(
+            icon: Icons.newspaper_rounded,
+            title: 'Latest News',
+            onTap: _openAllNews,
+          ),
+          FutureBuilder<List<AgricultureFeedUpdate>>(
+            future: _newsFuture,
+            builder: (context, snapshot) {
+              final news =
+                  snapshot.data ?? const <AgricultureFeedUpdate>[];
+
+              if (news.isEmpty) {
+                return Container(
+                  height: 92,
+                  padding: const EdgeInsets.all(8),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F9F5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'No new updates right now.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 8.0,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                );
+              }
+
+              final visible = news.take(2).toList(growable: false);
+              return SizedBox(
+                height: 96,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < visible.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      _newsTile(visible[i]),
                     ],
-                  );
-                },
+                  ],
+                ),
               );
             },
           ),
@@ -8973,99 +10246,75 @@ class _HpjReferenceNetworkPainter extends CustomPainter {
 }
 
 
+
 class _HpjReferenceDemandNetworkCard extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _HpjReferenceDemandNetworkCard({required this.onTap});
+  const _HpjReferenceDemandNetworkCard({
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const deep = Color(0xFF07583A);
-
-    return SizedBox(
-      height: 88,
-      child: Material(
-        color: deep,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Stack(
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE1E8DE),
+            ),
+          ),
+          child: Row(
             children: [
-              const Positioned.fill(
-                child: CustomPaint(painter: _HpjReferenceNetworkPainter()),
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1D5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.hub_outlined,
+                  color: Color(0xFFA66B00),
+                  size: 20,
+                ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                child: Row(
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 45,
-                      height: 45,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(.11),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withOpacity(.14)),
-                      ),
-                      child: const Icon(Icons.bar_chart_rounded, color: Colors.white, size: 23),
-                    ),
-                    const SizedBox(width: 9),
-                    const Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Jamaica Demand Network',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12.4,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Post a buyer need, see national supply gaps and let HPJ match farmers.',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Color(0xFFDDEBE2),
-                              fontSize: 8.3,
-                              height: 1.16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      'Post a Need',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(width: 7),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Post a need',
-                            style: TextStyle(
-                              color: deep,
-                              fontSize: 7.8,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(width: 3),
-                          Icon(Icons.arrow_forward_rounded, color: deep, size: 13),
-                        ],
+                    SizedBox(height: 2),
+                    Text(
+                      'Tell HPJ what your business needs.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.4,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: FarmColors.ink,
+                size: 19,
               ),
             ],
           ),
@@ -9074,13 +10323,6 @@ class _HpjReferenceDemandNetworkCard extends StatelessWidget {
     );
   }
 }
-
-
-// =====================================================
-// HPJ BUSINESS SUPER ELITE — RESPONSIVE APP HOME
-// Uses the same live Business data as desktop while prioritising the five
-// jobs a buyer needs on a phone: source, plan, suppliers, orders and account.
-// =====================================================
 
 class _HpjEliteBusinessMobileHome extends StatelessWidget {
   final BusinessAccount account;
@@ -12008,29 +13250,22 @@ class _EliteBusinessHero extends StatelessWidget {
       height: 248,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF043726).withOpacity(.18),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          const DecoratedBox(
+          DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF043827),
-                  Color(0xFF0A6240),
-                  Color(0xFF2D7C4B),
-                ],
-              ),
+              color: const Color(0xFFF8FBF6),
+              border: Border.all(color: const Color(0xFFDDE6DA)),
             ),
           ),
           Positioned.fill(
@@ -12046,7 +13281,7 @@ class _EliteBusinessHero extends StatelessWidget {
               height: 340,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(.055),
+                color: const Color(0xFFF3F8F1),
               ),
             ),
           ),
@@ -12064,7 +13299,7 @@ class _EliteBusinessHero extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: FarmColors.ink,
                           fontSize: 25,
                           height: 1.02,
                           letterSpacing: -.45,
@@ -12075,7 +13310,7 @@ class _EliteBusinessHero extends StatelessWidget {
                       const Text(
                         'Source. Plan. Grow. Together.',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: FarmColors.ink,
                           fontSize: 22,
                           height: 1.05,
                           letterSpacing: -.35,
@@ -12087,7 +13322,7 @@ class _EliteBusinessHero extends StatelessWidget {
                         Text(
                           businessLine,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(.76),
+                            color: FarmColors.mutedText,
                             fontSize: 9.3,
                             fontWeight: FontWeight.w700,
                           ),
@@ -12102,7 +13337,7 @@ class _EliteBusinessHero extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(.86),
+                            color: FarmColors.mutedText,
                             fontSize: 11.2,
                             height: 1.4,
                             fontWeight: FontWeight.w600,
@@ -13530,14 +14765,8 @@ class _EliteBusinessAgroNetworkBanner extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            Color(0xFF06402D),
-            Color(0xFF087247),
-          ],
-        ),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
       ),
       child: Stack(
         fit: StackFit.expand,
@@ -13548,7 +14777,7 @@ class _EliteBusinessAgroNetworkBanner extends StatelessWidget {
             child: Icon(
               Icons.hub_outlined,
               size: 190,
-              color: Colors.white.withOpacity(.06),
+              color: FarmColors.mutedText,
             ),
           ),
           Padding(
@@ -13562,7 +14791,7 @@ class _EliteBusinessAgroNetworkBanner extends StatelessWidget {
                       Text(
                         'Jamaica’s\nAgro Network',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: FarmColors.ink,
                           fontSize: 21,
                           height: 1.02,
                           fontWeight: FontWeight.w900,
@@ -14432,7 +15661,7 @@ class _WholesaleHomeQuickActions extends StatelessWidget {
                     child: _HpjBusinessPhotoActionCard(
                       imageUrl: _imageAt(0),
                       icon: Icons.shopping_basket_outlined,
-                      title: 'Source Produce',
+                      title: 'Find Produce',
                       subtitle: 'Order from current HPJ supply.',
                       onTap: onOrderNow,
                       dark: true,
@@ -17024,10 +18253,10 @@ class _PremiumBusinessDetailsHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: const Color(0xFFDDE6DA),
           ),
         ),
         child: Column(
@@ -17038,7 +18267,7 @@ class _PremiumBusinessDetailsHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 13.5,
                 fontWeight: FontWeight.w900,
               ),
@@ -17049,7 +18278,7 @@ class _PremiumBusinessDetailsHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.6,
                 fontWeight: FontWeight.w800,
               ),
@@ -17065,18 +18294,11 @@ class _PremiumBusinessDetailsHero extends StatelessWidget {
     final preferredDays = account.preferredDeliveryDays.length;
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -17084,7 +18306,7 @@ class _PremiumBusinessDetailsHero extends StatelessWidget {
           const Text(
             'PRIVATE BUSINESS RECORD',
             style: TextStyle(
-              color: Color(0xFFCFE0CF),
+              color: FarmColors.mutedText,
               fontSize: 10.3,
               fontWeight: FontWeight.w900,
               letterSpacing: .8,
@@ -17096,7 +18318,7 @@ class _PremiumBusinessDetailsHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
@@ -17105,7 +18327,7 @@ class _PremiumBusinessDetailsHero extends StatelessWidget {
           Text(
             'Keep your contact, delivery and business information current so HPJ can fulfil orders correctly.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.82),
+              color: FarmColors.mutedText,
               fontSize: 10.5,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -17219,6 +18441,9 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
   String search = '';
   String categoryFilter = 'all';
   String sortMode = 'priority';
+  String mobileNeedsView = 'my_needs';
+  Set<String> savedProductIds = <String>{};
+  bool loadingSavedProducts = false;
 
   @override
   void initState() {
@@ -17233,12 +18458,39 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
     }
     _future = fetchWholesaleCatalogue();
     _insightFuture = fetchWholesaleTodaySnapshot(account: widget.account);
+    unawaited(_refreshSavedProducts(silent: true));
   }
 
   @override
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshSavedProducts({
+    bool silent = false,
+  }) async {
+    if (!silent && mounted) {
+      setState(() => loadingSavedProducts = true);
+    }
+
+    final next = await fetchHpjActiveWatchKeys(
+      workspace: 'wholesale',
+      watchType: 'product',
+    );
+
+    if (!mounted) return;
+    setState(() {
+      savedProductIds = next;
+      loadingSavedProducts = false;
+    });
+  }
+
+  void _selectNeedsView(String value) {
+    setState(() => mobileNeedsView = value);
+    if (value == 'saved') {
+      unawaited(_refreshSavedProducts());
+    }
   }
 
   Future<void> _refreshCatalogue() async {
@@ -17412,7 +18664,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
         );
       },
       decoration: InputDecoration(
-        hintText: 'Search produce or price',
+        hintText: 'Search produce (e.g. ackee, banana, yam)',
         prefixIcon: const Icon(Icons.search),
         suffixIcon: query.isEmpty
             ? null
@@ -17450,7 +18702,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
       backgroundColor: FarmColors.background,
       appBar: widget.embedded
           ? null
-          : _businessChildAppBar(context, 'Wholesale Shop'),
+          : _businessChildAppBar(context, 'Needs'),
       bottomNavigationBar: selectedProducts.isEmpty
           ? null
           : _PremiumWholesaleBasketBar(
@@ -17468,9 +18720,9 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
                 children: const [
-                  FarmSkeletonCard(height: 210),
+                  FarmSkeletonCard(height: 120),
                   SizedBox(height: 12),
-                  FarmSkeletonCard(height: 220),
+                  FarmSkeletonCard(height: 210),
                   SizedBox(height: 12),
                   FarmSkeletonCard(height: 220),
                 ],
@@ -17486,7 +18738,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                 children: [
                   FarmEmptyState(
                     icon: Icons.cloud_off_outlined,
-                    title: 'Wholesale catalogue unavailable',
+                    title: 'Produce unavailable',
                     message:
                         'HPJ could not load current wholesale supply. Your Business account is safe.',
                   ),
@@ -17494,7 +18746,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                   FilledButton.icon(
                     onPressed: _refreshCatalogue,
                     icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Retry Source Produce'),
+                    label: const Text('Retry'),
                   ),
                 ],
               ),
@@ -17585,17 +18837,42 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                 );
           });
 
+          final mobileApp = hpjUseMobileAppPresentation(context);
           final managedCount =
               all.where((item) => item.marketAllocationManaged).length;
-          final mobileApp = hpjUseMobileAppPresentation(context);
+
+          final visibleItems = mobileApp && mobileNeedsView == 'saved'
+              ? items
+                  .where((item) => savedProductIds.contains(item.product.id))
+                  .toList(growable: false)
+              : items;
+
+          WholesaleProduct? productForNeed(WholesaleDemandForecast forecast) {
+            final id = forecast.productId?.trim() ?? '';
+            if (id.isNotEmpty) {
+              for (final item in all) {
+                if (item.product.id == id) return item;
+              }
+            }
+            final name = forecast.productName.trim().toLowerCase();
+            for (final item in all) {
+              final candidate = item.product.name.trim().toLowerCase();
+              if (candidate == name ||
+                  candidate.contains(name) ||
+                  name.contains(candidate)) {
+                return item;
+              }
+            }
+            return null;
+          }
 
           return FarmPage(
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(
-                18,
-                16,
-                18,
+                mobileApp ? 10 : 18,
+                mobileApp ? 8 : 16,
+                mobileApp ? 10 : 18,
                 selectedProducts.isEmpty ? 120 : 200,
               ),
               children: [
@@ -17619,8 +18896,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Build a bulk request using current HPJ wholesale prices, '
-                    'minimum quantities and available market allocation.',
+                    'Build a bulk request using current HPJ wholesale prices, minimum quantities and available market allocation.',
                     style: TextStyle(
                       color: FarmColors.mutedText,
                       fontSize: 10.2,
@@ -17632,77 +18908,236 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                   _searchField(query),
                   const SizedBox(height: 10),
                 ] else ...[
-                  Row(
-                    children: [
-                      Expanded(child: _searchField(query)),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 48,
-                        child: OutlinedButton.icon(
-                          onPressed: _openSuppliers,
-                          icon: const Icon(
-                            Icons.agriculture_outlined,
-                            size: 17,
-                          ),
-                          label: const Text(
-                            'Find Farms',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (categoryOptions.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          ChoiceChip(
-                            label: const Text('All Produce'),
-                            selected: categoryFilter == 'all',
-                            onSelected: (_) {
-                              setState(() => categoryFilter = 'all');
-                            },
-                          ),
-                          for (final category in categoryOptions.take(6)) ...[
-                            const SizedBox(width: 7),
-                            ChoiceChip(
-                              label: Text(category),
-                              selected: categoryFilter == category,
-                              onSelected: (_) {
-                                setState(() => categoryFilter = category);
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
+                  const Text(
+                    'Plan and manage what your business needs to buy.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 9.4,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 10),
+                  _HpjBusinessNeedsTabs(
+                    selected: mobileNeedsView,
+                    onSelected: _selectNeedsView,
+                  ),
+                  const SizedBox(height: 10),
+
                   FutureBuilder<_WholesaleTodaySnapshot>(
                     future: _insightFuture,
                     builder: (context, insightSnapshot) {
                       final insight = insightSnapshot.data;
-                      if (insight == null) return const SizedBox.shrink();
-                      final reviewCount = insight.forecasts
-                          .where(
-                            (item) =>
-                                item.isActive &&
-                                _wholesaleForecastNeedsReview(item),
-                          )
-                          .length;
-                      if (reviewCount == 0) return const SizedBox.shrink();
+                      if (insight == null) {
+                        return insightSnapshot.connectionState ==
+                                ConnectionState.waiting
+                            ? const FarmSkeletonCard(height: 150)
+                            : const SizedBox.shrink();
+                      }
 
-                      return _WholesaleSourcePlanReviewBanner(
-                        count: reviewCount,
-                        onTap: _openPlan,
+                      final activeNeeds = insight.forecasts
+                          .where((item) => item.isActive)
+                          .toList()
+                        ..sort(
+                          (a, b) =>
+                              a.needByDate.compareTo(b.needByDate),
+                        );
+
+                      final reviewCount = activeNeeds
+                          .where(_wholesaleForecastNeedsReview)
+                          .length;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (reviewCount > 0) ...[
+                            _WholesaleSourcePlanReviewBanner(
+                              count: reviewCount,
+                              onTap: _openPlan,
+                            ),
+                            const SizedBox(height: 13),
+                          ],
+
+                          if (mobileNeedsView == 'my_needs') ...[
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'My Needs',
+                                    style: TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _openPlan,
+                                  iconAlignment: IconAlignment.end,
+                                  icon: const Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text(
+                                    'See all',
+                                    style: TextStyle(
+                                      fontSize: 9.2,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            if (activeNeeds.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFE1E8DE),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'No active needs yet. Add what your business expects to buy.',
+                                  style: TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 9.2,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            else
+                              for (final forecast in activeNeeds.take(3))
+                                _HpjBusinessNeedRowMvp(
+                                  forecast: forecast,
+                                  product: productForNeed(forecast),
+                                  onTap: _openPlan,
+                                ),
+                            const SizedBox(height: 9),
+                          ],
+                        ],
                       );
                     },
                   ),
+
+                  if (mobileNeedsView != 'saved') ...[
+                    const Text(
+                      'Find Produce',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Search produce or find farms to add to your needs.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Saved Produce',
+                            style: TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        if (loadingSavedProducts)
+                          const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Produce you saved for quick access.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+
+                  if (mobileNeedsView != 'saved') ...[
+                    Row(
+                      children: [
+                        Expanded(child: _searchField(query)),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _openSuppliers,
+                            icon: const Icon(
+                              Icons.agriculture_outlined,
+                              size: 17,
+                            ),
+                            label: const Text(
+                              'Find Farms',
+                              style: TextStyle(
+                                fontSize: 9.6,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: FarmColors.primary,
+                              side: const BorderSide(
+                                color: Color(0xFF9EC39B),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (categoryOptions.isNotEmpty) ...[
+                      const SizedBox(height: 9),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            ChoiceChip(
+                              label: const Text('All'),
+                              selected: categoryFilter == 'all',
+                              onSelected: (_) {
+                                setState(() => categoryFilter = 'all');
+                              },
+                            ),
+                            for (final category
+                                in categoryOptions.take(6)) ...[
+                              const SizedBox(width: 6),
+                              ChoiceChip(
+                                label: Text(category),
+                                selected: categoryFilter == category,
+                                onSelected: (_) {
+                                  setState(
+                                    () => categoryFilter = category,
+                                  );
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+
                   const SizedBox(height: 10),
                 ],
 
@@ -17710,19 +19145,23 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        query.isEmpty && categoryFilter == 'all'
-                            ? '${all.length} wholesale product${all.length == 1 ? '' : 's'} available'
-                            : '${items.length} result${items.length == 1 ? '' : 's'}',
+                        mobileApp
+                            ? mobileNeedsView == 'saved'
+                                ? '${visibleItems.length} saved product${visibleItems.length == 1 ? '' : 's'}'
+                                : '${visibleItems.length} product${visibleItems.length == 1 ? '' : 's'} available'
+                            : query.isEmpty && categoryFilter == 'all'
+                                ? '${all.length} wholesale product${all.length == 1 ? '' : 's'} available'
+                                : '${visibleItems.length} result${visibleItems.length == 1 ? '' : 's'}',
                         style: TextStyle(
                           color: mobileApp
                               ? FarmColors.ink
                               : FarmColors.mutedText,
-                          fontSize: mobileApp ? 13.5 : 9.5,
+                          fontSize: mobileApp ? 12.5 : 9.5,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                    if (mobileApp)
+                    if (mobileApp && mobileNeedsView != 'saved')
                       PopupMenuButton<String>(
                         tooltip: 'Sort products',
                         initialValue: sortMode,
@@ -17782,7 +19221,7 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                           ),
                         ),
                       )
-                    else
+                    else if (!mobileApp)
                       TextButton.icon(
                         onPressed: _openSuppliers,
                         icon: const Icon(
@@ -17795,18 +19234,23 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                if (items.isEmpty)
-                  const FarmEmptyState(
-                    icon: Icons.inventory_2_outlined,
-                    title: 'No wholesale products',
-                    message:
-                        'Try another search. Wholesale products appear here when HPJ enables them for business ordering.',
+                if (visibleItems.isEmpty)
+                  FarmEmptyState(
+                    icon: mobileNeedsView == 'saved'
+                        ? Icons.bookmark_border_rounded
+                        : Icons.inventory_2_outlined,
+                    title: mobileNeedsView == 'saved'
+                        ? 'No saved produce'
+                        : 'No wholesale products',
+                    message: mobileNeedsView == 'saved'
+                        ? 'Tap Save on produce to keep it here for quick access.'
+                        : 'Try another search. Wholesale products appear here when HPJ enables them for business ordering.',
                   )
                 else
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final useTwoColumns =
-                          constraints.maxWidth >= 900;
+                          !mobileApp && constraints.maxWidth >= 900;
                       const gap = 12.0;
                       final width = useTwoColumns
                           ? (constraints.maxWidth - gap) / 2
@@ -17815,10 +19259,9 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                       return Wrap(
                         spacing: gap,
                         runSpacing: gap,
-                        children: items.map((item) {
+                        children: visibleItems.map((item) {
                           final selected = selectedProducts
                               .containsKey(item.product.id);
-
                           final quantity =
                               quantities[item.product.id] ??
                                   item.minimumQuantity;
@@ -17834,41 +19277,427 @@ class _WholesaleCatalogueScreenState extends State<WholesaleCatalogueScreen> {
                                   _changeQuantity(item, -1),
                               onIncrease: () =>
                                   _changeQuantity(item, 1),
+                              onSavedChanged: (saved) {
+                                setState(() {
+                                  if (saved) {
+                                    savedProductIds.add(item.product.id);
+                                  } else {
+                                    savedProductIds.remove(item.product.id);
+                                  }
+                                });
+                              },
                             ),
                           );
                         }).toList(),
                       );
                     },
                   ),
-                const SizedBox(height: 16),
-                FutureBuilder<_WholesaleTodaySnapshot>(
-                  future: _insightFuture,
-                  builder: (context, insightSnapshot) {
-                    final insight = insightSnapshot.data;
-                    if (insight == null) {
-                      if (insightSnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const FarmSkeletonCard(height: 170);
-                      }
-                      return const SizedBox.shrink();
-                    }
 
-                    return _WholesaleSourceMarketIntelligencePanel(
-                      catalogue: insight.catalogue.isEmpty
-                          ? all
-                          : insight.catalogue,
-                      forecasts: insight.forecasts,
-                      gapLines: insight.demandGaps,
-                      onOpenPlan: _openPlan,
-                      onOpenShop: _showAllSupply,
-                      onAgricultureAction: _handleAgricultureFeedAction,
-                    );
-                  },
-                ),
+                // Preserve market intelligence below the focused MVP workflow.
+                if (!mobileApp) ...[
+                  const SizedBox(height: 16),
+                  FutureBuilder<_WholesaleTodaySnapshot>(
+                    future: _insightFuture,
+                    builder: (context, insightSnapshot) {
+                      final insight = insightSnapshot.data;
+                      if (insight == null) {
+                        if (insightSnapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const FarmSkeletonCard(height: 170);
+                        }
+                        return const SizedBox.shrink();
+                      }
+
+                      return _WholesaleSourceMarketIntelligencePanel(
+                        catalogue: insight.catalogue.isEmpty
+                            ? all
+                            : insight.catalogue,
+                        forecasts: insight.forecasts,
+                        gapLines: insight.demandGaps,
+                        onOpenPlan: _openPlan,
+                        onOpenShop: _showAllSupply,
+                        onAgricultureAction: _handleAgricultureFeedAction,
+                      );
+                    },
+                  ),
+                ],
               ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+
+
+class _HpjBusinessNeedsTabs extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  const _HpjBusinessNeedsTabs({
+    required this.selected,
+    required this.onSelected,
+  });
+
+  Widget _tab({
+    required String value,
+    required IconData icon,
+    required String label,
+  }) {
+    final active = selected == value;
+
+    return Expanded(
+      child: Material(
+        color: active ? FarmColors.primary : Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          onTap: () => onSelected(value),
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: active
+                    ? FarmColors.primary
+                    : const Color(0xFFDDE6DA),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: active ? Colors.white : FarmColors.primary,
+                ),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: active ? Colors.white : FarmColors.deepGreen,
+                      fontSize: 9.4,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _tab(
+          value: 'my_needs',
+          icon: Icons.assignment_outlined,
+          label: 'My Needs',
+        ),
+        const SizedBox(width: 7),
+        _tab(
+          value: 'find',
+          icon: Icons.eco_outlined,
+          label: 'Find Produce',
+        ),
+        const SizedBox(width: 7),
+        _tab(
+          value: 'saved',
+          icon: Icons.bookmark_border_rounded,
+          label: 'Saved',
+        ),
+      ],
+    );
+  }
+}
+
+
+class _HpjBusinessNeedRowMvp extends StatelessWidget {
+  final WholesaleDemandForecast forecast;
+  final WholesaleProduct? product;
+  final VoidCallback onTap;
+
+  const _HpjBusinessNeedRowMvp({
+    required this.forecast,
+    required this.product,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = product?.product.imageUrl;
+    final matched = forecast.isMatched || forecast.isReserved;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 82),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE1E8DE)),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(13),
+                  child: SizedBox(
+                    width: 68,
+                    height: 68,
+                    child: imageUrl == null || imageUrl.trim().isEmpty
+                        ? Container(
+                            color: const Color(0xFFF0F5EC),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.eco_rounded,
+                              color: FarmColors.primary,
+                              size: 28,
+                            ),
+                          )
+                        : Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: const Color(0xFFF0F5EC),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.eco_rounded,
+                                color: FarmColors.primary,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        forecast.productName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${forecast.formattedQuantity} needed',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 9.4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.calendar_month_outlined,
+                            size: 12,
+                            color: FarmColors.mutedText,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Needed by ${_wholesaleSimpleDate(forecast.needByDate)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 8.2,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Icon(
+                            matched
+                                ? Icons.groups_2_outlined
+                                : Icons.schedule_rounded,
+                            size: 12,
+                            color: matched
+                                ? FarmColors.success
+                                : FarmColors.warning,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              matched
+                                  ? 'Supplier match available'
+                                  : 'Waiting for suppliers',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: matched
+                                    ? FarmColors.success
+                                    : FarmColors.warning,
+                                fontSize: 8.2,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF7FAF5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: FarmColors.primary,
+                    size: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _HpjMvpProductSaveButton extends StatefulWidget {
+  final WholesaleProduct item;
+  final ValueChanged<bool>? onChanged;
+
+  const _HpjMvpProductSaveButton({
+    required this.item,
+    this.onChanged,
+  });
+
+  @override
+  State<_HpjMvpProductSaveButton> createState() =>
+      _HpjMvpProductSaveButtonState();
+}
+
+
+class _HpjMvpProductSaveButtonState
+    extends State<_HpjMvpProductSaveButton> {
+  bool loading = true;
+  bool saving = false;
+  bool saved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _HpjMvpProductSaveButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.product.id != widget.item.product.id) {
+      loading = true;
+      unawaited(_load());
+    }
+  }
+
+  Future<void> _load() async {
+    final value = await isHpjWatchActive(
+      workspace: 'wholesale',
+      watchType: 'product',
+      entityKey: widget.item.product.id,
+    );
+    if (!mounted) return;
+    setState(() {
+      saved = value;
+      loading = false;
+    });
+  }
+
+  Future<void> _toggle() async {
+    if (saving) return;
+    setState(() => saving = true);
+    try {
+      final value = await setHpjWatchActive(
+        workspace: 'wholesale',
+        watchType: 'product',
+        entityKey: widget.item.product.id,
+        entityName: widget.item.product.name,
+        active: !saved,
+      );
+      if (!mounted) return;
+      setState(() => saved = value);
+      widget.onChanged?.call(value);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 38,
+      child: OutlinedButton.icon(
+        onPressed: loading || saving ? null : _toggle,
+        icon: saving
+            ? const SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                saved
+                    ? Icons.bookmark_rounded
+                    : Icons.bookmark_border_rounded,
+                size: 16,
+              ),
+        label: Text(
+          saved ? 'Saved' : 'Save',
+          style: const TextStyle(
+            fontSize: 9.4,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: FarmColors.primary,
+          side: const BorderSide(color: Color(0xFFBFD4BA)),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
     );
   }
@@ -17934,7 +19763,7 @@ class _WholesaleSourcePlanReviewBanner extends StatelessWidget {
                           ),
                           TextSpan(
                             text:
-                                'planned need${count == 1 ? '' : 's'} need review',
+                                'need${count == 1 ? '' : 's'} need updating',
                           ),
                         ],
                       ),
@@ -17948,7 +19777,7 @@ class _WholesaleSourcePlanReviewBanner extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     const Text(
-                      'Confirm dates and quantities so HPJ can keep your supply plan current.',
+                      'Check dates and quantities to keep your supply plan current.',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -18363,10 +20192,10 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: const Color(0xFFDDE6DA),
           ),
         ),
         child: Column(
@@ -18375,7 +20204,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
             Icon(
               icon,
               size: 17,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
             ),
             const SizedBox(height: 7),
             Text(
@@ -18383,7 +20212,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -18394,7 +20223,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.7,
                 fontWeight: FontWeight.w800,
               ),
@@ -18445,23 +20274,16 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -18475,15 +20297,15 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
                 height: 48,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.13),
+                  color: const Color(0xFFF3F8F1),
                   borderRadius: BorderRadius.circular(15),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.18),
+                    color: const Color(0xFFDDE6DA),
                   ),
                 ),
                 child: const Icon(
                   Icons.shopping_basket_outlined,
-                  color: Colors.white,
+                  color: FarmColors.ink,
                   size: 25,
                 ),
               ),
@@ -18495,7 +20317,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
                     Text(
                       'WHOLESALE SHOP',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(.72),
+                        color: FarmColors.mutedText,
                         fontSize: 10.3,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .9,
@@ -18507,7 +20329,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: FarmColors.ink,
                         fontSize: 21,
                         height: 1.05,
                         fontWeight: FontWeight.w900,
@@ -18523,7 +20345,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
             'Build a request from HPJ-approved bulk produce and current '
             'market allocation.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
+              color: FarmColors.mutedText,
               fontSize: 10.8,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -18557,7 +20379,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Material(
-            color: Colors.white.withOpacity(.10),
+            color: const Color(0xFFF3F8F1),
             borderRadius: BorderRadius.circular(15),
             child: InkWell(
               onTap: onFindSuppliers,
@@ -18571,14 +20393,14 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(15),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.14),
+                    color: const Color(0xFFDDE6DA),
                   ),
                 ),
                 child: Row(
                   children: [
                     const Icon(
                       Icons.agriculture_outlined,
-                      color: Color(0xFFE8C768),
+                      color: FarmColors.primary,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
@@ -18586,7 +20408,7 @@ class _PremiumWholesaleShopHero extends StatelessWidget {
                       child: Text(
                         'Need a preferred farm? Discover approved Jamaican suppliers through HPJ.',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(.84),
+                          color: FarmColors.mutedText,
                           fontSize: 9.5,
                           height: 1.3,
                           fontWeight: FontWeight.w700,
@@ -18617,6 +20439,7 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onDecrease;
   final VoidCallback onIncrease;
+  final ValueChanged<bool>? onSavedChanged;
 
   const _PremiumWholesaleProductCard({
     required this.item,
@@ -18625,6 +20448,7 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
     required this.onToggle,
     required this.onDecrease,
     required this.onIncrease,
+    this.onSavedChanged,
   });
 
   Widget _image({
@@ -18859,12 +20683,9 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: HpjWatchButton(
-                      workspace: 'wholesale',
-                      watchType: 'product',
-                      entityKey: item.product.id,
-                      entityName: item.product.name,
-                      compact: true,
+                    child: _HpjMvpProductSaveButton(
+                      item: item,
+                      onChanged: onSavedChanged,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -18889,7 +20710,7 @@ class _PremiumWholesaleProductCard extends StatelessWidget {
                             size: 16,
                           ),
                           label: const Text(
-                            'Add to request',
+                            'Add to Need',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -20070,10 +21891,10 @@ class _PremiumWholesaleReviewHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: const Color(0xFFDDE6DA),
           ),
         ),
         child: Column(
@@ -20084,7 +21905,7 @@ class _PremiumWholesaleReviewHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -20095,7 +21916,7 @@ class _PremiumWholesaleReviewHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.8,
                 fontWeight: FontWeight.w800,
               ),
@@ -20113,18 +21934,11 @@ class _PremiumWholesaleReviewHero extends StatelessWidget {
         : businessName.trim();
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -20132,7 +21946,7 @@ class _PremiumWholesaleReviewHero extends StatelessWidget {
           const Text(
             'REVIEW WHOLESALE REQUEST',
             style: TextStyle(
-              color: Color(0xFFCFE0CF),
+              color: FarmColors.mutedText,
               fontSize: 10.3,
               fontWeight: FontWeight.w900,
               letterSpacing: .8,
@@ -20144,7 +21958,7 @@ class _PremiumWholesaleReviewHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
@@ -20153,7 +21967,7 @@ class _PremiumWholesaleReviewHero extends StatelessWidget {
           Text(
             'Review quantities, account status and fulfilment before sending the request to HPJ.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.82),
+              color: FarmColors.mutedText,
               fontSize: 10.5,
               height: 1.38,
               fontWeight: FontWeight.w600,
@@ -21223,10 +23037,10 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: const Color(0xFFDDE6DA),
           ),
         ),
         child: Column(
@@ -21237,7 +23051,7 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -21248,7 +23062,7 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.7,
                 fontWeight: FontWeight.w800,
               ),
@@ -21264,18 +23078,11 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
     final repeatMode = mode == 'repeat';
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -21285,7 +23092,7 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
                 ? 'REPEAT ORDERS'
                 : 'STANDING ORDERS',
             style: const TextStyle(
-              color: Color(0xFFCFE0CF),
+              color: FarmColors.mutedText,
               fontSize: 10.3,
               fontWeight: FontWeight.w900,
               letterSpacing: .8,
@@ -21299,7 +23106,7 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
@@ -21310,7 +23117,7 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
                 ? 'Save a familiar basket, then reorder it using current HPJ availability and pricing.'
                 : 'Manage recurring requirements while HPJ keeps each occurrence subject to live supply, capacity and credit checks.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.82),
+              color: FarmColors.mutedText,
               fontSize: 10.5,
               height: 1.38,
               fontWeight: FontWeight.w600,
@@ -21361,17 +23168,17 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
                 vertical: 9,
               ),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(.10),
+                color: const Color(0xFFF3F8F1),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: Colors.white.withOpacity(.14),
+                  color: const Color(0xFFDDE6DA),
                 ),
               ),
               child: Row(
                 children: [
                   const Icon(
                     Icons.schedule_outlined,
-                    color: Color(0xFFE8C768),
+                    color: FarmColors.primary,
                     size: 17,
                   ),
                   const SizedBox(width: 7),
@@ -21379,7 +23186,7 @@ class _PremiumRecurringOrdersHero extends StatelessWidget {
                     child: Text(
                       'Next active requirement: ${_date(nextDue)}',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(.83),
+                        color: FarmColors.mutedText,
                         fontSize: 9.4,
                         fontWeight: FontWeight.w800,
                       ),
@@ -23279,23 +25086,39 @@ class _WholesalePlanningAheadScreenState
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 110),
                 children: [
-                  _PremiumWholesalePlanningHero(
-                    businessName: widget.account.displayName,
-                    activeCount: allActive.length,
-                    recurringCount: recurringCount,
-                    reviewCount: totalNeedsReview,
-                    securedCount: securedCount,
-                    expectedCount: expectedCount,
-                    nextNeed: nextNeed,
-                    onAddPlan: _savingPlanning
-                        ? null
-                        : () {
-                            _showPlanningForm
-                                ? _closePlanning()
-                                : _startPlanning(allActive);
-                          },
-                    formOpen: _showPlanningForm,
-                  ),
+                  if (hpjUseMobileAppPresentation(context))
+                    _HpjBusinessMvpPageHeader(
+                      icon: Icons.event_note_outlined,
+                      title: 'Plan Ahead',
+                      subtitle: 'Tell HPJ what your business will need.',
+                      actionLabel:
+                          _showPlanningForm ? 'Close' : 'Add',
+                      onAction: _savingPlanning
+                          ? null
+                          : () {
+                              _showPlanningForm
+                                  ? _closePlanning()
+                                  : _startPlanning(allActive);
+                            },
+                    )
+                  else
+                    _PremiumWholesalePlanningHero(
+                      businessName: widget.account.displayName,
+                      activeCount: allActive.length,
+                      recurringCount: recurringCount,
+                      reviewCount: totalNeedsReview,
+                      securedCount: securedCount,
+                      expectedCount: expectedCount,
+                      nextNeed: nextNeed,
+                      onAddPlan: _savingPlanning
+                          ? null
+                          : () {
+                              _showPlanningForm
+                                  ? _closePlanning()
+                                  : _startPlanning(allActive);
+                            },
+                      formOpen: _showPlanningForm,
+                    ),
                   if (_showPlanningForm) ...[
                     const SizedBox(height: 12),
                     _planningForm(),
@@ -23543,7 +25366,7 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white.withOpacity(.16)),
         ),
@@ -23552,7 +25375,7 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
@@ -23561,7 +25384,7 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -23572,7 +25395,7 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.7,
                 fontWeight: FontWeight.w800,
               ),
@@ -23626,23 +25449,16 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -23657,13 +25473,13 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
                 height: 50,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.13),
+                  color: const Color(0xFFF3F8F1),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white.withOpacity(.18)),
                 ),
                 child: const Icon(
                   Icons.calendar_month_outlined,
-                  color: Colors.white,
+                  color: FarmColors.ink,
                   size: 25,
                 ),
               ),
@@ -23675,7 +25491,7 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
                     Text(
                       'PLANNING AHEAD',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(.72),
+                        color: FarmColors.mutedText,
                         fontSize: 10.3,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .9,
@@ -23687,7 +25503,7 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: FarmColors.ink,
                         fontSize: 21,
                         height: 1.05,
                         fontWeight: FontWeight.w900,
@@ -23699,14 +25515,14 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.11),
+                  color: const Color(0xFFF3F8F1),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(color: Colors.white.withOpacity(.15)),
                 ),
                 child: const Text(
                   'NOT AN ORDER',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: FarmColors.ink,
                     fontSize: 8.2,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .4,
@@ -23719,7 +25535,7 @@ class _PremiumWholesalePlanningHero extends StatelessWidget {
           Text(
             'Share expected demand early so HPJ can prepare Jamaican farm supply, procurement and fulfilment before you place an order.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.84),
+              color: FarmColors.mutedText,
               fontSize: 10.8,
               height: 1.42,
               fontWeight: FontWeight.w600,
@@ -26850,14 +28666,17 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
               children: [
-                _PremiumWholesaleOrdersHero(
-                  currentOrders: allCurrentCount,
-                  loadedOrders: allRequests.length,
-                  receiptActions: receiptActions,
-                  amountDue: amountDue,
-                  nextScheduled: nextScheduled,
-                ),
-                const SizedBox(height: 16),
+                if (!hpjUseMobileAppPresentation(context))
+                  _PremiumWholesaleOrdersHero(
+                    currentOrders: allCurrentCount,
+                    loadedOrders: allRequests.length,
+                    receiptActions: receiptActions,
+                    amountDue: amountDue,
+                    nextScheduled: nextScheduled,
+                  ),
+
+                if (!hpjUseMobileAppPresentation(context))
+                  const SizedBox(height: 14),
 
                 if (requestedRequestId.isNotEmpty) ...[
                   Container(
@@ -26953,8 +28772,7 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
                   if (current.isNotEmpty) ...[
                     _PremiumWholesaleOrderSectionHeader(
                       title: 'Current orders',
-                      subtitle:
-                          'Orders still moving through confirmation, fulfilment or delivery.',
+                      subtitle: 'In progress',
                       count: current.length,
                     ),
                     const SizedBox(height: 9),
@@ -26972,8 +28790,7 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
                     if (current.isNotEmpty) const SizedBox(height: 7),
                     _PremiumWholesaleOrderSectionHeader(
                       title: 'Past orders',
-                      subtitle:
-                          'Completed, cancelled or otherwise closed wholesale activity.',
+                      subtitle: 'Completed or closed',
                       count: past.length,
                     ),
                     const SizedBox(height: 9),
@@ -27057,21 +28874,21 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white.withOpacity(.16)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: const Color(0xFFE8C768), size: 17),
+            Icon(icon, color: FarmColors.primary, size: 17),
             const SizedBox(height: 7),
             Text(
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -27082,7 +28899,7 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.7,
                 fontWeight: FontWeight.w800,
               ),
@@ -27132,23 +28949,16 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -27159,14 +28969,14 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
             children: [
               Icon(
                 Icons.local_shipping_outlined,
-                color: Color(0xFFE8C768),
+                color: FarmColors.primary,
                 size: 22,
               ),
               SizedBox(width: 8),
               Text(
                 'BUSINESS ORDERS',
                 style: TextStyle(
-                  color: Color(0xFFCFE0CF),
+                  color: FarmColors.mutedText,
                   fontSize: 10.3,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .9,
@@ -27178,7 +28988,7 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
           const Text(
             'Track every wholesale request',
             style: TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
@@ -27188,7 +28998,7 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
             'Follow confirmation, preparation, packing, delivery or collection, '
             'final invoice totals and receipt confirmation.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
+              color: FarmColors.mutedText,
               fontSize: 10.6,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -27221,7 +29031,7 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.10),
+              color: const Color(0xFFF3F8F1),
               borderRadius: BorderRadius.circular(15),
               border: Border.all(color: Colors.white.withOpacity(.14)),
             ),
@@ -27229,7 +29039,7 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
               children: [
                 const Icon(
                   Icons.schedule_outlined,
-                  color: Color(0xFFE8C768),
+                  color: FarmColors.primary,
                   size: 17,
                 ),
                 const SizedBox(width: 7),
@@ -27239,7 +29049,7 @@ class _PremiumWholesaleOrdersHero extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.83),
+                      color: FarmColors.mutedText,
                       fontSize: 9.5,
                       fontWeight: FontWeight.w800,
                     ),
@@ -27966,40 +29776,27 @@ class _WholesaleSupplierDiscoveryScreenState
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 120),
                 children: [
-                  _PremiumWholesaleSupplierHero(
-                    businessName: widget.account.displayName,
-                    farmCount: allFarms.length,
-                    verifiedCount: verifiedCount,
-                    parishCount: parishCount,
-                  ),
-                  const SizedBox(height: 16),
-
-                  const Text(
-                    'Discover farm partners',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
+                  if (hpjUseMobileAppPresentation(context))
+                    _HpjBusinessMvpPageHeader(
+                      icon: Icons.groups_2_outlined,
+                      title: 'Suppliers',
+                      subtitle:
+                          '${allFarms.length} farms • $verifiedCount verified • $parishCount parishes',
+                    )
+                  else
+                    _PremiumWholesaleSupplierHero(
+                      businessName: widget.account.displayName,
+                      farmCount: allFarms.length,
+                      verifiedCount: verifiedCount,
+                      parishCount: parishCount,
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Search by farm, parish, crop tag or farming practice, then ask HPJ to source with that farm as your preference.',
-                    style: TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 9.7,
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
 
                   TextField(
                     controller: searchController,
                     onChanged: (value) => setState(() => query = value),
                     decoration: InputDecoration(
-                      hintText:
-                          'Search farm, parish, crop tag or farming practice...',
+                      hintText: 'Search farms, parish or crop...',
                       prefixIcon: const Icon(Icons.search_rounded),
                       suffixIcon: query.trim().isEmpty
                           ? null
@@ -28069,7 +29866,7 @@ class _WholesaleSupplierDiscoveryScreenState
                         SizedBox(width: 9),
                         Expanded(
                           child: Text(
-                            'Preferred supplier does not create a direct buyer-to-farmer contract. HPJ manages sourcing, pricing, collection, receiving and fulfilment, and may use another verified farm if needed.',
+                            'HPJ manages sourcing, pricing and fulfilment. Preferred farms guide sourcing but do not guarantee supply.',
                             style: TextStyle(
                               color: FarmColors.deepGreen,
                               fontSize: 9.8,
@@ -28223,7 +30020,7 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white.withOpacity(.16)),
         ),
@@ -28232,14 +30029,14 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -28250,7 +30047,7 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.7,
                 fontWeight: FontWeight.w800,
               ),
@@ -28292,23 +30089,16 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -28322,15 +30112,15 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
                 height: 50,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.13),
+                  color: const Color(0xFFF3F8F1),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.18),
+                    color: const Color(0xFFDDE6DA),
                   ),
                 ),
                 child: const Icon(
                   Icons.agriculture_outlined,
-                  color: Colors.white,
+                  color: FarmColors.ink,
                   size: 26,
                 ),
               ),
@@ -28342,7 +30132,7 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
                     Text(
                       'HPJ SUPPLIER NETWORK',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(.72),
+                        color: FarmColors.mutedText,
                         fontSize: 10.3,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .9,
@@ -28354,7 +30144,7 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: FarmColors.ink,
                         fontSize: 21,
                         fontWeight: FontWeight.w900,
                       ),
@@ -28368,7 +30158,7 @@ class _PremiumWholesaleSupplierHero extends StatelessWidget {
           Text(
             'Discover published Jamaican farm partners and tell HPJ which farm you would prefer us to check first.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.84),
+              color: FarmColors.mutedText,
               fontSize: 10.8,
               height: 1.42,
               fontWeight: FontWeight.w600,
@@ -29522,12 +31312,12 @@ class _PremiumPreferredFarmRequestHero extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(20),
         color: FarmColors.deepGreen,
         boxShadow: [
           BoxShadow(
             color: FarmColors.deepGreen.withOpacity(.13),
-            blurRadius: 22,
+            blurRadius: 10,
             offset: const Offset(0, 9),
           ),
         ],
@@ -29544,7 +31334,7 @@ class _PremiumPreferredFarmRequestHero extends StatelessWidget {
                     alignment: Alignment.center,
                     child: const Icon(
                       Icons.agriculture_outlined,
-                      color: Colors.white,
+                      color: FarmColors.ink,
                       size: 42,
                     ),
                   )
@@ -29559,21 +31349,15 @@ class _PremiumPreferredFarmRequestHero extends StatelessWidget {
                           alignment: Alignment.center,
                           child: const Icon(
                             Icons.agriculture_outlined,
-                            color: Colors.white,
+                            color: FarmColors.ink,
                             size: 42,
                           ),
                         ),
                       ),
-                      const DecoratedBox(
+                      DecoratedBox(
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Color(0xCC123C2C),
-                            ],
-                          ),
+                          color: const Color(0xFFF8FBF6),
+                          border: Border.all(color: const Color(0xFFDDE6DA)),
                         ),
                       ),
                     ],
@@ -29593,7 +31377,7 @@ class _PremiumPreferredFarmRequestHero extends StatelessWidget {
                           const Text(
                             'PREFERRED FARM REQUEST',
                             style: TextStyle(
-                              color: Color(0xFFCFE0CF),
+                              color: FarmColors.mutedText,
                               fontSize: 9.5,
                               fontWeight: FontWeight.w900,
                               letterSpacing: .8,
@@ -29605,7 +31389,7 @@ class _PremiumPreferredFarmRequestHero extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: FarmColors.ink,
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
                             ),
@@ -29616,7 +31400,7 @@ class _PremiumPreferredFarmRequestHero extends StatelessWidget {
                     if (farm.hpjVerified)
                       const Icon(
                         Icons.verified_rounded,
-                        color: Color(0xFFE8C768),
+                        color: FarmColors.primary,
                         size: 22,
                       ),
                   ],
@@ -29625,7 +31409,7 @@ class _PremiumPreferredFarmRequestHero extends StatelessWidget {
                 Text(
                   farm.locationLine,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(.76),
+                    color: FarmColors.mutedText,
                     fontSize: 9.8,
                     fontWeight: FontWeight.w700,
                   ),
@@ -30951,10 +32735,10 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: const Color(0xFFDDE6DA),
           ),
         ),
         child: Column(
@@ -30962,7 +32746,7 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
@@ -30971,7 +32755,7 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -30982,7 +32766,7 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.6,
                 fontWeight: FontWeight.w800,
               ),
@@ -31000,24 +32784,17 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
         : businessName.trim();
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color:
                 FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -31028,14 +32805,14 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
             children: [
               Icon(
                 Icons.account_balance_wallet_outlined,
-                color: Color(0xFFE8C768),
+                color: FarmColors.primary,
                 size: 22,
               ),
               SizedBox(width: 8),
               Text(
                 'INVOICES & PAYMENTS',
                 style: TextStyle(
-                  color: Color(0xFFCFE0CF),
+                  color: FarmColors.mutedText,
                   fontSize: 10.3,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .9,
@@ -31049,7 +32826,7 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
@@ -31060,7 +32837,7 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
                 ? '${formatJmd(outstanding)} currently outstanding across issued wholesale invoices.'
                 : 'Your currently loaded issued invoices have no outstanding balance.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
+              color: FarmColors.mutedText,
               fontSize: 10.6,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -31096,10 +32873,10 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
               vertical: 9,
             ),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.10),
+              color: const Color(0xFFF3F8F1),
               borderRadius: BorderRadius.circular(15),
               border: Border.all(
-                color: Colors.white.withOpacity(.14),
+                color: const Color(0xFFDDE6DA),
               ),
             ),
             child: Row(
@@ -31108,7 +32885,7 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
                   pendingConfirmations > 0
                       ? Icons.hourglass_top_rounded
                       : Icons.receipt_long_outlined,
-                  color: const Color(0xFFE8C768),
+                  color: FarmColors.primary,
                   size: 17,
                 ),
                 const SizedBox(width: 7),
@@ -31120,7 +32897,7 @@ class _PremiumWholesaleInvoicesHero extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.83),
+                      color: FarmColors.mutedText,
                       fontSize: 9.5,
                       fontWeight: FontWeight.w800,
                     ),
@@ -32001,10 +33778,10 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: const Color(0xFFF3F8F1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: const Color(0xFFDDE6DA),
           ),
         ),
         child: Column(
@@ -32012,7 +33789,7 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
@@ -32021,7 +33798,7 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -32032,7 +33809,7 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
+                color: FarmColors.mutedText,
                 fontSize: 8.6,
                 fontWeight: FontWeight.w800,
               ),
@@ -32050,24 +33827,17 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
         : businessName.trim();
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFFF8FBF6),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
         boxShadow: [
           BoxShadow(
             color:
                 FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -32078,14 +33848,14 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
             children: [
               Icon(
                 Icons.description_outlined,
-                color: Color(0xFFE8C768),
+                color: FarmColors.primary,
                 size: 22,
               ),
               SizedBox(width: 8),
               Text(
                 'BUSINESS ACCOUNT STATEMENT',
                 style: TextStyle(
-                  color: Color(0xFFCFE0CF),
+                  color: FarmColors.mutedText,
                   fontSize: 10.2,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .8,
@@ -32099,7 +33869,7 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
@@ -32110,7 +33880,7 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
                 ? '${formatJmd(outstanding)} outstanding across $openInvoiceCount open invoice${openInvoiceCount == 1 ? '' : 's'}.'
                 : 'Your current HPJ wholesale statement has no outstanding balance.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
+              color: FarmColors.mutedText,
               fontSize: 10.6,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -32146,17 +33916,17 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
               vertical: 9,
             ),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.10),
+              color: const Color(0xFFF3F8F1),
               borderRadius: BorderRadius.circular(15),
               border: Border.all(
-                color: Colors.white.withOpacity(.14),
+                color: const Color(0xFFDDE6DA),
               ),
             ),
             child: Row(
               children: [
                 const Icon(
                   Icons.account_balance_outlined,
-                  color: Color(0xFFE8C768),
+                  color: FarmColors.primary,
                   size: 17,
                 ),
                 const SizedBox(width: 7),
@@ -32166,7 +33936,7 @@ class _PremiumWholesaleStatementHero extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.83),
+                      color: FarmColors.mutedText,
                       fontSize: 9.4,
                       fontWeight: FontWeight.w800,
                     ),

@@ -616,7 +616,7 @@ Future<void> saveHpjCompanySettings({
 const String savedCartSource = 'mobile_app';
 
 const String _savedCartProductSelectFields =
-    'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+    'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
 class SavedCustomerProductSnapshot {
   final List<Product> favoriteProducts;
@@ -1090,7 +1090,7 @@ Future<SecureCartQuote> fetchSecureCartQuote(List<CartLine> lines) async {
   final response = await supabase
       .from('products')
       .select(
-          'id, name, price, stock_quantity, is_available, approval_status, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent')
+          'id, name, price, stock_quantity, is_available, approval_status, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent')
       .inFilter('id', ids);
 
   final rowsById = <String, Map<String, dynamic>>{};
@@ -2060,7 +2060,7 @@ Future<List<Product>> fetchProductsForCustomerUi({
 
 Future<List<Product>> _fetchProductsUncached() async {
   final extendedSelect =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
   final compatibleSelect =
       'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at';
 
@@ -2127,7 +2127,7 @@ Future<List<Product>> fetchReadySoonProductsForCustomerUi({
 
 Future<List<Product>> _fetchReadySoonProductsUncached() async {
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   try {
     // Customer-facing Ready Soon list. Only products explicitly marked
@@ -2173,7 +2173,7 @@ Future<List<Product>> _fetchReadySoonProductsUncached() async {
 Future<Product?> fetchProductById(String productId) async {
   if (productId.trim().isEmpty) return null;
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   try {
     final response = await supabase
@@ -2214,7 +2214,7 @@ Future<List<Product>> fetchDealOfTheDayProducts(
 
 Future<List<Product>> _fetchDealOfTheDayProductsUncached() async {
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   try {
     final response = await supabase
@@ -2473,7 +2473,7 @@ Future<List<Product>> _fetchBuyAgainProductsUncached() async {
   }
 
   const selectFields =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
 
   final productsById = <String, Product>{};
 
@@ -3857,7 +3857,7 @@ Future<void> updateDeliveryStatus(String orderId, String deliveryStatus) async {
 
 Future<List<Product>> fetchAllProducts() async {
   final extendedSelect =
-      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
+      'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g';
   final compatibleSelect =
       'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at';
   Future<List<Product>> runQuery(String selectFields) async {
@@ -3907,6 +3907,7 @@ Future<Map<String, dynamic>?> adminUpdateProduct({
   DateTime? discountEndsAt,
   bool? isDiscountActive,
   String? productStatus,
+  String? customerBadge,
   bool? readySoon,
   DateTime? estimatedReadyDate,
   int? expectedStockQuantity,
@@ -3963,6 +3964,31 @@ Future<Map<String, dynamic>?> adminUpdateProduct({
             .update({'is_local': isLocal}).eq('id', productId);
       } catch (localUpdateError) {
         farmDebugLog('Local origin update skipped: $localUpdateError');
+      }
+    }
+
+    if (customerBadge != null) {
+      final cleanBadge = customerBadge.trim().toLowerCase().replaceAll('-', '_');
+      const allowedBadges = <String>{
+        'none',
+        'sample',
+        'coming_soon',
+        'new',
+        'limited',
+        'seasonal',
+      };
+      if (!allowedBadges.contains(cleanBadge)) {
+        throw Exception('Choose a valid customer product badge.');
+      }
+
+      try {
+        await supabase
+            .from('products')
+            .update({'customer_badge': cleanBadge}).eq('id', productId);
+      } catch (badgeError) {
+        throw Exception(
+          'Customer product badges are not installed yet. Run the HPJ Product Badge SQL migration, then try again.',
+        );
       }
     }
 
@@ -4079,6 +4105,7 @@ Future<void> createProduct({
   String? discountStartsAt,
   String? discountEndsAt,
   String productStatus = 'available',
+  String customerBadge = 'none',
   bool readySoon = false,
   String? estimatedReadyDate,
   int? expectedStockQuantity,
@@ -4116,6 +4143,7 @@ Future<void> createProduct({
     'discount_ends_at': discountEndsAt,
     'is_discount_active': isDiscountActive,
     'product_status': readySoon ? 'ready_soon' : productStatus,
+    'customer_badge': customerBadge.trim().toLowerCase().replaceAll('-', '_'),
     'ready_soon': readySoon,
     'estimated_ready_date': estimatedReadyDate,
     'expected_stock_quantity': expectedStockQuantity,
@@ -4184,6 +4212,7 @@ Future<void> updateProductDetails({
   String? discountStartsAt,
   String? discountEndsAt,
   String productStatus = 'available',
+  String customerBadge = 'none',
   bool readySoon = false,
   String? estimatedReadyDate,
   int? expectedStockQuantity,
@@ -4215,6 +4244,7 @@ Future<void> updateProductDetails({
     discountEndsAt: parseProductDate(discountEndsAt),
     isDiscountActive: isDiscountActive,
     productStatus: readySoon ? 'ready_soon' : productStatus,
+    customerBadge: customerBadge,
     readySoon: readySoon,
     estimatedReadyDate: parseProductDate(estimatedReadyDate),
     expectedStockQuantity: expectedStockQuantity,
@@ -4234,7 +4264,7 @@ Future<Map<String, int>> fetchProductStockByIds(List<String> productIds) async {
   final response = await supabase
       .from('products')
       .select(
-          'id, stock_quantity, is_available, approval_status, product_status, ready_soon')
+          'id, stock_quantity, is_available, approval_status, product_status, customer_badge, ready_soon')
       .inFilter('id', ids);
 
   final stock = <String, int>{};
@@ -4536,7 +4566,7 @@ Future<List<FarmerOrderSummary>> fetchFarmerOrderSummaries(
         .select(
             'order_id, product_name, quantity, line_total, farmer_earning_amount, farmer_id')
         .eq('farmer_id', scopedFarmerId)
-        .order('is_read', ascending: true)
+      
         .order('created_at', ascending: false)
         .limit(200);
     return (response as List)
@@ -5254,7 +5284,7 @@ Future<List<Product>> fetchFarmerProducts(String farmerId) async {
     final response = await supabase
         .from('products')
         .select(
-            'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g')
+            'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, is_local, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent, nutrient_strong, nutrient_good, nutrient_contains, nutrition_notes, nutrition_source, nutrition_verified, usda_fdc_id, serving_size_g')
         .eq('farmer_id', farmerId)
         .order('created_at', ascending: false);
     return (response as List)
@@ -5267,7 +5297,7 @@ Future<List<Product>> fetchFarmerProducts(String farmerId) async {
       final response = await supabase
           .from('products')
           .select(
-              'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent')
+              'id, name, description, price, unit, image_url, is_available, stock_quantity, created_at, category, is_organic, harvest_date, farmer_id, farmer_name, farm_name, parish, approval_status, platform_commission_percent, original_price, discount_price, discount_percent, discount_label, discount_starts_at, discount_ends_at, is_discount_active, product_status, customer_badge, ready_soon, estimated_ready_date, expected_stock_quantity, is_deal_of_day, deal_rank, subscribe_save_enabled, subscribe_save_discount_percent')
           .eq('farmer_id', farmerId)
           .order('created_at', ascending: false);
       return (response as List)
@@ -5843,9 +5873,12 @@ Future<String> createSupportTicket({
 }) async {
   final cleanSubject = subject.trim();
   final cleanMessage = message.trim();
+
   if (cleanSubject.isEmpty || cleanMessage.isEmpty) {
     throw Exception('Please enter a subject and message.');
   }
+
+  String ticketId;
 
   try {
     final response = await supabase.rpc(
@@ -5856,33 +5889,68 @@ Future<String> createSupportTicket({
       },
     );
 
-    final ticketId = response?.toString().trim() ?? '';
+    ticketId = response?.toString().trim() ?? '';
+
     if (ticketId.isEmpty) {
-      throw Exception('HPJ Customer Care could not create the conversation.');
+      throw Exception(
+        'HPJ Customer Care could not create the conversation.',
+      );
     }
-
-    // Keep admin notifications generic so private message content never appears
-    // outside the secured conversation itself.
-    await createAdminNotification(
-      title: 'New private Customer Care conversation',
-      message:
-          'A signed-in HPJ user started Customer Care conversation #${ticketId.length <= 6 ? ticketId.toUpperCase() : ticketId.substring(0, 6).toUpperCase()}.',
-      type: 'support',
-      actionType: 'admin_support_chat',
-      actionId: ticketId,
-    );
-
-    return ticketId;
   } catch (error) {
     final lower = error.toString().toLowerCase();
+
     if (lower.contains('hpj_create_support_conversation') ||
         lower.contains('function') && lower.contains('does not exist')) {
       throw Exception(
-        'Customer Care security update is not installed yet. Run the HPJ private chat Supabase migration.',
+        'Customer Care security update is not installed yet. '
+        'Run the HPJ private chat Supabase migration.',
       );
     }
+
     rethrow;
   }
+
+  // The conversation already exists. Notification delivery is best-effort
+  // so a push problem never makes a successful chat look failed.
+  try {
+    final response = await supabase.rpc(
+      'hpj_create_support_message_notifications',
+      params: {
+        'p_ticket_id': ticketId,
+      },
+    );
+
+    final notificationIds = <String>{};
+
+    if (response is List) {
+      for (final value in response) {
+        final id = value?.toString().trim() ?? '';
+        if (id.isNotEmpty) notificationIds.add(id);
+      }
+    } else {
+      final id = response?.toString().trim() ?? '';
+      if (id.isNotEmpty) notificationIds.add(id);
+    }
+
+    for (final notificationId in notificationIds) {
+      try {
+        await dispatchStoredPushNotification(notificationId);
+      } catch (pushError) {
+        farmDebugLog(
+          'New support conversation push skipped safely: $pushError',
+        );
+      }
+    }
+
+    refreshHpjNotificationBadges();
+  } catch (notificationError) {
+    farmDebugLog(
+      'New support conversation notification skipped safely: '
+      '$notificationError',
+    );
+  }
+
+  return ticketId;
 }
 
 const String _supportTicketSelectFields =
@@ -6092,6 +6160,7 @@ Future<void> sendSupportMessage({
   }
 
   var usedModernRpc = false;
+
   try {
     await supabase.rpc(
       'hpj_send_support_message_v3',
@@ -6112,13 +6181,16 @@ Future<void> sendSupportMessage({
     usedModernRpc = true;
   } catch (v3Error) {
     final lower = v3Error.toString().toLowerCase();
-    final missingV3 = lower.contains('hpj_send_support_message_v3') ||
+    final missingV3 =
+        lower.contains('hpj_send_support_message_v3') ||
         lower.contains('function') && lower.contains('does not exist');
+
     if (!missingV3) rethrow;
 
     if (cleanAttachmentPath.isNotEmpty) {
       throw Exception(
-        'Private photo/video chat is not installed yet. Run the final HPJ chat SQL.',
+        'Private photo/video chat is not installed yet. '
+        'Run the final HPJ chat SQL.',
       );
     }
 
@@ -6136,8 +6208,11 @@ Future<void> sendSupportMessage({
       usedModernRpc = true;
     } catch (v2Error) {
       final lowerV2 = v2Error.toString().toLowerCase();
-      final missingV2 = lowerV2.contains('hpj_send_support_message_v2') ||
-          lowerV2.contains('function') && lowerV2.contains('does not exist');
+      final missingV2 =
+          lowerV2.contains('hpj_send_support_message_v2') ||
+          lowerV2.contains('function') &&
+              lowerV2.contains('does not exist');
+
       if (!missingV2) rethrow;
 
       await supabase.rpc(
@@ -6153,88 +6228,72 @@ Future<void> sendSupportMessage({
 
   if (internal) return;
 
+  // The private message is already saved. Notification work is best-effort.
   try {
     final response = await supabase.rpc(
       'hpj_create_support_message_notifications',
-      params: {'p_ticket_id': cleanId},
+      params: {
+        'p_ticket_id': cleanId,
+      },
     );
 
-    final ids = <String>[];
+    final notificationIds = <String>{};
+
     if (response is List) {
       for (final value in response) {
         final id = value?.toString().trim() ?? '';
-        if (id.isNotEmpty) ids.add(id);
+        if (id.isNotEmpty) notificationIds.add(id);
       }
     } else {
       final id = response?.toString().trim() ?? '';
-      if (id.isNotEmpty) ids.add(id);
+      if (id.isNotEmpty) notificationIds.add(id);
     }
 
     var suppressPush = false;
-    final ticket = await fetchSupportTicket(cleanId);
-    final currentUserId = supabase.auth.currentUser?.id ?? '';
-    if (ticket != null &&
-        currentUserId.isNotEmpty &&
-        ticket.userId.trim() != currentUserId &&
-        ticket.isMutedForUser) {
-      suppressPush = true;
+
+    try {
+      final ticket = await fetchSupportTicket(cleanId);
+      final currentUserId =
+          supabase.auth.currentUser?.id.trim() ?? '';
+
+      if (ticket != null &&
+          currentUserId.isNotEmpty &&
+          ticket.userId.trim() != currentUserId &&
+          ticket.isMutedForUser) {
+        suppressPush = true;
+      }
+    } catch (muteCheckError) {
+      farmDebugLog(
+        'Support notification mute check skipped safely: '
+        '$muteCheckError',
+      );
     }
 
     if (!suppressPush) {
-      for (final id in ids.toSet()) {
-        await dispatchStoredPushNotification(id);
+      for (final notificationId in notificationIds) {
+        try {
+          await dispatchStoredPushNotification(notificationId);
+        } catch (pushError) {
+          farmDebugLog(
+            'Support push dispatch skipped safely: $pushError',
+          );
+        }
       }
     }
-    return;
-  } catch (error) {
+
+    refreshHpjNotificationBadges();
+  } catch (notificationError) {
     farmDebugLog(
-      'Secure support notification RPC unavailable; using compatibility path: '
-      '$error',
-    );
-  }
-
-  final ticket = await fetchSupportTicket(cleanId);
-  if (ticket == null) return;
-
-  var senderIsStaff = false;
-  try {
-    final role = await fetchCurrentStaffRole();
-    senderIsStaff = isStaffRoleActive(role);
-    if (!senderIsStaff) {
-      senderIsStaff = await isCurrentUserAdminFromDatabase();
-    }
-  } catch (_) {
-    senderIsStaff = false;
-  }
-
-  if (senderIsStaff) {
-    await createFarmNotification(
-      title: 'HPJ Inbox reply',
-      message: cleanAttachmentPath.isNotEmpty && cleanMessage.isEmpty
-          ? 'You have a new private attachment from The Harvest Place Ja.'
-          : 'You have a new private reply from The Harvest Place Ja.',
-      type: 'support',
-      userId: ticket.userId.trim().isEmpty ? null : ticket.userId.trim(),
-      userEmail: ticket.email.trim().isEmpty ? null : ticket.email.trim(),
-      actionType: 'support_chat',
-      actionId: cleanId,
-    );
-  } else {
-    await createAdminNotification(
-      title: 'New HPJ Inbox message',
-      message: cleanAttachmentPath.isNotEmpty && cleanMessage.isEmpty
-          ? 'Conversation #${ticket.shortId} has a new private attachment.'
-          : 'Conversation #${ticket.shortId} has a new private reply.',
-      type: 'support',
-      actionType: 'admin_support_chat',
-      actionId: cleanId,
+      'Support notification creation skipped safely: '
+      '$notificationError',
     );
   }
 
   if (!usedModernRpc &&
       (cleanReplyTo.isNotEmpty || cleanAttachmentPath.isNotEmpty)) {
     farmDebugLog(
-      'Support message used a legacy RPC; modern reply/media metadata was skipped.',
+      'Support message used a legacy RPC; '
+      'modern reply/media metadata was skipped.',
     );
   }
 }

@@ -3404,7 +3404,6 @@ class VeganIngredientBookScreen extends StatefulWidget {
       _VeganIngredientBookScreenState();
 }
 
-
 class _VeganIngredientBookScreenState extends State<VeganIngredientBookScreen> {
   final searchController = TextEditingController();
   String selectedCategory = 'All';
@@ -3773,57 +3772,138 @@ class ProductAvailabilityChip extends StatelessWidget {
     this.compact = false,
   });
 
+  Widget _chip({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required Color background,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 10,
+        vertical: compact ? 4 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 11 : 13, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: compact ? 9.7 : 11.1,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    String? label;
-    IconData icon = Icons.check_circle_outline;
-    Color color = FarmColors.green;
-    Color background = FarmColors.lightGreen;
+    final chips = <Widget>[];
 
-    if (product.isOutOfStock) {
-      label = 'Out of stock';
-      icon = Icons.block_outlined;
-      color = FarmColors.danger;
-      background = FarmColors.dangerSoft;
-    } else if (product.isLowStock) {
-      label = product.lowStockLabel;
-      icon = Icons.local_fire_department_outlined;
-      color = FarmColors.warning;
-      background = FarmColors.warningSoft;
+    switch (product.customerBadgeKey) {
+      case 'sample':
+        chips.add(
+          _chip(
+            label: 'SAMPLE',
+            icon: Icons.science_outlined,
+            color: FarmColors.green,
+            background: FarmColors.lightGreen,
+          ),
+        );
+        break;
+      case 'coming_soon':
+        chips.add(
+          _chip(
+            label: 'COMING SOON',
+            icon: Icons.schedule_rounded,
+            color: FarmColors.warning,
+            background: FarmColors.warningSoft,
+          ),
+        );
+        break;
+      case 'new':
+        chips.add(
+          _chip(
+            label: 'NEW',
+            icon: Icons.fiber_new_rounded,
+            color: FarmColors.primary,
+            background: FarmColors.primarySoft,
+          ),
+        );
+        break;
+      case 'limited':
+        chips.add(
+          _chip(
+            label: 'LIMITED',
+            icon: Icons.bolt_rounded,
+            color: FarmColors.warning,
+            background: FarmColors.warningSoft,
+          ),
+        );
+        break;
+      case 'seasonal':
+        chips.add(
+          _chip(
+            label: 'SEASONAL',
+            icon: Icons.eco_outlined,
+            color: FarmColors.green,
+            background: FarmColors.lightGreen,
+          ),
+        );
+        break;
     }
 
-    if (label == null || label.trim().isEmpty) return const SizedBox.shrink();
+    if (product.isOutOfStock) {
+      chips.add(
+        _chip(
+          label: 'OUT OF STOCK',
+          icon: Icons.block_outlined,
+          color: FarmColors.danger,
+          background: FarmColors.dangerSoft,
+        ),
+      );
+    } else if (product.isReadySoon &&
+        product.customerBadgeKey != 'coming_soon') {
+      chips.add(
+        _chip(
+          label: 'COMING SOON',
+          icon: Icons.schedule_rounded,
+          color: FarmColors.warning,
+          background: FarmColors.warningSoft,
+        ),
+      );
+    } else if (product.isLowStock) {
+      chips.add(
+        _chip(
+          label: product.lowStockLabel,
+          icon: Icons.local_fire_department_outlined,
+          color: FarmColors.warning,
+          background: FarmColors.warningSoft,
+        ),
+      );
+    }
+
+    if (chips.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: EdgeInsets.only(top: compact ? 3 : 7),
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 7 : 10,
-          vertical: compact ? 4 : 6,
-        ),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: color.withOpacity(0.12)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: compact ? 11 : 13, color: color),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontSize: compact ? 10.0 : 11.3,
-                height: 1,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
+      child: Wrap(
+        spacing: compact ? 4 : 6,
+        runSpacing: compact ? 4 : 6,
+        children: chips,
       ),
     );
   }
@@ -7444,12 +7524,14 @@ class _NotifyMeWhenReadyButtonState extends State<NotifyMeWhenReadyButton> {
   @override
   Widget build(BuildContext context) {
     final label = subscribed
-        ? 'Alert Set'
+        ? (widget.compact ? 'Alert Set' : 'We’ll notify you')
         : widget.compact
             ? 'Notify Me'
-            : widget.product.isReadySoon
-                ? 'Notify Me When Ready'
-                : 'Notify Me When Available';
+            : widget.product.customerBadgeKey == 'coming_soon'
+                ? 'Notify Me at Launch'
+                : widget.product.isReadySoon
+                    ? 'Notify Me When Ready'
+                    : 'Notify Me When Available';
 
     return SizedBox(
       height: widget.compact ? 34 : 52,

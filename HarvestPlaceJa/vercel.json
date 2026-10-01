@@ -3,6 +3,30 @@
   "outputDirectory": "build/web",
   "rewrites": [
     {
+      "source": "/farmer",
+      "destination": "/social/farmer.html"
+    },
+    {
+      "source": "/farmer/",
+      "destination": "/social/farmer.html"
+    },
+    {
+      "source": "/business",
+      "destination": "/social/business.html"
+    },
+    {
+      "source": "/business/",
+      "destination": "/social/business.html"
+    },
+    {
+      "source": "/shop",
+      "destination": "/social/shop.html"
+    },
+    {
+      "source": "/shop/",
+      "destination": "/social/shop.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

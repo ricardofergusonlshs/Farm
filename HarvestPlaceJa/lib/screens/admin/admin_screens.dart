@@ -2,6 +2,7 @@
 // HPJ RC2K HOTFIX 003 VERIFIED REPLACEMENT — 2026-08-27
 // Compile repair base: Hotfix 002 + visible verification marker.
 part of harvest_place_app;
+// HPJ PRODUCT INTEREST & DEMAND DASHBOARD — 2026-10-01
 // HPJ PHASE 15 — CONTROLLED REAL-WORLD PILOT CONTROL CENTER — 2026-09-26
 // HPJ PHASE 14H SURGICAL MERGE — preserves all existing admin features — 2026-09-26
 // HPJ MVP FINAL CONSOLIDATION RC1 — Phases 7–10 combined — 2026-09-24
@@ -25537,6 +25538,14 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         child: AdminAnalyticsTab(refreshKey: refreshKey),
       );
 
+  _AdminTabSpec demandIntel() => const _AdminTabSpec(
+        tab: Tab(
+          icon: Icon(Icons.query_stats_rounded),
+          text: 'Demand Intel',
+        ),
+        child: AdminCustomerDemandIntelligenceScreen(embedded: true),
+      );
+
   _AdminTabSpec growIntel() => _AdminTabSpec(
         tab: const Tab(
           icon: Icon(Icons.insights_rounded),
@@ -25836,6 +25845,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       onboarding(),
       payouts(),
       analytics(),
+       demandIntel(),
       growIntel(),
       impact(),
       reports(),
@@ -25870,6 +25880,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       farmers(),
       onboarding(),
       analytics(),
+       demandIntel(),
       growIntel(),
       impact(),
       reports(),
@@ -26148,6 +26159,7 @@ String _adminDesktopGroupForLabel(String value) {
 
     case 'Payouts':
     case 'Analytics':
+    case 'Demand Intel':
     case 'Grow Intel':
     case 'Impact':
     case 'Reports':
@@ -26174,7 +26186,10 @@ String _adminDesktopGroupForLabel(String value) {
 }
 
 String _adminDesktopVisibleLabel(String value) {
-  return value.trim() == 'Dashboard' ? 'Today' : value.trim();
+  final clean = value.trim();
+  if (clean == 'Dashboard') return 'Today';
+  if (clean == 'Demand Intel') return 'Product Interest & Demand';
+  return clean;
 }
 
 class _AdminDesktopSectionRail extends StatelessWidget {
@@ -27233,6 +27248,7 @@ class _AdminMoreScreen extends StatelessWidget {
       case 'Payouts':
         return 'Operations & Finance';
       case 'Analytics':
+      case 'Demand Intel':
       case 'Grow Intel':
       case 'Impact':
       case 'Reports':
@@ -27263,6 +27279,8 @@ class _AdminMoreScreen extends StatelessWidget {
         return 'Partner Leads';
       case 'Marketing':
         return 'Share & Promote';
+      case 'Demand Intel':
+        return 'Product Interest & Demand';
       case 'Grow Intel':
         return 'Grow Intelligence';
       case 'Hero':
@@ -28620,6 +28638,7 @@ class _AdminInsightsHubScreen extends StatelessWidget {
   const _AdminInsightsHubScreen({
     required this.sections,
   });
+  
 
   MapEntry<int, _AdminTabSpec>? _entry(String label) {
     for (final entry in sections) {
@@ -28633,6 +28652,8 @@ class _AdminInsightsHubScreen extends StatelessWidget {
 
   String _displayLabel(String label) {
     switch (label) {
+      case 'Demand Intel':
+        return 'Product Interest & Demand';
       case 'Grow Intel':
         return 'Grow Intelligence';
       case 'Impact':
@@ -28648,6 +28669,8 @@ class _AdminInsightsHubScreen extends StatelessWidget {
     switch (label) {
       case 'Analytics':
         return 'Check orders, sales, customer activity and marketplace performance before making changes.';
+      case 'Demand Intel':
+        return 'See what customers search for, view, save, add to My Box and actually buy so HPJ can make better sourcing and stock decisions.';
       case 'Grow Intel':
         return 'Combine demand and confirmed supply signals to support planting, sourcing and procurement decisions.';
       case 'Impact':
@@ -28663,6 +28686,8 @@ class _AdminInsightsHubScreen extends StatelessWidget {
     switch (label) {
       case 'Analytics':
         return 'Measure';
+      case 'Demand Intel':
+        return 'Demand';
       case 'Grow Intel':
         return 'Decide';
       case 'Impact':
@@ -28678,6 +28703,8 @@ class _AdminInsightsHubScreen extends StatelessWidget {
     switch (label) {
       case 'Analytics':
         return Icons.analytics_outlined;
+      case 'Demand Intel':
+        return Icons.query_stats_rounded;
       case 'Grow Intel':
         return Icons.insights_rounded;
       case 'Impact':
@@ -28794,6 +28821,7 @@ class _AdminInsightsHubScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     const preferredOrder = <String>[
       'Analytics',
+      'Demand Intel',
       'Grow Intel',
       'Impact',
       'Reports',
@@ -28879,7 +28907,7 @@ class _AdminInsightsHubScreen extends StatelessWidget {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'MVP rule: start with Analytics for performance and Grow Intelligence for supply-demand decisions. Use Impact and Reports when you need evidence, accountability or an export.',
+                      'MVP rule: use Product Interest & Demand to see what customers want, Analytics for marketplace performance, and Grow Intelligence before larger supply or planting decisions. Use Impact and Reports for evidence, accountability or exports.',
                       style: TextStyle(
                         color: FarmColors.ink,
                         fontSize: 13,
@@ -42960,6 +42988,19 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
       selectedProductStatus = 'available';
     }
 
+    String selectedCustomerBadge = product?.customerBadgeKey ?? 'none';
+    const allowedCustomerBadges = <String>[
+      'none',
+      'sample',
+      'coming_soon',
+      'new',
+      'limited',
+      'seasonal',
+    ];
+    if (!allowedCustomerBadges.contains(selectedCustomerBadge)) {
+      selectedCustomerBadge = 'none';
+    }
+
     bool isOrganic = product?.isOrganic ?? false;
     bool isLocal = product?.isLocal ?? true;
     bool isAvailable = product?.isAvailable ?? true;
@@ -43115,6 +43156,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     discountStartsAt: null,
                     discountEndsAt: null,
                     productStatus: status,
+                    customerBadge: selectedCustomerBadge,
                     readySoon: readySoon,
                     estimatedReadyDate:
                         estimatedReadyDate.isEmpty ? null : estimatedReadyDate,
@@ -43154,6 +43196,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     discountStartsAt: null,
                     discountEndsAt: null,
                     productStatus: status,
+                    customerBadge: selectedCustomerBadge,
                     readySoon: readySoon,
                     estimatedReadyDate:
                         estimatedReadyDate.isEmpty ? null : estimatedReadyDate,
@@ -43770,6 +43813,73 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                                 });
                               },
                       ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: selectedCustomerBadge,
+                        decoration: const InputDecoration(
+                          labelText: 'Customer listing badge',
+                          helperText:
+                              'Use Sample Listing for example produce. Sample items stay visible but cannot be added to My Box.',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'none',
+                            child: Text('Live / no badge'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'sample',
+                            child: Text('Sample Listing'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'coming_soon',
+                            child: Text('Coming Soon'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'new',
+                            child: Text('New'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'limited',
+                            child: Text('Limited'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'seasonal',
+                            child: Text('Seasonal'),
+                          ),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() {
+                                  selectedCustomerBadge = value;
+                                  if (value == 'sample') {
+                                    isDealOfDay = false;
+                                  }
+                                });
+                              },
+                      ),
+                      if (selectedCustomerBadge == 'sample') ...[
+                        const SizedBox(height: 9),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(11),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8E9),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFE8C875)),
+                          ),
+                          child: const Text(
+                            'Sample Listing: shown only while no matching live farmer product is available. Customers can view it, but cannot add it to My Box or checkout.',
+                            style: TextStyle(
+                              color: Color(0xFF725417),
+                              fontSize: 11.5,
+                              height: 1.3,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       LocalProductSelector(
                         value: isLocal,

@@ -14034,6 +14034,78 @@ class _WebOrdersTrustPill extends StatelessWidget {
   }
 }
 
+
+class _HpjOrdersMobileHeader extends StatelessWidget {
+  final VoidCallback onBack;
+
+  const _HpjOrdersMobileHeader({
+    required this.onBack,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Material(
+          color: const Color(0xFFF7FAF4),
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onBack,
+            child: Container(
+              width: 46,
+              height: 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0xFFDCE6D9),
+                ),
+              ),
+              child: const Icon(
+                Icons.arrow_back_rounded,
+                color: FarmColors.deepGreen,
+                size: 22,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'My Orders',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 22,
+                  height: 1.05,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -.45,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Tracking, receipts and HPJ updates in one place',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 11.2,
+                  height: 1.25,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class OrdersScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
   final void Function(Product product)? onAddToCart;
@@ -15094,21 +15166,30 @@ class _OrdersScreenState extends State<OrdersScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
           children: [
-            Header(
-              title: desktopWeb ? 'Orders & Tracking' : 'My Orders',
-              subtitle: desktopWeb
-                  ? 'Receipts, fulfilment progress and HPJ support'
-                  : 'Tracking, receipts and HPJ updates in one place',
-              showBackButton: !desktopWeb,
-              backTooltip: 'Back to Home',
-              onBack: () {
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).maybePop();
-                  return;
-                }
-                widget.onBackToHome?.call();
-              },
-            ),
+            if (desktopWeb)
+              Header(
+                title: 'Orders & Tracking',
+                subtitle: 'Receipts, fulfilment progress and HPJ support',
+                showBackButton: false,
+                backTooltip: 'Back to Home',
+                onBack: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).maybePop();
+                    return;
+                  }
+                  widget.onBackToHome?.call();
+                },
+              )
+            else
+              _HpjOrdersMobileHeader(
+                onBack: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).maybePop();
+                    return;
+                  }
+                  widget.onBackToHome?.call();
+                },
+              ),
             const SizedBox(height: 16),
             FutureBuilder<List<FarmOrder>>(
               future: _ordersFuture,
@@ -23380,6 +23461,12 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
 
   bool sending = false;
   bool uploadingMedia = false;
+
+  // MVP controlled messaging:
+  // Keep attachments hidden unless the current messaging policy explicitly
+  // allows them. Starting false prevents a paperclip flash while policy loads.
+  bool attachmentsAvailable = false;
+
   bool searching = false;
   String searchQuery = '';
   String? lastReadMessageId;
@@ -23396,6 +23483,27 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
   void initState() {
     super.initState();
     unawaited(markSupportConversationRead(widget.ticket.id));
+    unawaited(_loadAttachmentAvailability());
+  }
+
+  Future<void> _loadAttachmentAvailability() async {
+    var allowed = false;
+
+    try {
+      // This uses the Admin Messaging Controls policy.
+      // In the recommended Limited MVP configuration, attachments are OFF,
+      // so the paperclip remains completely hidden.
+      await hpjRequireMessagingAttachmentAllowed();
+      allowed = true;
+    } catch (_) {
+      allowed = false;
+    }
+
+    if (!mounted || attachmentsAvailable == allowed) return;
+
+    setState(() {
+      attachmentsAvailable = allowed;
+    });
   }
 
   @override
@@ -24391,7 +24499,9 @@ class _SupportConversationScreenState extends State<SupportConversationScreen> {
                   sending: sending || uploadingMedia,
                   onSend: sendMessage,
                   onChanged: _handleTyping,
-                  onAttach: editingMessage == null ? _showAttachmentMenu : null,
+                  onAttach: editingMessage == null && attachmentsAvailable
+                      ? _showAttachmentMenu
+                      : null,
                   uploadingMedia: uploadingMedia,
                 ),
               ],
@@ -24819,17 +24929,18 @@ class _SupportMessageComposer extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          IconButton(
-            tooltip: 'Attach photo or video',
-            onPressed: sending || onAttach == null ? null : onAttach,
-            icon: uploadingMedia
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.attach_file_rounded),
-          ),
+          if (onAttach != null)
+            IconButton(
+              tooltip: 'Attach photo or video',
+              onPressed: sending ? null : onAttach,
+              icon: uploadingMedia
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.attach_file_rounded),
+            ),
           Expanded(
             child: TextField(
               controller: controller,

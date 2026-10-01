@@ -392,7 +392,7 @@ class Product {
   String get customerBadgeLabel {
     switch (customerBadgeKey) {
       case 'sample':
-        return 'SAMPLE';
+        return 'SAMPLE LISTING';
       case 'coming_soon':
         return 'COMING SOON';
       case 'new':
@@ -428,6 +428,7 @@ class Product {
   }
 
   bool get isOutOfStock =>
+      !isSampleProduct &&
       isCustomerVisible &&
       (isExplicitlyOutOfStock ||
           !isAvailable ||
@@ -436,10 +437,15 @@ class Product {
 
   bool get canAddToCart =>
       isCustomerVisible &&
+      !isSampleProduct &&
       !isExplicitlyOutOfStock &&
       isAvailable &&
       stockQuantity > 0 &&
       hasCustomerPrice;
+
+  String get sampleListingMessage => isSampleProduct
+      ? 'Example listing while HPJ onboards live farmer supply. This item cannot be added to My Box.'
+      : '';
 
   bool get isLowStock =>
       canAddToCart && stockQuantity > 0 && stockQuantity <= 5;

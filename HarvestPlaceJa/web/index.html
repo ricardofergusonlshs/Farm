@@ -1,24 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=Edge">
-
-  <!-- Flutter Web configures the viewport at runtime. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- HPJ website identity -->
   <meta
     name="description"
-    content="The Harvest Place Ja connects customers, farmers and businesses with fresh Jamaican produce."
+    content="Fresh Jamaican produce for customers, farmers and businesses through The Harvest Place Ja."
   >
   <meta name="application-name" content="The Harvest Place Ja">
   <meta name="theme-color" content="#1F6B3B">
@@ -29,38 +21,35 @@
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="The Harvest Place Ja">
-  <meta property="og:title" content="The Harvest Place Ja | Fresh Jamaican Produce">
-  <meta property="og:description" content="Shop fresh Jamaican produce and connect with trusted farmers and businesses through The Harvest Place Ja.">
+  <meta property="og:title" content="The Harvest Place Ja">
+  <meta property="og:description" content="Fresh Jamaican produce • Customers • Farmers • Businesses">
   <meta property="og:url" content="https://harvestplaceja.com/">
-  <meta property="og:image" content="https://harvestplaceja.com/og-hpj.png">
+  <meta property="og:image" content="https://harvestplaceja.com/og/og-hpj-home-mvp-v2.png">
+  <meta property="og:image:secure_url" content="https://harvestplaceja.com/og/og-hpj-home-mvp-v2.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Harvest Place Ja — Fresh Jamaican Produce">
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="The Harvest Place Ja | Fresh Jamaican Produce">
-  <meta name="twitter:description" content="Shop fresh Jamaican produce and connect with trusted farmers and businesses through The Harvest Place Ja.">
-  <meta name="twitter:image" content="https://harvestplaceja.com/og-hpj.png">
+  <meta name="twitter:title" content="The Harvest Place Ja">
+  <meta name="twitter:description" content="Fresh Jamaican produce • Customers • Farmers • Businesses">
+  <meta name="twitter:image" content="https://harvestplaceja.com/og/og-hpj-home-mvp-v2.png">
 
   <!-- Mobile / PWA -->
   <meta name="mobile-web-app-capable" content="yes">
-
-  <!-- iOS / Apple -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="The Harvest Place Ja">
   <link rel="apple-touch-icon" href="hpj-apple-touch-20260927.png">
 
-  <!-- Favicon -->
-
-  <!-- Official HPJ browser tab icon — PNG only for FlutLab compatibility -->
+  <!-- Official HPJ browser tab icon -->
   <link rel="icon" type="image/png" sizes="32x32" href="hpj-tab-icon-32-20260927.png?v=20260927">
   <link rel="icon" type="image/png" sizes="64x64" href="hpj-tab-icon-20260927.png?v=20260927">
 
-  <!-- Browser title -->
   <title>The Harvest Place Ja | Fresh Jamaican Produce</title>
-
-  <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json">
 
-  <!-- Passkeys Web SDK required for FlutLab / Flutter Web preview -->
   <script
     src="https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js"
     type="application/javascript"

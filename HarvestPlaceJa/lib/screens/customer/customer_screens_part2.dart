@@ -1,5 +1,52 @@
 part of harvest_place_app;
 
+// ============================================================================
+// HPJ SAMPLE LISTING BADGE — PART 2 LOCAL FALLBACK
+// Kept private so it cannot collide with a badge class in customer_screens.dart.
+// ============================================================================
+class _HpjSampleListingBadgePart2 extends StatelessWidget {
+  final bool compact;
+
+  const _HpjSampleListingBadgePart2({
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 9,
+        vertical: compact ? 4 : 5,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3D8),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE8C875)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        'SAMPLE LISTING',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: const Color(0xFF725417),
+          fontSize: compact ? 8.2 : 10.2,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.25,
+        ),
+      ),
+    );
+  }
+}
+
+// HPJ SAMPLE LISTING UI POLISH — 2026-10-01
+
 class HpjCommunityScreen extends StatefulWidget {
   final void Function(Product product) onAddProduct;
   final void Function(Product product) onOpenProduct;
@@ -6225,6 +6272,7 @@ Widget _harvestPulseShopBanner(int itemCount) {
   @override
   void initState() {
     super.initState();
+    unawaited(hpjTrackCustomerSessionStart(source: 'customer_shop'));
     selectedCategory = normalizeProductCategory(widget.initialCategory);
     searchController.addListener(() {
       searchDebounce?.cancel();
@@ -7281,11 +7329,25 @@ void dispose() {
   void _addProductToCart(Product product) {
     widget.onAddToCart(product);
     Future.microtask(() => saveCartItemForCurrentUser(product));
+    unawaited(
+      hpjTrackCartChange(
+        product,
+        added: true,
+        source: 'shop',
+      ),
+    );
   }
 
   void _removeProductFromCart(Product product) {
     widget.onRemoveFromCart(product);
     Future.microtask(() => removeCartItemForCurrentUser(product));
+    unawaited(
+      hpjTrackCartChange(
+        product,
+        added: false,
+        source: 'shop',
+      ),
+    );
   }
 
   bool _isFavoriteProduct(Product product) {
@@ -7323,6 +7385,13 @@ void dispose() {
     });
 
     unawaited(setFavoriteForCurrentUser(product, isFavorite: nextValue));
+    unawaited(
+      hpjTrackFavoriteChange(
+        product,
+        isFavorite: nextValue,
+        source: 'shop',
+      ),
+    );
   }
 
   void _rememberViewedProduct(Product product) {
@@ -7330,6 +7399,12 @@ void dispose() {
 
     unawaited(
       saveRecentlyViewedForCurrentUser(product),
+    );
+    unawaited(
+      hpjTrackProductView(
+        product,
+        source: 'shop',
+      ),
     );
   }
 
@@ -8636,7 +8711,21 @@ if (harvestPulseContext == 'fresh' &&
     List<String> availableCategories,
     String activeCategory,
   ) {
-    final resultCount = filteredProducts(activeCategory).length;
+    final filtered = filteredProducts(activeCategory);
+    final resultCount = filtered.length;
+    final realResultCount = filtered
+        .where((product) => !product.isSampleProduct)
+        .length;
+    final sampleResultCount = filtered
+        .where((product) => product.isSampleProduct)
+        .length;
+    final resultSummary = loadingProducts && products.isEmpty
+        ? 'Loading fresh items…'
+        : realResultCount > 0
+            ? '$realResultCount live${sampleResultCount > 0 ? ' • $sampleResultCount sample' : ''}'
+            : sampleResultCount > 0
+                ? '$sampleResultCount sample ${sampleResultCount == 1 ? 'listing' : 'listings'}'
+                : '$resultCount ${resultCount == 1 ? 'item' : 'items'}';
     final activeSortLabel = selectedSort == 'Recommended'
         ? 'Recommended'
         : selectedSort.replaceAll('Price: ', 'Price ');
@@ -8702,6 +8791,13 @@ if (harvestPulseContext == 'fresh' &&
                     cursorColor: FarmColors.green,
                     onSubmitted: (value) {
                       unawaited(HpjSmartLocalStore.rememberRecentSearch(value));
+                      unawaited(
+                        hpjTrackCustomerSearch(
+                          value,
+                          resultCount: realResultCount,
+                          source: 'shop',
+                        ),
+                      );
                       if (mounted) setState(() {});
                     },
                     style: TextStyle(
@@ -8808,9 +8904,7 @@ if (harvestPulseContext == 'fresh' &&
               children: [
                 Expanded(
                   child: Text(
-                    loadingProducts && products.isEmpty
-                        ? 'Loading fresh items…'
-                        : '$resultCount ${resultCount == 1 ? 'item' : 'items'} • $activeSortLabel • $activeShopSummaryLabel',
+                    '$resultSummary • $activeSortLabel • $activeShopSummaryLabel',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -8860,8 +8954,9 @@ if (harvestPulseContext == 'fresh' &&
       (total, product) => total + widget.quantityForProduct(product),
     );
 
-    final availableCount =
-        allProducts.where((product) => product.canAddToCart).length;
+    final availableCount = allProducts
+        .where((product) => !product.isSampleProduct && product.canAddToCart)
+        .length;
 
     final title =
         activeCategory == 'All' ? 'Fresh Jamaican food' : activeCategory;
@@ -8898,7 +8993,9 @@ if (harvestPulseContext == 'fresh' &&
               ),
               const SizedBox(height: 4),
               Text(
-                '$availableCount available now • Fresh • Local • Jamaican',
+                availableCount > 0
+                    ? '$availableCount live ${availableCount == 1 ? 'listing' : 'listings'} • Fresh • Local • Jamaican'
+                    : 'Live farmer supply is being added • Fresh • Local • Jamaican',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -9013,12 +9110,19 @@ if (harvestPulseContext == 'fresh' &&
           )
         : sortedShopProducts(visibleCustomerProducts);
 
+    final liveMarketProducts = availableNowProducts
+        .where((product) => !product.isSampleProduct)
+        .toList(growable: false);
+    final sampleListingProducts = availableNowProducts
+        .where((product) => product.isSampleProduct)
+        .toList(growable: false);
+
     final selectedParishProducts = selectedSort == 'Recommended'
-        ? availableNowProducts.where(_productIsNearArea).toList(growable: false)
+        ? liveMarketProducts.where(_productIsNearArea).toList(growable: false)
         : const <Product>[];
 
     final jamaicaWideFallbackProducts = selectedSort == 'Recommended'
-        ? availableNowProducts
+        ? liveMarketProducts
             .where((product) => !_productIsNearArea(product))
             .toList(growable: false)
         : const <Product>[];
@@ -9218,18 +9322,87 @@ if (harvestPulseContext == 'fresh' &&
       );
     }
 
+    Widget _sampleListingsDivider() {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          2,
+          desktopWeb ? 28 : 18,
+          2,
+          desktopWeb ? 16 : 12,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Divider(
+                color: const Color(0xFFE8C875).withOpacity(.75),
+                height: 1,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              flex: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E9),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFE8C875)),
+                ),
+                child: const Text(
+                  'Sample listings • live farmer supply coming soon',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF725417),
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Divider(
+                color: const Color(0xFFE8C875).withOpacity(.75),
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     Widget productCollection() {
-      if (!showJamaicaFallbackDivider) {
-        return _productGridFor(availableNowProducts);
+      final sections = <Widget>[];
+
+      if (liveMarketProducts.isNotEmpty) {
+        if (showJamaicaFallbackDivider) {
+          sections.add(_productGridFor(selectedParishProducts));
+          sections.add(_jamaicaFallbackDivider());
+          sections.add(_productGridFor(jamaicaWideFallbackProducts));
+        } else {
+          sections.add(_productGridFor(liveMarketProducts));
+        }
+      }
+
+      if (sampleListingProducts.isNotEmpty) {
+        if (sections.isNotEmpty) {
+          sections.add(_sampleListingsDivider());
+        } else {
+          sections.add(_sampleListingsDivider());
+        }
+        sections.add(_productGridFor(sampleListingProducts));
+      }
+
+      if (sections.isEmpty) {
+        return _productGridFor(const <Product>[]);
       }
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _productGridFor(selectedParishProducts),
-          _jamaicaFallbackDivider(),
-          _productGridFor(jamaicaWideFallbackProducts),
-        ],
+        children: sections,
       );
     }
 
@@ -9560,6 +9733,40 @@ class SafeShopProductTile extends StatelessWidget {
     final inStock = product.canAddToCart;
     final muted = product.isOutOfStock;
 
+    Widget productPrice({bool compact = true}) {
+      if (!product.isSampleProduct) {
+        return DiscountPriceText(product: product, compact: compact);
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Example listing',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: const Color(0xFF725417),
+              fontSize: compact ? 13.2 : 17.0,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Live farmer pricing coming soon',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: compact ? 8.8 : 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      );
+    }
+
     Widget favoriteButton({bool overImage = false}) {
       return Tooltip(
         message: isFavorite ? 'Remove from favorites' : 'Save to favorites',
@@ -9761,6 +9968,30 @@ class SafeShopProductTile extends StatelessWidget {
     Widget primaryAction({required bool fullWidth}) {
       if (quantity > 0) return quantityControl(fullWidth: fullWidth);
 
+      if (product.isSampleProduct) {
+        return Container(
+          width: fullWidth ? double.infinity : 136,
+          height: 40,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF8E9),
+            borderRadius: BorderRadius.circular(desktopWeb ? 10 : 999),
+            border: Border.all(color: const Color(0xFFE8C875)),
+          ),
+          child: const Text(
+            'Sample only',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Color(0xFF725417),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        );
+      }
+
       if (!inStock) {
         return SizedBox(
           width: fullWidth ? double.infinity : 136,
@@ -9817,6 +10048,8 @@ class SafeShopProductTile extends StatelessWidget {
               spacing: 5,
               runSpacing: 5,
               children: [
+                if (product.isSampleProduct)
+                  const _HpjSampleListingBadgePart2(compact: true),
                 if (isFreshPick)
                   const _SmallShopChip(
                     label: 'Fresh Pick',
@@ -9889,6 +10122,10 @@ class SafeShopProductTile extends StatelessWidget {
       }
 
       Widget desktopPrice() {
+        if (product.isSampleProduct) {
+          return productPrice(compact: true);
+        }
+
         return Column(
           crossAxisAlignment:
               CrossAxisAlignment.start,
@@ -10072,7 +10309,8 @@ class SafeShopProductTile extends StatelessWidget {
                                   chip: true,
                                 ),
                               ProductUnitChip(product: product, compact: true),
-                              ProductAvailabilityChip(product: product, compact: true),
+                              if (!product.isSampleProduct)
+                                ProductAvailabilityChip(product: product, compact: true),
                               for (final badge in nutrientBadges.take(2))
                                 _SmallShopChip(
                                   label: badge,
@@ -10174,10 +10412,11 @@ class SafeShopProductTile extends StatelessWidget {
                               compact: true,
                               includeIcon: false,
                             ),
-                          ProductAvailabilityChip(
-                            product: product,
-                            compact: true,
-                          ),
+                          if (!product.isSampleProduct)
+                            ProductAvailabilityChip(
+                              product: product,
+                              compact: true,
+                            ),
                           if (!nativeMobile)
                             for (final badge in nutrientBadges.take(1))
                               _SmallShopChip(
@@ -10189,7 +10428,7 @@ class SafeShopProductTile extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      DiscountPriceText(product: product, compact: true),
+                      productPrice(compact: true),
                       const SizedBox(height: 10),
                       primaryAction(fullWidth: true),
                     ],
@@ -10303,7 +10542,8 @@ class SafeShopProductTile extends StatelessWidget {
                         includeIcon: false,
                       ),
                       ProductUnitChip(product: product, compact: true),
-                      ProductAvailabilityChip(product: product, compact: true),
+                      if (!product.isSampleProduct)
+                        ProductAvailabilityChip(product: product, compact: true),
                       for (final badge in nutrientBadges.take(2))
                         _SmallShopChip(
                           label: badge,
@@ -10330,7 +10570,7 @@ class SafeShopProductTile extends StatelessWidget {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              DiscountPriceText(product: product, compact: true),
+                              productPrice(compact: true),
                               const SizedBox(height: 9),
                               primaryAction(fullWidth: true),
                             ],
@@ -10339,7 +10579,7 @@ class SafeShopProductTile extends StatelessWidget {
                         return Row(
                           children: [
                             Expanded(
-                              child: DiscountPriceText(product: product, compact: true),
+                              child: productPrice(compact: true),
                             ),
                             const SizedBox(width: 10),
                             primaryAction(fullWidth: false),
@@ -17413,67 +17653,208 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     return FutureBuilder<String?>(
       future: _fetchCustomerBoxPhotoUrl(),
       builder: (context, snapshot) {
-        final photoUrl = snapshot.data;
+        final photoUrl = snapshot.data?.trim() ?? '';
+        final loading = snapshot.connectionState == ConnectionState.waiting;
+        final hasPhoto = photoUrl.isNotEmpty;
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox.shrink();
-        }
-
-        if (photoUrl == null || photoUrl.isEmpty) {
-          return const SizedBox.shrink();
+        Widget statusPill({
+          required String label,
+          required IconData icon,
+          required Color color,
+          required Color background,
+        }) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: color.withOpacity(0.16)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 13, color: color),
+                const SizedBox(width: 5),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          );
         }
 
         return FarmCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.photo_camera_outlined, color: FarmColors.green),
-                  SizedBox(width: 8),
-                  Text(
-                    'Your Box Photo',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: hasPhoto
+                          ? FarmColors.lightGreen
+                          : FarmColors.warningSoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      hasPhoto
+                          ? Icons.verified_outlined
+                          : Icons.photo_camera_outlined,
+                      color: hasPhoto
+                          ? FarmColors.green
+                          : FarmColors.warning,
+                      size: 20,
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasPhoto ? 'Your Box Photo' : 'Box Photo Proof',
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          hasPhoto
+                              ? 'A packing photo was added to your order by HPJ.'
+                              : loading
+                                  ? 'Checking for your packing photo...'
+                                  : 'Your packing photo will appear here once HPJ prepares your order.',
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 12,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (hasPhoto)
+                    statusPill(
+                      label: 'Added',
+                      icon: Icons.check_circle_outline_rounded,
+                      color: FarmColors.green,
+                      background: FarmColors.lightGreen,
+                    )
+                  else if (loading)
+                    statusPill(
+                      label: 'Checking',
+                      icon: Icons.sync_rounded,
+                      color: FarmColors.mutedText,
+                      background: FarmColors.cardSoft,
+                    )
+                  else
+                    statusPill(
+                      label: 'Waiting',
+                      icon: Icons.schedule_rounded,
+                      color: FarmColors.warning,
+                      background: FarmColors.warningSoft,
+                    ),
                 ],
               ),
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.all(Radius.circular(18)),
-                child: Image.network(
-                  photoUrl,
+              const SizedBox(height: 12),
+              if (hasPhoto) ...[
+                ClipRRect(
+                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  child: Image.network(
+                    photoUrl,
+                    width: double.infinity,
+                    height: 220,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: FarmColors.cardSoft,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.broken_image_outlined,
+                              color: FarmColors.mutedText,
+                            ),
+                            SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                'The box photo could not be displayed. Use the refresh button at the top of Order Details to try again.',
+                                style: TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 12,
+                                  height: 1.3,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Photo proof of your packed fresh order.',
+                  style: TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ] else ...[
+                Container(
                   width: double.infinity,
-                  height: 220,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: FarmColors.cardSoft,
-                        borderRadius: BorderRadius.circular(18),
+                  padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+                  decoration: BoxDecoration(
+                    color: FarmColors.cardSoft,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: FarmColors.line.withOpacity(0.9),
+                    ),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.inventory_2_outlined,
+                        color: FarmColors.green,
+                        size: 19,
                       ),
-                      child: const Text(
-                        'Box photo could not be loaded.',
-                        style: TextStyle(color: FarmColors.muted),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'No action is needed from you. The HPJ packing team will add the proof photo when your order is packed.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 12,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Photo proof of your packed fresh box.',
-                style: TextStyle(
-                  color: FarmColors.muted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              ],
             ],
           ),
         );
@@ -27646,6 +28027,8 @@ class ProductDetailScreen extends StatelessWidget {
               spacing: 7,
               runSpacing: 7,
               children: [
+                if (product.isSampleProduct)
+                  const _HpjSampleListingBadgePart2(),
                 if (product.hasActiveDiscount && !product.isOutOfStock)
                   DiscountBadge(product: product, compact: true),
                 if (product.isOrganic)
@@ -27695,7 +28078,8 @@ class ProductDetailScreen extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              ProductAvailabilityChip(product: product, compact: true),
+              if (!product.isSampleProduct)
+                ProductAvailabilityChip(product: product, compact: true),
             ],
           ),
           const SizedBox(height: 13),
@@ -27750,6 +28134,40 @@ class ProductDetailScreen extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (product.isSampleProduct) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E9),
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: const Color(0xFFE8C875)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    color: Color(0xFF8A6411),
+                    size: 19,
+                  ),
+                  SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      'Sample Listing — this is an example product while HPJ onboards live Jamaican farmer supply. It cannot be added to My Box. Live farmer products are shown first when available.',
+                      style: TextStyle(
+                        color: Color(0xFF725417),
+                        fontSize: 12.2,
+                        height: 1.35,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Wrap(
             spacing: 8,
@@ -27802,7 +28220,31 @@ class ProductDetailScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(19),
               border: Border.all(color: FarmColors.line.withOpacity(0.65)),
             ),
-            child: DiscountPriceText(product: product),
+            child: product.isSampleProduct
+                ? const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Example listing',
+                        style: TextStyle(
+                          color: Color(0xFF725417),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Live farmer pricing will appear when this produce is supplied by an active HPJ farmer.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 11.5,
+                          height: 1.3,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  )
+                : DiscountPriceText(product: product),
           ),
         ],
       ),
@@ -28117,8 +28559,27 @@ class ProductDetailScreen extends StatelessWidget {
           ),
           child: Container(
             constraints: const BoxConstraints(maxWidth: 1100),
-            child: quantity <= 0
-                ? (inStock
+            child: product.isSampleProduct
+                ? Container(
+                    height: 54,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E9),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFE8C875)),
+                    ),
+                    child: const Text(
+                      'Sample only • Live farmer supply coming soon',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF725417),
+                        fontSize: 12.2,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  )
+                : quantity <= 0
+                    ? (inStock
                     ? LayoutBuilder(
                         builder: (context, constraints) {
                           final stackAction = constraints.maxWidth < 360;

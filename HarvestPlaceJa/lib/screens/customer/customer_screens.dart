@@ -8,6 +8,53 @@
 // Includes Phase 93 Harvest Drop + Phase 94 Farm-to-Box Passport
 // HPJ PHASE 92 — HARVEST JOURNEY + RESCUE HARVEST
 part of harvest_place_app;
+
+
+// ============================================================================
+// HPJ SAMPLE LISTING TRANSITION
+// Reuses the existing products.customer_badge = 'sample' field.
+// ============================================================================
+class HpjSampleListingBadge extends StatelessWidget {
+  final bool compact;
+
+  const HpjSampleListingBadge({
+    super.key,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 9,
+        vertical: compact ? 4 : 5,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3D8),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE8C875)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        'SAMPLE LISTING',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: const Color(0xFF725417),
+          fontSize: compact ? 8.2 : 10.2,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.25,
+        ),
+      ),
+    );
+  }
+}
 // HPJ SUPER MVP MERGE — 2026-09-16
 // First source is canonical for Home appearance, navigation and existing features.
 // Second source contributes larger two-across no-price Home cards, quick-add and
@@ -22532,8 +22579,6 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
   bool? _desktopCarouselMode;
 
   int _currentPage = 0;
-  int? _navTargetPage;
-  int _navAnimationToken = 0;
 
   static const int _cardCount = 4;
 
@@ -22609,39 +22654,20 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
   void _goToPage(int index) {
     if (index < 0 || index >= _cardCount) return;
 
-    // Keep the tapped pill selected for the entire carousel animation.
-    // PageView can report intermediate pages while animateToPage is moving
-    // (for example 0 -> 1 -> 2 -> 3). If the pill reads _currentPage directly
-    // during that movement it briefly flashes back through previous colours.
-    final token = ++_navAnimationToken;
-
-    if (mounted) {
-      setState(() => _navTargetPage = index);
+    // Update the selected quick-navigation pill immediately so every item,
+    // including Post a Meal, behaves consistently when tapped.
+    if (_currentPage != index && mounted) {
+      setState(() => _currentPage = index);
     }
 
     final controller = _pageController;
-    if (controller == null || !controller.hasClients) {
-      if (!mounted || token != _navAnimationToken) return;
-      setState(() {
-        _currentPage = index;
-        _navTargetPage = null;
-      });
-      return;
-    }
+    if (controller == null || !controller.hasClients) return;
 
-    controller
-        .animateToPage(
-          index,
-          duration: const Duration(milliseconds: 320),
-          curve: Curves.easeInOutCubic,
-        )
-        .then((_) {
-      if (!mounted || token != _navAnimationToken) return;
-      setState(() {
-        _currentPage = index;
-        _navTargetPage = null;
-      });
-    });
+    controller.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   String? _productImage(Product? product) {
@@ -22730,8 +22756,7 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
         separatorBuilder: (_, __) => const SizedBox(width: 7),
         itemBuilder: (context, index) {
           final item = _navItems[index];
-          final selectedIndex = _navTargetPage ?? _currentPage;
-          final selected = index == selectedIndex;
+          final selected = index == _currentPage;
           final accent = item.accent;
 
           return Semantics(
@@ -22745,8 +22770,8 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => _goToPage(index),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeInOutCubic,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
@@ -22882,7 +22907,7 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
             physics: const BouncingScrollPhysics(),
             itemCount: _cardCount,
             onPageChanged: (index) {
-              if (!mounted || _currentPage == index) return;
+              if (!mounted) return;
 
               setState(() {
                 _currentPage = index;
@@ -25192,6 +25217,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                       ),
                                     ),
+                                    if (product.isSampleProduct)
+                                      const Positioned(
+                                        left: 6,
+                                        top: 6,
+                                        child: HpjSampleListingBadge(compact: true),
+                                      ),
                                     // Local sits above the stock chip, matching
                                     // the original screenshot without overlap.
                                     Positioned(

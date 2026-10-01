@@ -22532,6 +22532,8 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
   bool? _desktopCarouselMode;
 
   int _currentPage = 0;
+  int? _navTargetPage;
+  int _navAnimationToken = 0;
 
   static const int _cardCount = 4;
 
@@ -22554,9 +22556,9 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
           icon: Icons.local_offer_outlined,
         ),
         const _HPJHomeNavItem(
-          label: 'Pulse',
-          accent: Color(0xFF2E6B45),
-          icon: Icons.monitor_heart_outlined,
+          label: 'Post a Meal',
+          accent: Color(0xFF1F6B3B),
+          icon: Icons.add_a_photo_outlined,
         ),
       ];
 
@@ -22605,14 +22607,41 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
   }
 
   void _goToPage(int index) {
-    final controller = _pageController;
-    if (controller == null || !controller.hasClients) return;
+    if (index < 0 || index >= _cardCount) return;
 
-    controller.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 380),
-      curve: Curves.easeOutCubic,
-    );
+    // Keep the tapped pill selected for the entire carousel animation.
+    // PageView can report intermediate pages while animateToPage is moving
+    // (for example 0 -> 1 -> 2 -> 3). If the pill reads _currentPage directly
+    // during that movement it briefly flashes back through previous colours.
+    final token = ++_navAnimationToken;
+
+    if (mounted) {
+      setState(() => _navTargetPage = index);
+    }
+
+    final controller = _pageController;
+    if (controller == null || !controller.hasClients) {
+      if (!mounted || token != _navAnimationToken) return;
+      setState(() {
+        _currentPage = index;
+        _navTargetPage = null;
+      });
+      return;
+    }
+
+    controller
+        .animateToPage(
+          index,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeInOutCubic,
+        )
+        .then((_) {
+      if (!mounted || token != _navAnimationToken) return;
+      setState(() {
+        _currentPage = index;
+        _navTargetPage = null;
+      });
+    });
   }
 
   String? _productImage(Product? product) {
@@ -22680,6 +22709,16 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
     );
   }
 
+  void _openMealComposerFromHome() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const HpjMealPulseScreen(
+          openComposerOnStart: true,
+        ),
+      ),
+    );
+  }
+
   Widget _buildQuickNavigation() {
     return SizedBox(
       height: 40,
@@ -22691,31 +22730,37 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
         separatorBuilder: (_, __) => const SizedBox(width: 7),
         itemBuilder: (context, index) {
           final item = _navItems[index];
-          final selected = index == _currentPage;
+          final selectedIndex = _navTargetPage ?? _currentPage;
+          final selected = index == selectedIndex;
           final accent = item.accent;
 
           return Semantics(
             button: true,
             selected: selected,
             label: item.label,
+            hint: 'Show ${item.label}',
             child: Material(
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => _goToPage(index),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOutCubic,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: selected ? accent : const Color(0xFFFFFEFB),
+                    color: selected
+                        ? accent
+                        : const Color(0xFFFFFEFB),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: selected ? accent : const Color(0xFFE5E0D7),
+                      color: selected
+                          ? accent
+                          : const Color(0xFFE5E0D7),
                     ),
                   ),
                   child: Text(
@@ -22778,23 +22823,8 @@ class _HPJHomeSwipeCarouselState extends State<HPJHomeSwipeCarousel> {
     final String? dealsImage =
         defaultSlides.length > 2 ? defaultSlides[2].imageUrl : mealsImage;
 
-    final String? farmImage =
-        defaultSlides.length > 2 ? defaultSlides[2].imageUrl : freshBoxImage;
-
     final dealProduct = _findDealProduct();
-    final farmProduct = _findFarmProduct();
     final generalProduct = _findGeneralImageProduct();
-
-    final freshPick = farmProduct;
-
-final freshPickName =
-    freshPick?.name.trim() ?? '';
-
-final hasFreshPick =
-    freshPick != null &&
-    freshPick.canAddToCart &&
-    freshPick.isLocal &&
-    isProductHarvestedThisWeek(freshPick);
 
     final meal = _mealForWeekday(
       DateTime.now().weekday,
@@ -22809,25 +22839,7 @@ final hasFreshPick =
         )
         .length;
 
-    final localCount = widget.products
-        .where(
-          (product) => product.canAddToCart && product.isLocal,
-        )
-        .length;
-
-    final harvestedCount = widget.products
-        .where(
-          (product) =>
-              product.canAddToCart &&
-              product.isLocal &&
-              isProductHarvestedThisWeek(product),
-        )
-        .length;
-
-    final farmName =
-        (farmProduct?.farmName ?? farmProduct?.farmerName ?? '').trim();
-
-     final screenWidth = MediaQuery.sizeOf(context).width;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final desktopWeb = kIsWeb && screenWidth >= 1100;
 
     final double heroHeight;
@@ -22870,7 +22882,7 @@ final hasFreshPick =
             physics: const BouncingScrollPhysics(),
             itemCount: _cardCount,
             onPageChanged: (index) {
-              if (!mounted) return;
+              if (!mounted || _currentPage == index) return;
 
               setState(() {
                 _currentPage = index;
@@ -22960,99 +22972,25 @@ final hasFreshPick =
               }
 
               // =================================================
-              // 4 — LOCAL FARMS
+              // 4 — POST A MEAL
               // =================================================
-else {
-  final lowStockCount = widget.products
-      .where(
-        (product) =>
-            product.canAddToCart &&
-            product.isLowStock,
-      )
-      .length;
-
-  final dealPulseCount = widget.products
-      .where(
-        (product) =>
-            product.canAddToCart &&
-            product.hasActiveDiscount,
-      )
-      .length;
-
-  String pulseTitle;
-  String pulseSubtitle;
-  String pulseRequest;
-
- if (harvestedCount > 0) {
-  pulseTitle =
-      '$harvestedCount fresh ${harvestedCount == 1 ? 'harvest' : 'harvests'} available now.';
-
-  pulseSubtitle = hasFreshPick &&
-          freshPickName.isNotEmpty
-      ? '$freshPickName is today’s Fresh Pick.'
-      : 'Fresh Jamaican produce is moving through HPJ right now.';
-
-  pulseRequest = 'fresh';
-}else if (lowStockCount > 0) {
-    pulseTitle =
-        '$lowStockCount ${lowStockCount == 1 ? 'item is' : 'items are'} moving fast.';
-
-    pulseSubtitle =
-        'Some fresh picks are moving into limited supply.';
-
-    pulseRequest = 'low_stock';
-  } else if (dealPulseCount > 0) {
-    pulseTitle =
-        '$dealPulseCount fresh ${dealPulseCount == 1 ? 'price opportunity' : 'price opportunities'} today.';
-
-    pulseSubtitle =
-        'Good value is showing across selected fresh products.';
-
-    pulseRequest = 'deals';
-  } else {
-    pulseTitle =
-        'Fresh activity across the marketplace.';
-
-    pulseSubtitle =
-        'See what is fresh, local and moving through HPJ today.';
-
-    pulseRequest = 'all';
-  }
-
-  card = _HPJSwipePromoCard(
-    style: _HPJHeroStyle.farm,
-    eyebrow: 'HARVEST PULSE • LIVE',
-    title: pulseTitle,
-    subtitle: pulseSubtitle,
-    badges: [
-  harvestedCount > 0
-      ? '$harvestedCount fresh'
-      : '$localCount local',
-
-  if (hasFreshPick &&
-      freshPickName.isNotEmpty)
-    'Pick • $freshPickName'
-  else if (widget.showFarmStories && farmName.isNotEmpty)
-    farmName
-  else
-    'Jamaican grown',
-],
-    ctaLabel: 'Explore Harvest',
-    imageUrl: farmImage ??
-        (widget.showFarmStories ? _productImage(farmProduct) : null) ??
-        _productImage(generalProduct),
-    fallbackIcon: Icons.monitor_heart_outlined,
-    onTap: () {
-  harvestPulseFreshPickId.value =
-      hasFreshPick ? freshPick?.id : null;
-
-  harvestPulseShopRequest.value =
-      pulseRequest;
-
-  widget.onShopTap();
-},
-  );
-}
+              else {
+                card = _HPJSwipePromoCard(
+                  style: _HPJHeroStyle.farm,
+                  eyebrow: 'COMMUNITY • SHARE YOUR PLATE',
+                  title: 'What did you eat today?',
+                  subtitle:
+                      'Post a meal, inspire the HPJ community and help show what Jamaica is eating.',
+                  badges: const [
+                    'Photo or video',
+                    'Community',
+                  ],
+                  ctaLabel: 'Post a Meal',
+                  imageUrl: mealsImage ?? _productImage(generalProduct),
+                  fallbackIcon: Icons.add_a_photo_outlined,
+                  onTap: _openMealComposerFromHome,
+                );
+              }
               return Padding(
                 padding: EdgeInsets.only(
                   right: desktopWeb ? 0 : 12,

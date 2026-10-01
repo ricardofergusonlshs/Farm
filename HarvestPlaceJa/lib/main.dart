@@ -34,6 +34,7 @@ part 'theme/farm_colors.dart';
 part 'theme/hpj_typography.dart';
 part 'models/models.dart';
 part 'services/services.dart';
+part 'services/customer_activity.dart';
 part 'services/push_notification_service.dart';
 part 'screens/customer/customer_screens.dart';
 part 'screens/customer/customer_screens_part2.dart';

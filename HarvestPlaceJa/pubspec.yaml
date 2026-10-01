@@ -43,15 +43,11 @@ dependencies:
 
   # =====================================================
   # WHATSAPP IMAGE SHARING / HPJ ADVERTISING
-  #
-  # Pinned for the HPJ Flutter 3.32 configuration.
   # =====================================================
   share_plus: 11.1.0
 
   # =====================================================
   # FRESH REELS
-  #
-  # Pinned for FlutLab / Flutter 3.32 compatibility.
   # =====================================================
   video_player: 2.9.5
 
@@ -75,9 +71,6 @@ dependencies:
 
 # =====================================================
 # FLUTLAB / FLUTTER 3.32 COMPATIBILITY
-#
-# Keep this override while FlutLab requires it.
-# Remove only after testing a newer Flutter environment.
 # =====================================================
 dependency_overrides:
   firebase_core_web: 3.10.0
@@ -105,15 +98,23 @@ flutter:
 
 
 # =====================================================
-# HPJ ANDROID LAUNCHER ICON
+# HPJ ANDROID LAUNCHER ICON — MVP
+#
+# Uses the simplified HPJ mark instead of the full logo
+# so Android does not crop the business name/tagline.
 # =====================================================
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
 
-  image_path: "lib/assets/images/logo.png"
+  # Standard / legacy Android icon
+  image_path: "lib/assets/images/hpj_app_icon_mvp.png"
 
-  adaptive_icon_background: "#F4F9F2"
-  adaptive_icon_foreground: "lib/assets/images/logo.png"
+  # Android adaptive icon
+  adaptive_icon_background: "#F7FAF2"
+  adaptive_icon_foreground: "lib/assets/images/hpj_app_icon_foreground_mvp.png"
+
+  # Adds safe breathing room around HPJ inside Android masks
+  adaptive_icon_foreground_inset: 24
 
   min_sdk_android: 21

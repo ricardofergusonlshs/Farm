@@ -1690,7 +1690,40 @@ IconData productOriginIcon(Product product) {
   return product.isLocal ? Icons.eco_outlined : Icons.public_outlined;
 }
 
+String _hpjCustomerProductMatchKey(Product product) {
+  return product.name
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+List<Product> _applyCustomerSampleListingTransition(
+  Iterable<Product> products,
+) {
+  final rows = products.toList(growable: false);
+  final liveNames = <String>{
+    for (final product in rows)
+      if (!product.isSampleProduct && product.isCustomerVisible)
+        _hpjCustomerProductMatchKey(product),
+  }..remove('');
+
+  final visible = rows.where((product) {
+    if (!product.isSampleProduct) return true;
+    final key = _hpjCustomerProductMatchKey(product);
+    return key.isEmpty || !liveNames.contains(key);
+  }).toList();
+
+  visible.sort(compareCustomerProductAvailabilityThenName);
+  return visible;
+}
+
 int compareCustomerProductAvailabilityThenName(Product a, Product b) {
+  if (a.isSampleProduct != b.isSampleProduct) {
+    return a.isSampleProduct ? 1 : -1;
+  }
+
   if (a.canAddToCart != b.canAddToCart) {
     return a.canAddToCart ? -1 : 1;
   }
@@ -1994,9 +2027,9 @@ Future<List<Product>> fetchProducts({bool forceRefresh = false}) async {
 List<Product> _customerPricedProducts(
   Iterable<Product> products,
 ) {
-  return products
-      .where((product) => product.hasCustomerPrice)
-      .toList(growable: false);
+  return _applyCustomerSampleListingTransition(
+    products.where((product) => product.hasCustomerPrice),
+  );
 }
 
 Future<List<Product>> fetchProductsForCustomerUi({
@@ -4279,8 +4312,11 @@ Future<Map<String, int>> fetchProductStockByIds(List<String> productIds) async {
     final isReadySoon = data['ready_soon'] == true || status == 'ready_soon';
     final isHidden = status == 'hidden';
     final isApproved = approvalStatus == 'approved';
+    final customerBadge =
+        (data['customer_badge'] ?? 'none').toString().trim().toLowerCase();
+    final isSample = customerBadge == 'sample';
     final canCustomerBuy =
-        isApproved && isAvailable && !isHidden && !isReadySoon;
+        isApproved && isAvailable && !isHidden && !isReadySoon && !isSample;
 
     stock[(data['id'] ?? '').toString()] =
         canCustomerBuy ? Product._toInt(data['stock_quantity']) : 0;
@@ -5873,12 +5909,9 @@ Future<String> createSupportTicket({
 }) async {
   final cleanSubject = subject.trim();
   final cleanMessage = message.trim();
-
   if (cleanSubject.isEmpty || cleanMessage.isEmpty) {
     throw Exception('Please enter a subject and message.');
   }
-
-  String ticketId;
 
   try {
     final response = await supabase.rpc(
@@ -5889,68 +5922,33 @@ Future<String> createSupportTicket({
       },
     );
 
-    ticketId = response?.toString().trim() ?? '';
-
+    final ticketId = response?.toString().trim() ?? '';
     if (ticketId.isEmpty) {
-      throw Exception(
-        'HPJ Customer Care could not create the conversation.',
-      );
+      throw Exception('HPJ Customer Care could not create the conversation.');
     }
+
+    // Keep admin notifications generic so private message content never appears
+    // outside the secured conversation itself.
+    await createAdminNotification(
+      title: 'New private Customer Care conversation',
+      message:
+          'A signed-in HPJ user started Customer Care conversation #${ticketId.length <= 6 ? ticketId.toUpperCase() : ticketId.substring(0, 6).toUpperCase()}.',
+      type: 'support',
+      actionType: 'admin_support_chat',
+      actionId: ticketId,
+    );
+
+    return ticketId;
   } catch (error) {
     final lower = error.toString().toLowerCase();
-
     if (lower.contains('hpj_create_support_conversation') ||
         lower.contains('function') && lower.contains('does not exist')) {
       throw Exception(
-        'Customer Care security update is not installed yet. '
-        'Run the HPJ private chat Supabase migration.',
+        'Customer Care security update is not installed yet. Run the HPJ private chat Supabase migration.',
       );
     }
-
     rethrow;
   }
-
-  // The conversation already exists. Notification delivery is best-effort
-  // so a push problem never makes a successful chat look failed.
-  try {
-    final response = await supabase.rpc(
-      'hpj_create_support_message_notifications',
-      params: {
-        'p_ticket_id': ticketId,
-      },
-    );
-
-    final notificationIds = <String>{};
-
-    if (response is List) {
-      for (final value in response) {
-        final id = value?.toString().trim() ?? '';
-        if (id.isNotEmpty) notificationIds.add(id);
-      }
-    } else {
-      final id = response?.toString().trim() ?? '';
-      if (id.isNotEmpty) notificationIds.add(id);
-    }
-
-    for (final notificationId in notificationIds) {
-      try {
-        await dispatchStoredPushNotification(notificationId);
-      } catch (pushError) {
-        farmDebugLog(
-          'New support conversation push skipped safely: $pushError',
-        );
-      }
-    }
-
-    refreshHpjNotificationBadges();
-  } catch (notificationError) {
-    farmDebugLog(
-      'New support conversation notification skipped safely: '
-      '$notificationError',
-    );
-  }
-
-  return ticketId;
 }
 
 const String _supportTicketSelectFields =
@@ -6160,7 +6158,6 @@ Future<void> sendSupportMessage({
   }
 
   var usedModernRpc = false;
-
   try {
     await supabase.rpc(
       'hpj_send_support_message_v3',
@@ -6181,16 +6178,13 @@ Future<void> sendSupportMessage({
     usedModernRpc = true;
   } catch (v3Error) {
     final lower = v3Error.toString().toLowerCase();
-    final missingV3 =
-        lower.contains('hpj_send_support_message_v3') ||
+    final missingV3 = lower.contains('hpj_send_support_message_v3') ||
         lower.contains('function') && lower.contains('does not exist');
-
     if (!missingV3) rethrow;
 
     if (cleanAttachmentPath.isNotEmpty) {
       throw Exception(
-        'Private photo/video chat is not installed yet. '
-        'Run the final HPJ chat SQL.',
+        'Private photo/video chat is not installed yet. Run the final HPJ chat SQL.',
       );
     }
 
@@ -6208,11 +6202,8 @@ Future<void> sendSupportMessage({
       usedModernRpc = true;
     } catch (v2Error) {
       final lowerV2 = v2Error.toString().toLowerCase();
-      final missingV2 =
-          lowerV2.contains('hpj_send_support_message_v2') ||
-          lowerV2.contains('function') &&
-              lowerV2.contains('does not exist');
-
+      final missingV2 = lowerV2.contains('hpj_send_support_message_v2') ||
+          lowerV2.contains('function') && lowerV2.contains('does not exist');
       if (!missingV2) rethrow;
 
       await supabase.rpc(
@@ -6228,72 +6219,88 @@ Future<void> sendSupportMessage({
 
   if (internal) return;
 
-  // The private message is already saved. Notification work is best-effort.
   try {
     final response = await supabase.rpc(
       'hpj_create_support_message_notifications',
-      params: {
-        'p_ticket_id': cleanId,
-      },
+      params: {'p_ticket_id': cleanId},
     );
 
-    final notificationIds = <String>{};
-
+    final ids = <String>[];
     if (response is List) {
       for (final value in response) {
         final id = value?.toString().trim() ?? '';
-        if (id.isNotEmpty) notificationIds.add(id);
+        if (id.isNotEmpty) ids.add(id);
       }
     } else {
       final id = response?.toString().trim() ?? '';
-      if (id.isNotEmpty) notificationIds.add(id);
+      if (id.isNotEmpty) ids.add(id);
     }
 
     var suppressPush = false;
-
-    try {
-      final ticket = await fetchSupportTicket(cleanId);
-      final currentUserId =
-          supabase.auth.currentUser?.id.trim() ?? '';
-
-      if (ticket != null &&
-          currentUserId.isNotEmpty &&
-          ticket.userId.trim() != currentUserId &&
-          ticket.isMutedForUser) {
-        suppressPush = true;
-      }
-    } catch (muteCheckError) {
-      farmDebugLog(
-        'Support notification mute check skipped safely: '
-        '$muteCheckError',
-      );
+    final ticket = await fetchSupportTicket(cleanId);
+    final currentUserId = supabase.auth.currentUser?.id ?? '';
+    if (ticket != null &&
+        currentUserId.isNotEmpty &&
+        ticket.userId.trim() != currentUserId &&
+        ticket.isMutedForUser) {
+      suppressPush = true;
     }
 
     if (!suppressPush) {
-      for (final notificationId in notificationIds) {
-        try {
-          await dispatchStoredPushNotification(notificationId);
-        } catch (pushError) {
-          farmDebugLog(
-            'Support push dispatch skipped safely: $pushError',
-          );
-        }
+      for (final id in ids.toSet()) {
+        await dispatchStoredPushNotification(id);
       }
     }
-
-    refreshHpjNotificationBadges();
-  } catch (notificationError) {
+    return;
+  } catch (error) {
     farmDebugLog(
-      'Support notification creation skipped safely: '
-      '$notificationError',
+      'Secure support notification RPC unavailable; using compatibility path: '
+      '$error',
+    );
+  }
+
+  final ticket = await fetchSupportTicket(cleanId);
+  if (ticket == null) return;
+
+  var senderIsStaff = false;
+  try {
+    final role = await fetchCurrentStaffRole();
+    senderIsStaff = isStaffRoleActive(role);
+    if (!senderIsStaff) {
+      senderIsStaff = await isCurrentUserAdminFromDatabase();
+    }
+  } catch (_) {
+    senderIsStaff = false;
+  }
+
+  if (senderIsStaff) {
+    await createFarmNotification(
+      title: 'HPJ Inbox reply',
+      message: cleanAttachmentPath.isNotEmpty && cleanMessage.isEmpty
+          ? 'You have a new private attachment from The Harvest Place Ja.'
+          : 'You have a new private reply from The Harvest Place Ja.',
+      type: 'support',
+      userId: ticket.userId.trim().isEmpty ? null : ticket.userId.trim(),
+      userEmail: ticket.email.trim().isEmpty ? null : ticket.email.trim(),
+      actionType: 'support_chat',
+      actionId: cleanId,
+    );
+  } else {
+    await createAdminNotification(
+      title: 'New HPJ Inbox message',
+      message: cleanAttachmentPath.isNotEmpty && cleanMessage.isEmpty
+          ? 'Conversation #${ticket.shortId} has a new private attachment.'
+          : 'Conversation #${ticket.shortId} has a new private reply.',
+      type: 'support',
+      actionType: 'admin_support_chat',
+      actionId: cleanId,
     );
   }
 
   if (!usedModernRpc &&
       (cleanReplyTo.isNotEmpty || cleanAttachmentPath.isNotEmpty)) {
     farmDebugLog(
-      'Support message used a legacy RPC; '
-      'modern reply/media metadata was skipped.',
+      'Support message used a legacy RPC; modern reply/media metadata was skipped.',
     );
   }
 }

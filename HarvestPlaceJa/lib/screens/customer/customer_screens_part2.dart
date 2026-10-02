@@ -17700,18 +17700,12 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: hasPhoto
-                          ? FarmColors.lightGreen
-                          : FarmColors.warningSoft,
+                      color: hasPhoto ? FarmColors.lightGreen : FarmColors.warningSoft,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      hasPhoto
-                          ? Icons.verified_outlined
-                          : Icons.photo_camera_outlined,
-                      color: hasPhoto
-                          ? FarmColors.green
-                          : FarmColors.warning,
+                      hasPhoto ? Icons.verified_outlined : Icons.photo_camera_outlined,
+                      color: hasPhoto ? FarmColors.green : FarmColors.warning,
                       size: 20,
                     ),
                   ),
@@ -17786,26 +17780,14 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                           color: FarmColors.cardSoft,
                           borderRadius: BorderRadius.circular(18),
                         ),
-                        child: const Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.broken_image_outlined,
-                              color: FarmColors.mutedText,
-                            ),
-                            SizedBox(width: 9),
-                            Expanded(
-                              child: Text(
-                                'The box photo could not be displayed. Use the refresh button at the top of Order Details to try again.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 12,
-                                  height: 1.3,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
+                        child: const Text(
+                          'The box photo could not be displayed. Use refresh at the top of Order Details to try again.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 12,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       );
                     },
@@ -17823,22 +17805,16 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
               ] else ...[
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+                  padding: const EdgeInsets.all(13),
                   decoration: BoxDecoration(
                     color: FarmColors.cardSoft,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: FarmColors.line.withOpacity(0.9),
-                    ),
+                    border: Border.all(color: FarmColors.line.withOpacity(0.9)),
                   ),
                   child: const Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.inventory_2_outlined,
-                        color: FarmColors.green,
-                        size: 19,
-                      ),
+                      Icon(Icons.inventory_2_outlined, color: FarmColors.green, size: 19),
                       SizedBox(width: 9),
                       Expanded(
                         child: Text(
@@ -18777,7 +18753,14 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                 const SizedBox(height: 14),
                 _premiumSupportCard(order),
                 const SizedBox(height: 14),
+                const HpjOrderTrustCard(),
+                const SizedBox(height: 14),
                 _customerBoxPhotoCard(),
+                const SizedBox(height: 12),
+                HpjCustomerSubstitutionCard(
+                  orderId: widget.orderId,
+                  onChanged: _refreshOrderDetails,
+                ),
                 const SizedBox(height: 12),
                 CustomerOrderUpdatesCard(orderId: widget.orderId),
                 const SizedBox(height: 14),
@@ -29770,6 +29753,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     if (mounted) setState(() => loading = true);
 
+    unawaited(
+      hpjTrackCheckoutStart(
+        itemCount: checkoutItemCount,
+        total: checkoutTotal,
+        source: 'checkout',
+      ),
+    );
+
     final checkoutBoundary =
         captureHpjPrivateOperationBoundary();
 
@@ -29780,7 +29771,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!isHpjPrivateOperationBoundaryCurrent(checkoutBoundary)) {
         throw const HpjPrivateMutationInterruptedException();
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      unawaited(
+        HpjReliability.recordNonFatal(
+          error,
+          stackTrace: stackTrace,
+          area: 'checkout',
+          eventKey: 'checkout_failed',
+        ),
+      );
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
       widget.onInventoryChanged?.call();
@@ -30042,6 +30041,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       mutationLease.ensureCurrent();
 
+      unawaited(
+        hpjTrackPurchase(
+          orderId: orderId,
+          itemCount: checkoutItemCount,
+          total: total,
+          source: 'checkout',
+        ),
+      );
+
       final orderShortId = orderId.length >= 6
           ? orderId.substring(0, 6).toUpperCase()
           : orderId.toUpperCase();
@@ -30085,7 +30093,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      unawaited(
+        HpjReliability.recordNonFatal(
+          error,
+          stackTrace: stackTrace,
+          area: 'checkout',
+          eventKey: 'checkout_submit_failed',
+        ),
+      );
       FarmDataCache.clearProducts();
       FarmDataCache.clearOrders();
       widget.onInventoryChanged?.call();
@@ -30261,6 +30277,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             children: [
               _checkoutTrustPill(Icons.inventory_2_outlined, 'Stock rechecked'),
               _checkoutTrustPill(Icons.lock_outline_rounded, 'Secure order'),
+              _checkoutTrustPill(Icons.agriculture_outlined, 'Jamaican farmer supply'),
+              _checkoutTrustPill(Icons.photo_camera_outlined, 'Box Photo Proof'),
               _checkoutTrustPill(Icons.notifications_none_rounded, 'Order updates'),
             ],
           ),

@@ -2,7 +2,7 @@ name: farm
 description: Fresh local food ordering and farm updates for The Harvest Place Ja.
 publish_to: 'none'
 
-version: 1.0.4+25
+version: 1.0.4+43
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
@@ -17,15 +17,23 @@ dependencies:
   supabase_flutter: ^2.5.6
 
   # =====================================================
-  # FIREBASE / PUSH NOTIFICATIONS
+  # FIREBASE / PUSH NOTIFICATIONS / RELIABILITY
   # =====================================================
   firebase_core: ^4.12.1
   firebase_messaging: ^16.4.3
+  firebase_crashlytics: 5.2.7
 
   # =====================================================
-  # FOREGROUND ANDROID NOTIFICATIONS
+  # FOREGROUND + SCHEDULED LOCAL NOTIFICATIONS
+  # Used for HPJ alerts and Farmer Calendar reminders.
   # =====================================================
   flutter_local_notifications: 19.5.0
+
+  # =====================================================
+  # TIMEZONE
+  # Used for Farmer Calendar scheduled reminders.
+  # =====================================================
+  timezone: ^0.10.1
 
   # =====================================================
   # APP FEATURES
@@ -33,23 +41,27 @@ dependencies:
   app_links: ^6.4.1
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
+  package_info_plus: ^8.3.1
+
+  # =====================================================
+  # GOOGLE PLAY IN-APP UPDATES
+  # 4.2.5 remains compatible with HPJ's current Dart range.
+  # =====================================================
+  in_app_update: ^4.2.5
 
   # =====================================================
   # WHATSAPP IMAGE SHARING / HPJ ADVERTISING
-  #
-  # Pinned for the HPJ Flutter 3.32 configuration.
   # =====================================================
   share_plus: 11.1.0
 
   # =====================================================
   # FRESH REELS
-  #
-  # Pinned for FlutLab / Flutter 3.32 compatibility.
   # =====================================================
   video_player: 2.9.5
 
   # =====================================================
   # SMART LOCAL PREFERENCES / RESUME MEMORY
+  # Also stores Farmer Calendar reminder records locally.
   # =====================================================
   shared_preferences: ^2.3.5
 
@@ -64,16 +76,14 @@ dependencies:
   pdf: ^3.11.0
   printing: ^5.14.0
 
-
 # =====================================================
 # FLUTLAB / FLUTTER 3.32 COMPATIBILITY
-#
-# Keep this override while FlutLab requires it.
-# Remove only after testing a newer Flutter environment.
+# Temporary cache-bypass pins for the broken FlutLab cache.
 # =====================================================
 dependency_overrides:
   firebase_core_web: 3.10.0
-
+  collection: 1.19.0
+  stream_channel: 2.1.3
 
 # =====================================================
 # DEVELOPMENT DEPENDENCIES
@@ -85,7 +95,6 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.4
 
-
 # =====================================================
 # FLUTTER
 # =====================================================
@@ -95,17 +104,21 @@ flutter:
   assets:
     - lib/assets/images/
 
-
 # =====================================================
-# HPJ ANDROID LAUNCHER ICON
+# HPJ ANDROID LAUNCHER ICON — MVP
 # =====================================================
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
 
-  image_path: "lib/assets/images/logo.png"
+  # Standard / legacy Android icon
+  image_path: "lib/assets/images/hpj_app_icon_mvp.png"
 
-  adaptive_icon_background: "#F4F9F2"
-  adaptive_icon_foreground: "lib/assets/images/logo.png"
+  # Android adaptive icon
+  adaptive_icon_background: "#F7FAF2"
+  adaptive_icon_foreground: "lib/assets/images/hpj_app_icon_foreground_mvp.png"
+
+  # Adds safe breathing room around HPJ inside Android masks
+  adaptive_icon_foreground_inset: 24
 
   min_sdk_android: 21

@@ -25545,6 +25545,15 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         ),
         child: AdminCustomerDemandIntelligenceScreen(embedded: true),
       );
+  _AdminTabSpec growthOps() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.dashboard_customize_outlined),
+          text: 'Growth Ops',
+        ),
+        child: AdminMvpProductionControlCenter(
+          refreshKey: refreshKey,
+        ),
+      );
 
   _AdminTabSpec growIntel() => _AdminTabSpec(
         tab: const Tab(
@@ -25845,7 +25854,8 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       onboarding(),
       payouts(),
       analytics(),
-       demandIntel(),
+      growthOps(),
+      demandIntel(),
       growIntel(),
       impact(),
       reports(),
@@ -25880,7 +25890,8 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       farmers(),
       onboarding(),
       analytics(),
-       demandIntel(),
+      growthOps(),
+      demandIntel(),
       growIntel(),
       impact(),
       reports(),
@@ -26159,6 +26170,7 @@ String _adminDesktopGroupForLabel(String value) {
 
     case 'Payouts':
     case 'Analytics':
+    case 'Growth Ops':
     case 'Demand Intel':
     case 'Grow Intel':
     case 'Impact':
@@ -27248,6 +27260,7 @@ class _AdminMoreScreen extends StatelessWidget {
       case 'Payouts':
         return 'Operations & Finance';
       case 'Analytics':
+      case 'Growth Ops':
       case 'Demand Intel':
       case 'Grow Intel':
       case 'Impact':
@@ -28677,6 +28690,8 @@ class _AdminInsightsHubScreen extends StatelessWidget {
         return 'Review HPJ network participation, farmer activity, business activity and operational impact snapshots.';
       case 'Reports':
         return 'Open operational reports and exports when a deeper record or shareable output is needed.';
+      case 'Growth Ops':
+        return 'See website/app visitors, conversion, operational exceptions, fresh-item substitutions, Android version adoption and platform health.';
       default:
         return 'Open this insight tool.';
     }
@@ -28694,6 +28709,8 @@ class _AdminInsightsHubScreen extends StatelessWidget {
         return 'Prove';
       case 'Reports':
         return 'Export';
+      case 'Growth Ops':
+        return 'Operate';
       default:
         return 'Review';
     }
@@ -28711,6 +28728,8 @@ class _AdminInsightsHubScreen extends StatelessWidget {
         return Icons.hub_outlined;
       case 'Reports':
         return Icons.table_chart_outlined;
+      case 'Growth Ops':
+        return Icons.dashboard_customize_outlined;
       default:
         return Icons.query_stats_outlined;
     }
@@ -28821,6 +28840,7 @@ class _AdminInsightsHubScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     const preferredOrder = <String>[
       'Analytics',
+      'Growth Ops',
       'Demand Intel',
       'Grow Intel',
       'Impact',

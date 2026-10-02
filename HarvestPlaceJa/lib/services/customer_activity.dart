@@ -79,15 +79,29 @@ Future<void> hpjTrackCustomerActivity({
   Map<String, dynamic> metadata = const <String, dynamic>{},
   Duration dedupeWindow = const Duration(milliseconds: 900),
 }) async {
+  // Aggregate audience/conversion analytics are deliberately separate from
+  // the customer's optional private activity history. This also allows HPJ to
+  // count anonymous website/app visits without exposing identity in Admin.
+  unawaited(
+    HpjAudienceAnalytics.trackFromCustomerActivity(
+      eventType: eventType,
+      product: product,
+      query: query,
+      quantity: quantity,
+      source: source,
+      metadata: metadata,
+    ),
+  );
+
   final user = supabase.auth.currentUser;
   if (user == null || !HpjCustomerActivityType.values.contains(eventType)) {
     return;
   }
   if (!hpjCustomerActivityHistoryEnabled()) return;
 
-  // Sample listings are presentation-only. Keep customer searches as demand
-  // signals, but do not let sample views/favourites/cart actions inflate the
-  // product-level procurement score.
+  // Sample listings are presentation-only. They may still contribute to
+  // aggregate visitor counts, but they must not inflate product procurement
+  // interest or private customer product-history signals.
   if (product?.isSampleProduct == true) return;
 
   final productId = _hpjCleanActivityText(product?.id, maxLength: 120);

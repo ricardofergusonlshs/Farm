@@ -1283,10 +1283,14 @@ class FamilyFarmApp extends StatelessWidget {
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(PushNotificationService.flushPendingNavigation());
+      unawaited(HpjReliability.initialise());
+      unawaited(HpjAudienceAnalytics.startSession());
+      unawaited(HpjAppUpdateService.checkForUpdate());
     });
 
     return MaterialApp(
       navigatorKey: hpjRootNavigatorKey,
+      navigatorObservers: [hpjAudienceNavigatorObserver],
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
       builder: (context, child) {

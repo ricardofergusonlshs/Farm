@@ -70,15 +70,15 @@ class _AdminMvpProductionControlCenterState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
             color: FarmColors.primarySoft,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: FarmColors.deepGreen, size: 21),
+          child: Icon(icon, color: FarmColors.deepGreen, size: 20),
         ),
-        const SizedBox(width: 11),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -87,20 +87,25 @@ class _AdminMvpProductionControlCenterState
                 title,
                 style: const TextStyle(
                   color: FarmColors.ink,
-                  fontSize: 18,
+                  fontSize: 16,
+                  height: 1.05,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 12.2,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
+              if (subtitle.trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -117,25 +122,45 @@ class _AdminMvpProductionControlCenterState
     required String value,
     required String detail,
     required IconData icon,
+    double? width,
   }) {
     return Container(
-      width: 176,
-      padding: const EdgeInsets.all(13),
+      width: width ?? 164,
+      constraints: const BoxConstraints(minHeight: 112),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(17),
         border: Border.all(color: FarmColors.line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.025),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: FarmColors.green, size: 20),
+          Container(
+            width: 31,
+            height: 31,
+            decoration: BoxDecoration(
+              color: FarmColors.primarySoft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: FarmColors.deepGreen, size: 17),
+          ),
           const SizedBox(height: 9),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: FarmColors.ink,
-              fontSize: 22,
+              fontSize: 21,
               height: 1,
               fontWeight: FontWeight.w900,
             ),
@@ -143,18 +168,22 @@ class _AdminMvpProductionControlCenterState
           const SizedBox(height: 5),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: FarmColors.deepGreen,
-              fontSize: 11.5,
+              fontSize: 11,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
             detail,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: FarmColors.mutedText,
-              fontSize: 10.4,
+              fontSize: 9.7,
               height: 1.25,
               fontWeight: FontWeight.w600,
             ),
@@ -171,55 +200,70 @@ class _AdminMvpProductionControlCenterState
     required String detail,
     bool urgent = false,
   }) {
+    final active = count > 0;
+    final tone = urgent ? FarmColors.danger : FarmColors.warning;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
-        color: count > 0
+        color: active
             ? urgent
                 ? FarmColors.dangerSoft
                 : FarmColors.warningSoft
             : FarmColors.cardSoft,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color:
+              active ? tone.withOpacity(.16) : FarmColors.line.withOpacity(.6),
+        ),
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 19,
-            color: count > 0
-                ? urgent
-                    ? FarmColors.danger
-                    : FarmColors.warning
-                : FarmColors.mutedText,
+          Container(
+            width: 31,
+            height: 31,
+            decoration: BoxDecoration(
+              color: active ? Colors.white.withOpacity(.75) : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              size: 17,
+              color: active ? tone : FarmColors.mutedText,
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: FarmColors.ink,
-                    fontSize: 12.5,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: FarmColors.mutedText,
-                    fontSize: 10.5,
+                    fontSize: 9.7,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Container(
-            constraints: const BoxConstraints(minWidth: 32),
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            constraints: const BoxConstraints(minWidth: 30),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.white,
@@ -228,10 +272,154 @@ class _AdminMvpProductionControlCenterState
             child: Text(
               '$count',
               style: TextStyle(
-                color: count > 0 ? FarmColors.deepGreen : FarmColors.mutedText,
+                color: active ? FarmColors.deepGreen : FarmColors.mutedText,
+                fontSize: 11,
                 fontWeight: FontWeight.w900,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusPill({
+    required IconData icon,
+    required String label,
+    bool positive = false,
+    bool warning = false,
+  }) {
+    final background = warning
+        ? FarmColors.warningSoft
+        : positive
+            ? FarmColors.primarySoft
+            : FarmColors.cardSoft;
+    final foreground = warning ? FarmColors.warning : FarmColors.deepGreen;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: foreground),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 9.8,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _topHeader(
+    HpjAudienceSnapshot audience,
+    HpjNeedsAttentionSnapshot attention,
+    HpjAppReleaseControl release,
+  ) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(15, 14, 12, 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FarmColors.line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.025),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: FarmColors.deepGreen,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.space_dashboard_rounded,
+                  color: Colors.white,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Growth & Operations',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 20,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Live signals for demand, operations and app health.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                tooltip: 'Refresh',
+                onPressed: _reload,
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              _statusPill(
+                icon: Icons.people_alt_outlined,
+                label: '${audience.visitorsToday} visitors',
+                positive: true,
+              ),
+              _statusPill(
+                icon: attention.total > 0
+                    ? Icons.notification_important_outlined
+                    : Icons.check_circle_outline_rounded,
+                label: attention.total > 0
+                    ? '${attention.total} need attention'
+                    : 'Operations clear',
+                positive: attention.total == 0,
+                warning: attention.total > 0,
+              ),
+              _statusPill(
+                icon: Icons.android_rounded,
+                label: 'Play build ${release.latestAndroidBuild}',
+                positive: !release.forceLatestUpdate,
+                warning: release.forceLatestUpdate,
+              ),
+            ],
           ),
         ],
       ),
@@ -625,52 +813,167 @@ class _AdminMvpProductionControlCenterState
   }
 
   Widget _releaseCard(HpjAppReleaseControl control) {
+    final forced = control.forceLatestUpdate;
+
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: forced ? FarmColors.warningSoft : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: FarmColors.line),
+        border: Border.all(
+          color: forced ? FarmColors.warning.withOpacity(.28) : FarmColors.line,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(
-            'App Update Control',
-            'Control the minimum supported Android build without publishing another emergency code change.',
-            icon: Icons.system_update_alt_rounded,
-            trailing: FilledButton.tonalIcon(
-              onPressed: () => _manageReleaseControl(control),
-              icon: const Icon(Icons.tune_rounded, size: 18),
-              label: const Text('Manage'),
-            ),
-          ),
-          const SizedBox(height: 13),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Row(
             children: [
-              _metric(
-                label: 'Minimum build',
-                value: '${control.minAndroidBuild}',
-                detail: 'Older builds must update',
-                icon: Icons.security_update_warning_outlined,
+              Container(
+                width: 39,
+                height: 39,
+                decoration: BoxDecoration(
+                  color: forced ? Colors.white : FarmColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.system_update_alt_rounded,
+                  color: forced ? FarmColors.warning : FarmColors.deepGreen,
+                  size: 20,
+                ),
               ),
-              _metric(
-                label: 'Latest build',
-                value: '${control.latestAndroidBuild}',
-                detail: 'Current Play release',
-                icon: Icons.new_releases_outlined,
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'App Release',
+                      style: TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Android update control',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              _metric(
-                label: 'Force latest',
-                value: control.forceLatestUpdate ? 'ON' : 'OFF',
-                detail: control.forceLatestUpdate
-                    ? 'Critical update mode'
-                    : 'Normal optional updates',
-                icon: Icons.shield_outlined,
+              FilledButton.tonalIcon(
+                onPressed: () => _manageReleaseControl(control),
+                icon: const Icon(Icons.tune_rounded, size: 17),
+                label: const Text('Manage'),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = ((constraints.maxWidth - 14) / 3)
+                  .clamp(88.0, 220.0)
+                  .toDouble();
+
+              return Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  _releaseStat(
+                    width: itemWidth,
+                    label: 'Minimum',
+                    value: '${control.minAndroidBuild}',
+                    icon: Icons.security_update_warning_outlined,
+                  ),
+                  _releaseStat(
+                    width: itemWidth,
+                    label: 'Latest',
+                    value: '${control.latestAndroidBuild}',
+                    icon: Icons.new_releases_outlined,
+                  ),
+                  _releaseStat(
+                    width: itemWidth,
+                    label: 'Force update',
+                    value: forced ? 'ON' : 'OFF',
+                    icon: Icons.shield_outlined,
+                    warning: forced,
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 9),
+          Text(
+            forced
+                ? 'Critical update mode is active. Builds below the latest release must update.'
+                : 'Normal update mode • users may snooze for ${control.snoozeHours} hours.',
+            style: TextStyle(
+              color: forced ? FarmColors.warning : FarmColors.mutedText,
+              fontSize: 10,
+              height: 1.3,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _releaseStat({
+    required double width,
+    required String label,
+    required String value,
+    required IconData icon,
+    bool warning = false,
+  }) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: FarmColors.line.withOpacity(.8)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 16,
+            color: warning ? FarmColors.warning : FarmColors.green,
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.2,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -679,8 +982,9 @@ class _AdminMvpProductionControlCenterState
 
   Widget _substitutionSection(List<HpjOrderSubstitution> substitutions) {
     final pending = substitutions.where((s) => s.awaitingCustomer).toList();
+
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -690,40 +994,46 @@ class _AdminMvpProductionControlCenterState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader(
-            'Fresh Produce Substitutions',
-            'Offer a live replacement when fresh supply changes. The customer must approve before HPJ changes the order.',
+            'Fresh Substitutions',
+            pending.isEmpty
+                ? 'No customer decisions are waiting.'
+                : '${pending.length} waiting for customer approval.',
             icon: Icons.swap_horiz_rounded,
-            trailing: FilledButton.icon(
+            trailing: IconButton.filledTonal(
+              tooltip: 'Propose substitution',
               onPressed: _proposeSubstitution,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Propose'),
+              icon: const Icon(Icons.add_rounded, size: 19),
             ),
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 11),
           if (substitutions.isEmpty)
-            const Text(
-              'No substitution records yet.',
-              style: TextStyle(
-                  color: FarmColors.mutedText, fontWeight: FontWeight.w700),
-            )
-          else ...[
-            Text(
-              '${pending.length} awaiting customer approval',
-              style: const TextStyle(
-                color: FarmColors.deepGreen,
-                fontWeight: FontWeight.w900,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: FarmColors.cardSoft,
+                borderRadius: BorderRadius.circular(14),
               ),
-            ),
-            const SizedBox(height: 9),
-            for (final item in substitutions.take(8)) ...[
+              child: const Text(
+                'No substitution records yet.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.8,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          else
+            for (final item in substitutions.take(6)) ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 7),
-                padding: const EdgeInsets.all(11),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                 decoration: BoxDecoration(
                   color: item.awaitingCustomer
                       ? FarmColors.warningSoft
                       : FarmColors.cardSoft,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Row(
                   children: [
@@ -733,18 +1043,20 @@ class _AdminMvpProductionControlCenterState
                         children: [
                           Text(
                             '#${shortIdLabel(item.orderId)} • ${item.originalProductName} → ${item.replacementProductName}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: FarmColors.ink,
-                              fontSize: 11.8,
+                              fontSize: 10.8,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '${item.quantity} item(s) • ${formatJmd(item.replacementLineTotal)} replacement line',
+                            '${item.quantity} item(s) • ${formatJmd(item.replacementLineTotal)}',
                             style: const TextStyle(
                               color: FarmColors.mutedText,
-                              fontSize: 10.4,
+                              fontSize: 9.6,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -752,29 +1064,28 @@ class _AdminMvpProductionControlCenterState
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      friendlyLabel(item.status),
-                      style: TextStyle(
-                        color: item.awaitingCustomer
-                            ? FarmColors.warning
-                            : FarmColors.green,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w900,
-                      ),
+                    _statusPill(
+                      icon: item.awaitingCustomer
+                          ? Icons.schedule_rounded
+                          : Icons.check_circle_outline_rounded,
+                      label: friendlyLabel(item.status),
+                      positive: !item.awaitingCustomer,
+                      warning: item.awaitingCustomer,
                     ),
                   ],
                 ),
               ),
             ],
-          ],
         ],
       ),
     );
   }
 
   Widget _healthSection(HpjPlatformHealthSnapshot health) {
+    final healthy = health.errors24h == 0 && health.fatals24h == 0;
+
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -784,76 +1095,89 @@ class _AdminMvpProductionControlCenterState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader(
-            'Platform Health',
-            'Crashlytics provides detailed Android crash diagnostics; HPJ keeps this compact operational view for recent caught failures.',
+            'Reliability',
+            healthy
+                ? 'No critical health signals in the last 24 hours.'
+                : '${health.errors24h + health.fatals24h} health signal(s) need review.',
             icon: Icons.monitor_heart_outlined,
+            trailing: _statusPill(
+              icon: healthy
+                  ? Icons.check_circle_rounded
+                  : Icons.warning_amber_rounded,
+              label: healthy ? 'Healthy' : 'Review',
+              positive: healthy,
+              warning: !healthy,
+            ),
           ),
-          const SizedBox(height: 13),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _metric(
-                label: 'Errors • 24h',
-                value: '${health.errors24h}',
-                detail: 'Caught operational failures',
-                icon: Icons.error_outline_rounded,
-              ),
-              _metric(
-                label: 'Fatal • 24h',
-                value: '${health.fatals24h}',
-                detail: 'Requires immediate review',
-                icon: Icons.crisis_alert_outlined,
-              ),
-              _metric(
-                label: 'Health events',
-                value: '${health.eventsPeriod}',
-                detail: 'Last ${health.days} days',
-                icon: Icons.timeline_outlined,
-              ),
-            ],
+          const SizedBox(height: 11),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final tileWidth = constraints.maxWidth >= 620
+                  ? (constraints.maxWidth - 16) / 3
+                  : (constraints.maxWidth - 8) / 2;
+
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _metric(
+                    width: tileWidth,
+                    label: 'Errors • 24h',
+                    value: '${health.errors24h}',
+                    detail: 'Caught failures',
+                    icon: Icons.error_outline_rounded,
+                  ),
+                  _metric(
+                    width: tileWidth,
+                    label: 'Fatal • 24h',
+                    value: '${health.fatals24h}',
+                    detail: 'Critical failures',
+                    icon: Icons.crisis_alert_outlined,
+                  ),
+                  _metric(
+                    width: tileWidth,
+                    label: 'Health events',
+                    value: '${health.eventsPeriod}',
+                    detail: 'Last ${health.days} days',
+                    icon: Icons.timeline_outlined,
+                  ),
+                ],
+              );
+            },
           ),
           if (health.recent.isNotEmpty) ...[
-            const SizedBox(height: 13),
+            const SizedBox(height: 12),
             const Text(
-              'Recent',
-              style:
-                  TextStyle(color: FarmColors.ink, fontWeight: FontWeight.w900),
+              'Recent signals',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
             ),
             const SizedBox(height: 7),
-            for (final row in health.recent.take(6)) ...[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 7),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      (row['severity'] ?? '').toString() == 'fatal'
-                          ? Icons.crisis_alert_outlined
-                          : Icons.warning_amber_rounded,
-                      size: 17,
-                      color: (row['severity'] ?? '').toString() == 'fatal'
-                          ? FarmColors.danger
-                          : FarmColors.warning,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '${row['area'] ?? 'app'} • ${row['event_key'] ?? 'event'}\n${row['message'] ?? ''}',
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: FarmColors.mutedText,
-                          fontSize: 10.5,
-                          height: 1.3,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
+            for (final row in health.recent.take(4))
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: FarmColors.cardSoft,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${row['area'] ?? 'app'} • ${row['event_key'] ?? 'event'} — ${row['message'] ?? ''}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 9.8,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ],
           ],
         ],
       ),
@@ -862,7 +1186,7 @@ class _AdminMvpProductionControlCenterState
 
   Widget _audienceSection(HpjAudienceSnapshot audience) {
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -873,116 +1197,143 @@ class _AdminMvpProductionControlCenterState
         children: [
           _sectionHeader(
             'Audience & Conversion',
-            'Unique visitor/session estimates across the HPJ website and Android app. Anonymous visitors are aggregate estimates, not identity tracking.',
+            'Live customer activity across web and Android.',
             icon: Icons.groups_2_outlined,
-            trailing: PopupMenuButton<int>(
-              initialValue: _days,
-              onSelected: (value) {
-                setState(() {
-                  _days = value;
-                  _future = _load();
-                });
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 7, child: Text('Last 7 days')),
-                PopupMenuItem(value: 30, child: Text('Last 30 days')),
-                PopupMenuItem(value: 90, child: Text('Last 90 days')),
-              ],
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: FarmColors.cardSoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${audience.days} days',
-                  style: const TextStyle(
-                    color: FarmColors.deepGreen,
-                    fontSize: 11,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final value in const [7, 30, 90])
+                ChoiceChip(
+                  label: Text(
+                    value == 7
+                        ? '7 days'
+                        : value == 30
+                            ? '30 days'
+                            : '90 days',
+                  ),
+                  selected: _days == value,
+                  onSelected: (_) {
+                    if (_days == value) return;
+                    setState(() {
+                      _days = value;
+                      _future = _load();
+                    });
+                  },
+                  visualDensity: VisualDensity.compact,
+                  labelStyle: TextStyle(
+                    color: _days == value ? Colors.white : FarmColors.deepGreen,
+                    fontSize: 10,
                     fontWeight: FontWeight.w900,
                   ),
+                  selectedColor: FarmColors.deepGreen,
+                  backgroundColor: FarmColors.cardSoft,
+                  side: BorderSide.none,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
-              ),
-            ),
+            ],
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 11),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final tileWidth = constraints.maxWidth >= 760
+                  ? (constraints.maxWidth - 24) / 4
+                  : (constraints.maxWidth - 8) / 2;
+
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _metric(
+                    width: tileWidth,
+                    label: 'Visitors today',
+                    value: '${audience.visitorsToday}',
+                    detail: 'Unique estimate',
+                    icon: Icons.today_outlined,
+                  ),
+                  _metric(
+                    width: tileWidth,
+                    label: 'Active now',
+                    value: '${audience.activeNow}',
+                    detail: 'About 5 minutes',
+                    icon: Icons.online_prediction_outlined,
+                  ),
+                  _metric(
+                    width: tileWidth,
+                    label: 'Conversion',
+                    value: '${audience.conversionPct.toStringAsFixed(1)}%',
+                    detail: 'Visitors → orders',
+                    icon: Icons.trending_up_rounded,
+                  ),
+                  _metric(
+                    width: tileWidth,
+                    label: 'Orders',
+                    value: '${audience.ordersCompleted}',
+                    detail: 'Completed checkout',
+                    icon: Icons.receipt_long_outlined,
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 10),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 7,
+            runSpacing: 7,
             children: [
-              _metric(
-                label: 'Visitors today',
-                value: '${audience.visitorsToday}',
-                detail: 'Unique visitor estimate',
-                icon: Icons.today_outlined,
+              _miniSignal(
+                Icons.language_rounded,
+                'Web',
+                '${audience.webVisitors}',
               ),
-              _metric(
-                label: 'Active now',
-                value: '${audience.activeNow}',
-                detail: 'Active in about 5 minutes',
-                icon: Icons.online_prediction_outlined,
+              _miniSignal(
+                Icons.android_rounded,
+                'Android',
+                '${audience.androidVisitors}',
               ),
-              _metric(
-                label: 'Website',
-                value: '${audience.webVisitors}',
-                detail: 'Unique web visitors',
-                icon: Icons.language_rounded,
+              _miniSignal(
+                Icons.shopping_cart_checkout_outlined,
+                'Checkout',
+                '${audience.checkoutStarts}',
               ),
-              _metric(
-                label: 'Android',
-                value: '${audience.androidVisitors}',
-                detail: 'Unique app visitors',
-                icon: Icons.android_rounded,
+              _miniSignal(
+                Icons.replay_rounded,
+                'Returning',
+                '${audience.returningVisitors}',
               ),
-              _metric(
-                label: 'Checkout starts',
-                value: '${audience.checkoutStarts}',
-                detail: 'Purchase intent',
-                icon: Icons.shopping_cart_checkout_outlined,
-              ),
-              _metric(
-                label: 'Orders',
-                value: '${audience.ordersCompleted}',
-                detail: 'Completed checkout events',
-                icon: Icons.receipt_long_outlined,
-              ),
-              _metric(
-                label: 'Conversion',
-                value: '${audience.conversionPct.toStringAsFixed(1)}%',
-                detail: 'Visitors → orders',
-                icon: Icons.trending_up_rounded,
-              ),
-              _metric(
-                label: 'Returning',
-                value: '${audience.returningVisitors}',
-                detail: '${audience.newVisitors} new visitors',
-                icon: Icons.replay_rounded,
+              _miniSignal(
+                Icons.person_add_alt_1_outlined,
+                'New',
+                '${audience.newVisitors}',
               ),
             ],
           ),
           if (audience.appVersions.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const Divider(height: 1),
             const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
             const Text(
-              'Android version adoption',
+              'Android adoption',
               style: TextStyle(
                 color: FarmColors.ink,
-                fontSize: 13,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 7),
             Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              children: audience.appVersions.map((row) {
-                return Chip(
-                  avatar: const Icon(Icons.android_rounded, size: 16),
-                  label: Text(
-                    '${row['version'] ?? 'Unknown'} (${row['build'] ?? 0}) • ${row['visitors'] ?? 0}',
-                  ),
+              spacing: 6,
+              runSpacing: 6,
+              children: audience.appVersions.take(6).map((row) {
+                return _statusPill(
+                  icon: Icons.android_rounded,
+                  label:
+                      '${row['version'] ?? 'Unknown'} (${row['build'] ?? 0}) • ${row['visitors'] ?? 0}',
+                  positive: true,
                 );
               }).toList(growable: false),
             ),
@@ -992,15 +1343,48 @@ class _AdminMvpProductionControlCenterState
     );
   }
 
+  Widget _miniSignal(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: FarmColors.cardSoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: FarmColors.green),
+          const SizedBox(width: 6),
+          Text(
+            '$label ',
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 9.8,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: FarmColors.ink,
+              fontSize: 10.2,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _attentionSection(HpjNeedsAttentionSnapshot attention) {
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: attention.total > 0
-              ? FarmColors.warning.withOpacity(.32)
+              ? FarmColors.warning.withOpacity(.28)
               : FarmColors.line,
         ),
       ),
@@ -1010,18 +1394,26 @@ class _AdminMvpProductionControlCenterState
           _sectionHeader(
             'Needs Attention',
             attention.total == 0
-                ? 'No current operational exception was detected by this MVP snapshot.'
-                : '${attention.total} operational signal(s) need review.',
+                ? 'No current operational exceptions.'
+                : '${attention.total} signal(s) need review.',
             icon: Icons.notification_important_outlined,
+            trailing: _statusPill(
+              icon: attention.total == 0
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.priority_high_rounded,
+              label: attention.total == 0 ? 'Clear' : '${attention.total}',
+              positive: attention.total == 0,
+              warning: attention.total > 0,
+            ),
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 11),
           _attentionRow(
             icon: Icons.payments_outlined,
             label: 'Bank transfer reviews',
             count: attention.paymentReviews,
             detail: 'Payment verification waiting',
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 6),
           _attentionRow(
             icon: Icons.timer_outlined,
             label: 'Orders preparing too long',
@@ -1029,41 +1421,41 @@ class _AdminMvpProductionControlCenterState
             detail: 'Preparing for more than 4 hours',
             urgent: true,
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 6),
           _attentionRow(
             icon: Icons.event_busy_outlined,
             label: 'Overdue orders',
             count: attention.overdueOrders,
-            detail: 'Scheduled date passed without completion',
+            detail: 'Scheduled date passed',
             urgent: true,
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 6),
           _attentionRow(
             icon: Icons.inventory_2_outlined,
             label: 'Low-stock live products',
             count: attention.lowStockProducts,
-            detail: '5 or fewer units; samples excluded',
+            detail: '5 or fewer units',
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 6),
           _attentionRow(
             icon: Icons.mark_chat_unread_outlined,
             label: 'Customer messages',
             count: attention.unansweredMessages,
-            detail: 'Customer Care waiting for staff',
+            detail: 'Waiting for staff reply',
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 6),
           _attentionRow(
             icon: Icons.swap_horiz_rounded,
             label: 'Replacement approvals',
             count: attention.pendingSubstitutions,
-            detail: 'Customers deciding on fresh-item substitutions',
+            detail: 'Customer decision pending',
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 6),
           _attentionRow(
             icon: Icons.monitor_heart_outlined,
             label: 'Platform errors',
             count: attention.platformErrors24h,
-            detail: 'Caught error/fatal health signals in 24 hours',
+            detail: 'Last 24 hours',
             urgent: true,
           ),
         ],
@@ -1088,9 +1480,12 @@ class _AdminMvpProductionControlCenterState
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.dashboard_customize_outlined,
-                      size: 44, color: FarmColors.mutedText),
-                  const SizedBox(height: 12),
+                  const Icon(
+                    Icons.dashboard_customize_outlined,
+                    size: 42,
+                    color: FarmColors.mutedText,
+                  ),
+                  const SizedBox(height: 11),
                   const Text(
                     'Growth & Operations is not ready yet.',
                     textAlign: TextAlign.center,
@@ -1100,18 +1495,20 @@ class _AdminMvpProductionControlCenterState
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 7),
                   Text(
-                    'Run RUN_ALL_HPJ_9_10_MVP_PRODUCTION_UPGRADE.sql in Supabase, then refresh.\n\n${friendlyAppError(snapshot.error!)}',
+                    friendlyAppError(snapshot.error!),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        color: FarmColors.mutedText, height: 1.4),
+                      color: FarmColors.mutedText,
+                      height: 1.35,
+                    ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 13),
                   FilledButton.icon(
                     onPressed: _reload,
                     icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Refresh'),
+                    label: const Text('Try again'),
                   ),
                 ],
               ),
@@ -1130,58 +1527,18 @@ class _AdminMvpProductionControlCenterState
           onRefresh: _refresh,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 110),
             children: [
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: FarmColors.deepGreen,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'HPJ 9/10 MVP CONTROL CENTER',
-                      style: TextStyle(
-                        color: Color(0xFFD6E8D2),
-                        fontSize: 10.5,
-                        letterSpacing: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 6),
-                    Text(
-                      'Growth & Operations',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 7),
-                    Text(
-                      'Know who is visiting, what needs attention, which app versions are active, and where fresh-supply exceptions need a decision.',
-                      style: TextStyle(
-                        color: Color(0xFFE3EEE0),
-                        fontSize: 12.5,
-                        height: 1.4,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              _audienceSection(audience),
-              const SizedBox(height: 14),
-              _attentionSection(attention),
-              const SizedBox(height: 14),
-              _substitutionSection(substitutions),
-              const SizedBox(height: 14),
+              _topHeader(audience, attention, release),
+              const SizedBox(height: 10),
               _releaseCard(release),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
+              _attentionSection(attention),
+              const SizedBox(height: 10),
+              _audienceSection(audience),
+              const SizedBox(height: 10),
+              _substitutionSection(substitutions),
+              const SizedBox(height: 10),
               _healthSection(health),
             ],
           ),

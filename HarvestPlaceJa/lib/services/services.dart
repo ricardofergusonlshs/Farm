@@ -2769,11 +2769,14 @@ Future<void> createFarmNotification({
   String? dedupeKey,
 }) async {
   final currentUser = supabase.auth.currentUser;
+  final explicitUserId = userId != null && userId.trim().isNotEmpty;
   final explicitUserEmail = userEmail != null && userEmail.trim().isNotEmpty;
   final targetUserId =
       (userId ?? (explicitUserEmail ? null : currentUser?.id))?.trim();
-  final targetEmail =
-      (userEmail ?? currentUser?.email)?.trim().toLowerCase();
+  final targetEmail = (userEmail ??
+          (explicitUserId ? null : currentUser?.email))
+      ?.trim()
+      .toLowerCase();
   final cleanType = type.trim().toLowerCase().isEmpty
       ? 'notification'
       : type.trim().toLowerCase();
@@ -5346,7 +5349,987 @@ Future<List<Product>> fetchFarmerProducts(String farmerId) async {
   }
 }
 
-Future<void> createFarmerProduct({
+
+// =====================================================
+// HPJ PRODUCT PRICE NEGOTIATION MVP — 2026-10-04
+// Farmer proposes a price, HPJ can counter, farmer can accept/counter,
+// and final product approval waits until both sides agree.
+// RADA/JAMIS values are market references only; the farmer remains free to
+// propose a price and HPJ must never silently overwrite it.
+// =====================================================
+
+class HpjProductMarketPriceReferenceMvp {
+  final String id;
+  final String cropName;
+  final String unit;
+  final String marketSource;
+  final String marketPeriod;
+  final double radaCostOfProduction;
+  final double radaFarmgateLow;
+  final double radaFarmgateReference;
+  final double radaFarmgateHigh;
+  final double radaWholesaleReference;
+  final double radaRetailLow;
+  final double radaRetailHigh;
+  final DateTime? updatedAt;
+
+  const HpjProductMarketPriceReferenceMvp({
+    required this.id,
+    required this.cropName,
+    required this.unit,
+    required this.marketSource,
+    required this.marketPeriod,
+    required this.radaCostOfProduction,
+    required this.radaFarmgateLow,
+    required this.radaFarmgateReference,
+    required this.radaFarmgateHigh,
+    required this.radaWholesaleReference,
+    required this.radaRetailLow,
+    required this.radaRetailHigh,
+    required this.updatedAt,
+  });
+
+  factory HpjProductMarketPriceReferenceMvp.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    double number(String key) {
+      final value = data[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    final updated = (data['updated_at'] ?? '').toString().trim();
+    return HpjProductMarketPriceReferenceMvp(
+      id: (data['id'] ?? '').toString().trim(),
+      cropName: (data['crop_name'] ?? '').toString().trim(),
+      unit: (data['unit'] ?? 'each').toString().trim(),
+      marketSource: (data['market_source'] ?? 'RADA/JAMIS').toString().trim(),
+      marketPeriod: (data['market_period'] ?? '').toString().trim(),
+      radaCostOfProduction: number('rada_cost_of_production'),
+      radaFarmgateLow: number('rada_farmgate_low'),
+      radaFarmgateReference: number('rada_farmgate_reference'),
+      radaFarmgateHigh: number('rada_farmgate_high'),
+      radaWholesaleReference: number('rada_wholesale_reference'),
+      radaRetailLow: number('rada_retail_low'),
+      radaRetailHigh: number('rada_retail_high'),
+      updatedAt: updated.isEmpty ? null : DateTime.tryParse(updated),
+    );
+  }
+
+  bool get hasFarmgate =>
+      radaFarmgateLow > 0 ||
+      radaFarmgateReference > 0 ||
+      radaFarmgateHigh > 0;
+}
+
+class HpjProductPriceNegotiationMvp {
+  final String id;
+  final String productId;
+  final String farmerId;
+  final String status;
+  final double farmerPrice;
+  final double hpjPrice;
+  final double agreedPrice;
+  final String farmerNote;
+  final String hpjNote;
+  final String marketSource;
+  final String marketPeriod;
+  final double radaCostOfProduction;
+  final double radaFarmgateLow;
+  final double radaFarmgateReference;
+  final double radaFarmgateHigh;
+  final double radaWholesaleReference;
+  final double radaRetailLow;
+  final double radaRetailHigh;
+  final String lastActionBy;
+  final DateTime? agreedAt;
+  final DateTime? updatedAt;
+
+  const HpjProductPriceNegotiationMvp({
+    required this.id,
+    required this.productId,
+    required this.farmerId,
+    required this.status,
+    required this.farmerPrice,
+    required this.hpjPrice,
+    required this.agreedPrice,
+    required this.farmerNote,
+    required this.hpjNote,
+    required this.marketSource,
+    required this.marketPeriod,
+    required this.radaCostOfProduction,
+    required this.radaFarmgateLow,
+    required this.radaFarmgateReference,
+    required this.radaFarmgateHigh,
+    required this.radaWholesaleReference,
+    required this.radaRetailLow,
+    required this.radaRetailHigh,
+    required this.lastActionBy,
+    required this.agreedAt,
+    required this.updatedAt,
+  });
+
+  factory HpjProductPriceNegotiationMvp.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    double number(String key) {
+      final value = data[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    DateTime? date(String key) {
+      final raw = (data[key] ?? '').toString().trim();
+      return raw.isEmpty ? null : DateTime.tryParse(raw);
+    }
+
+    return HpjProductPriceNegotiationMvp(
+      id: (data['id'] ?? '').toString().trim(),
+      productId: (data['product_id'] ?? '').toString().trim(),
+      farmerId: (data['farmer_id'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'farmer_proposed')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      farmerPrice: number('farmer_price'),
+      hpjPrice: number('hpj_price'),
+      agreedPrice: number('agreed_price'),
+      farmerNote: (data['farmer_note'] ?? '').toString().trim(),
+      hpjNote: (data['hpj_note'] ?? '').toString().trim(),
+      marketSource: (data['market_source'] ?? 'RADA/JAMIS').toString().trim(),
+      marketPeriod: (data['market_period'] ?? '').toString().trim(),
+      radaCostOfProduction: number('rada_cost_of_production'),
+      radaFarmgateLow: number('rada_farmgate_low'),
+      radaFarmgateReference: number('rada_farmgate_reference'),
+      radaFarmgateHigh: number('rada_farmgate_high'),
+      radaWholesaleReference: number('rada_wholesale_reference'),
+      radaRetailLow: number('rada_retail_low'),
+      radaRetailHigh: number('rada_retail_high'),
+      lastActionBy: (data['last_action_by'] ?? '').toString().trim(),
+      agreedAt: date('agreed_at'),
+      updatedAt: date('updated_at'),
+    );
+  }
+
+  bool get isWaitingOnHpj =>
+      status == 'farmer_proposed' || status == 'farmer_countered';
+  bool get isWaitingOnFarmer => status == 'hpj_countered';
+  bool get isAgreed => status == 'agreed';
+  bool get isDeclined => status == 'declined';
+
+  String get statusLabel {
+    switch (status) {
+      case 'farmer_proposed':
+        return 'Waiting on HPJ';
+      case 'farmer_countered':
+        return 'Farmer counter sent';
+      case 'hpj_countered':
+        return 'HPJ counter received';
+      case 'agreed':
+        return 'Price agreed';
+      case 'declined':
+        return 'Price review closed';
+      default:
+        return 'Price review';
+    }
+  }
+}
+
+class HpjProductPriceNegotiationEventMvp {
+  final String actorRole;
+  final String action;
+  final double price;
+  final String note;
+  final DateTime? createdAt;
+
+  const HpjProductPriceNegotiationEventMvp({
+    required this.actorRole,
+    required this.action,
+    required this.price,
+    required this.note,
+    required this.createdAt,
+  });
+
+  factory HpjProductPriceNegotiationEventMvp.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    final rawPrice = data['price'];
+    final price = rawPrice is num
+        ? rawPrice.toDouble()
+        : double.tryParse(rawPrice?.toString() ?? '') ?? 0;
+    final rawDate = (data['created_at'] ?? '').toString().trim();
+    return HpjProductPriceNegotiationEventMvp(
+      actorRole: (data['actor_role'] ?? '').toString().trim(),
+      action: (data['action'] ?? '').toString().trim(),
+      price: price,
+      note: (data['note'] ?? '').toString().trim(),
+      createdAt: rawDate.isEmpty ? null : DateTime.tryParse(rawDate),
+    );
+  }
+}
+
+Future<HpjProductMarketPriceReferenceMvp?>
+    fetchHpjProductMarketPriceReferenceMvp({
+  required String cropName,
+  String? unit,
+}) async {
+  final cleanCrop = cropName.trim().toLowerCase();
+  final cleanUnit = (unit ?? '').trim().toLowerCase();
+  if (cleanCrop.isEmpty) return null;
+
+  try {
+    var query = supabase
+        .from('hpj_market_price_reference_mvp')
+        .select(
+          'id, crop_name, unit, market_source, market_period, '
+          'rada_cost_of_production, rada_farmgate_low, rada_farmgate_reference, rada_farmgate_high, '
+          'rada_wholesale_reference, rada_retail_low, rada_retail_high, updated_at',
+        )
+        .eq('crop_key', cleanCrop);
+
+    if (cleanUnit.isNotEmpty) {
+      query = query.eq('unit_key', cleanUnit);
+    }
+
+    final row = await query.order('updated_at', ascending: false).limit(1).maybeSingle();
+    if (row == null) return null;
+    return HpjProductMarketPriceReferenceMvp.fromSupabase(
+      Map<String, dynamic>.from(row),
+    );
+  } catch (error) {
+    farmDebugLog('HPJ product market price reference unavailable: $error');
+    return null;
+  }
+}
+
+Future<HpjProductPriceNegotiationMvp?> fetchHpjProductPriceNegotiationMvp(
+  String productId,
+) async {
+  final cleanId = productId.trim();
+  if (cleanId.isEmpty) return null;
+
+  try {
+    final row = await supabase
+        .from('hpj_product_price_negotiations')
+        .select(
+          'id, product_id, farmer_id, status, farmer_price, hpj_price, '
+          'agreed_price, farmer_note, hpj_note, market_source, market_period, '
+          'rada_cost_of_production, rada_farmgate_low, rada_farmgate_reference, rada_farmgate_high, '
+          'rada_wholesale_reference, rada_retail_low, rada_retail_high, '
+          'last_action_by, agreed_at, updated_at',
+        )
+        .eq('product_id', cleanId)
+        .maybeSingle();
+
+    if (row == null) return null;
+    return HpjProductPriceNegotiationMvp.fromSupabase(
+      Map<String, dynamic>.from(row),
+    );
+  } catch (error) {
+    farmDebugLog('HPJ product price negotiation unavailable: $error');
+    return null;
+  }
+}
+
+Future<List<HpjProductPriceNegotiationEventMvp>>
+    fetchHpjProductPriceNegotiationEventsMvp(
+  String productId, {
+  int limit = 20,
+}) async {
+  final cleanId = productId.trim();
+  if (cleanId.isEmpty) return const <HpjProductPriceNegotiationEventMvp>[];
+
+  try {
+    final rows = await supabase
+        .from('hpj_product_price_negotiation_events')
+        .select('actor_role, action, price, note, created_at')
+        .eq('product_id', cleanId)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return (rows as List)
+        .map(
+          (row) => HpjProductPriceNegotiationEventMvp.fromSupabase(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    farmDebugLog('HPJ product price negotiation history unavailable: $error');
+    return const <HpjProductPriceNegotiationEventMvp>[];
+  }
+}
+
+Future<void> farmerStartProductPriceNegotiationMvp({
+  required String productId,
+  required double proposedPrice,
+  String note = '',
+}) async {
+  final cleanId = productId.trim();
+  await supabase.rpc(
+    'farmer_start_product_price_negotiation_mvp',
+    params: <String, dynamic>{
+      'p_product_id': cleanId,
+      'p_proposed_price': proposedPrice,
+      'p_note': note.trim(),
+    },
+  );
+
+  try {
+    await createAdminNotification(
+      title: 'Farmer price proposal received',
+      message:
+          'A farmer proposed J\$${proposedPrice.toStringAsFixed(2)} for a product listing. Review the market guide and respond.',
+      type: 'admin',
+      actionType: 'admin_product_approval',
+      actionId: cleanId,
+      dedupeKey:
+          'admin-product-price:$cleanId:farmer-proposal:${proposedPrice.toStringAsFixed(2)}',
+    );
+  } catch (error) {
+    farmDebugLog('Initial price proposal notification skipped: $error');
+  }
+}
+
+Future<void> farmerCounterProductPriceMvp({
+  required String productId,
+  required double counterPrice,
+  String note = '',
+}) async {
+  await supabase.rpc(
+    'farmer_counter_product_price_mvp',
+    params: <String, dynamic>{
+      'p_product_id': productId.trim(),
+      'p_counter_price': counterPrice,
+      'p_note': note.trim(),
+    },
+  );
+
+  try {
+    await createAdminNotification(
+      title: 'Farmer price counter received',
+      message: 'A farmer sent a new price counter offer for review.',
+      type: 'admin',
+      actionType: 'admin_product_approval',
+      actionId: productId.trim(),
+      dedupeKey:
+          'admin-product-price:${productId.trim()}:farmer-counter:${counterPrice.toStringAsFixed(2)}',
+    );
+  } catch (error) {
+    farmDebugLog('Price counter admin notification skipped: $error');
+  }
+}
+
+Future<void> farmerAcceptHpjProductPriceMvp({
+  required String productId,
+  String note = '',
+}) async {
+  await supabase.rpc(
+    'farmer_accept_hpj_product_price_mvp',
+    params: <String, dynamic>{
+      'p_product_id': productId.trim(),
+      'p_note': note.trim(),
+    },
+  );
+
+  try {
+    await createAdminNotification(
+      title: 'Farmer accepted HPJ price',
+      message:
+          'The negotiated price is agreed and ready for final product approval.',
+      type: 'admin',
+      actionType: 'admin_product_approval',
+      actionId: productId.trim(),
+      dedupeKey: 'admin-product-price:${productId.trim()}:agreed',
+    );
+  } catch (error) {
+    farmDebugLog('Price agreement admin notification skipped: $error');
+  }
+}
+
+Future<String?> _hpjFarmerUserIdForProductMvp(String productId) async {
+  try {
+    final productRow = await supabase
+        .from('products')
+        .select('farmer_id')
+        .eq('id', productId.trim())
+        .maybeSingle();
+    final farmerId = productRow == null
+        ? ''
+        : (productRow['farmer_id'] ?? '').toString().trim();
+    if (farmerId.isEmpty) return null;
+
+    final farmerRow = await supabase
+        .from('farmer_profiles')
+        .select('user_id')
+        .eq('id', farmerId)
+        .maybeSingle();
+    final userId = farmerRow == null
+        ? ''
+        : (farmerRow['user_id'] ?? '').toString().trim();
+    return userId.isEmpty ? null : userId;
+  } catch (error) {
+    farmDebugLog('Price negotiation farmer notification target unavailable: $error');
+    return null;
+  }
+}
+
+Future<void> hpjAdminCounterProductPriceMvp({
+  required String productId,
+  required double counterPrice,
+  String note = '',
+}) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_counter_product_price_mvp',
+    params: <String, dynamic>{
+      'p_product_id': productId.trim(),
+      'p_counter_price': counterPrice,
+      'p_note': note.trim(),
+    },
+  );
+
+  final farmerUserId = await _hpjFarmerUserIdForProductMvp(productId);
+  if (farmerUserId != null) {
+    try {
+      await createFarmNotification(
+        title: 'HPJ sent a price offer',
+        message:
+            'HPJ proposed J\$${counterPrice.toStringAsFixed(2)}. Open My Products to review, accept or counter.',
+        type: 'farmer',
+        userId: farmerUserId,
+        dedupeKey:
+            'farmer-product-price:${productId.trim()}:hpj-counter:${counterPrice.toStringAsFixed(2)}',
+      );
+    } catch (error) {
+      farmDebugLog('HPJ counter farmer notification skipped: $error');
+    }
+  }
+}
+
+Future<void> hpjAdminAcceptFarmerProductPriceMvp({
+  required String productId,
+  String note = '',
+}) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_accept_farmer_product_price_mvp',
+    params: <String, dynamic>{
+      'p_product_id': productId.trim(),
+      'p_note': note.trim(),
+    },
+  );
+
+  final farmerUserId = await _hpjFarmerUserIdForProductMvp(productId);
+  if (farmerUserId != null) {
+    try {
+      await createFarmNotification(
+        title: 'HPJ accepted your price',
+        message:
+            'Your proposed price has been accepted. The listing is waiting for final HPJ approval.',
+        type: 'farmer',
+        userId: farmerUserId,
+        dedupeKey: 'farmer-product-price:${productId.trim()}:agreed',
+      );
+    } catch (error) {
+      farmDebugLog('HPJ price acceptance farmer notification skipped: $error');
+    }
+  }
+}
+
+Future<void> hpjAdminUpsertMarketPriceReferenceMvp({
+  required String cropName,
+  required String unit,
+  String marketSource = 'RADA/JAMIS',
+  required String marketPeriod,
+  required double radaCostOfProduction,
+  required double radaFarmgateLow,
+  required double radaFarmgateReference,
+  required double radaFarmgateHigh,
+  required double radaWholesaleReference,
+  required double radaRetailLow,
+  required double radaRetailHigh,
+}) async {
+  await requireAdminAccess();
+  await supabase.rpc(
+    'hpj_admin_upsert_market_price_reference_mvp',
+    params: <String, dynamic>{
+      'p_crop_name': cropName.trim(),
+      'p_unit': unit.trim().isEmpty ? 'each' : unit.trim(),
+      'p_market_source': marketSource.trim().isEmpty ? 'RADA/JAMIS' : marketSource.trim(),
+      'p_market_period': marketPeriod.trim(),
+      'p_rada_cost_of_production': radaCostOfProduction,
+      'p_rada_farmgate_low': radaFarmgateLow,
+      'p_rada_farmgate_reference': radaFarmgateReference,
+      'p_rada_farmgate_high': radaFarmgateHigh,
+      'p_rada_wholesale_reference': radaWholesaleReference,
+      'p_rada_retail_low': radaRetailLow,
+      'p_rada_retail_high': radaRetailHigh,
+    },
+  );
+}
+
+
+// =====================================================
+// HPJ COMMERCIAL FEES + BUSINESS PRICE NEGOTIATION MVP — 2026-10-04
+// Central, transparent commercial settings. These are configuration defaults,
+// not hidden price changes. Farmer listings keep the fee snapshot stored on
+// the product so the farmer can see the exact rate that applies to that listing.
+// =====================================================
+
+class HpjCommercialFeeSettings {
+  final double farmerMarketplaceFeePercent;
+  final double customerServiceFeePercent;
+  final double wholesaleServiceMarginPercent;
+  final double deliveryMarginPercent;
+  final double managedServiceMonthlyFee;
+  final String currencyCode;
+  final DateTime? updatedAt;
+
+  const HpjCommercialFeeSettings({
+    required this.farmerMarketplaceFeePercent,
+    required this.customerServiceFeePercent,
+    required this.wholesaleServiceMarginPercent,
+    required this.deliveryMarginPercent,
+    required this.managedServiceMonthlyFee,
+    required this.currencyCode,
+    this.updatedAt,
+  });
+
+  static const fallback = HpjCommercialFeeSettings(
+    farmerMarketplaceFeePercent: 10,
+    customerServiceFeePercent: 0,
+    wholesaleServiceMarginPercent: 8,
+    deliveryMarginPercent: 0,
+    managedServiceMonthlyFee: 0,
+    currencyCode: 'JMD',
+  );
+
+  factory HpjCommercialFeeSettings.fromSupabase(Map<String, dynamic> data) {
+    double number(String key, double fallback) {
+      final value = data[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? fallback;
+    }
+
+    final rawUpdated = (data['updated_at'] ?? '').toString().trim();
+    return HpjCommercialFeeSettings(
+      farmerMarketplaceFeePercent:
+          number('farmer_marketplace_fee_percent', 10),
+      customerServiceFeePercent: number('customer_service_fee_percent', 0),
+      wholesaleServiceMarginPercent:
+          number('wholesale_service_margin_percent', 8),
+      deliveryMarginPercent: number('delivery_margin_percent', 0),
+      managedServiceMonthlyFee: number('managed_service_monthly_fee', 0),
+      currencyCode: (data['currency_code'] ?? 'JMD').toString().trim().isEmpty
+          ? 'JMD'
+          : (data['currency_code'] ?? 'JMD').toString().trim().toUpperCase(),
+      updatedAt:
+          rawUpdated.isEmpty ? null : DateTime.tryParse(rawUpdated)?.toLocal(),
+    );
+  }
+}
+
+Future<HpjCommercialFeeSettings> fetchHpjCommercialFeeSettings() async {
+  try {
+    final response = await supabase.rpc('hpj_get_commercial_fee_settings');
+    Map<String, dynamic>? row;
+
+    if (response is Map) {
+      row = Map<String, dynamic>.from(response);
+    } else if (response is List && response.isNotEmpty && response.first is Map) {
+      row = Map<String, dynamic>.from(response.first as Map);
+    }
+
+    if (row == null) return HpjCommercialFeeSettings.fallback;
+    return HpjCommercialFeeSettings.fromSupabase(row);
+  } catch (error) {
+    farmDebugLog('Commercial fee settings unavailable; using fallback: $error');
+    return HpjCommercialFeeSettings.fallback;
+  }
+}
+
+Future<void> hpjAdminSaveCommercialFeeSettings({
+  required double farmerMarketplaceFeePercent,
+  required double customerServiceFeePercent,
+  required double wholesaleServiceMarginPercent,
+  required double deliveryMarginPercent,
+  required double managedServiceMonthlyFee,
+}) async {
+  await requireAdminAccess();
+  final values = <double>[
+    farmerMarketplaceFeePercent,
+    customerServiceFeePercent,
+    wholesaleServiceMarginPercent,
+    deliveryMarginPercent,
+  ];
+  if (values.any((value) => value < 0 || value > 100)) {
+    throw Exception('Percentage fees must be between 0% and 100%.');
+  }
+  if (managedServiceMonthlyFee < 0) {
+    throw Exception('Managed-service fee cannot be negative.');
+  }
+
+  await supabase.rpc(
+    'hpj_admin_save_commercial_fee_settings',
+    params: <String, dynamic>{
+      'p_farmer_marketplace_fee_percent': farmerMarketplaceFeePercent,
+      'p_customer_service_fee_percent': customerServiceFeePercent,
+      'p_wholesale_service_margin_percent': wholesaleServiceMarginPercent,
+      'p_delivery_margin_percent': deliveryMarginPercent,
+      'p_managed_service_monthly_fee': managedServiceMonthlyFee,
+    },
+  );
+}
+
+Map<String, double> hpjFarmerPriceBreakdown({
+  required double price,
+  required double feePercent,
+  double productionCost = 0,
+}) {
+  final double safePrice = price < 0 ? 0.0 : price;
+  final double safeRate = feePercent < 0
+      ? 0.0
+      : feePercent > 100
+          ? 100.0
+          : feePercent;
+  final double fee = safePrice * safeRate / 100.0;
+  final double net = safePrice - fee;
+  final double margin = productionCost > 0 ? net - productionCost : 0.0;
+  return <String, double>{
+    'price': safePrice,
+    'fee': fee,
+    'net': net,
+    'production_cost': productionCost > 0 ? productionCost : 0.0,
+    'margin_after_fee': margin,
+  };
+}
+
+class HpjWholesalePriceNegotiationMvp {
+  final String id;
+  final String requestId;
+  final String businessAccountId;
+  final String userId;
+  final String status;
+  final double hpjPrice;
+  final double businessPrice;
+  final double agreedPrice;
+  final String hpjNote;
+  final String businessNote;
+  final String lastActionBy;
+  final DateTime? agreedAt;
+  final DateTime? updatedAt;
+
+  const HpjWholesalePriceNegotiationMvp({
+    required this.id,
+    required this.requestId,
+    required this.businessAccountId,
+    required this.userId,
+    required this.status,
+    required this.hpjPrice,
+    required this.businessPrice,
+    required this.agreedPrice,
+    required this.hpjNote,
+    required this.businessNote,
+    required this.lastActionBy,
+    required this.agreedAt,
+    required this.updatedAt,
+  });
+
+  factory HpjWholesalePriceNegotiationMvp.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    double number(String key) {
+      final value = data[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    DateTime? date(String key) {
+      final raw = (data[key] ?? '').toString().trim();
+      return raw.isEmpty ? null : DateTime.tryParse(raw)?.toLocal();
+    }
+
+    return HpjWholesalePriceNegotiationMvp(
+      id: (data['id'] ?? '').toString().trim(),
+      requestId: (data['request_id'] ?? '').toString().trim(),
+      businessAccountId: (data['business_account_id'] ?? '').toString().trim(),
+      userId: (data['user_id'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'hpj_quoted').toString().trim().toLowerCase(),
+      hpjPrice: number('hpj_price'),
+      businessPrice: number('business_price'),
+      agreedPrice: number('agreed_price'),
+      hpjNote: (data['hpj_note'] ?? '').toString().trim(),
+      businessNote: (data['business_note'] ?? '').toString().trim(),
+      lastActionBy: (data['last_action_by'] ?? '').toString().trim(),
+      agreedAt: date('agreed_at'),
+      updatedAt: date('updated_at'),
+    );
+  }
+
+  bool get isWaitingOnBusiness =>
+      status == 'hpj_quoted' || status == 'hpj_countered';
+  bool get isWaitingOnHpj => status == 'business_countered';
+  bool get isAgreed => status == 'agreed';
+  bool get isClosed => status == 'closed';
+
+  String get statusLabel {
+    switch (status) {
+      case 'hpj_quoted':
+        return 'HPJ quote ready';
+      case 'hpj_countered':
+        return 'HPJ counter sent';
+      case 'business_countered':
+        return 'Business counter sent';
+      case 'agreed':
+        return 'Price agreed';
+      case 'closed':
+        return 'Price review closed';
+      default:
+        return 'Price review';
+    }
+  }
+}
+
+class HpjWholesalePriceNegotiationEventMvp {
+  final String actorRole;
+  final String action;
+  final double price;
+  final String note;
+  final DateTime? createdAt;
+
+  const HpjWholesalePriceNegotiationEventMvp({
+    required this.actorRole,
+    required this.action,
+    required this.price,
+    required this.note,
+    required this.createdAt,
+  });
+
+  factory HpjWholesalePriceNegotiationEventMvp.fromSupabase(
+    Map<String, dynamic> data,
+  ) {
+    final rawPrice = data['price'];
+    final price = rawPrice is num
+        ? rawPrice.toDouble()
+        : double.tryParse(rawPrice?.toString() ?? '') ?? 0;
+    final rawDate = (data['created_at'] ?? '').toString().trim();
+    return HpjWholesalePriceNegotiationEventMvp(
+      actorRole: (data['actor_role'] ?? '').toString().trim(),
+      action: (data['action'] ?? '').toString().trim(),
+      price: price,
+      note: (data['note'] ?? '').toString().trim(),
+      createdAt: rawDate.isEmpty ? null : DateTime.tryParse(rawDate)?.toLocal(),
+    );
+  }
+}
+
+Future<HpjWholesalePriceNegotiationMvp?>
+    fetchHpjWholesalePriceNegotiationMvp(String requestId) async {
+  final cleanId = requestId.trim();
+  if (cleanId.isEmpty) return null;
+  try {
+    final row = await supabase
+        .from('hpj_wholesale_price_negotiations')
+        .select(
+          'id, request_id, business_account_id, user_id, status, hpj_price, '
+          'business_price, agreed_price, hpj_note, business_note, '
+          'last_action_by, agreed_at, updated_at',
+        )
+        .eq('request_id', cleanId)
+        .maybeSingle();
+    if (row == null) return null;
+    return HpjWholesalePriceNegotiationMvp.fromSupabase(
+      Map<String, dynamic>.from(row as Map),
+    );
+  } catch (error) {
+    farmDebugLog('Wholesale price negotiation unavailable: $error');
+    return null;
+  }
+}
+
+Future<List<HpjWholesalePriceNegotiationEventMvp>>
+    fetchHpjWholesalePriceNegotiationEventsMvp(
+  String requestId, {
+  int limit = 20,
+}) async {
+  final cleanId = requestId.trim();
+  if (cleanId.isEmpty) {
+    return const <HpjWholesalePriceNegotiationEventMvp>[];
+  }
+  try {
+    final rows = await supabase
+        .from('hpj_wholesale_price_negotiation_events')
+        .select('actor_role, action, price, note, created_at')
+        .eq('request_id', cleanId)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return (rows as List)
+        .map(
+          (row) => HpjWholesalePriceNegotiationEventMvp.fromSupabase(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList(growable: false);
+  } catch (error) {
+    farmDebugLog('Wholesale price history unavailable: $error');
+    return const <HpjWholesalePriceNegotiationEventMvp>[];
+  }
+}
+
+Future<({String? userId, String? email})> _hpjBusinessNotificationTarget(
+  String requestId,
+) async {
+  final cleanId = requestId.trim();
+  if (cleanId.isEmpty) return (userId: null, email: null);
+
+  try {
+    final row = await supabase
+        .from('wholesale_order_requests')
+        .select('user_id, business_account_id')
+        .eq('id', cleanId)
+        .maybeSingle();
+    if (row == null) return (userId: null, email: null);
+
+    final userId = (row['user_id'] ?? '').toString().trim();
+    final businessAccountId =
+        (row['business_account_id'] ?? '').toString().trim();
+    String email = '';
+
+    if (businessAccountId.isNotEmpty) {
+      try {
+        final account = await supabase
+            .from('business_accounts')
+            .select('email')
+            .eq('id', businessAccountId)
+            .maybeSingle();
+        if (account != null) {
+          email = (account['email'] ?? '').toString().trim().toLowerCase();
+        }
+      } catch (error) {
+        farmDebugLog('Business notification email lookup skipped: $error');
+      }
+    }
+
+    return (
+      userId: userId.isEmpty ? null : userId,
+      email: email.isEmpty ? null : email,
+    );
+  } catch (error) {
+    farmDebugLog('Business notification target unavailable: $error');
+    return (userId: null, email: null);
+  }
+}
+
+Future<void> hpjAdminQuoteWholesalePriceMvp({
+  required String requestId,
+  required double price,
+  String note = '',
+}) async {
+  await requireAdminAccess();
+  if (price <= 0) throw Exception('Enter a valid HPJ quote.');
+  final cleanId = requestId.trim();
+  await supabase.rpc(
+    'hpj_admin_quote_wholesale_price_mvp',
+    params: <String, dynamic>{
+      'p_request_id': cleanId,
+      'p_price': price,
+      'p_note': note.trim(),
+    },
+  );
+
+  final target = await _hpjBusinessNotificationTarget(cleanId);
+  await createFarmNotification(
+    title: 'HPJ wholesale quote ready',
+    message:
+        'HPJ quoted ${formatJmd(price)} for your bulk request. Open Business Orders to accept or counter.',
+    type: 'wholesale',
+    userId: target.userId,
+    userEmail: target.email,
+    actionType: 'wholesale_order',
+    actionId: cleanId,
+    dedupeKey: 'wholesale-price:$cleanId:hpj:${price.toStringAsFixed(2)}',
+  );
+}
+
+Future<void> hpjAdminAcceptBusinessWholesalePriceMvp({
+  required String requestId,
+  String note = '',
+}) async {
+  await requireAdminAccess();
+  final cleanId = requestId.trim();
+  await supabase.rpc(
+    'hpj_admin_accept_business_wholesale_price_mvp',
+    params: <String, dynamic>{
+      'p_request_id': cleanId,
+      'p_note': note.trim(),
+    },
+  );
+  final negotiation = await fetchHpjWholesalePriceNegotiationMvp(cleanId);
+  final target = await _hpjBusinessNotificationTarget(cleanId);
+  await createFarmNotification(
+    title: 'Wholesale price agreed',
+    message: negotiation != null && negotiation.agreedPrice > 0
+        ? 'HPJ accepted your ${formatJmd(negotiation.agreedPrice)} counter. The agreed price is ready for final order approval.'
+        : 'HPJ accepted your counter. The agreed price is ready for final order approval.',
+    type: 'wholesale',
+    userId: target.userId,
+    userEmail: target.email,
+    actionType: 'wholesale_order',
+    actionId: cleanId,
+    dedupeKey: 'wholesale-price:$cleanId:agreed',
+  );
+}
+
+Future<void> businessCounterWholesalePriceMvp({
+  required String requestId,
+  required double price,
+  String note = '',
+}) async {
+  if (price <= 0) throw Exception('Enter a valid counter offer.');
+  final cleanId = requestId.trim();
+  await supabase.rpc(
+    'business_counter_wholesale_price_mvp',
+    params: <String, dynamic>{
+      'p_request_id': cleanId,
+      'p_price': price,
+      'p_note': note.trim(),
+    },
+  );
+  await createAdminNotification(
+    title: 'Business wholesale counter received',
+    message:
+        'A business sent a ${formatJmd(price)} counter for bulk request #${shortIdLabel(cleanId, length: 8)}.',
+    type: 'wholesale',
+    actionType: 'admin_wholesale_order',
+    actionId: cleanId,
+    dedupeKey: 'admin-wholesale-price:$cleanId:business:${price.toStringAsFixed(2)}',
+  );
+}
+
+Future<void> businessAcceptHpjWholesalePriceMvp({
+  required String requestId,
+  String note = '',
+}) async {
+  final cleanId = requestId.trim();
+  await supabase.rpc(
+    'business_accept_hpj_wholesale_price_mvp',
+    params: <String, dynamic>{
+      'p_request_id': cleanId,
+      'p_note': note.trim(),
+    },
+  );
+  await createAdminNotification(
+    title: 'Business accepted HPJ wholesale price',
+    message:
+        'The price for bulk request #${shortIdLabel(cleanId, length: 8)} is agreed and ready for final approval.',
+    type: 'wholesale',
+    actionType: 'admin_wholesale_order',
+    actionId: cleanId,
+    dedupeKey: 'admin-wholesale-price:$cleanId:agreed',
+  );
+}
+
+Future<String> createFarmerProduct({
   required FarmerProfile farmer,
   required String name,
   required double price,
@@ -5383,6 +6366,10 @@ Future<void> createFarmerProduct({
     throw Exception('Stock quantity cannot be negative.');
   }
 
+  final commercialFees = await fetchHpjCommercialFeeSettings();
+  final farmerMarketplaceFeePercent =
+      commercialFees.farmerMarketplaceFeePercent;
+
   final marketplacePayload = {
     'name': cleanName,
     'price': price,
@@ -5401,7 +6388,7 @@ Future<void> createFarmerProduct({
     'farm_name': farmer.farmName,
     'parish': farmer.parish,
     'approval_status': 'pending',
-    'platform_commission_percent': 10,
+    'platform_commission_percent': farmerMarketplaceFeePercent,
     'original_price': originalPrice,
     'discount_price': discountPrice,
     'discount_percent': discountPercent,
@@ -5557,6 +6544,21 @@ Future<void> createFarmerProduct({
     }
   }
 
+  if (submittedProductId.isNotEmpty) {
+    try {
+      await farmerStartProductPriceNegotiationMvp(
+        productId: submittedProductId,
+        proposedPrice: price,
+      );
+    } catch (error) {
+      // Keep the product safely pending/hidden if the SQL migration has not
+      // been installed yet. HPJ can start the negotiation from Admin later.
+      farmDebugLog(
+        'Product submitted but price negotiation could not start: $error',
+      );
+    }
+  }
+
   await createAdminNotification(
     title: 'Product awaiting approval',
     message: '${farmer.farmName} submitted $cleanName for review.',
@@ -5567,14 +6569,74 @@ Future<void> createFarmerProduct({
         ? null
         : 'admin-product-approval:$submittedProductId',
   );
+
+  return submittedProductId;
 }
 
 Future<void> updateProductApproval(String productId, String status) async {
+  await requireAdminAccess();
+  final cleanProductId = productId.trim();
+  final cleanStatus = status.trim().toLowerCase();
+
+  try {
+    await supabase.rpc(
+      'hpj_admin_set_product_approval_mvp',
+      params: <String, dynamic>{
+        'p_product_id': cleanProductId,
+        'p_status': cleanStatus,
+      },
+    );
+    FarmDataCache.clearProducts();
+
+    final farmerUserId = await _hpjFarmerUserIdForProductMvp(cleanProductId);
+    if (farmerUserId != null &&
+        const <String>{'approved', 'rejected'}.contains(cleanStatus)) {
+      try {
+        await createFarmNotification(
+          title: cleanStatus == 'approved'
+              ? 'Your product is now live'
+              : 'Product listing needs attention',
+          message: cleanStatus == 'approved'
+              ? 'HPJ completed final approval. Your agreed product listing is now live in the marketplace.'
+              : 'HPJ did not approve this listing. Open My Products to review the status and contact HPJ if you need help.',
+          type: 'farmer',
+          userId: farmerUserId,
+          actionType: 'farmer_supply',
+          actionId: cleanProductId,
+          dedupeKey: 'farmer-product-approval:$cleanProductId:$cleanStatus',
+        );
+      } catch (notificationError) {
+        farmDebugLog(
+          'Final product approval notification skipped: $notificationError',
+        );
+      }
+    }
+    return;
+  } catch (error) {
+    final errorText = error.toString().toLowerCase();
+    final migrationMissing =
+        errorText.contains('hpj_admin_set_product_approval_mvp') &&
+            (errorText.contains('pgrst202') ||
+                errorText.contains('schema cache') ||
+                errorText.contains('could not find the function'));
+
+    if (!migrationMissing) {
+      throw Exception(friendlyAppError(error));
+    }
+
+    farmDebugLog(
+      'Negotiated product approval RPC unavailable; using legacy approval: $error',
+    );
+  }
+
+  // Compatibility only for databases that have not installed the negotiation
+  // migration yet. Once installed, negotiated products cannot be approved
+  // until both farmer and HPJ have agreed on the price.
   await adminUpdateProduct(
-    productId: productId,
-    approvalStatus: status,
-    isAvailable: status == 'approved',
-    adminNote: 'Admin changed product approval to $status from app',
+    productId: cleanProductId,
+    approvalStatus: cleanStatus,
+    isAvailable: cleanStatus == 'approved',
+    adminNote: 'Admin changed product approval to $cleanStatus from app',
   );
 }
 // =====================================================

@@ -28,9 +28,9 @@ String freshReelPlacementLabel(String placement) {
     case freshReelPlacementCustomerFeed:
       return 'Customer Home Feed';
     case freshReelPlacementFarmerFeed:
-      return 'Farmer Feed';
+      return 'Farmer Home Feed';
     case freshReelPlacementWholesaleFeed:
-      return 'Wholesale Feed';
+      return 'Business Home Feed';
     case freshReelPlacementShop:
       return 'Customer Shop';
     case freshReelPlacementFreshBox:
@@ -49,9 +49,9 @@ String freshReelPlacementDescription(String placement) {
     case freshReelPlacementCustomerFeed:
       return 'Insert naturally in the customer Home feed.';
     case freshReelPlacementFarmerFeed:
-      return 'Show in the farmer For You feed.';
+      return 'Show in the Farmer Home HPJ Feed.';
     case freshReelPlacementWholesaleFeed:
-      return 'Show in the wholesale For You feed.';
+      return 'Show in the Business Home HPJ Feed.';
     case freshReelPlacementShop:
       return 'Show near the top of the customer Shop.';
     case freshReelPlacementFreshBox:
@@ -84,23 +84,185 @@ IconData freshReelPlacementIcon(String placement) {
   }
 }
 
-Set<String> _defaultPlacementsForReel(HpjFreshReel reel) {
-  final placements = <String>{
-    freshReelPlacementViewer,
-    freshReelPlacementCustomerFeed,
-  };
-  if (<String>{
-    'farm_update',
-    'harvest',
-    'new_arrival',
-    'behind_the_scenes',
-    'hpj_update',
-    'nutrition',
-  }.contains(reel.reelType)) {
-    placements.add(freshReelPlacementFarmerFeed);
+const List<String> _freshReelAdminTypeOrder = <String>[
+  'farming_tip',
+  'market_update',
+  'hpj_update',
+  'produce_opportunity',
+  'farmer_story',
+  'success_story',
+  'farm_update',
+  'harvest',
+  'new_arrival',
+  'behind_the_scenes',
+  'recipe',
+  'nutrition',
+  'promotion',
+  'general',
+];
+
+const List<String> _freshReelFarmerTypeOrder = <String>[
+  'farm_update',
+  'harvest',
+  'new_arrival',
+  'produce_opportunity',
+  'farming_tip',
+  'farmer_story',
+  'success_story',
+  'behind_the_scenes',
+  'recipe',
+  'general',
+];
+
+String freshReelTypeLabel(String reelType) {
+  switch (reelType) {
+    case 'farming_tip':
+      return 'Farming tip';
+    case 'market_update':
+      return 'Market update';
+    case 'hpj_update':
+      return 'HPJ update';
+    case 'produce_opportunity':
+      return 'Produce opportunity';
+    case 'farmer_story':
+      return 'Farmer story';
+    case 'success_story':
+      return 'Success story';
+    case 'harvest':
+      return 'Harvest';
+    case 'new_arrival':
+      return 'New arrival';
+    case 'recipe':
+      return 'Recipe';
+    case 'nutrition':
+      return 'Nutrition';
+    case 'behind_the_scenes':
+      return 'Behind the scenes';
+    case 'promotion':
+      return 'Promotion';
+    case 'general':
+      return 'General';
+    default:
+      return 'Farm update';
   }
-  return placements;
 }
+
+String freshReelTypeDescription(String reelType) {
+  switch (reelType) {
+    case 'farming_tip':
+      return 'Practical growing, harvesting or farm-management advice.';
+    case 'market_update':
+      return 'Official HPJ market-price, demand or seasonal market information.';
+    case 'hpj_update':
+      return 'Official HPJ announcement, collection notice or platform update.';
+    case 'produce_opportunity':
+      return 'A current buying, selling or supply opportunity involving produce.';
+    case 'farmer_story':
+      return 'A farmer, farm or day-in-the-field story.';
+    case 'success_story':
+      return 'A positive farmer, buyer or HPJ outcome worth highlighting.';
+    case 'harvest':
+      return 'A harvest that is ready, being picked or coming soon.';
+    case 'new_arrival':
+      return 'Fresh produce or a new product that has just become available.';
+    case 'behind_the_scenes':
+      return 'Behind-the-scenes farm, packing or HPJ activity.';
+    case 'recipe':
+      return 'Food preparation, serving or recipe content.';
+    case 'nutrition':
+      return 'Nutrition or healthy-eating information.';
+    case 'promotion':
+      return 'A promotional or sponsored reel.';
+    case 'general':
+      return 'General agriculture or HPJ content.';
+    default:
+      return 'A general update from the farm.';
+  }
+}
+
+Set<String> recommendedFreshReelPlacementsForType(String reelType) {
+  switch (reelType.trim().toLowerCase()) {
+    case 'farming_tip':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementFarmerFeed,
+      };
+    case 'market_update':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementFarmerFeed,
+        freshReelPlacementWholesaleFeed,
+      };
+    case 'hpj_update':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementFarmerFeed,
+        freshReelPlacementWholesaleFeed,
+      };
+    case 'produce_opportunity':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementFarmerFeed,
+        freshReelPlacementWholesaleFeed,
+      };
+    case 'farmer_story':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementFarmerFeed,
+      };
+    case 'success_story':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementFarmerFeed,
+        freshReelPlacementWholesaleFeed,
+      };
+    case 'farm_update':
+    case 'harvest':
+    case 'behind_the_scenes':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementFarmerFeed,
+      };
+    case 'new_arrival':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementFarmerFeed,
+        freshReelPlacementShop,
+      };
+    case 'recipe':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementMealPlanner,
+      };
+    case 'nutrition':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementFreshBox,
+      };
+    case 'promotion':
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+        freshReelPlacementShop,
+      };
+    case 'general':
+    default:
+      return <String>{
+        freshReelPlacementViewer,
+        freshReelPlacementCustomerFeed,
+      };
+  }
+}
+
+Set<String> _defaultPlacementsForReel(HpjFreshReel reel) =>
+    recommendedFreshReelPlacementsForType(reel.reelType);
 
 class _FreshReelPlacementSelector extends StatelessWidget {
   final Set<String> selected;
@@ -113,91 +275,149 @@ class _FreshReelPlacementSelector extends StatelessWidget {
     required this.onChanged,
   });
 
+  static const _primaryPlacements = <String>[
+    freshReelPlacementFarmerFeed,
+    freshReelPlacementWholesaleFeed,
+    freshReelPlacementCustomerFeed,
+    freshReelPlacementViewer,
+  ];
+
+  static const _secondaryPlacements = <String>[
+    freshReelPlacementShop,
+    freshReelPlacementFreshBox,
+    freshReelPlacementMealPlanner,
+  ];
+
+  Widget _placementRow(String placement) {
+    final isSelected = selected.contains(placement);
+    return InkWell(
+      onTap: enabled ? () => onChanged(placement, !isSelected) : null,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: Checkbox(
+                value: isSelected,
+                onChanged: enabled
+                    ? (value) => onChanged(placement, value ?? false)
+                    : null,
+                activeColor: FarmColors.green,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFFEAF5E9)
+                    : const Color(0xFFF5F6F4),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                freshReelPlacementIcon(placement),
+                size: 17,
+                color: isSelected ? FarmColors.green : FarmColors.mutedText,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    freshReelPlacementLabel(placement),
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    freshReelPlacementDescription(placement),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 8.8,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(15),
         border: Border.all(
-          color: const Color(0xFFDDE6DA),
+          color: const Color(0xFFB65CE3),
+          width: 2.2,
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Color(0xFFEAF5E9),
-                  borderRadius: BorderRadius.all(Radius.circular(11)),
-                ),
-                child: Icon(
-                  Icons.place_outlined,
-                  color: FarmColors.green,
-                  size: 19,
-                ),
-              ),
-              SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Show this reel in',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 1),
-                    Text(
-                      'Choose one or more places.',
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          const Text(
+            'Show this Reel in *',
+            style: TextStyle(
+              color: FarmColors.ink,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: _freshReelPlacementOrder.map((placement) {
-              final isSelected = selected.contains(placement);
-              return FilterChip(
-                selected: isSelected,
-                showCheckmark: true,
-                avatar: Icon(
-                  freshReelPlacementIcon(placement),
-                  size: 15,
-                  color: isSelected ? FarmColors.green : FarmColors.mutedText,
-                ),
-                label: Text(
-                  freshReelPlacementLabel(placement),
-                  style: const TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                onSelected:
-                    enabled ? (value) => onChanged(placement, value) : null,
-              );
-            }).toList(),
+          const SizedBox(height: 2),
+          const Text(
+            'Select where this Reel will appear.',
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 9.3,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._primaryPlacements.map(_placementRow),
+          const SizedBox(height: 5),
+          ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+            childrenPadding: EdgeInsets.zero,
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            title: const Text(
+              'More HPJ destinations',
+              style: TextStyle(
+                color: FarmColors.deepGreen,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            children: _secondaryPlacements.map(_placementRow).toList(),
           ),
         ],
       ),
@@ -274,6 +494,66 @@ Future<Set<String>?> showFreshReelPlacementDialog(
         },
       );
     },
+  );
+}
+
+Future<String?> showFreshReelCategoryDialog(
+  BuildContext context, {
+  required String initial,
+}) async {
+  return showDialog<String>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      title: const Text('Choose Reel category'),
+      children: _freshReelAdminTypeOrder
+          .map(
+            (type) => SimpleDialogOption(
+              onPressed: () => Navigator.of(dialogContext).pop(type),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 24,
+                    child: Icon(
+                      type == initial
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      size: 18,
+                      color: type == initial
+                          ? FarmColors.green
+                          : FarmColors.mutedText,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          freshReelTypeLabel(type),
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          freshReelTypeDescription(type),
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 10.5,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(growable: false),
+    ),
   );
 }
 
@@ -409,26 +689,7 @@ class HpjFreshReel {
     );
   }
 
-  String get typeLabel {
-    switch (reelType) {
-      case 'harvest':
-        return 'Harvest';
-      case 'new_arrival':
-        return 'New arrival';
-      case 'recipe':
-        return 'Recipe';
-      case 'nutrition':
-        return 'Nutrition';
-      case 'behind_the_scenes':
-        return 'Behind the scenes';
-      case 'hpj_update':
-        return 'HPJ update';
-      case 'promotion':
-        return 'Promotion';
-      default:
-        return 'Farm update';
-    }
-  }
+  String get typeLabel => freshReelTypeLabel(reelType);
 
   String get creatorLabel {
     if (farmName.isNotEmpty) return farmName;
@@ -475,8 +736,18 @@ bool _freshReelMatchesPreferences(
     return false;
   }
   if (!preferences.showFarmerReels &&
-      <String>{'farm_update', 'harvest', 'new_arrival', 'behind_the_scenes'}
-          .contains(reel.reelType)) {
+      <String>{
+        'farm_update',
+        'harvest',
+        'new_arrival',
+        'behind_the_scenes',
+        'farming_tip',
+        'market_update',
+        'produce_opportunity',
+        'farmer_story',
+        'success_story',
+        'general',
+      }.contains(reel.reelType)) {
     return false;
   }
   return true;
@@ -578,14 +849,17 @@ Future<List<HpjFreshReel>> fetchAdminFreshReels({
 
 Future<void> recordFreshReelView(String reelId) async {
   final user = supabase.auth.currentUser;
-  if (user == null || reelId.trim().isEmpty) return;
+  final cleanReelId = reelId.trim();
+  if (user == null || cleanReelId.isEmpty) return;
   try {
-    await supabase.from('fresh_reel_views').insert(
+    await supabase.from('fresh_reel_views').upsert(
       {
-        'reel_id': reelId,
+        'reel_id': cleanReelId,
         'user_id': user.id,
         'viewed_on': DateTime.now().toIso8601String().substring(0, 10),
       },
+      onConflict: 'reel_id,user_id,viewed_on',
+      ignoreDuplicates: true,
     );
   } catch (error) {
     farmDebugLog('Fresh reel view tracking skipped: $error');
@@ -660,6 +934,11 @@ Future<void> submitFarmerFreshReel({
     throw Exception('Add a short title for your reel.');
   }
 
+  final cleanReelType = reelType.trim().toLowerCase();
+  if (!_freshReelFarmerTypeOrder.contains(cleanReelType)) {
+    throw Exception('Choose a valid Farmer Reel category.');
+  }
+
   final bytes = await video.readAsBytes();
   if (bytes.isEmpty) throw Exception('The selected video is empty.');
   if (bytes.length > _freshReelMaxBytes) {
@@ -698,7 +977,7 @@ Future<void> submitFarmerFreshReel({
       'linked_product_id': linkedProductId?.trim().isEmpty == true
           ? null
           : linkedProductId?.trim(),
-      'reel_type': reelType,
+      'reel_type': cleanReelType,
       'status': 'pending',
       'is_featured': false,
     });
@@ -716,6 +995,8 @@ Future<void> submitAdminFreshReel({
   required String caption,
   required String reelType,
   required Set<String> placements,
+  String status = 'published',
+  XFile? coverImage,
   String? linkedProductId,
 }) async {
   await requireAdminAccess();
@@ -725,6 +1006,16 @@ Future<void> submitAdminFreshReel({
   final cleanTitle = title.trim();
   if (cleanTitle.length < 3) {
     throw Exception('Add a short title for your reel.');
+  }
+
+  final cleanReelType = reelType.trim().toLowerCase();
+  if (!_freshReelAdminTypeOrder.contains(cleanReelType)) {
+    throw Exception('Choose a valid HPJ Reel category.');
+  }
+
+  final cleanStatus = status.trim().toLowerCase();
+  if (!const <String>{'published', 'pending'}.contains(cleanStatus)) {
+    throw Exception('Choose Published or Draft.');
   }
 
   final bytes = await video.readAsBytes();
@@ -750,11 +1041,62 @@ Future<void> submitAdminFreshReel({
 
   final videoUrl = supabase.storage.from(_freshReelsBucket).getPublicUrl(path);
 
+  String coverPath = '';
+  String thumbnailUrl = '';
+  if (coverImage != null) {
+    final coverBytes = await coverImage.readAsBytes();
+    if (coverBytes.isEmpty) {
+      try {
+        await supabase.storage.from(_freshReelsBucket).remove([path]);
+      } catch (_) {}
+      throw Exception('The selected Reel cover image is empty.');
+    }
+    if (coverBytes.length > 8 * 1024 * 1024) {
+      try {
+        await supabase.storage.from(_freshReelsBucket).remove([path]);
+      } catch (_) {}
+      throw Exception('Keep the Reel cover image under 8 MB.');
+    }
+
+    final coverName = _safeFreshReelFileName(coverImage.name);
+    coverPath =
+        'covers/${user.id}/${DateTime.now().microsecondsSinceEpoch}_$coverName';
+    final lowerCoverName = coverImage.name.toLowerCase();
+    final declaredCoverMime = (coverImage.mimeType ?? '').trim().toLowerCase();
+    final coverMime = declaredCoverMime.startsWith('image/')
+        ? declaredCoverMime
+        : lowerCoverName.endsWith('.png')
+            ? 'image/png'
+            : lowerCoverName.endsWith('.webp')
+                ? 'image/webp'
+                : 'image/jpeg';
+
+    try {
+      await supabase.storage.from(_freshReelsBucket).uploadBinary(
+            coverPath,
+            coverBytes,
+            fileOptions: FileOptions(
+              contentType: coverMime,
+              upsert: false,
+            ),
+          );
+      thumbnailUrl =
+          supabase.storage.from(_freshReelsBucket).getPublicUrl(coverPath);
+    } catch (error) {
+      try {
+        await supabase.storage.from(_freshReelsBucket).remove([path]);
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
   final cleanPlacements =
       placements.where(_freshReelPlacementOrder.contains).toSet();
   if (cleanPlacements.isEmpty) {
     try {
-      await supabase.storage.from(_freshReelsBucket).remove([path]);
+      final cleanup = <String>[path];
+      if (coverPath.isNotEmpty) cleanup.add(coverPath);
+      await supabase.storage.from(_freshReelsBucket).remove(cleanup);
     } catch (_) {}
     throw Exception('Choose at least one place for this reel to appear.');
   }
@@ -772,15 +1114,18 @@ Future<void> submitAdminFreshReel({
           'caption': caption.trim(),
           'video_url': videoUrl,
           'storage_path': path,
+          'thumbnail_url': thumbnailUrl,
           'linked_product_id': linkedProductId?.trim().isEmpty == true
               ? null
               : linkedProductId?.trim(),
-          'reel_type': reelType,
-          'status': 'published',
-          'published_at': DateTime.now().toIso8601String(),
+          'reel_type': cleanReelType,
+          'status': cleanStatus,
+          if (cleanStatus == 'published')
+            'published_at': DateTime.now().toIso8601String(),
           'is_featured': false,
-          'moderated_by': user.id,
-          'moderated_at': DateTime.now().toIso8601String(),
+          if (cleanStatus == 'published') 'moderated_by': user.id,
+          if (cleanStatus == 'published')
+            'moderated_at': DateTime.now().toIso8601String(),
         })
         .select('id')
         .single();
@@ -804,7 +1149,9 @@ Future<void> submitAdminFreshReel({
       } catch (_) {}
     }
     try {
-      await supabase.storage.from(_freshReelsBucket).remove([path]);
+      final cleanup = <String>[path];
+      if (coverPath.isNotEmpty) cleanup.add(coverPath);
+      await supabase.storage.from(_freshReelsBucket).remove(cleanup);
     } catch (_) {}
     rethrow;
   }
@@ -838,6 +1185,27 @@ Future<void> setFreshReelPlacements({
       'p_placements': clean,
     },
   );
+}
+
+Future<void> setFreshReelType({
+  required String reelId,
+  required String reelType,
+}) async {
+  await requireAdminAccess();
+
+  final cleanId = reelId.trim();
+  final cleanType = reelType.trim().toLowerCase();
+  if (cleanId.isEmpty) {
+    throw Exception('Reel ID is missing.');
+  }
+  if (!_freshReelAdminTypeOrder.contains(cleanType)) {
+    throw Exception('Choose a valid Reel category.');
+  }
+
+  await supabase.from('fresh_reels').update({
+    'reel_type': cleanType,
+    'updated_at': DateTime.now().toIso8601String(),
+  }).eq('id', cleanId);
 }
 
 Future<void> moderateFreshReel({
@@ -1413,10 +1781,14 @@ class _FreshReelInlineFeedPostState extends State<_FreshReelInlineFeedPost> {
 
 class HpjFreshReelsEntryScreen extends StatelessWidget {
   final ValueChanged<Product>? onAddToCart;
+  final String initialReelId;
+  final String placement;
 
   const HpjFreshReelsEntryScreen({
     super.key,
     this.onAddToCart,
+    this.initialReelId = '',
+    this.placement = freshReelPlacementViewer,
   });
 
   @override
@@ -1439,6 +1811,8 @@ class HpjFreshReelsEntryScreen extends StatelessWidget {
         return FreshReelsScreen(
           preferences: snapshot.data ?? UserExperiencePreferences.defaults,
           onAddToCart: onAddToCart,
+          initialReelId: initialReelId,
+          placement: placement,
         );
       },
     );
@@ -1471,7 +1845,9 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
   @override
   void initState() {
     super.initState();
-    _muted = widget.preferences.reelsMutedByDefault;
+    // Browser autoplay is much more reliable when reels start muted.
+    // On Flutter Web we also require a user tap before playback starts.
+    _muted = kIsWeb ? true : widget.preferences.reelsMutedByDefault;
     _future = _loadReels();
   }
 
@@ -1506,7 +1882,24 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+      appBar: kIsWeb
+          ? AppBar(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              leading: IconButton(
+                tooltip: 'Back',
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              title: const Text(
+                'HPJ Feed',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            )
+          : null,
       body: SafeArea(
+        top: !kIsWeb,
         child: FutureBuilder<List<HpjFreshReel>>(
           future: _future,
           builder: (context, snapshot) {
@@ -1542,7 +1935,10 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
                       reel: reels[index],
                       active: index == _activeIndex,
                       muted: _muted,
-                      autoplay: widget.preferences.reelsAutoplay &&
+                      // Flutter Web browsers can block programmatic video
+                      // playback. Let the user tap the reel to start it there.
+                      autoplay: !kIsWeb &&
+                          widget.preferences.reelsAutoplay &&
                           widget.preferences.feedImageMode != 'data_saver',
                       onMuteChanged: (value) => setState(() => _muted = value),
                       onAddToCart: widget.onAddToCart,
@@ -1555,76 +1951,78 @@ class _FreshReelsScreenState extends State<FreshReelsScreen> {
                     );
                   },
                 ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: _ReelCircleButton(
-                    icon: Icons.arrow_back_rounded,
-                    tooltip: 'Back',
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  left: 58,
-                  right: 58,
-                  child: IgnorePointer(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(.94),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(.78),
-                            ),
-                          ),
-                          child: Image.asset(
-                            'lib/assets/images/logo.png',
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.eco_rounded,
-                              color: FarmColors.primary,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'HPJ Feed',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                                shadows: [
-                                  Shadow(
-                                    blurRadius: 8,
-                                    color: Colors.black54,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Text(
-                              '${_activeIndex + 1} of ${reels.length}',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                if (!kIsWeb)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: _ReelCircleButton(
+                      icon: Icons.arrow_back_rounded,
+                      tooltip: 'Back',
+                      onTap: () => Navigator.of(context).maybePop(),
                     ),
                   ),
-                ),
+                if (!kIsWeb)
+                  Positioned(
+                    top: 8,
+                    left: 58,
+                    right: 58,
+                    child: IgnorePointer(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(.94),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(.78),
+                              ),
+                            ),
+                            child: Image.asset(
+                              'lib/assets/images/logo.png',
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.eco_rounded,
+                                color: FarmColors.primary,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'HPJ Feed',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  shadows: [
+                                    Shadow(
+                                      blurRadius: 8,
+                                      color: Colors.black54,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                '${_activeIndex + 1} of ${reels.length}',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             );
           },
@@ -1908,7 +2306,7 @@ class _FreshReelPageState extends State<_FreshReelPage> {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.reel.videoUrl),
       );
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 15));
       if (!mounted) {
         await controller.dispose();
         return;
@@ -2825,9 +3223,9 @@ class _FarmerFreshReelSubmissionScreenState
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 110),
         children: [
           const Header(
-            title: 'Show what is fresh',
+            title: 'Create a Farmer Reel',
             subtitle:
-                '15–60 seconds • vertical works best • HPJ reviews before publishing',
+                'Choose the Reel type so viewers immediately know what the video is about. HPJ reviews Farmer Reels before publishing.',
           ),
           const SizedBox(height: 14),
           FarmCard(
@@ -2873,24 +3271,25 @@ class _FarmerFreshReelSubmissionScreenState
             maxLines: 5,
             decoration: const InputDecoration(
               labelText: 'Caption',
-              hintText: 'Tell customers what they are seeing.',
+              hintText: 'Tell farmers and buyers what they are seeing.',
             ),
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             value: _reelType,
-            decoration: const InputDecoration(labelText: 'Reel type'),
-            items: const [
-              DropdownMenuItem(
-                  value: 'farm_update', child: Text('Farm update')),
-              DropdownMenuItem(value: 'harvest', child: Text('Harvest')),
-              DropdownMenuItem(
-                  value: 'new_arrival', child: Text('New arrival')),
-              DropdownMenuItem(
-                  value: 'behind_the_scenes', child: Text('Behind the scenes')),
-              DropdownMenuItem(
-                  value: 'recipe', child: Text('Recipe / preparation')),
-            ],
+            decoration: InputDecoration(
+              labelText: 'What kind of Reel is this?',
+              helperText: freshReelTypeDescription(_reelType),
+              helperMaxLines: 2,
+            ),
+            items: _freshReelFarmerTypeOrder
+                .map(
+                  (type) => DropdownMenuItem<String>(
+                    value: type,
+                    child: Text(freshReelTypeLabel(type)),
+                  ),
+                )
+                .toList(growable: false),
             onChanged: _submitting
                 ? null
                 : (value) => setState(() => _reelType = value ?? 'farm_update'),
@@ -2942,6 +3341,320 @@ class _FarmerFreshReelSubmissionScreenState
   }
 }
 
+class _HpjAdminSelectedVideoPreview extends StatefulWidget {
+  final XFile? video;
+
+  const _HpjAdminSelectedVideoPreview({
+    required this.video,
+  });
+
+  @override
+  State<_HpjAdminSelectedVideoPreview> createState() =>
+      _HpjAdminSelectedVideoPreviewState();
+}
+
+class _HpjAdminSelectedVideoPreviewState
+    extends State<_HpjAdminSelectedVideoPreview> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _HpjAdminSelectedVideoPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.video?.path != widget.video?.path) {
+      _controller?.dispose();
+      _controller = null;
+      _failed = false;
+      unawaited(_load());
+    }
+  }
+
+  Future<void> _load() async {
+    final video = widget.video;
+    if (video == null || !kIsWeb) {
+      if (mounted) setState(() {});
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(video.path);
+      final controller = VideoPlayerController.networkUrl(uri);
+      await controller.initialize();
+      await controller.setLooping(true);
+      _controller = controller;
+    } catch (_) {
+      _failed = true;
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    final hasVideo = widget.video != null;
+
+    return AspectRatio(
+      aspectRatio: 9 / 13,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(17),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (controller != null && controller.value.isInitialized)
+              FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: controller.value.size.width,
+                  height: controller.value.size.height,
+                  child: VideoPlayer(controller),
+                ),
+              )
+            else
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF315E3A), Color(0xFF91B86D)],
+                  ),
+                ),
+              ),
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0x10000000),
+                      Color(0x00000000),
+                      Color(0x8F000000),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Center(
+              child: Material(
+                color: Colors.white.withOpacity(.90),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: controller == null || !controller.value.isInitialized
+                      ? null
+                      : () async {
+                          if (controller.value.isPlaying) {
+                            await controller.pause();
+                          } else {
+                            await controller.play();
+                          }
+                          if (mounted) setState(() {});
+                        },
+                  child: SizedBox(
+                    width: 58,
+                    height: 58,
+                    child: Icon(
+                      controller?.value.isPlaying == true
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: FarmColors.deepGreen,
+                      size: 38,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (!hasVideo)
+              const Positioned(
+                left: 16,
+                right: 16,
+                bottom: 18,
+                child: Text(
+                  'Choose a Reel video to preview it here.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              )
+            else
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: Text(
+                  widget.video!.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    height: 1.15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            if (_failed)
+              const Positioned(
+                right: 9,
+                top: 9,
+                child: Tooltip(
+                  message:
+                      'Live preview unavailable. The selected file can still be published.',
+                  child: Icon(
+                    Icons.info_outline_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HpjReelAdminTopTabs extends StatelessWidget {
+  final bool createSelected;
+  final VoidCallback? onAll;
+  final VoidCallback? onCreate;
+  final VoidCallback? onPending;
+
+  const _HpjReelAdminTopTabs({
+    required this.createSelected,
+    this.onAll,
+    this.onCreate,
+    this.onPending,
+  });
+
+  Widget _tab({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback? onTap,
+    Widget? trailing,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? FarmColors.green : Colors.transparent,
+              width: 2.5,
+            ),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? FarmColors.green : FarmColors.mutedText,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? FarmColors.deepGreen : FarmColors.mutedText,
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 7),
+              trailing,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFE2E8DF)),
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _tab(
+              label: 'All Reels',
+              icon: Icons.video_library_outlined,
+              selected: !createSelected,
+              onTap: onAll,
+            ),
+            _tab(
+              label: 'Create Reel',
+              icon: Icons.video_call_outlined,
+              selected: createSelected,
+              onTap: onCreate,
+            ),
+            FutureBuilder<List<HpjFreshReel>>(
+              future: fetchAdminFreshReels(status: 'pending'),
+              builder: (context, snapshot) {
+                final count = (snapshot.data ?? const <HpjFreshReel>[])
+                    .where((reel) => reel.creatorRole == 'farmer')
+                    .length;
+                return _tab(
+                  label: 'Pending (Farmer)',
+                  icon: Icons.agriculture_outlined,
+                  selected: false,
+                  onTap: onPending,
+                  trailing: count <= 0
+                      ? null
+                      : Container(
+                          constraints: const BoxConstraints(minWidth: 22),
+                          height: 22,
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE91E4D),
+                            borderRadius: BorderRadius.all(Radius.circular(99)),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AdminFreshReelSubmissionScreen extends StatefulWidget {
   const AdminFreshReelSubmissionScreen({super.key});
 
@@ -2955,12 +3668,12 @@ class _AdminFreshReelSubmissionScreenState
   final _titleController = TextEditingController();
   final _captionController = TextEditingController();
   XFile? _video;
+  XFile? _coverImage;
   String _reelType = 'hpj_update';
   String _linkedProductId = '';
-  final Set<String> _placements = <String>{
-    freshReelPlacementViewer,
-    freshReelPlacementCustomerFeed,
-  };
+  String _status = 'published';
+  final Set<String> _placements =
+      recommendedFreshReelPlacementsForType('hpj_update');
   bool _submitting = false;
   late Future<List<Product>> _productsFuture;
 
@@ -2986,6 +3699,16 @@ class _AdminFreshReelSubmissionScreenState
     setState(() => _video = picked);
   }
 
+  Future<void> _pickCoverImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 88,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _coverImage = picked);
+  }
+
   Future<void> _submit() async {
     if (_video == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2997,7 +3720,7 @@ class _AdminFreshReelSubmissionScreenState
     if (_placements.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Choose at least one place for this reel to appear.'),
+          content: Text('Choose at least one place for this Reel to appear.'),
         ),
       );
       return;
@@ -3011,11 +3734,19 @@ class _AdminFreshReelSubmissionScreenState
         caption: _captionController.text,
         reelType: _reelType,
         placements: _placements,
+        status: _status,
+        coverImage: _coverImage,
         linkedProductId: _linkedProductId,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('HPJ reel published.')),
+        SnackBar(
+          content: Text(
+            _status == 'published'
+                ? 'HPJ Reel published.'
+                : 'HPJ Reel saved to the pending queue.',
+          ),
+        ),
       );
       Navigator.of(context).pop(true);
     } catch (error) {
@@ -3030,158 +3761,408 @@ class _AdminFreshReelSubmissionScreenState
     }
   }
 
+  Widget _categoryField() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFFFC400),
+          width: 2.2,
+        ),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _reelType,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Reel Category *',
+          helperText: freshReelTypeDescription(_reelType),
+          helperMaxLines: 2,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+        ),
+        items: _freshReelAdminTypeOrder
+            .map(
+              (type) => DropdownMenuItem<String>(
+                value: type,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.eco_rounded,
+                      size: 17,
+                      color: FarmColors.green,
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        freshReelTypeLabel(type),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(growable: false),
+        onChanged: _submitting
+            ? null
+            : (value) {
+                final nextType = value ?? 'hpj_update';
+                setState(() {
+                  _reelType = nextType;
+                  _placements
+                    ..clear()
+                    ..addAll(
+                      recommendedFreshReelPlacementsForType(nextType),
+                    );
+                });
+              },
+      ),
+    );
+  }
+
+  Widget _statusField() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF37AEE2),
+          width: 2.2,
+        ),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _status,
+        decoration: InputDecoration(
+          labelText: 'Status *',
+          helperText: _status == 'published'
+              ? 'Reel will be visible immediately in selected feeds.'
+              : 'Save it for review before making it visible.',
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+        ),
+        items: const [
+          DropdownMenuItem(
+            value: 'published',
+            child: Text('Published'),
+          ),
+          DropdownMenuItem(
+            value: 'pending',
+            child: Text('Draft / Pending'),
+          ),
+        ],
+        onChanged: _submitting
+            ? null
+            : (value) => setState(() => _status = value ?? 'published'),
+      ),
+    );
+  }
+
+  Widget _formFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _titleController,
+          maxLength: 80,
+          decoration: const InputDecoration(
+            labelText: 'Title *',
+            hintText: 'e.g. How to improve cucumber yield',
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _captionController,
+          maxLength: 280,
+          minLines: 3,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            labelText: 'Description',
+            hintText:
+                'Tell farmers or buyers what they will learn from this Reel.',
+          ),
+        ),
+        const SizedBox(height: 10),
+        _categoryField(),
+        const SizedBox(height: 11),
+        _FreshReelPlacementSelector(
+          selected: _placements,
+          enabled: !_submitting,
+          onChanged: (placement, selected) {
+            setState(() {
+              if (selected) {
+                _placements.add(placement);
+              } else {
+                _placements.remove(placement);
+              }
+            });
+          },
+        ),
+        const SizedBox(height: 11),
+        _statusField(),
+        const SizedBox(height: 11),
+        FutureBuilder<List<Product>>(
+          future: _productsFuture,
+          builder: (context, snapshot) {
+            final products = (snapshot.data ?? const <Product>[])
+                .where(isVisibleCustomerProduct)
+                .toList();
+            return DropdownButtonFormField<String>(
+              value: _linkedProductId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Linked produce (optional)',
+                helperText:
+                    'Use when this Reel is about a specific HPJ product.',
+              ),
+              items: [
+                const DropdownMenuItem(
+                  value: '',
+                  child: Text('No linked product'),
+                ),
+                ...products.map(
+                  (product) => DropdownMenuItem(
+                    value: product.id,
+                    child: Text(
+                      product.name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: _submitting
+                  ? null
+                  : (value) => setState(() => _linkedProductId = value ?? ''),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _videoPanel() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FBF8),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDDE6DA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _HpjAdminSelectedVideoPreview(video: _video),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _submitting ? null : _pickVideo,
+            icon: const Icon(Icons.video_camera_back_outlined),
+            label: Text(_video == null ? 'Choose Video' : 'Change Video'),
+          ),
+          const SizedBox(height: 7),
+          TextButton.icon(
+            onPressed: _submitting ? null : _pickCoverImage,
+            icon: const Icon(Icons.image_outlined, size: 17),
+            label: Text(
+              _coverImage == null ? 'Add Reel Cover' : 'Change Reel Cover',
+            ),
+          ),
+          if (_coverImage != null)
+            Text(
+              _coverImage!.name,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 8.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          const SizedBox(height: 5),
+          const Text(
+            'Max 60 seconds • MP4, MOV or WebM • under 30 MB',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 8.7,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 850;
+
     return Scaffold(
-      backgroundColor: FarmColors.background,
+      backgroundColor: const Color(0xFFF6F8F5),
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           tooltip: 'Back to Reels',
           onPressed: () => Navigator.of(context).maybePop(),
           icon: const Icon(Icons.arrow_back_rounded),
         ),
-        title: const Text('Create HPJ Reel'),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.eco_rounded, color: FarmColors.green, size: 21),
+            SizedBox(width: 8),
+            Text('HPJ Admin  ›  Fresh Reels'),
+          ],
+        ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 110),
-        children: [
-          const Header(
-            title: 'Publish a Fresh Reel',
-            subtitle:
-                'Use for HPJ updates, recipes, nutrition, arrivals or promotions.',
-          ),
-          const SizedBox(height: 14),
-          FarmCard(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1040),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                OutlinedButton.icon(
-                  onPressed: _submitting ? null : _pickVideo,
-                  icon: const Icon(Icons.video_library_outlined),
-                  label: Text(_video == null ? 'Choose video' : 'Change video'),
+                _HpjReelAdminTopTabs(
+                  createSelected: true,
+                  onAll: () => Navigator.of(context).maybePop(),
+                  onCreate: null,
+                  onPending: () => Navigator.of(context).maybePop(),
                 ),
-                if (_video != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _video!.name,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _titleController,
-            maxLength: 80,
-            decoration: const InputDecoration(
-              labelText: 'Title',
-              hintText: 'e.g. Pumpkin soup in 30 seconds',
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _captionController,
-            maxLength: 280,
-            minLines: 3,
-            maxLines: 5,
-            decoration: const InputDecoration(
-              labelText: 'Caption',
-              hintText: 'Tell customers what they are seeing.',
-            ),
-          ),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            value: _reelType,
-            decoration: const InputDecoration(labelText: 'Reel type'),
-            items: const [
-              DropdownMenuItem(value: 'hpj_update', child: Text('HPJ update')),
-              DropdownMenuItem(
-                  value: 'new_arrival', child: Text('New arrival')),
-              DropdownMenuItem(value: 'recipe', child: Text('Recipe')),
-              DropdownMenuItem(value: 'nutrition', child: Text('Nutrition')),
-              DropdownMenuItem(
-                  value: 'behind_the_scenes', child: Text('Behind the scenes')),
-              DropdownMenuItem(value: 'promotion', child: Text('Promotion')),
-              DropdownMenuItem(value: 'harvest', child: Text('Harvest')),
-              DropdownMenuItem(
-                  value: 'farm_update', child: Text('Farm update')),
-            ],
-            onChanged: _submitting
-                ? null
-                : (value) => setState(() => _reelType = value ?? 'hpj_update'),
-          ),
-          const SizedBox(height: 12),
-          _FreshReelPlacementSelector(
-            selected: _placements,
-            enabled: !_submitting,
-            onChanged: (placement, selected) {
-              setState(() {
-                if (selected) {
-                  _placements.add(placement);
-                } else {
-                  _placements.remove(placement);
-                }
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          FutureBuilder<List<Product>>(
-            future: _productsFuture,
-            builder: (context, snapshot) {
-              final products = (snapshot.data ?? const <Product>[])
-                  .where(isVisibleCustomerProduct)
-                  .toList();
-              return DropdownButtonFormField<String>(
-                value: _linkedProductId,
-                decoration: const InputDecoration(
-                  labelText: 'Link produce (optional)',
-                  helperText: 'Customers can add this produce from the reel.',
-                ),
-                items: [
-                  const DropdownMenuItem(
-                    value: '',
-                    child: Text('No linked product'),
-                  ),
-                  ...products.map(
-                    (product) => DropdownMenuItem(
-                      value: product.id,
-                      child: Text(
-                        product.name,
-                        overflow: TextOverflow.ellipsis,
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFDDE5DA)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x11000000),
+                            blurRadius: 18,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CircleAvatar(
+                                radius: 20,
+                                backgroundColor: Color(0xFFEAF5E9),
+                                child: Icon(
+                                  Icons.video_camera_back_outlined,
+                                  color: FarmColors.green,
+                                  size: 21,
+                                ),
+                              ),
+                              SizedBox(width: 11),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Create HPJ Reel',
+                                      style: TextStyle(
+                                        color: FarmColors.ink,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Share updates, tips, opportunities and stories with farmers, businesses and customers.',
+                                      style: TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontSize: 10.5,
+                                        height: 1.3,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          const Divider(height: 1),
+                          const SizedBox(height: 15),
+                          if (wide)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 245,
+                                  child: _videoPanel(),
+                                ),
+                                const SizedBox(width: 18),
+                                Expanded(child: _formFields()),
+                              ],
+                            )
+                          else ...[
+                            _videoPanel(),
+                            const SizedBox(height: 15),
+                            _formFields(),
+                          ],
+                          const SizedBox(height: 16),
+                          const Divider(height: 1),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Wrap(
+                              spacing: 10,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: _submitting
+                                      ? null
+                                      : () => Navigator.of(context).maybePop(),
+                                  child: const Text('Cancel'),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: _submitting ? null : _submit,
+                                  icon: _submitting
+                                      ? const SizedBox(
+                                          width: 17,
+                                          height: 17,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(Icons.cloud_upload_outlined),
+                                  label: Text(
+                                    _submitting
+                                        ? 'Saving…'
+                                        : _status == 'published'
+                                            ? 'Create Reel'
+                                            : 'Save Draft',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ],
-                onChanged: _submitting
-                    ? null
-                    : (value) => setState(() => _linkedProductId = value ?? ''),
-              );
-            },
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 18),
-          ElevatedButton.icon(
-            onPressed: _submitting ? null : _submit,
-            icon: _submitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.publish_rounded),
-            label: Text(_submitting ? 'Publishing…' : 'Publish reel'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -3286,6 +4267,42 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
     }
   }
 
+  Future<void> _editCategory(HpjFreshReel reel) async {
+    final next = await showFreshReelCategoryDialog(
+      context,
+      initial: reel.reelType,
+    );
+    if (!mounted || next == null || next == reel.reelType) return;
+
+    try {
+      await setFreshReelType(
+        reelId: reel.id,
+        reelType: next,
+      );
+
+      if (reel.placements.isEmpty) {
+        await setFreshReelPlacements(
+          reelId: reel.id,
+          placements: recommendedFreshReelPlacementsForType(next),
+        );
+      }
+
+      _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Reel category changed to ${freshReelTypeLabel(next)}.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update Reel category: $error')),
+      );
+    }
+  }
+
   Future<void> _editPlacements(HpjFreshReel reel) async {
     final next = await showFreshReelPlacementDialog(
       context,
@@ -3350,7 +4367,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: FarmColors.danger),
+            style: FilledButton.styleFrom(backgroundColor: FarmColors.error),
             child: const Text('Delete permanently'),
           ),
         ],
@@ -3436,17 +4453,26 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
             children: [
               const Header(
-                title: 'Fresh Reels',
-                subtitle: 'Review farmer submissions and publish HPJ videos.',
+                title: 'HPJ Feed & Fresh Reels',
+                subtitle:
+                    'Create, categorize, route and moderate the videos shown across Customer, Farmer and Business feeds.',
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _createHpjReel,
-                  icon: const Icon(Icons.video_call_outlined),
-                  label: const Text('Create HPJ Reel'),
-                ),
+              const SizedBox(height: 10),
+              _HpjReelAdminTopTabs(
+                createSelected: false,
+                onAll: () {
+                  setState(() {
+                    _status = 'all';
+                    _future = fetchAdminFreshReels(status: 'all');
+                  });
+                },
+                onCreate: _createHpjReel,
+                onPending: () {
+                  setState(() {
+                    _status = 'pending';
+                    _future = fetchAdminFreshReels(status: 'pending');
+                  });
+                },
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -3512,6 +4538,7 @@ class _AdminFreshReelsTabState extends State<AdminFreshReelsTab> {
                       onArchive: () => _setStatus(reel, 'archived'),
                       onDelete: () => _deletePermanently(reel),
                       onFeature: () => _toggleFeatured(reel),
+                      onCategory: () => _editCategory(reel),
                       onPlacement: () => _editPlacements(reel),
                     ),
                   ),
@@ -3531,6 +4558,7 @@ class _AdminFreshReelCard extends StatelessWidget {
   final VoidCallback onArchive;
   final VoidCallback onDelete;
   final VoidCallback onFeature;
+  final VoidCallback onCategory;
   final VoidCallback onPlacement;
 
   const _AdminFreshReelCard({
@@ -3540,6 +4568,7 @@ class _AdminFreshReelCard extends StatelessWidget {
     required this.onArchive,
     required this.onDelete,
     required this.onFeature,
+    required this.onCategory,
     required this.onPlacement,
   });
 
@@ -3679,6 +4708,11 @@ class _AdminFreshReelCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              OutlinedButton.icon(
+                onPressed: onCategory,
+                icon: const Icon(Icons.label_outline_rounded, size: 17),
+                label: const Text('Category'),
+              ),
               OutlinedButton.icon(
                 onPressed: onPlacement,
                 icon: const Icon(Icons.place_outlined, size: 17),

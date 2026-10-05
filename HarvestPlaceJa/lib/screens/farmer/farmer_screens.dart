@@ -3785,47 +3785,53 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    Color iconColor = const Color(0xFF19713F),
+    Color iconBackground = const Color(0xFFE7F4E5),
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 36,
-          height: 36,
+          width: 38,
+          height: 38,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: const Color(0xFFFFF4D6),
-            borderRadius: BorderRadius.circular(11),
+            color: iconBackground,
+            shape: BoxShape.circle,
           ),
           child: Icon(
             icon,
-            color: const Color(0xFFA87306),
-            size: 20,
+            color: iconColor,
+            size: 21,
           ),
         ),
-        const SizedBox(width: 9),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: FarmColors.ink,
-                  fontSize: 17,
-                  height: 1.05,
+                  fontSize: 18,
+                  height: 1.03,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: -.25,
+                  letterSpacing: -.35,
                 ),
               ),
               if (subtitle.trim().isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: FarmColors.mutedText,
-                    fontSize: 9.8,
-                    height: 1.25,
+                    fontSize: 10.1,
+                    height: 1.18,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -3837,7 +3843,7 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(999),
           child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+            padding: EdgeInsets.fromLTRB(6, 6, 0, 5),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3845,11 +3851,11 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
                   'See all',
                   style: TextStyle(
                     color: FarmColors.deepGreen,
-                    fontSize: 10,
+                    fontSize: 10.4,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(width: 2),
+                SizedBox(width: 1),
                 Icon(
                   Icons.chevron_right_rounded,
                   color: FarmColors.deepGreen,
@@ -4636,399 +4642,639 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
 
 
   Widget _buyerDemand(BuildContext context) {
-    final rows = demand.take(2).toList(growable: false);
-    final first = rows.isEmpty ? null : rows.first;
+    final rows = demand
+        .where((item) =>
+            item.opportunityGap > 0.0001 || item.visibleDemand > 0.0001)
+        .take(12)
+        .toList(growable: false);
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(11, 11, 11, 12),
-      decoration: _surface(),
-      child: Column(
-        children: [
-          _sectionTitle(
-            icon: Icons.campaign_rounded,
-            title: 'Market Needs',
-            subtitle: 'What the market needs now',
-            onTap: onOpenDemand,
-          ),
-          const SizedBox(height: 10),
-          if (first == null)
-            Material(
-              color: const Color(0xFFF5F8F3),
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                onTap: onOpenDemand,
-                borderRadius: BorderRadius.circular(16),
-                child: const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Icon(Icons.trending_up_rounded, color: FarmColors.primary),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'New market needs will appear here.',
-                          style: TextStyle(
-                            color: FarmColors.mutedText,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded),
-                    ],
+    Widget card(FarmerMarketDemandOpportunity item) {
+      final strong = item.demandSignal == 'urgent' ||
+          item.demandSignal == 'committed_need';
+      final need =
+          item.opportunityGap > 0 ? item.opportunityGap : item.visibleDemand;
+
+      return SizedBox(
+        width: 148,
+        child: Material(
+          color: Colors.white,
+          elevation: 0,
+          borderRadius: BorderRadius.circular(15),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _openMarketNeedDetails(context, item),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: const Color(0xFFE2E9DF)),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF154A2E).withOpacity(.035),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                ),
+                ],
               ),
-            )
-          else
-            Material(
-              color: const Color(0xFFFBFCF9),
-              borderRadius: BorderRadius.circular(17),
-              child: Container(
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(17),
-                    border: Border.all(color: const Color(0xFFE2E8DF)),
-                  ),
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        height: 150,
-                        width: double.infinity,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: InkWell(
-                                onTap: () =>
-                                    _openMarketNeedDetails(context, first),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    HpjProductThumb(
-                                      productName: first.productName,
-                                      size: 180,
-                                      radius: 0,
-                                    ),
-                                    Positioned(
-                                      left: 8,
-                                      bottom: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(.62),
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                        ),
-                                        child: Text(
-                                          first.productName,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 8.5,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 94,
+                    width: double.infinity,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        HpjProductThumb(
+                          productName: item.productName,
+                          size: 160,
+                          radius: 0,
+                        ),
+                        Positioned(
+                          left: 7,
+                          top: 7,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF0CE),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0xFFF8D58E),
                               ),
                             ),
-                            if (rows.length > 1) ...[
-                              const SizedBox(width: 2),
+                            child: Text(
+                              strong ? 'HIGH NEED' : 'OPEN NEED',
+                              style: const TextStyle(
+                                color: Color(0xFFB36500),
+                                fontSize: 6.9,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: .1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.productName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 11,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_number(need)} ${item.unit} needed',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const Spacer(),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.event_outlined,
+                                size: 11,
+                                color: FarmColors.primary,
+                              ),
+                              const SizedBox(width: 3),
                               Expanded(
-                                child: InkWell(
-                                  onTap: () => _openMarketNeedDetails(
-                                    context,
-                                    rows[1],
-                                  ),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      HpjProductThumb(
-                                        productName: rows[1].productName,
-                                        size: 180,
-                                        radius: 0,
-                                      ),
-                                      Positioned(
-                                        left: 8,
-                                        bottom: 8,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                Colors.black.withOpacity(.62),
-                                            borderRadius:
-                                                BorderRadius.circular(999),
-                                          ),
-                                          child: Text(
-                                            rows[1].productName,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 8.5,
-                                              fontWeight: FontWeight.w900,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                child: Text(
+                                  item.nextNeedBy == null
+                                      ? 'Open request'
+                                      : 'By ${_date(item.nextNeedBy)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: FarmColors.primary,
+                                    fontSize: 7.3,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                               ),
                             ],
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFF0C4),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    first.demandSignal == 'urgent' ||
-                                            first.demandSignal ==
-                                                'committed_need'
-                                        ? 'Strong need'
-                                        : 'Open need',
-                                    style: const TextStyle(
-                                      color: Color(0xFFA66100),
-                                      fontSize: 8.4,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                                const Spacer(),
-                                const _HpjLivePill(),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              rows.length > 1
-                                  ? 'Tap a crop for details'
-                                  : first.productName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 17,
-                                height: 1.06,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 7),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _HpjHomeMetricLine(
-                                    icon: Icons.inventory_2_outlined,
-                                    label:
-                                        '${_number(first.visibleDemand)} ${first.unit} needed',
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _HpjHomeMetricLine(
-                                    icon: Icons.event_outlined,
-                                    label:
-                                        'Need by ${_date(first.nextNeedBy)}',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            const Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text(
-                                  'Tap for details',
-                                  style: TextStyle(
-                                    color: FarmColors.primary,
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                SizedBox(width: 2),
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: FarmColors.primary,
-                                  size: 17,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: onOpenDemand,
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(45),
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.only(
-                                bottomLeft: Radius.circular(17),
-                                bottomRight: Radius.circular(17),
-                              ),
-                            ),
                           ),
-                          icon: const Icon(Icons.handshake_outlined, size: 18),
-                          label: const Text(
-                            'I can supply this',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
+                ],
               ),
             ),
-        ],
-      ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle(
+          icon: Icons.campaign_rounded,
+          title: 'Market Needs',
+          subtitle: 'Active buyer requests for produce',
+          onTap: onOpenDemand,
+          iconColor: const Color(0xFFD87900),
+          iconBackground: const Color(0xFFFFF1D4),
+        ),
+        const SizedBox(height: 9),
+        if (rows.isEmpty)
+          _HpjFarmerHomeEmptyCard(
+            icon: Icons.campaign_outlined,
+            title: 'No open market needs right now',
+            subtitle: 'New buyer requests will appear here.',
+            onTap: onOpenDemand,
+          )
+        else
+          SizedBox(
+            height: 172,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(right: 14),
+              itemCount: rows.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => card(rows[index]),
+            ),
+          ),
+      ],
     );
   }
 
-  Widget _latestProduce(BuildContext context) {
-    final supply = supplies.isEmpty ? null : supplies.first;
+  void _openProduceGroupDetails(
+    BuildContext context,
+    String cropName,
+    List<FarmerSupplyForecast> group,
+  ) {
+    final rows = List<FarmerSupplyForecast>.from(group);
+    final unitKeys = rows
+        .map((item) => item.unit.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    final sameUnit = unitKeys.length == 1;
+    final totalQuantity = rows.fold<double>(
+      0,
+      (sum, item) => sum + _supplyQty(item),
+    );
+    final unitLabel = sameUnit && rows.isNotEmpty ? rows.first.unit : '';
+    final needsReview = rows.where(_farmerSupplyNeedsReview).length;
+    final live = rows
+        .where(
+          (item) => item.isHpjConfirmed && !_farmerSupplyNeedsReview(item),
+        )
+        .length;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(11, 11, 11, 12),
-      decoration: _surface(),
-      child: Column(
-        children: [
-          _sectionTitle(
-            icon: Icons.inventory_2_rounded,
-            title: 'My Produce',
-            subtitle: 'Latest listing',
-            onTap: onOpenSupply,
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: .72,
+        minChildSize: .50,
+        maxChildSize: .92,
+        expand: false,
+        builder: (context, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FAF6),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
           ),
-          const SizedBox(height: 10),
-          if (supply == null)
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onOpenSupply,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Post your first produce'),
-              ),
-            )
-          else
-            Material(
-              color: const Color(0xFFFBFCFA),
-              borderRadius: BorderRadius.circular(17),
-              child: InkWell(
-                onTap: () => _openProduceDetails(context, supply),
-                borderRadius: BorderRadius.circular(17),
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
+            children: [
+              Center(
                 child: Container(
-                  clipBehavior: Clip.antiAlias,
+                  width: 42,
+                  height: 4,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(17),
-                    border: Border.all(color: const Color(0xFFE1E7DE)),
+                    color: const Color(0xFFD2D9CF),
+                    borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        height: 142,
-                        width: double.infinity,
-                        child: Stack(
-                          fit: StackFit.expand,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: SizedBox(
+                  height: 180,
+                  child: HpjProductThumb(
+                    productName: cropName,
+                    size: 220,
+                    radius: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                cropName,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                rows.length == 1
+                    ? '1 produce listing'
+                    : '${rows.length} produce listings',
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE1E8DE)),
+                ),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (sameUnit)
+                      _homeStatusPill(
+                        '${_number(totalQuantity)} $unitLabel total',
+                        FarmColors.primary,
+                        const Color(0xFFE6F5E5),
+                      ),
+                    if (live > 0)
+                      _homeStatusPill(
+                        '$live live',
+                        const Color(0xFF178B43),
+                        const Color(0xFFE6F5E5),
+                      ),
+                    if (needsReview > 0)
+                      _homeStatusPill(
+                        '$needsReview need review',
+                        const Color(0xFFC93A49),
+                        const Color(0xFFFFE8EA),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Your listings',
+                style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...rows.map((supply) {
+                final review = _farmerSupplyNeedsReview(supply);
+                final active = supply.isHpjConfirmed && !review;
+                final status = review
+                    ? 'Needs Review'
+                    : active
+                        ? 'Live'
+                        : 'Coming Soon';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        Future<void>.delayed(
+                          const Duration(milliseconds: 120),
+                          () => _openProduceDetails(context, supply),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFE1E8DE),
+                          ),
+                        ),
+                        child: Row(
                           children: [
                             HpjProductThumb(
                               productName: supply.cropName,
-                              size: 190,
-                              radius: 0,
+                              size: 48,
+                              radius: 11,
                             ),
-                            Positioned(
-                              left: 9,
-                              bottom: 9,
-                              child: _HpjStatusPill(
-                                label: supply.isHpjConfirmed
-                                    ? 'Live in Shop'
-                                    : 'Coming Soon',
-                                active: supply.isHpjConfirmed,
-                                warning: !supply.isHpjConfirmed,
-                                dark: true,
-                              ),
-                            ),
-                            const Positioned(
-                              right: 9,
-                              top: 9,
-                              child: _HpjLivePill(),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
-                        child: Row(
-                          children: [
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    supply.cropName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                    '${_number(_supplyQty(supply))} ${supply.unit}',
                                     style: const TextStyle(
                                       color: FarmColors.ink,
-                                      fontSize: 16,
+                                      fontSize: 11.5,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 3),
                                   Text(
-                                    '${_number(_supplyQty(supply))} ${supply.unit} available',
-                                    style: const TextStyle(
-                                      color: FarmColors.primary,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w900,
+                                    status,
+                                    style: TextStyle(
+                                      color: review
+                                          ? const Color(0xFFC93A49)
+                                          : active
+                                              ? FarmColors.primary
+                                              : const Color(0xFFA66500),
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            const Text(
-                              'Details',
-                              style: TextStyle(
-                                color: FarmColors.primary,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(width: 2),
                             const Icon(
                               Icons.chevron_right_rounded,
                               color: FarmColors.primary,
-                              size: 18,
                             ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
+                );
+              }),
+              const SizedBox(height: 4),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(sheetContext).pop();
+                  onOpenSupply();
+                },
+                icon: const Icon(Icons.inventory_2_outlined),
+                label: const Text(
+                  'Manage My Produce',
+                  style: TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _latestProduce(BuildContext context) {
+    final grouped = <String, List<FarmerSupplyForecast>>{};
+    final displayNames = <String, String>{};
+
+    for (final supply in supplies) {
+      final displayName = supply.cropName.trim();
+      if (displayName.isEmpty) continue;
+      final key = hpjSmartNormalizeSearch(displayName);
+      if (key.isEmpty) continue;
+      grouped.putIfAbsent(key, () => <FarmerSupplyForecast>[]).add(supply);
+      displayNames.putIfAbsent(key, () => displayName);
+    }
+
+    final keys = grouped.keys.take(12).toList(growable: false);
+
+    Widget card(String key) {
+      final group = grouped[key] ?? const <FarmerSupplyForecast>[];
+      if (group.isEmpty) return const SizedBox.shrink();
+
+      final representative = group.first;
+      final cropName = displayNames[key] ?? representative.cropName;
+      final anyReview = group.any(_farmerSupplyNeedsReview);
+      final anyLive = group.any(
+        (item) => item.isHpjConfirmed && !_farmerSupplyNeedsReview(item),
+      );
+      final status = anyReview
+          ? 'NEEDS REVIEW'
+          : anyLive
+              ? 'LIVE'
+              : 'COMING SOON';
+
+      final unitKeys = group
+          .map((item) => item.unit.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      final sameUnit = unitKeys.length == 1;
+      final totalQuantity = group.fold<double>(
+        0,
+        (sum, item) => sum + _supplyQty(item),
+      );
+      final quantityText = sameUnit
+          ? '${_number(totalQuantity)} ${representative.unit} available'
+          : '${group.length} listings';
+
+      return SizedBox(
+        width: 140,
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _openProduceGroupDetails(
+              context,
+              cropName,
+              group,
             ),
-        ],
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: const Color(0xFFE1E8DE)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 82,
+                    width: double.infinity,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        HpjProductThumb(
+                          productName: cropName,
+                          size: 160,
+                          radius: 0,
+                        ),
+                        Positioned(
+                          left: 7,
+                          bottom: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: anyReview
+                                  ? const Color(0xFFFFE8EA)
+                                  : anyLive
+                                      ? const Color(0xFFE6F5E5)
+                                      : const Color(0xFFFFF0CE),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: anyReview
+                                        ? const Color(0xFFD64554)
+                                        : anyLive
+                                            ? const Color(0xFF19A54A)
+                                            : const Color(0xFFE29600),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  status,
+                                  style: TextStyle(
+                                    color: anyReview
+                                        ? const Color(0xFFC93A49)
+                                        : anyLive
+                                            ? FarmColors.primary
+                                            : const Color(0xFFA66500),
+                                    fontSize: 6.8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (group.length > 1)
+                          Positioned(
+                            right: 7,
+                            top: 7,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(.92),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${group.length} listings',
+                                style: const TextStyle(
+                                  color: FarmColors.primaryDark,
+                                  fontSize: 7.2,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cropName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 11.2,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          quantityText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 7.8,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle(
+          icon: Icons.spa_rounded,
+          title: 'My Produce',
+          subtitle: 'One card for each crop you grow',
+          onTap: onOpenSupply,
+          iconColor: FarmColors.primary,
+          iconBackground: const Color(0xFFE6F5E5),
+        ),
+        const SizedBox(height: 9),
+        if (keys.isEmpty)
+          _HpjFarmerHomeEmptyCard(
+            icon: Icons.add_circle_outline_rounded,
+            title: 'Add your first produce',
+            subtitle: 'Tell HPJ what you have available for buyers.',
+            onTap: onOpenSupply,
+          )
+        else
+          SizedBox(
+            height: 139,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(right: 14),
+              itemCount: keys.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => card(keys[index]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _homeStatusPill(String label, Color color, Color background) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 7.2,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
@@ -5182,63 +5428,564 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
     );
   }
 
-  Widget _updatesFeed(BuildContext context) {
-    final showNews = preferences.showAgricultureNews;
-    final showReels = preferences.showFreshReels;
-    final showSponsor = preferences.showPromotions;
 
-    if (!showNews && !showReels && !showSponsor) {
-      return const SizedBox.shrink();
+  Widget _swipeableReels(BuildContext context) {
+    // MVP rule: Admin placement is the source of truth. If a published Reel is
+    // assigned to Farmer Home Feed, show it here; category controls the badge.
+
+    Color badgeTextColor(String type) {
+      switch (type) {
+        case 'market_update':
+          return const Color(0xFFC43E3E);
+        case 'produce_opportunity':
+          return const Color(0xFFB56A00);
+        case 'hpj_update':
+          return const Color(0xFF245A9A);
+        case 'success_story':
+          return const Color(0xFF9B6500);
+        default:
+          return FarmColors.deepGreen;
+      }
     }
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
-      decoration: _surface(radius: 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle(
-            icon: Icons.dynamic_feed_rounded,
-            title: 'Updates',
-            subtitle: '',
-            onTap: () => _openReels(context),
+    Color badgeBackground(String type) {
+      switch (type) {
+        case 'market_update':
+          return const Color(0xFFFFEFED);
+        case 'produce_opportunity':
+          return const Color(0xFFFFF2D8);
+        case 'hpj_update':
+          return const Color(0xFFEAF2FF);
+        case 'success_story':
+          return const Color(0xFFFFF5D9);
+        default:
+          return const Color(0xFFEAF6E7);
+      }
+    }
+
+    Widget reelCard(HpjFreshReel reel) {
+      final thumb = cleanHostedImageUrl(reel.thumbnailUrl);
+      final title =
+          reel.title.trim().isNotEmpty ? reel.title.trim() : reel.typeLabel;
+      final label = reel.typeLabel.toUpperCase();
+
+      return SizedBox(
+        width: 148,
+        child: Material(
+          color: const Color(0xFFF3F7F1),
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _open(
+              context,
+              HpjFreshReelsEntryScreen(
+                initialReelId: reel.id,
+                placement: freshReelPlacementFarmerFeed,
+              ),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (thumb != null)
+                  Image.network(
+                    thumb,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _HpjFarmerReelVideoPreview(
+                      videoUrl: reel.videoUrl,
+                    ),
+                  )
+                else
+                  _HpjFarmerReelVideoPreview(
+                    videoUrl: reel.videoUrl,
+                  ),
+                const Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Color(0x14000000),
+                          Color(0xD6000000),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: badgeBackground(reel.reelType).withOpacity(.96),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: badgeTextColor(reel.reelType),
+                        fontSize: 7.2,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Container(
+                    width: 39,
+                    height: 39,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(.93),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow_rounded,
+                      color: FarmColors.deepGreen,
+                      size: 27,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 9,
+                  right: 9,
+                  bottom: 10,
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.2,
+                      height: 1.08,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          if (showReels) ...[
-            const SizedBox(height: 9),
-            FreshReelFeedPreviewCard(
-              preferences: preferences,
-              audience: 'farmer',
-              placement: freshReelPlacementFarmerFeed,
-              refreshKey: refreshKey,
+        ),
+      );
+    }
+
+    return FutureBuilder<List<HpjFreshReel>>(
+      future: fetchPublishedFreshReels(
+        preferences: preferences,
+        limit: 12,
+        placement: freshReelPlacementFarmerFeed,
+      ),
+      builder: (context, reelSnapshot) {
+        if (reelSnapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 196,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (reelSnapshot.hasError) {
+          return _HpjFarmerHomeEmptyCard(
+            icon: Icons.cloud_off_outlined,
+            title: 'HPJ Feed unavailable',
+            subtitle: 'Tap to open Fresh Reels or try again when your connection is restored.',
+            onTap: () => _openReels(context),
+          );
+        }
+
+        final visible = reelSnapshot.data ?? const <HpjFreshReel>[];
+
+        if (visible.isEmpty) {
+          return _HpjFarmerHomeEmptyCard(
+            icon: Icons.smart_display_outlined,
+            title: 'No Farmer Reels yet',
+            subtitle:
+                'HPJ farming tips, market updates and produce opportunities will appear here.',
+            onTap: () => _openReels(context),
+          );
+        }
+
+        return Column(
+          children: [
+            SizedBox(
+              height: 196,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.only(right: 14),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) => reelCard(visible[index]),
+              ),
             ),
+            if (visible.length > 1) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  visible.length.clamp(0, 4).toInt(),
+                  (index) => Container(
+                    width: index == 0 ? 7 : 6,
+                    height: index == 0 ? 7 : 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: index == 0
+                          ? FarmColors.primary
+                          : const Color(0xFFD7E0D4),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
-          if (showNews) ...[
-            const SizedBox(height: 9),
-            HpjAgricultureUpdatesSection(
-              audience: 'farmer',
-              workspace: 'farmer',
-              limit: 1,
-              refreshKey: refreshKey,
-              title: 'News',
-              subtitle: '',
-              socialStyle: true,
-              showImages: true,
-              onAction: onAgricultureAction,
-            ),
-          ],
-          if (showSponsor) ...[
-            const SizedBox(height: 9),
-            FutureBuilder<HpjSponsorCampaign?>(
-              future: fetchActiveFarmerHomeSponsor(),
-              builder: (context, snapshot) {
-                final campaign = snapshot.data;
-                if (campaign == null) return const SizedBox.shrink();
-                return _visualSponsorCard(context, campaign);
+        );
+      },
+    );
+  }
+
+  Widget _updatesFeed(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle(
+          icon: Icons.eco_rounded,
+          title: 'HPJ Feed',
+          subtitle: 'Reels, tips, market updates and opportunities for farmers',
+          onTap: () => _openReels(context),
+          iconColor: FarmColors.primary,
+          iconBackground: const Color(0xFFE6F5E5),
+        ),
+        const SizedBox(height: 9),
+        _swipeableReels(context),
+      ],
+    );
+  }
+
+
+  Widget _matchesHome(BuildContext context) {
+    // Home should show one useful match per crop, not one card per unit/listing.
+    // A supply-only row (visibleDemand == 0) is not a buyer match.
+    final bestByCrop = <String, FarmerMarketDemandOpportunity>{};
+
+    for (final item in demand) {
+      if (!matches(item) || item.visibleDemand <= 0.0001) continue;
+
+      final cropKey = item.productName.trim().toLowerCase();
+      if (cropKey.isEmpty) continue;
+
+      final current = bestByCrop[cropKey];
+      if (current == null ||
+          item.opportunityGap > current.opportunityGap ||
+          (item.opportunityGap == current.opportunityGap &&
+              item.visibleDemand > current.visibleDemand)) {
+        bestByCrop[cropKey] = item;
+      }
+    }
+
+    final rows = bestByCrop.values.toList(growable: false)
+      ..sort((a, b) {
+        final byGap = b.opportunityGap.compareTo(a.opportunityGap);
+        if (byGap != 0) return byGap;
+        return b.visibleDemand.compareTo(a.visibleDemand);
+      });
+
+    final visibleRows = rows.take(12).toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle(
+          icon: Icons.handshake_rounded,
+          title: 'Matches',
+          subtitle: 'Buyer demand matched with your produce',
+          onTap: onOpenDemand,
+          iconColor: FarmColors.primary,
+          iconBackground: const Color(0xFFE6F5E5),
+        ),
+        const SizedBox(height: 9),
+        if (rows.isEmpty)
+          _HpjFarmerHomeEmptyCard(
+            icon: Icons.handshake_outlined,
+            title: 'No matches yet',
+            subtitle:
+                'Keep your produce current and matching opportunities will appear here.',
+            onTap: onOpenDemand,
+          )
+        else
+          SizedBox(
+            height: 104,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(right: 14),
+              itemCount: visibleRows.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = visibleRows[index];
+                final gap = item.opportunityGap > 0
+                    ? item.opportunityGap
+                    : item.visibleDemand;
+                return SizedBox(
+                  width: 156,
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => _openMarketNeedDetails(context, item),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: const Color(0xFFE2E9DF)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF154A2E).withOpacity(.03),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            HpjProductThumb(
+                              productName: item.productName,
+                              size: 58,
+                              radius: 13,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE6F5E5),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: const Text(
+                                      'MATCH',
+                                      style: TextStyle(
+                                        color: FarmColors.primary,
+                                        fontSize: 6.5,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item.productName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 10.2,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${_number(gap)} ${item.unit} needed',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.mutedText,
+                                      fontSize: 7.3,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  if (item.myHpjConfirmedSupply > 0) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Your supply is confirmed',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: FarmColors.primary,
+                                        fontSize: 6.8,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
               },
             ),
-          ],
-        ],
-      ),
+          ),
+      ],
+    );
+  }
+
+  Widget _risingDemandHome(BuildContext context) {
+    final rows = demand
+        .where((item) => item.opportunityGap > 0.0001)
+        .toList(growable: false)
+      ..sort((a, b) {
+        int rank(FarmerMarketDemandOpportunity item) {
+          if (item.demandSignal == 'committed_need') return 3;
+          if (item.demandSignal == 'urgent') return 2;
+          if (item.demandSignal == 'opportunity') return 1;
+          return 0;
+        }
+
+        final bySignal = rank(b).compareTo(rank(a));
+        if (bySignal != 0) return bySignal;
+        return b.opportunityGap.compareTo(a.opportunityGap);
+      });
+
+    final seen = <String>{};
+    final visible = rows
+        .where(
+          (item) => seen.add(
+            '${item.productName.trim().toLowerCase()}|${item.unit.trim().toLowerCase()}',
+          ),
+        )
+        .take(12)
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle(
+          icon: Icons.bar_chart_rounded,
+          title: 'Rising Demand',
+          subtitle: 'Crops with increasing buyer interest',
+          onTap: onOpenDemand,
+          iconColor: FarmColors.primary,
+          iconBackground: const Color(0xFFE6F5E5),
+        ),
+        const SizedBox(height: 9),
+        if (visible.isEmpty)
+          _HpjFarmerHomeEmptyCard(
+            icon: Icons.trending_up_rounded,
+            title: 'No rising demand to show yet',
+            subtitle:
+                'HPJ will show stronger buyer opportunities here as demand changes.',
+            onTap: onOpenDemand,
+          )
+        else
+          SizedBox(
+            height: 96,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(right: 14),
+              itemCount: visible.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = visible[index];
+                final urgent = item.demandSignal == 'urgent' ||
+                    item.demandSignal == 'committed_need';
+
+                return SizedBox(
+                  width: 154,
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => _openMarketNeedDetails(context, item),
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: const Color(0xFFE2E9DF)),
+                        ),
+                        child: Row(
+                          children: [
+                            HpjProductThumb(
+                              productName: item.productName,
+                              size: 61,
+                              radius: 12,
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFF0CE),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      urgent ? 'HIGH DEMAND' : 'TRENDING',
+                                      style: const TextStyle(
+                                        color: Color(0xFFC56A00),
+                                        fontSize: 6.3,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item.productName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: FarmColors.ink,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.bar_chart_rounded,
+                                        size: 11,
+                                        color: FarmColors.mutedText,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Expanded(
+                                        child: Text(
+                                          '${_number(item.opportunityGap)} ${item.unit} open',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: FarmColors.mutedText,
+                                            fontSize: 6.9,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 
@@ -5375,22 +6122,31 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 132),
+        padding: const EdgeInsets.fromLTRB(12, 8, 0, 132),
         children: [
-          _farmHero(context),
-          const SizedBox(height: 11),
-          _composer(context),
-          const SizedBox(height: 11),
-          _buyerDemand(context),
-          const SizedBox(height: 11),
-          _latestProduce(context),
-          const SizedBox(height: 11),
-          Column(
-            children: [
-              _updatesFeed(context),
-              const SizedBox(height: 10),
-              _collection(),
-            ],
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _updatesFeed(context),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _buyerDemand(context),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _latestProduce(context),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _matchesHome(context),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _risingDemandHome(context),
           ),
         ],
       ),
@@ -5399,6 +6155,190 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
 }
 
 
+
+
+class _HpjFarmerReelVideoPreview extends StatefulWidget {
+  final String videoUrl;
+
+  const _HpjFarmerReelVideoPreview({
+    required this.videoUrl,
+  });
+
+  @override
+  State<_HpjFarmerReelVideoPreview> createState() =>
+      _HpjFarmerReelVideoPreviewState();
+}
+
+class _HpjFarmerReelVideoPreviewState
+    extends State<_HpjFarmerReelVideoPreview> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPreview());
+  }
+
+  Future<void> _loadPreview() async {
+    final url = widget.videoUrl.trim();
+    if (url.isEmpty) {
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
+
+    VideoPlayerController? controller;
+    try {
+      controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      await controller.initialize();
+      await controller.setVolume(0);
+
+      // Move slightly into the Reel so Home shows a useful visual frame rather
+      // than a black encoder frame that some videos have at 0:00.
+      final duration = controller.value.duration;
+      final previewPosition = duration > const Duration(milliseconds: 450)
+          ? const Duration(milliseconds: 450)
+          : Duration.zero;
+      await controller.seekTo(previewPosition);
+      await controller.pause();
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _controller = controller;
+      });
+    } catch (error) {
+      farmDebugLog('Farmer Reel preview frame unavailable: $error');
+      if (controller != null) {
+        try {
+          await controller.dispose();
+        } catch (_) {}
+      }
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+
+    if (_failed || controller == null || !controller.value.isInitialized) {
+      return const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF244D32), Color(0xFF81A95F)],
+          ),
+        ),
+      );
+    }
+
+    final size = controller.value.size;
+    if (size.width <= 0 || size.height <= 0) {
+      return const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF244D32), Color(0xFF81A95F)],
+          ),
+        ),
+      );
+    }
+
+    return ClipRect(
+      child: SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: VideoPlayer(controller),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HpjFarmerHomeEmptyCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _HpjFarmerHomeEmptyCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF4F8F1),
+      borderRadius: BorderRadius.circular(15),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Padding(
+          padding: const EdgeInsets.all(13),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: const Color(0xFFE4F2E1),
+                child: Icon(icon, color: FarmColors.primary, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 8.6,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: FarmColors.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _HpjLivePill extends StatelessWidget {
   const _HpjLivePill();
@@ -6047,11 +6987,15 @@ class _HpjFarmerReferenceCropsPageState
     FarmerSupplyForecast item,
   ) async {
     try {
+      // Refresh availability without resubmitting the current status.
+      // HPJ-confirmed supply uses an admin-only status, so sending it back from
+      // a farmer action causes the secure update RPC to reject the request.
       await updateFarmerSupplyForecast(
         forecastId: item.id,
+        cropName: item.cropName,
+        quantityGrowing: item.quantityGrowing,
         expectedQuantity: item.expectedQuantity,
         harvestedQuantity: item.harvestedQuantity,
-        status: item.status,
       );
 
       widget.onChanged();
@@ -6070,9 +7014,7 @@ class _HpjFarmerReferenceCropsPageState
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            friendlyAppError(error),
-          ),
+          content: Text(friendlyAppError(error)),
         ),
       );
     }
@@ -6087,7 +7029,7 @@ class _HpjFarmerReferenceCropsPageState
     return values.fold<double>(0, (a, b) => b > a ? b : a);
   }
 
-  bool _matchesFilter(FarmerSupplyForecast item) {
+  bool _itemMatchesFilter(FarmerSupplyForecast item) {
     final review = _farmerSupplyNeedsReview(item);
     if (_filter == 'Live') return item.isHpjConfirmed && !review;
     if (_filter == 'Coming Soon') {
@@ -6097,18 +7039,359 @@ class _HpjFarmerReferenceCropsPageState
     return true;
   }
 
+  bool _groupMatchesFilter(List<FarmerSupplyForecast> rows) {
+    if (_filter == 'All') return true;
+    return rows.any(_itemMatchesFilter);
+  }
+
+  FarmerSupplyForecast _representative(
+    List<FarmerSupplyForecast> rows,
+  ) {
+    if (rows.length == 1) return rows.first;
+
+    final sorted = rows.toList(growable: false)
+      ..sort((a, b) {
+        int rank(FarmerSupplyForecast item) {
+          if (_farmerSupplyNeedsReview(item)) return 3;
+          if (item.isHpjConfirmed) return 2;
+          return 1;
+        }
+
+        final byStatus = rank(b).compareTo(rank(a));
+        if (byStatus != 0) return byStatus;
+
+        final aDate = a.updatedAt ?? a.createdAt ?? DateTime(2000);
+        final bDate = b.updatedAt ?? b.createdAt ?? DateTime(2000);
+        return bDate.compareTo(aDate);
+      });
+
+    return sorted.first;
+  }
+
+  String _groupQuantityText(List<FarmerSupplyForecast> rows) {
+    if (rows.isEmpty) return '';
+
+    final unitKeys = rows
+        .map((item) => item.unit.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+
+    if (unitKeys.length == 1) {
+      final total = rows.fold<double>(0, (sum, item) => sum + _qty(item));
+      final unit = rows.first.unit.trim().isEmpty ? 'unit' : rows.first.unit;
+      return '${_farmerPartnerNumber(total)} $unit available';
+    }
+
+    return '${rows.length} listings • mixed units';
+  }
+
+  ({String label, Color color}) _groupStatus(
+    List<FarmerSupplyForecast> rows,
+  ) {
+    final reviewCount = rows.where(_farmerSupplyNeedsReview).length;
+    final liveCount = rows
+        .where(
+          (item) => item.isHpjConfirmed && !_farmerSupplyNeedsReview(item),
+        )
+        .length;
+    final comingCount = rows.length - reviewCount - liveCount;
+
+    if (reviewCount > 0) {
+      return (
+        label: reviewCount == 1 ? 'Needs Review' : '$reviewCount Need Review',
+        color: const Color(0xFFD9384E),
+      );
+    }
+    if (liveCount > 0) {
+      return (
+        label: liveCount == rows.length ? 'Live' : '$liveCount Live',
+        color: const Color(0xFF1AA33A),
+      );
+    }
+    return (
+      label: comingCount <= 1 ? 'Coming Soon' : '$comingCount Coming Soon',
+      color: const Color(0xFFE29811),
+    );
+  }
+
+  Future<void> _openCropListings(
+    String cropName,
+    List<FarmerSupplyForecast> sourceRows,
+  ) async {
+    if (sourceRows.isEmpty) return;
+
+    if (sourceRows.length == 1) {
+      await widget.onOpenSupply(sourceRows.first);
+      return;
+    }
+
+    final rows = sourceRows.toList(growable: false)
+      ..sort((a, b) {
+        final aDate = a.updatedAt ?? a.createdAt ?? DateTime(2000);
+        final bDate = b.updatedAt ?? b.createdAt ?? DateTime(2000);
+        return bDate.compareTo(aDate);
+      });
+
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: .72,
+          minChildSize: .48,
+          maxChildSize: .92,
+          expand: false,
+          builder: (context, controller) {
+            final summary = _groupStatus(rows);
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FAF6),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(26),
+                ),
+              ),
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 30),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD2D9CF),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      HpjProductThumb(
+                        productName: cropName,
+                        size: 76,
+                        radius: 16,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              cropName,
+                              style: const TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${rows.length} listings • ${_groupQuantityText(rows)}',
+                              style: const TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: summary.color.withOpacity(.10),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                summary.label,
+                                style: TextStyle(
+                                  color: summary.color,
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Choose a listing',
+                    style: TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Edit, confirm or repost the exact listing you want to manage.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 9.5,
+                      height: 1.3,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ...rows.map((item) {
+                    final review = _farmerSupplyNeedsReview(item);
+                    final live = item.isHpjConfirmed && !review;
+                    final status = review
+                        ? 'Needs Review'
+                        : live
+                            ? 'Live'
+                            : 'Coming Soon';
+                    final color = review
+                        ? const Color(0xFFD9384E)
+                        : live
+                            ? const Color(0xFF1AA33A)
+                            : const Color(0xFFE29811);
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(15),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(15),
+                          onTap: () async {
+                            Navigator.of(sheetContext).pop();
+                            await widget.onOpenSupply(item);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(
+                                color: const Color(0xFFE1E8DE),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                HpjProductThumb(
+                                  productName: item.cropName,
+                                  size: 52,
+                                  radius: 11,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${_farmerPartnerNumber(_qty(item))} ${item.unit}',
+                                        style: const TextStyle(
+                                          color: FarmColors.ink,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        status,
+                                        style: TextStyle(
+                                          color: color,
+                                          fontSize: 8.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (review)
+                                  IconButton(
+                                    tooltip: 'Still available',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () async {
+                                      await _confirmStillAvailable(item);
+                                      if (sheetContext.mounted) {
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.check_circle_outline_rounded,
+                                      color: FarmColors.primary,
+                                    ),
+                                  ),
+                                IconButton(
+                                  tooltip: 'Post again',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () async {
+                                    final posted =
+                                        await _showFarmerRepostProduceSheet(
+                                      context,
+                                      item,
+                                    );
+                                    if (posted == true) {
+                                      widget.onChanged();
+                                      if (sheetContext.mounted) {
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(
+                                    Icons.repeat_rounded,
+                                    color: FarmColors.primary,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: FarmColors.deepGreen,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final normalized = _query.trim().toLowerCase();
-    final current = widget.active
-        .where((item) {
-          final matchesSearch = normalized.isEmpty ||
-              item.cropName.toLowerCase().contains(normalized) ||
-              item.unit.toLowerCase().contains(normalized);
-          return matchesSearch && _matchesFilter(item);
-        })
-        .take(50)
-        .toList(growable: false);
+
+    final grouped = <String, List<FarmerSupplyForecast>>{};
+    final cropNames = <String, String>{};
+
+    for (final item in widget.active) {
+      final cropName = item.cropName.trim();
+      if (cropName.isEmpty) continue;
+      final key = hpjSmartNormalizeSearch(cropName);
+      if (key.isEmpty) continue;
+      grouped.putIfAbsent(key, () => <FarmerSupplyForecast>[]).add(item);
+      cropNames.putIfAbsent(key, () => cropName);
+    }
+
+    final current = grouped.entries.where((entry) {
+      final rows = entry.value;
+      final cropName = cropNames[entry.key] ?? rows.first.cropName;
+      final matchesSearch = normalized.isEmpty ||
+          cropName.toLowerCase().contains(normalized) ||
+          rows.any((item) => item.unit.toLowerCase().contains(normalized));
+      return matchesSearch && _groupMatchesFilter(rows);
+    }).toList(growable: false)
+      ..sort((a, b) {
+        final aName = cropNames[a.key] ?? a.value.first.cropName;
+        final bName = cropNames[b.key] ?? b.value.first.cropName;
+        return aName.toLowerCase().compareTo(bName.toLowerCase());
+      });
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -6142,7 +7425,6 @@ class _HpjFarmerReferenceCropsPageState
             ),
           ],
         ),
-        const SizedBox(height: 8),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.fromLTRB(9, 9, 9, 8),
@@ -6157,7 +7439,7 @@ class _HpjFarmerReferenceCropsPageState
                 onChanged: (value) => setState(() => _query = value),
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: 'Search my crops',
+                  hintText: 'Search crops',
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: _query.isEmpty
                       ? null
@@ -6167,40 +7449,34 @@ class _HpjFarmerReferenceCropsPageState
                           icon: const Icon(Icons.close_rounded),
                         ),
                   filled: true,
-                  fillColor: const Color(0xFFF7FAF5),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 13,
-                  ),
+                  fillColor: const Color(0xFFF8FAF6),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(15),
-                    borderSide: const BorderSide(
-                      color: Color(0xFFDCE5D9),
-                    ),
+                    borderSide: BorderSide.none,
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(15),
                     borderSide: const BorderSide(
-                      color: Color(0xFFDCE5D9),
+                      color: Color(0xFFDCE6D9),
                     ),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: const BorderSide(
-                      color: FarmColors.primary,
-                      width: 1.3,
-                    ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
                   ),
                 ),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 8),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    for (final label
-                        in const ['All', 'Live', 'Coming Soon', 'Needs Review'])
+                    for (final label in const <String>[
+                      'All',
+                      'Live',
+                      'Coming Soon',
+                      'Needs Review',
+                    ])
                       Padding(
                         padding: const EdgeInsets.only(right: 7),
                         child: ChoiceChip(
@@ -6241,40 +7517,10 @@ class _HpjFarmerReferenceCropsPageState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.eco_rounded, color: FarmColors.primary),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Crop List',
-                          style: TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        Text(
-                          'Tap a crop to edit.',
-                          style: TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 9.7,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
               Row(
                 children: [
                   Text(
-                    '${current.length} result${current.length == 1 ? '' : 's'}',
+                    '${current.length} crop${current.length == 1 ? '' : 's'}',
                     style: const TextStyle(
                       color: FarmColors.mutedText,
                       fontSize: 9.5,
@@ -6311,37 +7557,35 @@ class _HpjFarmerReferenceCropsPageState
                       : 'Try another crop name or change the filter.',
                 )
               else
-                ...current.map((item) {
-                  final qty = _qty(item);
-                  final review = _farmerSupplyNeedsReview(item);
-                  final status = review
-                      ? 'Needs Review'
-                      : item.isHpjConfirmed
-                          ? 'Live'
-                          : 'Coming Soon';
-                  final color = review
-                      ? const Color(0xFFD9384E)
-                      : item.isHpjConfirmed
-                          ? const Color(0xFF1AA33A)
-                          : const Color(0xFFE29811);
+                ...current.map((entry) {
+                  final rows = entry.value;
+                  final item = _representative(rows);
+                  final cropName = cropNames[entry.key] ?? item.cropName;
+                  final summary = _groupStatus(rows);
+                  final listingLabel = rows.length == 1
+                      ? '1 listing'
+                      : '${rows.length} listings';
+
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Material(
                       color: const Color(0xFFFCFDFB),
                       borderRadius: BorderRadius.circular(15),
                       child: InkWell(
-                        onTap: () => widget.onOpenSupply(item),
+                        onTap: () => _openCropListings(cropName, rows),
                         borderRadius: BorderRadius.circular(15),
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: const Color(0xFFE2E8DF)),
+                            border: Border.all(
+                              color: const Color(0xFFE2E8DF),
+                            ),
                           ),
                           child: Row(
                             children: [
                               HpjProductThumb(
-                                productName: item.cropName,
+                                productName: cropName,
                                 size: 72,
                                 radius: 12,
                               ),
@@ -6350,144 +7594,81 @@ class _HpjFarmerReferenceCropsPageState
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      item.cropName,
-                                      style: const TextStyle(
-                                        color: FarmColors.ink,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w900,
-                                      ),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            cropName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: FarmColors.ink,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                        if (rows.length > 1)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF0F5EE),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              listingLabel,
+                                              style: const TextStyle(
+                                                color: FarmColors.deepGreen,
+                                                fontSize: 7.5,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 2),
+                                    const SizedBox(height: 3),
                                     Text(
-                                      '${_farmerPartnerNumber(qty)} ${item.unit} available',
+                                      _groupQuantityText(rows),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: FarmColors.mutedText,
                                         fontSize: 9.7,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                    const SizedBox(height: 5),
+                                    const SizedBox(height: 6),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 9,
                                         vertical: 5,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: color.withOpacity(.10),
-                                        borderRadius: BorderRadius.circular(999),
+                                        color: summary.color.withOpacity(.10),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
                                       ),
                                       child: Text(
-                                        status,
+                                        summary.label,
                                         style: TextStyle(
-                                          color: color,
+                                          color: summary.color,
                                           fontSize: 8.8,
                                           fontWeight: FontWeight.w900,
                                         ),
                                       ),
                                     ),
-                                    if (review) ...[
-                                      const SizedBox(height: 6),
-                                      InkWell(
-                                        borderRadius:
-                                            BorderRadius.circular(999),
-                                        onTap: () =>
-                                            _confirmStillAvailable(item),
-                                        child: Container(
-                                          padding:
-                                              const EdgeInsets.symmetric(
-                                            horizontal: 9,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                const Color(0xFFEAF5E9),
-                                            borderRadius:
-                                                BorderRadius.circular(999),
-                                            border: Border.all(
-                                              color:
-                                                  const Color(0xFFCFE4CC),
-                                            ),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize:
-                                                MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.check_rounded,
-                                                color:
-                                                    FarmColors.primary,
-                                                size: 14,
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Still available',
-                                                style: TextStyle(
-                                                  color: FarmColors
-                                                      .deepGreen,
-                                                  fontSize: 8.4,
-                                                  fontWeight:
-                                                      FontWeight.w900,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
                                   ],
                                 ),
                               ),
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    tooltip: item.isActive
-                                        ? 'Repost produce'
-                                        : 'Post again',
-                                    visualDensity:
-                                        VisualDensity.compact,
-                                    onPressed: () async {
-                                      final posted =
-                                          await _showFarmerRepostProduceSheet(
-                                        context,
-                                        item,
-                                      );
-
-                                      if (posted != true ||
-                                          !context.mounted) {
-                                        return;
-                                      }
-
-                                      widget.onChanged();
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            '${item.cropName} posted again.',
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(
-                                      Icons.repeat_rounded,
-                                      color: FarmColors.primary,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Edit crop',
-                                    visualDensity:
-                                        VisualDensity.compact,
-                                    onPressed: () =>
-                                        widget.onOpenSupply(item),
-                                    icon: const Icon(
-                                      Icons.edit_outlined,
-                                      color:
-                                          FarmColors.deepGreen,
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                color: FarmColors.deepGreen,
+                                size: 24,
                               ),
                             ],
                           ),
@@ -28124,6 +29305,140 @@ class _AdminSupplyMarketDealSheetState
   }
 }
 
+class _FarmerBuyingGuideMvp {
+  final String cropName;
+  final String unit;
+  final String marketSource;
+  final String marketPeriod;
+  final double radaCostOfProduction;
+  final double radaFarmgateLow;
+  final double radaFarmgateReference;
+  final double radaFarmgateHigh;
+  final double radaWholesaleReference;
+  final double hpjFarmerMin;
+  final double hpjFarmerMax;
+  final DateTime? updatedAt;
+
+  const _FarmerBuyingGuideMvp({
+    required this.cropName,
+    required this.unit,
+    required this.marketSource,
+    required this.marketPeriod,
+    required this.radaCostOfProduction,
+    required this.radaFarmgateLow,
+    required this.radaFarmgateReference,
+    required this.radaFarmgateHigh,
+    required this.radaWholesaleReference,
+    required this.hpjFarmerMin,
+    required this.hpjFarmerMax,
+    required this.updatedAt,
+  });
+
+  factory _FarmerBuyingGuideMvp.fromMap(Map<String, dynamic> row) {
+    double money(String key) {
+      final value = row[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse((value ?? '').toString()) ?? 0;
+    }
+
+    DateTime? date(String key) {
+      final raw = (row[key] ?? '').toString().trim();
+      return raw.isEmpty ? null : DateTime.tryParse(raw)?.toLocal();
+    }
+
+    return _FarmerBuyingGuideMvp(
+      cropName: (row['crop_name'] ?? '').toString().trim(),
+      unit: (row['unit'] ?? '').toString().trim(),
+      marketSource: (row['market_source'] ?? 'RADA/JAMIS').toString().trim(),
+      marketPeriod: (row['market_period'] ?? '').toString().trim(),
+      radaCostOfProduction: money('rada_cost_of_production'),
+      radaFarmgateLow: money('rada_farmgate_low'),
+      radaFarmgateReference: money('rada_farmgate_reference'),
+      radaFarmgateHigh: money('rada_farmgate_high'),
+      radaWholesaleReference: money('rada_wholesale_reference'),
+      hpjFarmerMin: money('hpj_farmer_min'),
+      hpjFarmerMax: money('hpj_farmer_max'),
+      updatedAt: date('updated_at'),
+    );
+  }
+
+  bool get hasRada =>
+      radaFarmgateLow > 0 ||
+      radaFarmgateReference > 0 ||
+      radaFarmgateHigh > 0 ||
+      radaWholesaleReference > 0;
+
+  bool get hasHpjRange => hpjFarmerMin > 0 || hpjFarmerMax > 0;
+}
+
+Future<_FarmerBuyingGuideMvp?> _fetchFarmerBuyingGuideMvp({
+  required String cropName,
+  required String unit,
+}) async {
+  try {
+    final response = await supabase.rpc(
+      'hpj_farmer_buying_guide_mvp',
+      params: <String, dynamic>{
+        'p_crop_name': cropName.trim(),
+        'p_unit': unit.trim(),
+      },
+    );
+
+    if (response is List && response.isNotEmpty && response.first is Map) {
+      return _FarmerBuyingGuideMvp.fromMap(
+        Map<String, dynamic>.from(response.first as Map),
+      );
+    }
+    if (response is Map) {
+      return _FarmerBuyingGuideMvp.fromMap(
+        Map<String, dynamic>.from(response),
+      );
+    }
+  } catch (error) {
+    farmDebugLog('Farmer buying guide unavailable: $error');
+  }
+  return null;
+}
+
+Future<double?> _fetchFarmerMarketplaceFeePercentMvp() async {
+  try {
+    final response = await supabase.rpc('hpj_get_commercial_fee_settings');
+    Map<String, dynamic>? row;
+    if (response is List && response.isNotEmpty && response.first is Map) {
+      row = Map<String, dynamic>.from(response.first as Map);
+    } else if (response is Map) {
+      row = Map<String, dynamic>.from(response);
+    }
+    if (row == null) return null;
+    final raw = row['farmer_marketplace_fee_percent'];
+    final fee = raw is num
+        ? raw.toDouble()
+        : double.tryParse((raw ?? '').toString());
+    if (fee == null || fee < 0 || fee > 100) return null;
+    return fee;
+  } catch (error) {
+    farmDebugLog('Farmer marketplace fee unavailable: $error');
+    return null;
+  }
+}
+
+Future<void> _createFarmerInitialSupplyChannelOfferMvp({
+  required String supplyId,
+  double? retailAskingPrice,
+  double? wholesaleAskingPrice,
+  String note = '',
+}) async {
+  await supabase.rpc(
+    'farmer_create_initial_supply_channel_offer_mvp',
+    params: <String, dynamic>{
+      'p_supply_id': supplyId.trim(),
+      'p_retail_asking_price': retailAskingPrice,
+      'p_wholesale_asking_price': wholesaleAskingPrice,
+      'p_note': note.trim(),
+    },
+  );
+}
+
 class _FarmerSupplyEntrySheet extends StatefulWidget {
   final String farmerId;
   final List<FarmerSupplyForecast> recentSupplies;
@@ -28138,10 +29453,11 @@ class _FarmerSupplyEntrySheet extends StatefulWidget {
       _FarmerSupplyEntrySheetState();
 }
 
-class _FarmerSupplyEntrySheetState
-    extends State<_FarmerSupplyEntrySheet> {
+class _FarmerSupplyEntrySheetState extends State<_FarmerSupplyEntrySheet> {
   final cropController = TextEditingController();
   final quantityController = TextEditingController();
+  final retailPriceController = TextEditingController();
+  final wholesalePriceController = TextEditingController();
   final notesController = TextEditingController();
 
   static const allowedCategories = <String>[
@@ -28158,96 +29474,91 @@ class _FarmerSupplyEntrySheetState
     'bundle',
     'each',
     'crate',
+    'dozen',
   ];
 
   int step = 0;
   String selectedCategory = 'Vegetables';
   String selectedUnit = 'lb';
-
-  DateTime expectedHarvestDate =
-      DateTime.now().add(
-    const Duration(days: 14),
-  );
-
+  DateTime expectedHarvestDate = DateTime.now();
+  bool readyNow = true;
   bool saving = false;
+  bool pricingLoading = false;
   bool showMoreDetails = false;
   bool showOnFarmPageComingSoon = true;
-
-  Product? selectedProduct;
   bool sellToCustomer = true;
   bool sellToWholesale = true;
-
-  bool requestShopListing = true;
+  bool requestShopListing = false;
   bool uploadingListingImage = false;
   String? listingImageUrl;
+  Product? selectedProduct;
+  _FarmerBuyingGuideMvp? buyingGuide;
+  double? farmerFeePercent;
+  String pricingMessage = '';
 
   List<FarmerSupplyForecast> get recentCrops {
-    final unique =
-        <String, FarmerSupplyForecast>{};
-
-    for (final item
-        in widget.recentSupplies) {
-      final key =
-          item.cropName.trim().toLowerCase();
-
-      if (key.isEmpty ||
-          unique.containsKey(key)) {
-        continue;
-      }
-
+    final unique = <String, FarmerSupplyForecast>{};
+    for (final item in widget.recentSupplies) {
+      final key = item.cropName.trim().toLowerCase();
+      if (key.isEmpty || unique.containsKey(key)) continue;
       unique[key] = item;
-
-      if (unique.length >= 4) break;
+      if (unique.length >= 5) break;
     }
-
     return unique.values.toList();
   }
 
   @override
   void initState() {
     super.initState();
-
     if (widget.recentSupplies.isNotEmpty) {
-      _reuseDefaults(
-        widget.recentSupplies.first,
-        setCrop: false,
-      );
+      _reuseDefaults(widget.recentSupplies.first, setCrop: false);
     }
-
     cropController.addListener(_persistSmartDraft);
     quantityController.addListener(_persistSmartDraft);
+    retailPriceController.addListener(_persistSmartDraft);
+    wholesalePriceController.addListener(_persistSmartDraft);
     notesController.addListener(_persistSmartDraft);
     unawaited(_restoreSmartDraft());
+  }
+
+  @override
+  void dispose() {
+    cropController.dispose();
+    quantityController.dispose();
+    retailPriceController.dispose();
+    wholesalePriceController.dispose();
+    notesController.dispose();
+    super.dispose();
   }
 
   Future<void> _restoreSmartDraft() async {
     final crop = await HpjSmartLocalStore.readString('farmer_supply_crop');
     final quantity = await HpjSmartLocalStore.readString('farmer_supply_quantity');
+    final legacyPrice = await HpjSmartLocalStore.readString('farmer_supply_price');
+    final retailPrice = await HpjSmartLocalStore.readString('farmer_supply_retail_price');
+    final wholesalePrice = await HpjSmartLocalStore.readString('farmer_supply_wholesale_price');
     final notes = await HpjSmartLocalStore.readString('farmer_supply_notes');
     final category = await HpjSmartLocalStore.readString('farmer_supply_category');
     final unit = await HpjSmartLocalStore.readString('farmer_supply_unit');
     final harvestMs = await HpjSmartLocalStore.readInt('farmer_supply_harvest_ms');
     final savedStep = await HpjSmartLocalStore.readInt('farmer_supply_step');
-    final savedCustomer =
-        await HpjSmartLocalStore.readInt('farmer_supply_sell_customer');
-    final savedWholesale =
-        await HpjSmartLocalStore.readInt('farmer_supply_sell_wholesale');
-    final savedShopListing =
-        await HpjSmartLocalStore.readInt('farmer_supply_request_shop_listing');
-    final savedFarmPageComingSoon =
-        await HpjSmartLocalStore.readInt(
-          'farmer_supply_show_farm_page_coming_soon',
-        );
-    final savedListingImage =
-        await HpjSmartLocalStore.readString('farmer_supply_listing_image_url');
+    final savedReadyNow = await HpjSmartLocalStore.readInt('farmer_supply_ready_now');
+    final savedCustomer = await HpjSmartLocalStore.readInt('farmer_supply_sell_customer');
+    final savedWholesale = await HpjSmartLocalStore.readInt('farmer_supply_sell_wholesale');
+    final savedShopListing = await HpjSmartLocalStore.readInt('farmer_supply_request_shop_listing');
+    final savedFarmPage = await HpjSmartLocalStore.readInt('farmer_supply_show_farm_page_coming_soon');
+    final savedListingImage = await HpjSmartLocalStore.readString('farmer_supply_listing_image_url');
 
     if (!mounted) return;
-    final hasDraft = (crop?.isNotEmpty ?? false) || (quantity?.isNotEmpty ?? false);
+    final hasDraft =
+        (crop?.isNotEmpty ?? false) || (quantity?.isNotEmpty ?? false);
     if (!hasDraft) return;
 
     setState(() {
       cropController.text = crop ?? cropController.text;
       quantityController.text = quantity ?? quantityController.text;
+      retailPriceController.text = retailPrice ?? legacyPrice ?? retailPriceController.text;
+      wholesalePriceController.text = wholesalePrice ?? legacyPrice ?? wholesalePriceController.text;
       notesController.text = notes ?? notesController.text;
       if (category != null && allowedCategories.contains(category)) {
         selectedCategory = category;
@@ -28256,82 +29567,53 @@ class _FarmerSupplyEntrySheetState
       if (harvestMs != null && harvestMs > 0) {
         expectedHarvestDate = DateTime.fromMillisecondsSinceEpoch(harvestMs);
       }
+      readyNow = savedReadyNow == null ? readyNow : savedReadyNow == 1;
       step = (savedStep ?? 0).clamp(0, 1).toInt();
-      if (savedCustomer != null) {
-        sellToCustomer = savedCustomer == 1;
-      }
-      if (savedWholesale != null) {
-        sellToWholesale = savedWholesale == 1;
-      }
-      if (!sellToCustomer && !sellToWholesale) {
-        sellToWholesale = true;
-      }
-      if (savedShopListing != null) {
-        requestShopListing = savedShopListing == 1;
-      }
-      if (savedFarmPageComingSoon != null) {
-        showOnFarmPageComingSoon = savedFarmPageComingSoon == 1;
-      }
-      final cleanListingImage =
-          cleanHostedImageUrl(savedListingImage);
-      if (cleanListingImage != null) {
-        listingImageUrl = cleanListingImage;
-      }
+      if (savedCustomer != null) sellToCustomer = savedCustomer == 1;
+      if (savedWholesale != null) sellToWholesale = savedWholesale == 1;
+      if (!sellToCustomer && !sellToWholesale) sellToWholesale = true;
+      if (savedShopListing != null) requestShopListing = savedShopListing == 1;
+      if (savedFarmPage != null) showOnFarmPageComingSoon = savedFarmPage == 1;
+      final cleanListingImage = cleanHostedImageUrl(savedListingImage);
+      if (cleanListingImage != null) listingImageUrl = cleanListingImage;
     });
+
+    if (step >= 1 && cropController.text.trim().isNotEmpty) {
+      unawaited(_loadPricing());
+    }
   }
 
   void _persistSmartDraft() {
     unawaited(HpjSmartLocalStore.writeString('farmer_supply_crop', cropController.text));
     unawaited(HpjSmartLocalStore.writeString('farmer_supply_quantity', quantityController.text));
+    unawaited(HpjSmartLocalStore.writeString('farmer_supply_retail_price', retailPriceController.text));
+    unawaited(HpjSmartLocalStore.writeString('farmer_supply_wholesale_price', wholesalePriceController.text));
     unawaited(HpjSmartLocalStore.writeString('farmer_supply_notes', notesController.text));
     unawaited(HpjSmartLocalStore.writeString('farmer_supply_category', selectedCategory));
     unawaited(HpjSmartLocalStore.writeString('farmer_supply_unit', selectedUnit));
-    unawaited(HpjSmartLocalStore.writeInt(
-      'farmer_supply_harvest_ms',
-      expectedHarvestDate.millisecondsSinceEpoch,
-    ));
+    unawaited(HpjSmartLocalStore.writeInt('farmer_supply_harvest_ms', expectedHarvestDate.millisecondsSinceEpoch));
     unawaited(HpjSmartLocalStore.writeInt('farmer_supply_step', step));
-    unawaited(
-      HpjSmartLocalStore.writeInt(
-        'farmer_supply_sell_customer',
-        sellToCustomer ? 1 : 0,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeInt(
-        'farmer_supply_sell_wholesale',
-        sellToWholesale ? 1 : 0,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeInt(
-        'farmer_supply_request_shop_listing',
-        requestShopListing ? 1 : 0,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeInt(
-        'farmer_supply_show_farm_page_coming_soon',
-        showOnFarmPageComingSoon ? 1 : 0,
-      ),
-    );
-    unawaited(
-      HpjSmartLocalStore.writeString(
-        'farmer_supply_listing_image_url',
-        listingImageUrl ?? '',
-      ),
-    );
+    unawaited(HpjSmartLocalStore.writeInt('farmer_supply_ready_now', readyNow ? 1 : 0));
+    unawaited(HpjSmartLocalStore.writeInt('farmer_supply_sell_customer', sellToCustomer ? 1 : 0));
+    unawaited(HpjSmartLocalStore.writeInt('farmer_supply_sell_wholesale', sellToWholesale ? 1 : 0));
+    unawaited(HpjSmartLocalStore.writeInt('farmer_supply_request_shop_listing', requestShopListing ? 1 : 0));
+    unawaited(HpjSmartLocalStore.writeInt('farmer_supply_show_farm_page_coming_soon', showOnFarmPageComingSoon ? 1 : 0));
+    unawaited(HpjSmartLocalStore.writeString('farmer_supply_listing_image_url', listingImageUrl ?? ''));
   }
 
   Future<void> _clearSmartDraft() async {
     for (final key in const <String>[
       'farmer_supply_crop',
       'farmer_supply_quantity',
+      'farmer_supply_price',
+      'farmer_supply_retail_price',
+      'farmer_supply_wholesale_price',
       'farmer_supply_notes',
       'farmer_supply_category',
       'farmer_supply_unit',
       'farmer_supply_harvest_ms',
       'farmer_supply_step',
+      'farmer_supply_ready_now',
       'farmer_supply_sell_customer',
       'farmer_supply_sell_wholesale',
       'farmer_supply_request_shop_listing',
@@ -28342,90 +29624,30 @@ class _FarmerSupplyEntrySheetState
     }
   }
 
-  @override
-  void dispose() {
-    cropController.dispose();
-    quantityController.dispose();
-    notesController.dispose();
-    super.dispose();
-  }
-
-  void _reuseDefaults(
-    FarmerSupplyForecast supply, {
-    bool setCrop = true,
-  }) {
-    final category =
-        supply.category?.trim() ?? '';
-    final unit = supply.unit.trim();
-
+  void _reuseDefaults(FarmerSupplyForecast supply, {bool setCrop = true}) {
+    final category = supply.category?.trim() ?? '';
+    final unit = supply.unit.trim().toLowerCase();
     setState(() {
-      if (setCrop) {
-        cropController.text =
-            supply.cropName;
-      }
-
-      if (allowedCategories
-          .contains(category)) {
-        selectedCategory = category;
-      }
-
-      if (allowedUnits.contains(unit)) {
-        selectedUnit = unit;
-      }
-    });
-    _persistSmartDraft();
-  }
-
-  void _setHarvestDays(int days) {
-    final now = DateTime.now();
-
-    setState(() {
-      expectedHarvestDate = DateTime(
-        now.year,
-        now.month,
-        now.day,
-      ).add(
-        Duration(days: days),
-      );
-    });
-    _persistSmartDraft();
-  }
-
-  Future<void> _chooseHarvestDate() async {
-    final now = DateTime.now();
-
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: expectedHarvestDate,
-      firstDate: now,
-      lastDate: now.add(
-        const Duration(days: 730),
-      ),
-    );
-
-    if (!mounted || selected == null) {
-      return;
-    }
-
-    setState(() {
-      expectedHarvestDate = selected;
+      if (setCrop) cropController.text = supply.cropName;
+      if (allowedCategories.contains(category)) selectedCategory = category;
+      if (allowedUnits.contains(unit)) selectedUnit = unit;
+      selectedProduct = null;
+      buyingGuide = null;
+      pricingMessage = '';
     });
     _persistSmartDraft();
   }
 
   Future<void> _chooseCropByPicture() async {
     if (saving) return;
-
     final product = await showHpjProductPicturePicker(
       context,
-      title: 'What produce do you have?',
+      title: 'What are you selling?',
     );
-
     if (!mounted || product == null) return;
 
     final category = product.category.trim();
     final unit = (product.unit ?? '').trim().toLowerCase();
-
     final productFarmerId = product.farmerId?.trim() ?? '';
     final linkedToThisFarm =
         productFarmerId.isNotEmpty && productFarmerId == widget.farmerId;
@@ -28433,61 +29655,31 @@ class _FarmerSupplyEntrySheetState
     setState(() {
       cropController.text = product.name;
       selectedProduct = linkedToThisFarm ? product : null;
-
       if (linkedToThisFarm) {
         listingImageUrl = cleanHostedImageUrl(product.imageUrl);
-        requestShopListing = !product.canAddToCart;
       }
-
-      selectedCategory = allowedCategories.contains(category)
-          ? category
-          : 'Other';
-
-      if (allowedUnits.contains(unit)) {
-        selectedUnit = unit;
-      }
+      if (allowedCategories.contains(category)) selectedCategory = category;
+      if (allowedUnits.contains(unit)) selectedUnit = unit;
+      buyingGuide = null;
+      pricingMessage = '';
     });
     _persistSmartDraft();
-
-    if (!linkedToThisFarm && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Crop selected. This farm does not yet have a linked marketplace product for it; HPJ can link one later.',
-          ),
-        ),
-      );
-    }
   }
-
 
   Future<void> _uploadShopListingImage() async {
     if (saving || uploadingListingImage) return;
-
     final picked = await pickProductImageFromDevice();
     if (picked == null || !mounted) return;
-
     setState(() => uploadingListingImage = true);
-
     try {
       final url = await farmerUploadOwnPublicFarmImage(
         farmerId: widget.farmerId,
         slot: 'shop-listing-request',
         image: picked,
       );
-
       if (!mounted) return;
-
-      setState(() {
-        listingImageUrl = url;
-      });
+      setState(() => listingImageUrl = url);
       _persistSmartDraft();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Product photo ready for HPJ review.'),
-        ),
-      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -28495,105 +29687,1038 @@ class _FarmerSupplyEntrySheetState
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => uploadingListingImage = false);
-      }
+      if (mounted) setState(() => uploadingListingImage = false);
     }
   }
 
-  bool _validateStepOne() {
-    if (cropController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Tell HPJ which crop you are growing.',
-          ),
-        ),
-      );
-      return false;
-    }
-
-    final quantity = double.tryParse(
-      quantityController.text
-          .trim()
-          .replaceAll(',', ''),
+  Future<void> _chooseHarvestDate() async {
+    final today = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: expectedHarvestDate.isBefore(today) ? today : expectedHarvestDate,
+      firstDate: DateTime(today.year, today.month, today.day),
+      lastDate: today.add(const Duration(days: 730)),
     );
-
-    if (quantity == null ||
-        quantity <= 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Add your best estimate of the quantity you expect to harvest.',
-          ),
-        ),
-      );
-      return false;
-    }
-
-    return true;
+    if (!mounted || picked == null) return;
+    setState(() {
+      expectedHarvestDate = picked;
+      readyNow = false;
+    });
+    _persistSmartDraft();
   }
 
-  void _continue() {
-    if (saving || !_validateStepOne()) {
-      return;
-    }
+  void _setReadyNow(bool value) {
+    if (saving) return;
+    final now = DateTime.now();
+    setState(() {
+      readyNow = value;
+      if (value) {
+        expectedHarvestDate = DateTime(now.year, now.month, now.day);
+      } else if (!expectedHarvestDate.isAfter(now)) {
+        expectedHarvestDate = DateTime(now.year, now.month, now.day)
+            .add(const Duration(days: 7));
+      }
+    });
+    _persistSmartDraft();
+  }
+
+  bool _validateCrop() {
+    if (cropController.text.trim().isNotEmpty) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Choose or enter the produce you are selling.')),
+    );
+    return false;
+  }
+
+  bool _validateQuantity() {
+    final quantity = double.tryParse(
+      quantityController.text.trim().replaceAll(',', ''),
+    );
+    if (quantity != null && quantity > 0 && quantity.isFinite) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Enter how much produce you have.')),
+    );
+    return false;
+  }
+
+  double? _priceFrom(TextEditingController controller) {
+    final value = double.tryParse(controller.text.trim().replaceAll(',', ''));
+    if (value == null || value <= 0 || !value.isFinite) return null;
+    return value;
+  }
+
+  double? get _retailAskingPrice => _priceFrom(retailPriceController);
+  double? get _wholesaleAskingPrice => _priceFrom(wholesalePriceController);
+
+  double? get _primaryAskingPrice =>
+      sellToCustomer ? _retailAskingPrice : _wholesaleAskingPrice;
+
+  double get _quantity =>
+      double.tryParse(quantityController.text.trim().replaceAll(',', '')) ?? 0;
+
+  Future<void> _loadPricing() async {
+    if (!_validateCrop()) return;
+    setState(() {
+      pricingLoading = true;
+      pricingMessage = '';
+    });
+    final results = await Future.wait<dynamic>([
+      _fetchFarmerBuyingGuideMvp(
+        cropName: cropController.text.trim(),
+        unit: selectedUnit,
+      ),
+      _fetchFarmerMarketplaceFeePercentMvp(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      buyingGuide = results[0] as _FarmerBuyingGuideMvp?;
+      farmerFeePercent = results[1] as double?;
+      pricingLoading = false;
+      if (buyingGuide == null) {
+        pricingMessage =
+            'No current HPJ/RADA price guide is loaded for this produce and unit yet. You can still enter your price and HPJ can review it.';
+      }
+      if (farmerFeePercent == null) {
+        pricingMessage = pricingMessage.isEmpty
+            ? 'HPJ fee information is temporarily unavailable. Try again before sending.'
+            : '$pricingMessage\nHPJ fee information is temporarily unavailable.';
+      }
+    });
+  }
+
+  Future<void> _continue() async {
+    if (saving) return;
+    if (!_validateCrop() || !_validateQuantity()) return;
 
     FocusScope.of(context).unfocus();
-
-    setState(() {
-      step = 1;
-    });
+    await _loadPricing();
+    if (!mounted) return;
+    setState(() => step = 1);
     _persistSmartDraft();
   }
 
   void _back() {
-    if (saving) return;
-
+    if (saving || step == 0) return;
     FocusScope.of(context).unfocus();
-
-    setState(() {
-      step = 0;
-    });
+    setState(() => step--);
     _persistSmartDraft();
   }
 
+  String _money(double value) {
+    final whole = value == value.roundToDouble();
+    return 'J\$${value.toStringAsFixed(whole ? 0 : 2)}';
+  }
+
+  String get _dateLabel {
+    const months = <String>[
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[expectedHarvestDate.month - 1]} ${expectedHarvestDate.day}, ${expectedHarvestDate.year}';
+  }
+
+  Widget _progress() {
+    return Row(
+      children: List<Widget>.generate(2, (index) {
+        return Expanded(
+          child: Container(
+            margin: EdgeInsets.only(right: index == 1 ? 0 : 5),
+            height: 5,
+            decoration: BoxDecoration(
+              color: index <= step ? FarmColors.primary : FarmColors.line,
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _stepOne() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '1. What are you selling?',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'Choose the produce, quantity and when it will be ready.',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 10.5,
+            height: 1.35,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 15),
+        if (recentCrops.isNotEmpty) ...[
+          const Text(
+            'Your recent produce',
+            style: TextStyle(
+              color: FarmColors.ink,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 108,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: recentCrops.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final supply = recentCrops[index];
+                return InkWell(
+                  onTap: saving ? null : () => _reuseDefaults(supply),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    width: 108,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: FarmColors.background,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: FarmColors.line),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        HpjProductThumb(
+                          productName: supply.cropName,
+                          size: 52,
+                          radius: 11,
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          supply.cropName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 10.2,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: saving ? null : _chooseCropByPicture,
+            icon: const Icon(Icons.photo_library_outlined),
+            label: const Text('Choose produce by picture'),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: cropController,
+          enabled: !saving,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Produce',
+            hintText: 'e.g. Tomato',
+            prefixIcon: Icon(Icons.eco_outlined),
+          ),
+          onChanged: (_) {
+            setState(() {
+              selectedProduct = null;
+              buyingGuide = null;
+              pricingMessage = '';
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _stepTwo() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Quantity & availability',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'How much do you have and when is it ready?',
+          style: const TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 10.5,
+            height: 1.35,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: TextField(
+                controller: quantityController,
+                enabled: !saving,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'How much?',
+                  hintText: '100',
+                  prefixIcon: Icon(Icons.inventory_2_outlined),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: DropdownButtonFormField<String>(
+                value: selectedUnit,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Unit'),
+                items: allowedUnits
+                    .map((value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ))
+                    .toList(),
+                onChanged: saving
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          selectedUnit = value;
+                          buyingGuide = null;
+                        });
+                        _persistSmartDraft();
+                      },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'When will it be ready?',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: ChoiceChip(
+                label: const Text('Ready now'),
+                selected: readyNow,
+                onSelected: (_) => _setReadyNow(true),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ChoiceChip(
+                label: const Text('Ready later'),
+                selected: !readyNow,
+                onSelected: (_) => _setReadyNow(false),
+              ),
+            ),
+          ],
+        ),
+        if (!readyNow) ...[
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: saving ? null : _chooseHarvestDate,
+            borderRadius: BorderRadius.circular(16),
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Ready date',
+                suffixIcon: Icon(Icons.calendar_month_outlined),
+              ),
+              child: Text(
+                _dateLabel,
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F8EF),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Text(
+            readyNow
+                ? 'HPJ will treat this produce as ready for current buyer matching.'
+                : 'HPJ will use $_dateLabel when matching this produce with buyers.',
+            style: const TextStyle(
+              color: FarmColors.deepGreen,
+              fontSize: 9.7,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _priceLine(String label, String value, {bool strong = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: strong ? FarmColors.ink : FarmColors.mutedText,
+                fontSize: 10,
+                fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            value,
+            style: TextStyle(
+              color: strong ? FarmColors.deepGreen : FarmColors.ink,
+              fontSize: strong ? 13 : 10.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepThree() {
+    final guide = buyingGuide;
+    final retailPrice = _retailAskingPrice ?? 0;
+    final wholesalePrice = _wholesaleAskingPrice ?? 0;
+    final qty = _quantity;
+    final feePercent = farmerFeePercent;
+    final retailGross = retailPrice * qty;
+    final wholesaleGross = wholesalePrice * qty;
+    final retailNet = feePercent == null
+        ? retailGross
+        : retailGross * (1 - feePercent / 100);
+    final wholesaleNet = feePercent == null
+        ? wholesaleGross
+        : wholesaleGross * (1 - feePercent / 100);
+
+    String hpjGuideLabel = 'Not set yet';
+    if (guide != null && guide.hpjFarmerMin > 0 && guide.hpjFarmerMax > 0) {
+      hpjGuideLabel =
+          '${_money(guide.hpjFarmerMin)} – ${_money(guide.hpjFarmerMax)} / $selectedUnit';
+    } else if (guide != null && guide.hpjFarmerMin > 0) {
+      hpjGuideLabel = 'From ${_money(guide.hpjFarmerMin)} / $selectedUnit';
+    } else if (guide != null && guide.hpjFarmerMax > 0) {
+      hpjGuideLabel = 'Up to ${_money(guide.hpjFarmerMax)} / $selectedUnit';
+    }
+
+    String radaLabel = 'Not loaded yet';
+    if (guide != null &&
+        guide.radaFarmgateLow > 0 &&
+        guide.radaFarmgateHigh > 0) {
+      radaLabel =
+          '${_money(guide.radaFarmgateLow)} – ${_money(guide.radaFarmgateHigh)} / $selectedUnit';
+    } else if (guide != null && guide.radaFarmgateReference > 0) {
+      radaLabel = '${_money(guide.radaFarmgateReference)} / $selectedUnit';
+    }
+
+    void setAudience({
+      required bool customers,
+      required bool businesses,
+    }) {
+      if (saving) return;
+      setState(() {
+        sellToCustomer = customers;
+        sellToWholesale = businesses;
+        if (!customers) requestShopListing = false;
+      });
+      _persistSmartDraft();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '2. Price & market',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'Set your price and choose your market.',
+          style: TextStyle(
+            color: FarmColors.mutedText,
+            fontSize: 10.5,
+            height: 1.35,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 15),
+        const Text(
+          'Sell to',
+          style: TextStyle(
+            color: FarmColors.ink,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: [
+            ChoiceChip(
+              label: const Text('Retail'),
+              selected: sellToCustomer && !sellToWholesale,
+              onSelected: (_) => setAudience(
+                customers: true,
+                businesses: false,
+              ),
+            ),
+            ChoiceChip(
+              label: const Text('Wholesale'),
+              selected: !sellToCustomer && sellToWholesale,
+              onSelected: (_) => setAudience(
+                customers: false,
+                businesses: true,
+              ),
+            ),
+            ChoiceChip(
+              label: const Text('Both'),
+              selected: sellToCustomer && sellToWholesale,
+              onSelected: (_) => setAudience(
+                customers: true,
+                businesses: true,
+              ),
+            ),
+          ],
+        ),
+        if (sellToCustomer && sellToWholesale) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'Both gives your produce the widest reach.',
+            style: TextStyle(
+              color: FarmColors.primary,
+              fontSize: 9.2,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        if (sellToCustomer) ...[
+          TextField(
+            controller: retailPriceController,
+            enabled: !saving,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: 'Retail asking price',
+              prefixText: r'J$ ',
+              suffixText: '/ $selectedUnit',
+              helperText: 'Price for individual customer sales',
+            ),
+          ),
+        ],
+        if (sellToCustomer && sellToWholesale)
+          const SizedBox(height: 10),
+        if (sellToWholesale) ...[
+          TextField(
+            controller: wholesalePriceController,
+            enabled: !saving,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: 'Wholesale asking price',
+              prefixText: r'J$ ',
+              suffixText: '/ $selectedUnit',
+              helperText: 'Price for larger business orders',
+            ),
+          ),
+        ],
+        if ((sellToCustomer && retailPrice > 0 && qty > 0) ||
+            (sellToWholesale && wholesalePrice > 0 && qty > 0)) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F8ED),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFCFE2C8)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.payments_outlined,
+                      color: FarmColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 9),
+                    const Expanded(
+                      child: Text(
+                        'Estimated payout',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (feePercent != null)
+                      Text(
+                        'after ${feePercent.toStringAsFixed(feePercent % 1 == 0 ? 0 : 1)}% fee',
+                        style: const TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+                if (sellToCustomer && retailPrice > 0)
+                  _priceLine(
+                    'Retail',
+                    feePercent == null ? 'Checking fee…' : _money(retailNet),
+                    strong: true,
+                  ),
+                if (sellToWholesale && wholesalePrice > 0)
+                  _priceLine(
+                    'Wholesale',
+                    feePercent == null ? 'Checking fee…' : _money(wholesaleNet),
+                    strong: true,
+                  ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          title: const Text(
+            'Market price guide',
+            style: TextStyle(
+              color: FarmColors.ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          subtitle: Text(
+            pricingLoading
+                ? 'Loading…'
+                : guide == null
+                    ? 'Optional reference'
+                    : 'Buyer range + RADA/JAMIS',
+            style: const TextStyle(
+              color: FarmColors.mutedText,
+              fontSize: 9,
+            ),
+          ),
+          children: [
+            if (pricingLoading)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: CircularProgressIndicator(),
+              )
+            else ...[
+              _priceLine('Buyer range on HPJ', hpjGuideLabel),
+              _priceLine('RADA/JAMIS reference', radaLabel),
+              if (pricingMessage.isNotEmpty && guide == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'No market guide is loaded yet. You can still choose your own price.',
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 9,
+                      height: 1.3,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+        ExpansionTile(
+          initiallyExpanded: showMoreDetails,
+          onExpansionChanged: (value) =>
+              setState(() => showMoreDetails = value),
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 6),
+          title: const Text(
+            'More options',
+            style: TextStyle(
+              color: FarmColors.ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          subtitle: const Text(
+            'Farm Page, Shop, category and notes',
+            style: TextStyle(
+              fontSize: 9,
+              color: FarmColors.mutedText,
+            ),
+          ),
+          children: [
+            CheckboxListTile(
+              value: showOnFarmPageComingSoon,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Show on my Farm Page'),
+              onChanged: saving
+                  ? null
+                  : (value) {
+                      setState(() =>
+                          showOnFarmPageComingSoon = value == true);
+                      _persistSmartDraft();
+                    },
+            ),
+            if (sellToCustomer)
+              CheckboxListTile(
+                value: requestShopListing,
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Retail Shop listing'),
+                subtitle: const Text('Optional. HPJ reviews it before it goes live.'),
+                onChanged: saving
+                    ? null
+                    : (value) {
+                        setState(() => requestShopListing = value == true);
+                        _persistSmartDraft();
+                      },
+              ),
+            if (requestShopListing &&
+                sellToCustomer &&
+                selectedProduct?.canAddToCart != true) ...[
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: saving || uploadingListingImage
+                      ? null
+                      : _uploadShopListingImage,
+                  icon: uploadingListingImage
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_a_photo_outlined),
+                  label: Text(
+                    listingImageUrl == null
+                        ? 'Add product photo'
+                        : 'Replace product photo',
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: selectedCategory,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Category'),
+              items: allowedCategories
+                  .map(
+                    (value) => DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: saving
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() => selectedCategory = value);
+                      _persistSmartDraft();
+                    },
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: notesController,
+              enabled: !saving,
+              minLines: 2,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Notes (optional)',
+                hintText: 'Variety, quality or anything HPJ should know',
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+
+  String _numberForSummary(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value.toStringAsFixed(1);
+  }
+
+  Future<bool> _showListedSuccess({
+    required String crop,
+    required double quantity,
+    double? retailAskingPrice,
+    double? wholesaleAskingPrice,
+    String? warning,
+  }) async {
+    final audience = sellToCustomer && sellToWholesale
+        ? 'Retail + Wholesale'
+        : sellToCustomer
+            ? 'Retail'
+            : 'Wholesale';
+
+    final addAnother = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: false,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
+            decoration: const BoxDecoration(
+              color: FarmColors.card,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: FarmColors.line,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  width: 62,
+                  height: 62,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEAF6E8),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    color: FarmColors.primary,
+                    size: 34,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '$crop listed',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${_numberForSummary(quantity)} $selectedUnit',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (retailAskingPrice != null)
+                  Text(
+                    'Retail ${_money(retailAskingPrice)} / $selectedUnit',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                if (wholesaleAskingPrice != null)
+                  Text(
+                    'Wholesale ${_money(wholesaleAskingPrice)} / $selectedUnit',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                const SizedBox(height: 5),
+                Text(
+                  'Available to $audience',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: FarmColors.primary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (warning != null && warning.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF6E7),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      warning,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF8A5A00),
+                        fontSize: 9,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(sheetContext).pop(true),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Add another'),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(sheetContext).pop(false),
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    return addAnother == true;
+  }
+
+  void _resetForAnother() {
+    final now = DateTime.now();
+    cropController.clear();
+    quantityController.clear();
+    retailPriceController.clear();
+    wholesalePriceController.clear();
+    notesController.clear();
+    setState(() {
+      step = 0;
+      saving = false;
+      pricingLoading = false;
+      showMoreDetails = false;
+      selectedCategory = 'Vegetables';
+      selectedUnit = 'lb';
+      expectedHarvestDate = DateTime(now.year, now.month, now.day);
+      readyNow = true;
+      sellToCustomer = true;
+      sellToWholesale = true;
+      requestShopListing = false;
+      showOnFarmPageComingSoon = true;
+      listingImageUrl = null;
+      selectedProduct = null;
+      buyingGuide = null;
+      farmerFeePercent = null;
+      pricingMessage = '';
+    });
+    unawaited(_clearSmartDraft());
+  }
+
   Future<void> _submit() async {
-    if (saving ||
-        !_validateStepOne()) {
+    if (saving || !_validateCrop() || !_validateQuantity()) return;
+    final retailAskingPrice = sellToCustomer ? _retailAskingPrice : null;
+    final wholesaleAskingPrice = sellToWholesale ? _wholesaleAskingPrice : null;
+    if (sellToCustomer && retailAskingPrice == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your Retail asking price.')),
+      );
+      return;
+    }
+    if (sellToWholesale && wholesaleAskingPrice == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your Wholesale asking price.')),
+      );
+      return;
+    }
+    if (farmerFeePercent == null) {
+      await _loadPricing();
+      if (!mounted) return;
+      if (farmerFeePercent == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('HPJ fee information is unavailable. Please try again before listing.')),
+        );
+        return;
+      }
+    }
+    if (!sellToCustomer && !sellToWholesale) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose Retail, Wholesale, or Both.')),
+      );
+      return;
+    }
+    if (requestShopListing &&
+        sellToCustomer &&
+        selectedProduct == null &&
+        cleanHostedImageUrl(listingImageUrl) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a product photo or turn off Retail Shop listing.')),
+      );
       return;
     }
 
-    final crop =
-        cropController.text.trim();
-
-    final quantity = double.parse(
-      quantityController.text
-          .trim()
-          .replaceAll(',', ''),
-    );
-
-    setState(() {
-      saving = true;
-    });
+    final crop = cropController.text.trim();
+    final quantity = _quantity;
+    setState(() => saving = true);
 
     try {
-      if (!sellToCustomer && !sellToWholesale) {
-        throw Exception(
-          'Choose Customer Marketplace, Wholesale Business, or both.',
-        );
-      }
-
-      if (requestShopListing &&
-          sellToCustomer &&
-          selectedProduct == null &&
-          cleanHostedImageUrl(listingImageUrl) == null) {
-        throw Exception(
-          'Add a clear product photo before requesting a new Customer Shop listing.',
-        );
-      }
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final readyDate = readyNow ? today : expectedHarvestDate;
 
       final createdSupply = await createFarmerSupplyForecast(
         cropName: crop,
@@ -28601,13 +30726,38 @@ class _FarmerSupplyEntrySheetState
         quantityGrowing: quantity,
         expectedQuantity: quantity,
         unit: selectedUnit,
-        expectedHarvestDate:
-            expectedHarvestDate,
-        status: 'growing',
+        expectedHarvestDate: readyDate,
+        status: readyNow ? 'harvest_ready' : 'growing',
         notes: notesController.text.trim(),
       );
 
-      String? farmPageWarning;
+      String? warning;
+      try {
+        await setFarmerSupplyMarketChannels(
+          supplyId: createdSupply.id,
+          linkedProductId: selectedProduct?.id,
+          sellToCustomer: sellToCustomer,
+          sellToWholesale: sellToWholesale,
+        );
+      } catch (error) {
+        warning = 'Your produce was saved, but HPJ could not save the market-channel choice.';
+        farmDebugLog('Farmer supply channel link unavailable: $error');
+      }
+
+      try {
+        await _createFarmerInitialSupplyChannelOfferMvp(
+          supplyId: createdSupply.id,
+          retailAskingPrice: retailAskingPrice,
+          wholesaleAskingPrice: wholesaleAskingPrice,
+          note: notesController.text.trim(),
+        );
+      } catch (error) {
+        warning = warning == null
+            ? 'Your produce was saved, but the channel prices could not be attached. Open Price Negotiation and try again.'
+            : '$warning The channel prices could not be attached.';
+        farmDebugLog('Initial farmer price offer unavailable: $error');
+      }
+
       try {
         await supabase.rpc(
           'farmer_set_supply_farm_page_visibility',
@@ -28617,32 +30767,9 @@ class _FarmerSupplyEntrySheetState
           },
         );
       } catch (error) {
-        farmPageWarning =
-            'Supply was saved, but HPJ could not update its Farm Page Coming Soon visibility. '
-            'Please try again after the Phase 4 SQL is installed.';
-        farmDebugLog(
-          'Farmer supply Farm Page visibility unavailable: $error',
-        );
+        farmDebugLog('Farm Page visibility unavailable: $error');
       }
 
-      String? channelWarning;
-      try {
-        await setFarmerSupplyMarketChannels(
-          supplyId: createdSupply.id,
-          linkedProductId: selectedProduct?.id,
-          sellToCustomer: sellToCustomer,
-          sellToWholesale: sellToWholesale,
-        );
-      } catch (error) {
-        channelWarning =
-            'Supply was saved, but HPJ could not save the market-channel link. '
-            'Please ask HPJ to review it.';
-        farmDebugLog(
-          'Farmer supply channel link unavailable: $error',
-        );
-      }
-
-      String? listingWarning;
       if (requestShopListing && sellToCustomer) {
         try {
           await createFarmerShopListingRequest(
@@ -28656,984 +30783,43 @@ class _FarmerSupplyEntrySheetState
             sellToWholesale: sellToWholesale,
           );
         } catch (error) {
-          listingWarning =
-              'Supply was saved, but the Shop listing request could not be sent. '
-              'Please try again from My Supply.';
-          farmDebugLog(
-            'Farmer Shop listing request unavailable: $error',
-          );
+          warning = warning == null
+              ? 'Your produce and price were saved, but the optional Shop listing request could not be sent.'
+              : '$warning The optional Shop listing request could not be sent.';
+          farmDebugLog('Farmer Shop listing request unavailable: $error');
         }
-      }
-
-      if (!mounted) return;
-
-      if (farmPageWarning != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(farmPageWarning)),
-        );
-      }
-
-      if (channelWarning != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(channelWarning)),
-        );
-      }
-
-      if (listingWarning != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(listingWarning)),
-        );
       }
 
       await _clearSmartDraft();
       if (!mounted) return;
-      Navigator.of(context).pop(crop);
-    } catch (error) {
+
+      final addAnother = await _showListedSuccess(
+        crop: crop,
+        quantity: quantity,
+        retailAskingPrice: retailAskingPrice,
+        wholesaleAskingPrice: wholesaleAskingPrice,
+        warning: warning,
+      );
       if (!mounted) return;
 
-      setState(() {
-        saving = false;
-      });
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-            error.toString().replaceFirst(
-                  'Exception: ',
-                  '',
-                ),
-          ),
-        ),
+      if (addAnother) {
+        _resetForAnother();
+      } else {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
       );
     }
   }
 
-  String get _dateLabel {
-    return '${expectedHarvestDate.year}-'
-        '${expectedHarvestDate.month.toString().padLeft(2, '0')}-'
-        '${expectedHarvestDate.day.toString().padLeft(2, '0')}';
-  }
-
-  Widget _progress() {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            height: 4,
-            decoration: BoxDecoration(
-              color: FarmColors.primary,
-              borderRadius:
-                  BorderRadius.circular(99),
-            ),
-          ),
-        ),
-        const SizedBox(width: 5),
-        Expanded(
-          child: Container(
-            height: 4,
-            decoration: BoxDecoration(
-              color: step == 1
-                  ? FarmColors.primary
-                  : FarmColors.line,
-              borderRadius:
-                  BorderRadius.circular(99),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stepOne() {
-    return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'What produce do you have?',
-          style: TextStyle(
-            color: FarmColors.ink,
-            fontSize: 22,
-            fontWeight:
-                FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 5),
-        const Row(
-          children: [
-            Icon(
-              Icons.cloud_done_outlined,
-              size: 15,
-              color: FarmColors.success,
-            ),
-            SizedBox(width: 6),
-            Text(
-              'Draft saves automatically',
-              style: TextStyle(
-                color: FarmColors.success,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 7),
-        const Text(
-          'Start with one crop and your best quantity estimate. You can update it later.',
-          style: TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 10.5,
-            height: 1.38,
-            fontWeight:
-                FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        if (recentCrops.isNotEmpty) ...[
-          const Text(
-            'Post again',
-            style: TextStyle(
-              color: FarmColors.ink,
-              fontSize: 10.5,
-              fontWeight:
-                  FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 7),
-          SizedBox(
-            height: 112,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: recentCrops.length,
-              separatorBuilder: (_, __) =>
-                  const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final supply = recentCrops[index];
-
-                return Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: saving
-                        ? null
-                        : () => _reuseDefaults(supply),
-                    child: Ink(
-                      width: 108,
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        color: FarmColors.background,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: FarmColors.line),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          HpjProductThumb(
-                            productName: supply.cropName,
-                            size: 50,
-                            radius: 11,
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            supply.cropName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: FarmColors.ink,
-                              fontSize: 10.2,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'Post again',
-                            style: TextStyle(
-                              color: FarmColors.primary,
-                              fontSize: 8.4,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
-
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: saving ? null : _chooseCropByPicture,
-            icon: const Icon(Icons.photo_library_outlined),
-            label: const Text('Choose crop by picture'),
-          ),
-        ),
-
-        const SizedBox(height: 10),
-
-        TextField(
-          controller: cropController,
-          enabled: !saving,
-          textCapitalization:
-              TextCapitalization.words,
-          autofocus:
-              recentCrops.isEmpty,
-          onChanged: (value) {
-            final linked = selectedProduct;
-            if (linked != null &&
-                linked.name.trim().toLowerCase() !=
-                    value.trim().toLowerCase()) {
-              setState(() {
-                selectedProduct = null;
-                listingImageUrl = null;
-              });
-            }
-          },
-          decoration:
-              const InputDecoration(
-            labelText: 'Crop',
-            hintText:
-                'e.g. Callaloo',
-          ),
-        ),
-
-        if (selectedProduct != null) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(
-                Icons.link_rounded,
-                size: 16,
-                color: FarmColors.success,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Linked to HPJ product: ${selectedProduct!.name}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.success,
-                    fontSize: 9.8,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-
-        const SizedBox(height: 11),
-
-        Row(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: TextField(
-                controller:
-                    quantityController,
-                enabled: !saving,
-                keyboardType:
-                    const TextInputType
-                        .numberWithOptions(
-                  decimal: true,
-                ),
-                decoration:
-                    const InputDecoration(
-                  labelText:
-                      'Approx. quantity',
-                  hintText: '100',
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child:
-                  DropdownButtonFormField<
-                      String>(
-                value: selectedUnit,
-                isExpanded: true,
-                decoration:
-                    const InputDecoration(
-                  labelText: 'Unit',
-                ),
-                items: allowedUnits
-                    .map(
-                      (value) =>
-                          DropdownMenuItem<
-                              String>(
-                        value: value,
-                        child: Text(value),
-                      ),
-                    )
-                    .toList(),
-                onChanged: saving
-                    ? null
-                    : (value) {
-                        if (value == null) {
-                          return;
-                        }
-
-                        setState(() {
-                          selectedUnit =
-                              value;
-                        });
-                        _persistSmartDraft();
-                      },
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 10),
-
-        const Text(
-          'A good estimate is enough. HPJ can work with an updated estimate better than waiting until harvest day.',
-          style: TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 9.3,
-            height: 1.35,
-            fontWeight:
-                FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stepTwo() {
-    final today = DateTime.now();
-
-    final selectedDays = DateTime(
-      expectedHarvestDate.year,
-      expectedHarvestDate.month,
-      expectedHarvestDate.day,
-    )
-        .difference(
-          DateTime(
-            today.year,
-            today.month,
-            today.day,
-          ),
-        )
-        .inDays;
-
-    final listingPreview = cleanHostedImageUrl(
-      listingImageUrl ?? selectedProduct?.imageUrl,
-    );
-
-    return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'When should it be ready?',
-          style: TextStyle(
-            color: FarmColors.ink,
-            fontSize: 22,
-            fontWeight:
-                FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          'This helps HPJ compare your expected harvest with when buyers may need it.',
-          style: TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 10.5,
-            height: 1.38,
-            fontWeight:
-                FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        Wrap(
-          spacing: 7,
-          runSpacing: 7,
-          children: [
-            for (final days
-                in const <int>[
-              7,
-              14,
-              30,
-              60,
-            ])
-              ChoiceChip(
-                label: Text(
-                  days == 7
-                      ? 'About 1 week'
-                      : days == 14
-                          ? 'About 2 weeks'
-                          : days == 30
-                              ? 'About 1 month'
-                              : 'About 2 months',
-                ),
-                selected:
-                    selectedDays == days,
-                onSelected: saving
-                    ? null
-                    : (_) =>
-                        _setHarvestDays(
-                          days,
-                        ),
-              ),
-          ],
-        ),
-
-        const SizedBox(height: 12),
-
-        InkWell(
-          onTap: saving
-              ? null
-              : _chooseHarvestDate,
-          borderRadius:
-              BorderRadius.circular(16),
-          child: InputDecorator(
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'Expected harvest date',
-              suffixIcon: Icon(
-                Icons
-                    .calendar_month_outlined,
-              ),
-            ),
-            child: Text(
-              _dateLabel,
-              style: const TextStyle(
-                color: FarmColors.ink,
-                fontWeight:
-                    FontWeight.w800,
-              ),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        FarmCard(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(
-                    Icons.visibility_outlined,
-                    color: FarmColors.primary,
-                    size: 18,
-                  ),
-                  SizedBox(width: 7),
-                  Text(
-                    'Post preview',
-                    style: TextStyle(
-                      color: FarmColors.ink,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  HpjProductThumb(
-                    productName: cropController.text.trim().isEmpty
-                        ? 'Produce'
-                        : cropController.text.trim(),
-                    size: 58,
-                    radius: 13,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          cropController.text.trim().isEmpty
-                              ? 'Your produce'
-                              : cropController.text.trim(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${quantityController.text.trim().isEmpty ? '0' : quantityController.text.trim()} $selectedUnit • Ready $_dateLabel',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 9.7,
-                            height: 1.3,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF5E9),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      'READY TO POST',
-                      style: TextStyle(
-                        color: FarmColors.deepGreen,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        FarmCard(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 2,
-          ),
-          child: CheckboxListTile(
-            value: showOnFarmPageComingSoon,
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text(
-              'Show on my Farm Page as Coming Soon',
-              style: TextStyle(
-                color: FarmColors.ink,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            subtitle: const Text(
-              'Uses this real supply report and expected harvest date. '
-              'It does not create a Shop product or set a selling price.',
-              style: TextStyle(
-                color: FarmColors.mutedText,
-                fontSize: 9.2,
-                height: 1.3,
-              ),
-            ),
-            onChanged: saving
-                ? null
-                : (value) {
-                    setState(() {
-                      showOnFarmPageComingSoon = value == true;
-                    });
-                    _persistSmartDraft();
-                  },
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        const Text(
-          'Sell through HPJ to',
-          style: TextStyle(
-            color: FarmColors.ink,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Choose where HPJ may offer this supply. HPJ still controls final listing approval, pricing and allocation.',
-          style: TextStyle(
-            color: FarmColors.mutedText,
-            fontSize: 9.5,
-            height: 1.35,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-
-        FarmCard(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 2,
-          ),
-          child: Column(
-            children: [
-              CheckboxListTile(
-                value: sellToCustomer,
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Customer Marketplace',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                subtitle: const Text(
-                  'Home shoppers and My Box',
-                  style: TextStyle(fontSize: 9.4),
-                ),
-                onChanged: saving
-                    ? null
-                    : (value) {
-                        setState(() {
-                          sellToCustomer = value == true;
-                        });
-                        _persistSmartDraft();
-                      },
-              ),
-              const Divider(height: 1),
-              CheckboxListTile(
-                value: sellToWholesale,
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Wholesale Business',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                subtitle: const Text(
-                  'Restaurants, hotels and business buyers',
-                  style: TextStyle(fontSize: 9.4),
-                ),
-                onChanged: saving
-                    ? null
-                    : (value) {
-                        setState(() {
-                          sellToWholesale = value == true;
-                        });
-                        _persistSmartDraft();
-                      },
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 10),
-
-        if (sellToCustomer) ...[
-          FarmCard(
-            padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.storefront_outlined,
-                      color: FarmColors.primary,
-                      size: 19,
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Customer Shop listing',
-                        style: TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 12.3,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    if (selectedProduct != null)
-                      const HpjMvpStatusPill(
-                        label: 'Existing HPJ product',
-                        color: FarmColors.success,
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  selectedProduct == null
-                      ? 'Ask HPJ to create and publish this crop in the Customer Shop.'
-                      : selectedProduct!.canAddToCart
-                          ? 'This product is already live in the Customer Shop.'
-                          : 'Ask HPJ to review and activate the existing product for Customer Shop stock.',
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.4,
-                    height: 1.3,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                if (selectedProduct?.canAddToCart == true)
-                  const HpjMvpListRow(
-                    icon: Icons.check_circle_outline_rounded,
-                    title: 'Already live in Customer Shop',
-                    subtitle: 'No additional listing request is needed.',
-                    iconColor: FarmColors.success,
-                  )
-                else
-                  CheckboxListTile(
-                    value: requestShopListing,
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: const Text(
-                      'Request Shop Listing',
-                      style: TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 11.2,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    subtitle: const Text(
-                      'HPJ sets the selling price, confirms stock and publishes.',
-                      style: TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 9.1,
-                      ),
-                    ),
-                    onChanged: saving
-                        ? null
-                        : (value) {
-                            setState(() {
-                              requestShopListing = value == true;
-                            });
-                            _persistSmartDraft();
-                          },
-                  ),
-                if (requestShopListing &&
-                    selectedProduct?.canAddToCart != true) ...[
-                  const SizedBox(height: 6),
-                  if (listingPreview != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(13),
-                      child: Image.network(
-                        listingPreview,
-                        width: double.infinity,
-                        height: 118,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                      ),
-                    ),
-                  if (listingPreview != null)
-                    const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: saving || uploadingListingImage
-                          ? null
-                          : _uploadShopListingImage,
-                      icon: uploadingListingImage
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Icon(Icons.add_a_photo_outlined),
-                      label: Text(
-                        uploadingListingImage
-                            ? 'Uploading...'
-                            : selectedProduct == null
-                                ? listingPreview == null
-                                    ? 'Add real product photo'
-                                    : 'Replace product photo'
-                                : 'Add a newer farm product photo',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    selectedProduct == null
-                        ? 'A clear real product photo is required for a new Shop listing.'
-                        : 'The current HPJ product image can be used, or you may submit a newer farm photo.',
-                    style: const TextStyle(
-                      color: FarmColors.mutedText,
-                      fontSize: 8.8,
-                      height: 1.3,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-
-        Material(
-          color: FarmColors.background,
-          borderRadius:
-              BorderRadius.circular(14),
-          child: InkWell(
-            borderRadius:
-                BorderRadius.circular(14),
-            onTap: saving
-                ? null
-                : () {
-                    setState(() {
-                      showMoreDetails =
-                          !showMoreDetails;
-                    });
-                  },
-            child: Padding(
-              padding:
-                  const EdgeInsets.all(11),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment
-                              .start,
-                      children: [
-                        Text(
-                          'More details',
-                          style: TextStyle(
-                            color:
-                                FarmColors.ink,
-                            fontSize: 10.5,
-                            fontWeight:
-                                FontWeight
-                                    .w900,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Optional category and notes',
-                          style: TextStyle(
-                            color: FarmColors
-                                .mutedText,
-                            fontSize: 8.9,
-                            fontWeight:
-                                FontWeight
-                                    .w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    showMoreDetails
-                        ? Icons
-                            .expand_less_rounded
-                        : Icons
-                            .expand_more_rounded,
-                    color:
-                        FarmColors.mutedText,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        if (showMoreDetails) ...[
-          const SizedBox(height: 10),
-
-          DropdownButtonFormField<String>(
-            value: selectedCategory,
-            isExpanded: true,
-            decoration:
-                const InputDecoration(
-              labelText: 'Category',
-            ),
-            items: allowedCategories
-                .map(
-                  (value) =>
-                      DropdownMenuItem<
-                          String>(
-                    value: value,
-                    child: Text(value),
-                  ),
-                )
-                .toList(),
-            onChanged: saving
-                ? null
-                : (value) {
-                    if (value == null) {
-                      return;
-                    }
-
-                    setState(() {
-                      selectedCategory =
-                          value;
-                    });
-                  },
-          ),
-
-          const SizedBox(height: 10),
-
-          TextField(
-            controller:
-                notesController,
-            enabled: !saving,
-            minLines: 2,
-            maxLines: 3,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'Notes (optional)',
-              hintText:
-                  'Quality, variety, or anything HPJ should know',
-            ),
-          ),
-        ],
-
-        const SizedBox(height: 12),
-
-        Container(
-          width: double.infinity,
-          padding:
-              const EdgeInsets.all(11),
-          decoration: BoxDecoration(
-            color: const Color(
-              0xFFF0F4EC,
-            ),
-            borderRadius:
-                BorderRadius.circular(14),
-            border: Border.all(
-              color: const Color(
-                0xFFDCE4D8,
-              ),
-            ),
-          ),
-          child: const Text(
-            'After you save, HPJ will immediately check this crop against visible buyer demand.',
-            style: TextStyle(
-              color: Color(0xFF5D6A63),
-              fontSize: 9.6,
-              height: 1.35,
-              fontWeight:
-                  FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
   @override
   Widget build(BuildContext context) {
-    final maxHeight = MediaQuery.of(context).size.height * 0.88;
+    final maxHeight = MediaQuery.of(context).size.height * 0.92;
+    const labels = <String>['Produce', 'Sell'];
 
     return AnimatedPadding(
       duration: const Duration(milliseconds: 160),
@@ -29646,9 +30832,7 @@ class _FarmerSupplyEntrySheetState
         child: Container(
           decoration: const BoxDecoration(
             color: FarmColors.card,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(30),
-            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -29660,14 +30844,9 @@ class _FarmerSupplyEntrySheetState
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF073F2C),
-                      Color(0xFF0B5A3D),
-                    ],
+                    colors: [Color(0xFF073F2C), Color(0xFF0B5A3D)],
                   ),
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(30),
-                  ),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
                 ),
                 child: Column(
                   children: [
@@ -29676,29 +30855,24 @@ class _FarmerSupplyEntrySheetState
                         width: 42,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.34),
+                          color: Colors.white.withOpacity(.34),
                           borderRadius: BorderRadius.circular(99),
                         ),
                       ),
                     ),
                     const SizedBox(height: 10),
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Container(
                           width: 42,
                           height: 42,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.13),
+                            color: Colors.white.withOpacity(.13),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.16),
-                            ),
                           ),
                           child: const Icon(
                             Icons.agriculture_rounded,
                             color: Colors.white,
-                            size: 22,
                           ),
                         ),
                         const SizedBox(width: 11),
@@ -29706,25 +30880,21 @@ class _FarmerSupplyEntrySheetState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                step == 0
-                                    ? 'POST PRODUCE'
-                                    : 'HARVEST & MARKET',
+                              const Text(
+                                'ADD PRODUCE',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.70),
+                                  color: Colors.white70,
                                   fontSize: 9,
                                   fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
+                                  letterSpacing: .8,
                                 ),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                step == 0
-                                    ? 'What do you have to sell?'
-                                    : 'When will it be ready?',
+                                labels[step],
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 17,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
@@ -29732,12 +30902,9 @@ class _FarmerSupplyEntrySheetState
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.12),
+                            color: Colors.white.withOpacity(.12),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -29751,13 +30918,8 @@ class _FarmerSupplyEntrySheetState
                         ),
                         IconButton(
                           tooltip: 'Close',
-                          onPressed: saving
-                              ? null
-                              : () => Navigator.of(context).pop(),
-                          icon: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white,
-                          ),
+                          onPressed: saving ? null : () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded, color: Colors.white),
                         ),
                       ],
                     ),
@@ -29772,29 +30934,34 @@ class _FarmerSupplyEntrySheetState
                     children: [
                       _progress(),
                       const SizedBox(height: 18),
-                      if (step == 0) _stepOne() else _stepTwo(),
+                      if (step == 0) ...[
+                        _stepOne(),
+                        const SizedBox(height: 16),
+                        const Divider(),
+                        const SizedBox(height: 14),
+                        _stepTwo(),
+                      ] else
+                        _stepThree(),
                       const SizedBox(height: 20),
                       Row(
                         children: [
-                          if (step == 1) ...[
+                          if (step > 0) ...[
                             Expanded(
                               child: OutlinedButton.icon(
                                 onPressed: saving ? null : _back,
-                                icon: const Icon(
-                                  Icons.arrow_back_rounded,
-                                  size: 17,
-                                ),
+                                icon: const Icon(Icons.arrow_back_rounded, size: 17),
                                 label: const Text('Back'),
                               ),
                             ),
                             const SizedBox(width: 9),
                           ],
                           Expanded(
-                            flex: step == 1 ? 2 : 1,
+                            flex: step > 0 ? 2 : 1,
                             child: step == 0
                                 ? FilledButton.icon(
-                                    onPressed:
-                                        saving ? null : _continue,
+                                    onPressed: saving || pricingLoading
+                                        ? null
+                                        : _continue,
                                     icon: const Icon(
                                       Icons.arrow_forward_rounded,
                                       size: 17,
@@ -29802,10 +30969,8 @@ class _FarmerSupplyEntrySheetState
                                     label: const Text('Continue'),
                                   )
                                 : PrimaryFarmButton(
-                                    label:
-                                        saving ? 'Posting...' : 'Post Produce',
-                                    onPressed:
-                                        saving ? null : _submit,
+                                    label: saving ? 'Listing...' : 'List Produce',
+                                    onPressed: saving ? null : _submit,
                                   ),
                           ),
                         ],
@@ -29821,7 +30986,6 @@ class _FarmerSupplyEntrySheetState
     );
   }
 }
-
 
 
 class _FarmerExistingSupplyShopRequestSheet extends StatefulWidget {
@@ -30104,8 +31268,8 @@ class _FarmerExistingSupplyShopRequestSheetState
                   width: double.infinity,
                   child: PrimaryFarmButton(
                     label: saving
-                        ? 'Sending...'
-                        : 'Send to HPJ for Review',
+                        ? 'Submitting...'
+                        : 'Submit Listing for Review',
                     onPressed: saving ? null : _submit,
                   ),
                 ),
@@ -30324,6 +31488,73 @@ class _HpjFarmerDemandBoardMvpScreenState
         .toSet();
   }
 
+  bool _hasMarketDemand(FarmerMarketDemandOpportunity item) =>
+      item.visibleDemand > 0.0001;
+
+  String _cropDemandKey(FarmerMarketDemandOpportunity item) =>
+      hpjWatchKeyPart(item.productName);
+
+  int _demandPriority(FarmerMarketDemandOpportunity item) {
+    var score = 0;
+    if (!_isCovered(item)) score += 100000;
+    if (item.opportunityGap > 0.0001) score += 50000;
+    if (item.demandSignal == 'committed_need') score += 30000;
+    if (item.demandSignal == 'urgent') score += 25000;
+    if (item.demandSignal == 'opportunity') score += 15000;
+    if (_isNeededSoon(item)) score += 10000;
+    score += item.visibleDemand.clamp(0, 9999).round();
+    return score;
+  }
+
+  List<FarmerMarketDemandOpportunity> _uniqueMarketRows(
+    List<FarmerMarketDemandOpportunity> opportunities,
+  ) {
+    final bestByCrop = <String, FarmerMarketDemandOpportunity>{};
+
+    for (final item in opportunities) {
+      // The farmer Market page is for real buyer demand. Supply-only rows from
+      // the demand-board RPC belong in My Crops, not as fake "Covered" needs.
+      if (!_hasMarketDemand(item)) continue;
+
+      final key = _cropDemandKey(item);
+      if (key.isEmpty) continue;
+
+      final current = bestByCrop[key];
+      if (current == null) {
+        bestByCrop[key] = item;
+        continue;
+      }
+
+      final itemScore = _demandPriority(item);
+      final currentScore = _demandPriority(current);
+      if (itemScore > currentScore) {
+        bestByCrop[key] = item;
+      } else if (itemScore == currentScore) {
+        final itemDate = item.nextNeedBy ?? DateTime(2999);
+        final currentDate = current.nextNeedBy ?? DateTime(2999);
+        if (itemDate.isBefore(currentDate)) {
+          bestByCrop[key] = item;
+        }
+      }
+    }
+
+    final rows = bestByCrop.values.toList(growable: false);
+    rows.sort((a, b) {
+      final byPriority = _demandPriority(b).compareTo(_demandPriority(a));
+      if (byPriority != 0) return byPriority;
+
+      final aDate = a.nextNeedBy ?? DateTime(2999);
+      final bDate = b.nextNeedBy ?? DateTime(2999);
+      final byDate = aDate.compareTo(bDate);
+      if (byDate != 0) return byDate;
+
+      return a.productName.toLowerCase().compareTo(
+            b.productName.toLowerCase(),
+          );
+    });
+    return rows;
+  }
+
   bool _isNeededSoon(FarmerMarketDemandOpportunity item) {
     if (item.demandSignal == 'urgent' || item.demandSignal == 'committed_need') {
       return true;
@@ -30341,17 +31572,24 @@ class _HpjFarmerDemandBoardMvpScreenState
     FarmerMarketDemandOpportunity item,
     Set<String> matchingKeys,
   ) {
-    return matchingKeys.contains(
-      hpjFarmerDemandWatchKey(
-        item.productName,
-        item.unit,
-      ),
+    final exact = hpjFarmerDemandWatchKey(
+      item.productName,
+      item.unit,
     );
+    if (matchingKeys.contains(exact)) return true;
+
+    // Home/Market is crop-first. If a farmer grows Ackee, show Ackee once even
+    // when buyer demand is expressed in a different unit (each vs dozen).
+    final cropPrefix = '${hpjWatchKeyPart(item.productName)}|';
+    return matchingKeys.any((key) => key.startsWith(cropPrefix));
   }
 
   bool _isCovered(FarmerMarketDemandOpportunity item) {
+    // A supply-only row (visible demand = 0) is not a market need and must not
+    // appear as "Covered" on the demand page.
+    if (!_hasMarketDemand(item)) return false;
     return item.demandSignal == 'covered_by_you' ||
-        item.opportunityGap <= 0;
+        item.opportunityGap <= 0.0001;
   }
 
   bool _needsSupply(
@@ -30366,7 +31604,9 @@ class _HpjFarmerDemandBoardMvpScreenState
     List<FarmerMarketDemandOpportunity> opportunities,
     Set<String> matchingKeys,
   ) {
-    final rows = List<FarmerMarketDemandOpportunity>.from(opportunities);
+    // One market card per crop. If HPJ has Ackee demand in multiple units or
+    // dates, the strongest/current row represents Ackee on this overview.
+    final rows = _uniqueMarketRows(opportunities);
 
     switch (key) {
       case 'all':
@@ -30377,19 +31617,19 @@ class _HpjFarmerDemandBoardMvpScreenState
             .where(
               (item) =>
                   !_isCovered(item) &&
-                  item.opportunityGap > 0,
+                  item.opportunityGap > 0.0001,
             )
-            .toList();
+            .toList(growable: false);
 
       case 'my_supply':
         return rows
             .where(
               (item) => _matchesMySupply(item, matchingKeys),
             )
-            .toList();
+            .toList(growable: false);
 
       case 'covered':
-        return rows.where(_isCovered).toList();
+        return rows.where(_isCovered).toList(growable: false);
 
       default:
         return rows;
@@ -31176,7 +32416,7 @@ class _HpjFarmerDemandBoardMvpScreenState
           ),
           const SizedBox(height: 2),
           const Text(
-            'Browse current produce needs and opportunities.',
+            'Current buyer needs, one card per crop.',
             style: TextStyle(
               color: FarmColors.mutedText,
               fontSize: 10.5,
@@ -31284,7 +32524,7 @@ class _HpjFarmerDemandBoardMvpScreenState
                   Expanded(
                     child: Text(
                       selectedCategory.key == 'all'
-                          ? 'No market opportunities yet.'
+                          ? 'No active buyer needs right now.'
                           : 'No items in this filter.',
                       style: const TextStyle(
                         color: FarmColors.mutedText,

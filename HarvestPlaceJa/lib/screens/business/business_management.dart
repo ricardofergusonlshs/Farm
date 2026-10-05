@@ -1576,6 +1576,33 @@ class _WholesaleSettingsScreenState
                       ),
 
                       const SizedBox(height: 16),
+                      const Text(
+                        'Account assistance',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      FarmCard(
+                        padding: EdgeInsets.zero,
+                        child: AccountListTile(
+                          icon: Icons.verified_user_outlined,
+                          title: 'Allow HPJ to manage my account',
+                          subtitle: 'Choose page, order, sourcing and message permissions.',
+                          isLast: true,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const HpjManagedAccessOwnerScreen(
+                                accountType: 'business',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
                       PrimaryFarmButton(
                         label: saving ? 'Saving...' : 'Save',
                         icon: Icons.save_outlined,
@@ -1860,6 +1887,17 @@ class _WholesaleAccountWorkspacePage extends StatelessWidget {
                   title: 'Home Appearance',
                   subtitle: 'Business image and logo',
                   onTap: () => _editHomeAppearance(context),
+                ),
+                AccountListTile(
+                  icon: Icons.verified_user_outlined,
+                  title: 'HPJ Managed Access',
+                  subtitle: 'Choose what HPJ may manage for your business',
+                  onTap: () => _open(
+                    context,
+                    const HpjManagedAccessOwnerScreen(
+                      accountType: 'business',
+                    ),
+                  ),
                 ),
                 AccountListTile(
                   icon: Icons.tune_rounded,
@@ -27700,6 +27738,390 @@ String _wholesalePlanningDate(
 // HPJ PHASE 88 — BUSINESS ORDER TRACKING
 // Extracted from wholesale_management.dart without changing runtime behavior.
 
+
+class _BusinessWholesalePriceNegotiationCard extends StatefulWidget {
+  final WholesaleOrderRequest request;
+  final VoidCallback onChanged;
+
+  const _BusinessWholesalePriceNegotiationCard({
+    required this.request,
+    required this.onChanged,
+  });
+
+  @override
+  State<_BusinessWholesalePriceNegotiationCard> createState() =>
+      _BusinessWholesalePriceNegotiationCardState();
+}
+
+class _BusinessWholesalePriceNegotiationCardState
+    extends State<_BusinessWholesalePriceNegotiationCard> {
+  late Future<HpjWholesalePriceNegotiationMvp?> _future;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchHpjWholesalePriceNegotiationMvp(widget.request.id);
+  }
+
+  Future<void> _reload() async {
+    final next = fetchHpjWholesalePriceNegotiationMvp(widget.request.id);
+    if (mounted) setState(() => _future = next);
+    await next;
+    widget.onChanged();
+  }
+
+  Future<void> _accept(HpjWholesalePriceNegotiationMvp negotiation) async {
+    if (_saving || negotiation.hpjPrice <= 0) return;
+    setState(() => _saving = true);
+    try {
+      await businessAcceptHpjWholesalePriceMvp(
+        requestId: widget.request.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Price accepted. HPJ will complete final order approval.'),
+        ),
+      );
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _counter(HpjWholesalePriceNegotiationMvp negotiation) async {
+    final priceController = TextEditingController(
+      text: negotiation.businessPrice > 0
+          ? negotiation.businessPrice.toStringAsFixed(2)
+          : negotiation.hpjPrice > 0
+              ? negotiation.hpjPrice.toStringAsFixed(2)
+              : '',
+    );
+    final noteController = TextEditingController(text: negotiation.businessNote);
+
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Counter Order #${widget.request.shortId}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: priceController,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Your counter total (J\$)',
+                  helperText: 'HPJ must accept or counter before final approval.',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: noteController,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Message to HPJ (optional)',
+                  hintText: 'Add quantity, grade, delivery or budget context.',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Send Counter'),
+          ),
+        ],
+      ),
+    );
+
+    if (send != true) {
+      priceController.dispose();
+      noteController.dispose();
+      return;
+    }
+
+    final price = double.tryParse(
+      priceController.text.trim().replaceAll(',', ''),
+    );
+    final note = noteController.text.trim();
+    priceController.dispose();
+    noteController.dispose();
+
+    if (price == null || price <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid counter price.')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await businessCounterWholesalePriceMvp(
+        requestId: widget.request.id,
+        price: price,
+        note: note,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Counter offer sent to HPJ.')),
+      );
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _history() async {
+    final events =
+        await fetchHpjWholesalePriceNegotiationEventsMvp(widget.request.id);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Price history • #${widget.request.shortId}',
+                style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (events.isEmpty)
+                const Text('No negotiation history yet.')
+              else
+                SizedBox(
+                  height: 320,
+                  child: ListView.separated(
+                    itemCount: events.length,
+                    separatorBuilder: (_, __) => const Divider(height: 16),
+                    itemBuilder: (context, index) {
+                      final event = events[index];
+                      final actor = event.actorRole.trim().toLowerCase() == 'hpj'
+                          ? 'HPJ'
+                          : 'Your business';
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.handshake_outlined),
+                        title: Text(
+                          event.price > 0
+                              ? '$actor • ${formatJmd(event.price)}'
+                              : actor,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        subtitle: Text(
+                          [
+                            event.action.replaceAll('_', ' '),
+                            if (event.note.isNotEmpty) event.note,
+                          ].join(' • '),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<HpjWholesalePriceNegotiationMvp?>(
+      future: _future,
+      builder: (context, snapshot) {
+        final negotiation = snapshot.data;
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            negotiation == null) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) return const SizedBox.shrink();
+        if (negotiation == null) {
+          if (widget.request.status.trim().toLowerCase() != 'quoted') {
+            return const SizedBox.shrink();
+          }
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: FarmColors.cardSoft,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: FarmColors.line),
+            ),
+            child: const Text(
+              'HPJ has prepared a quote. If price negotiation is enabled for this request, refresh after the commercial SQL migration is installed.',
+              style: TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 10.5,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+        }
+
+        final amount = negotiation.isAgreed
+            ? negotiation.agreedPrice
+            : negotiation.isWaitingOnHpj
+                ? negotiation.businessPrice
+                : negotiation.hpjPrice;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: negotiation.isAgreed
+                ? FarmColors.success.withOpacity(.08)
+                : const Color(0xFFFFF8E8),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(
+              color: negotiation.isAgreed
+                  ? FarmColors.success.withOpacity(.25)
+                  : FarmColors.warning.withOpacity(.28),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    negotiation.isAgreed
+                        ? Icons.verified_outlined
+                        : Icons.handshake_outlined,
+                    color: negotiation.isAgreed
+                        ? FarmColors.success
+                        : FarmColors.warning,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      negotiation.statusLabel,
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  if (amount > 0)
+                    Text(
+                      formatJmd(amount),
+                      style: const TextStyle(
+                        color: FarmColors.ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                negotiation.isAgreed
+                    ? 'You and HPJ agreed this price. HPJ can now complete final order approval.'
+                    : negotiation.isWaitingOnHpj
+                        ? 'Your counter is with HPJ. HPJ can accept it or send another offer.'
+                        : 'Review HPJ’s price. You can accept it or send a counter before final approval.',
+                style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (negotiation.hpjNote.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'HPJ: ${negotiation.hpjNote}',
+                  style: const TextStyle(
+                    color: FarmColors.ink,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              if (negotiation.businessNote.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Your note: ${negotiation.businessNote}',
+                  style: const TextStyle(
+                    color: FarmColors.mutedText,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              if (negotiation.isWaitingOnBusiness)
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _saving ? null : () => _accept(negotiation),
+                        icon: const Icon(Icons.check_rounded, size: 17),
+                        label: const Text('Accept'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _saving ? null : () => _counter(negotiation),
+                        icon: const Icon(Icons.swap_horiz_rounded, size: 17),
+                        label: const Text('Counter'),
+                      ),
+                    ),
+                  ],
+                ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _history,
+                  icon: const Icon(Icons.history_rounded, size: 17),
+                  label: const Text('Price history'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class MyWholesaleRequestsScreen extends StatefulWidget {
   final bool embedded;
   final String? initialRequestId;
@@ -28326,6 +28748,19 @@ class _MyWholesaleRequestsScreenState extends State<MyWholesaleRequestsScreen> {
                           ],
                         ),
                       ),
+                      if (finalTotal <= 0 &&
+                          !const <String>{
+                            'approved',
+                            'fulfilled',
+                            'cancelled',
+                            'rejected',
+                          }.contains(request.status.trim().toLowerCase())) ...[
+                        const SizedBox(height: 12),
+                        _BusinessWholesalePriceNegotiationCard(
+                          request: request,
+                          onChanged: _refreshOrders,
+                        ),
+                      ],
                       if (invoice != null && invoice.items.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         const Text(

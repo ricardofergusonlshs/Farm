@@ -10499,6 +10499,263 @@ class _AdminSponsorsTabState extends State<AdminSponsorsTab> {
 // Owner/Manager can maintain public company contact details and Terms.
 // =====================================================
 
+
+class HpjCommercialFeeSettingsScreen extends StatefulWidget {
+  const HpjCommercialFeeSettingsScreen({super.key});
+
+  @override
+  State<HpjCommercialFeeSettingsScreen> createState() =>
+      _HpjCommercialFeeSettingsScreenState();
+}
+
+class _HpjCommercialFeeSettingsScreenState
+    extends State<HpjCommercialFeeSettingsScreen> {
+  late Future<HpjCommercialFeeSettings> _future;
+  final farmerController = TextEditingController();
+  final customerController = TextEditingController();
+  final wholesaleController = TextEditingController();
+  final deliveryController = TextEditingController();
+  final managedController = TextEditingController();
+  bool _hydrated = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchHpjCommercialFeeSettings();
+  }
+
+  @override
+  void dispose() {
+    farmerController.dispose();
+    customerController.dispose();
+    wholesaleController.dispose();
+    deliveryController.dispose();
+    managedController.dispose();
+    super.dispose();
+  }
+
+  String _clean(double value) => value % 1 == 0
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(2);
+
+  void _hydrate(HpjCommercialFeeSettings settings) {
+    if (_hydrated) return;
+    _hydrated = true;
+    farmerController.text = _clean(settings.farmerMarketplaceFeePercent);
+    customerController.text = _clean(settings.customerServiceFeePercent);
+    wholesaleController.text = _clean(settings.wholesaleServiceMarginPercent);
+    deliveryController.text = _clean(settings.deliveryMarginPercent);
+    managedController.text = _clean(settings.managedServiceMonthlyFee);
+  }
+
+  double? _number(TextEditingController controller) => double.tryParse(
+        controller.text.trim().replaceAll(',', ''),
+      );
+
+  Future<void> _reload() async {
+    final next = fetchHpjCommercialFeeSettings();
+    if (mounted) {
+      setState(() {
+        _hydrated = false;
+        _future = next;
+      });
+    }
+    await next;
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final farmer = _number(farmerController);
+    final customer = _number(customerController);
+    final wholesale = _number(wholesaleController);
+    final delivery = _number(deliveryController);
+    final managed = _number(managedController);
+    if ([farmer, customer, wholesale, delivery, managed]
+        .any((value) => value == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter valid numbers for all fees.')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await hpjAdminSaveCommercialFeeSettings(
+        farmerMarketplaceFeePercent: farmer!,
+        customerServiceFeePercent: customer!,
+        wholesaleServiceMarginPercent: wholesale!,
+        deliveryMarginPercent: delivery!,
+        managedServiceMonthlyFee: managed!,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Commercial fee settings updated.')),
+      );
+      await _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _percentField(
+    TextEditingController controller,
+    String label,
+    String helper,
+  ) {
+    return TextField(
+      controller: controller,
+      enabled: !_saving,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helper,
+        suffixText: '%',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('Commercial Fees'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _saving ? null : _reload,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: FutureBuilder<HpjCommercialFeeSettings>(
+        future: _future,
+        builder: (context, snapshot) {
+          final settings = snapshot.data;
+          if (settings != null) _hydrate(settings);
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              settings == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          return FarmPage(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 120),
+              children: [
+                const EliteGreenHeroCard(
+                  eyebrow: 'COMMERCIAL CONTROL',
+                  title: 'Keep HPJ fees clear and configurable.',
+                  subtitle:
+                      'These are HPJ commercial defaults. Farmers see the fee that applies before they submit a listing price.',
+                  icon: Icons.payments_outlined,
+                  chips: ['Transparent', 'Owner / Manager', 'JMD'],
+                ),
+                const SizedBox(height: 14),
+                FarmCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Marketplace & wholesale',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Changing a default does not silently rewrite old farmer listings. New farmer products snapshot the current farmer fee onto the listing.',
+                        style: TextStyle(
+                          color: FarmColors.mutedText,
+                          fontSize: 10,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _percentField(
+                        farmerController,
+                        'Farmer marketplace fee',
+                        'Shown to farmers before they submit their price.',
+                      ),
+                      const SizedBox(height: 12),
+                      _percentField(
+                        customerController,
+                        'Customer service fee',
+                        'MVP configuration value. Keep at 0% until HPJ intentionally enables a customer fee.',
+                      ),
+                      const SizedBox(height: 12),
+                      _percentField(
+                        wholesaleController,
+                        'Wholesale service margin target',
+                        'Internal target used as guidance during Business ↔ HPJ quoting.',
+                      ),
+                      const SizedBox(height: 12),
+                      _percentField(
+                        deliveryController,
+                        'Delivery margin target',
+                        'Internal delivery-margin target; this does not automatically change delivery fees.',
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: managedController,
+                        enabled: !_saving,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Managed account monthly fee',
+                          prefixText: 'J\$ ',
+                          helperText:
+                              'Optional. Set 0 until HPJ launches a paid managed-account plan.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                FarmCard(
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline_rounded,
+                          color: FarmColors.primary),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'MVP rule: fee settings are transparent configuration. They do not automatically add charges to existing customer orders, delivery fees or wholesale invoices until those transaction flows explicitly use them.',
+                          style: TextStyle(
+                            color: FarmColors.mutedText,
+                            fontSize: 10,
+                            height: 1.4,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                PrimaryFarmButton(
+                  label: _saving ? 'Saving...' : 'Save Commercial Fees',
+                  icon: Icons.save_outlined,
+                  onPressed: _saving ? null : _save,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class AdminCompanySettingsTab extends StatefulWidget {
   final int refreshKey;
 
@@ -10773,6 +11030,57 @@ class _AdminCompanySettingsTabState extends State<AdminCompanySettingsTab> {
                       labelText: 'Terms and Conditions',
                       alignLabelWithHint: true,
                       prefixIcon: Icon(Icons.description_outlined),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            FarmCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.payments_outlined, color: FarmColors.primary),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Commercial Fees',
+                          style: TextStyle(
+                            color: FarmColors.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 7),
+                  const Text(
+                    'Configure the farmer marketplace fee, wholesale margin target, delivery margin target and optional managed-service fee.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 9.8,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 11),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const HpjCommercialFeeSettingsScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.tune_rounded),
+                      label: const Text('Manage Commercial Fees'),
                     ),
                   ),
                 ],
@@ -25759,6 +26067,17 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
         ),
       );
 
+  _AdminTabSpec managedAccounts() => _AdminTabSpec(
+        tab: const Tab(
+          icon: Icon(Icons.verified_user_outlined),
+          text: 'Managed Accounts',
+        ),
+        child: AdminManagedAccountsTab(
+          refreshKey: refreshKey,
+          onChanged: onChanged,
+        ),
+      );
+
   _AdminTabSpec farmers() => _AdminTabSpec(
         tab: const Tab(
           icon: Icon(Icons.agriculture_outlined),
@@ -25852,6 +26171,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       drivers(),
       farmers(),
       onboarding(),
+      managedAccounts(),
       payouts(),
       analytics(),
       growthOps(),
@@ -25889,6 +26209,7 @@ List<_AdminTabSpec> _adminTabSpecsForRole({
       drivers(),
       farmers(),
       onboarding(),
+      managedAccounts(),
       analytics(),
       growthOps(),
       demandIntel(),
@@ -40985,7 +41306,11 @@ class AdminAnalyticsTab extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               const gap = 12.0;
-              final columns = constraints.maxWidth >= 1180 ? 4 : 2;
+              final columns = constraints.maxWidth >= 1180
+                  ? 4
+                  : constraints.maxWidth >= 700
+                      ? 2
+                      : 1;
               final width =
                   (constraints.maxWidth - gap * (columns - 1)) / columns;
 
@@ -41049,8 +41374,11 @@ class AdminAnalyticsTab extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               const gap = 12.0;
-              final useFour = constraints.maxWidth >= 1180;
-              final columns = useFour ? 4 : 2;
+              final columns = constraints.maxWidth >= 1180
+                  ? 4
+                  : constraints.maxWidth >= 700
+                      ? 2
+                      : 1;
               final width =
                   (constraints.maxWidth - gap * (columns - 1)) / columns;
 
@@ -41119,7 +41447,11 @@ class AdminAnalyticsTab extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               const gap = 12.0;
-              final columns = constraints.maxWidth >= 1180 ? 4 : 2;
+              final columns = constraints.maxWidth >= 1180
+                  ? 4
+                  : constraints.maxWidth >= 700
+                      ? 2
+                      : 1;
               final width =
                   (constraints.maxWidth - gap * (columns - 1)) / columns;
 
@@ -44844,9 +45176,24 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                     case 'harvested':
                       await openReuseThisWeekDialog(context, product);
                       break;
-                    case 'approve':
-                      await updateProductApproval(product.id, 'approved');
+                    case 'price_review':
+                      await showAdminProductPriceNegotiationMvp(
+                        context,
+                        product,
+                      );
                       refreshProducts();
+                      break;
+                    case 'approve':
+                      try {
+                        await updateProductApproval(product.id, 'approved');
+                        refreshProducts();
+                      } catch (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(friendlyAppError(error))),
+                          );
+                        }
+                      }
                       break;
                     case 'reject':
                       await updateProductApproval(product.id, 'rejected');
@@ -44886,6 +45233,16 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
                       title: Text('Mark Harvested'),
                     ),
                   ),
+                  if ((product.farmerId ?? '').trim().isNotEmpty)
+                    const PopupMenuItem(
+                      value: 'price_review',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.handshake_outlined),
+                        title: Text('Price review & negotiation'),
+                      ),
+                    ),
                   if (product.approvalStatus != 'approved')
                     const PopupMenuItem(
                       value: 'approve',
@@ -45342,8 +45699,16 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
         .join(' • ');
 
     Future<void> approve() async {
-      await updateProductApproval(product.id, 'approved');
-      refreshProducts();
+      try {
+        await updateProductApproval(product.id, 'approved');
+        refreshProducts();
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(friendlyAppError(error))),
+          );
+        }
+      }
     }
 
     Future<void> reject() async {
@@ -45360,6 +45725,10 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
         switch (action) {
           case 'harvested':
             await openReuseThisWeekDialog(context, product);
+            break;
+          case 'price_review':
+            await showAdminProductPriceNegotiationMvp(context, product);
+            refreshProducts();
             break;
           case 'approve':
             await approve();
@@ -45379,6 +45748,16 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
             title: Text('Mark Harvested'),
           ),
         ),
+        if ((product.farmerId ?? '').trim().isNotEmpty)
+          const PopupMenuItem(
+            value: 'price_review',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.handshake_outlined),
+              title: Text('Price review & negotiation'),
+            ),
+          ),
         if (pendingApproval && product.approvalStatus != 'approved')
           const PopupMenuItem(
             value: 'approve',
@@ -55113,6 +55492,2122 @@ class _HpjAdminMarketingTabState extends State<HpjAdminMarketingTab> {
           label: const Text('View published customer page'),
         ),
       ],
+    );
+  }
+}
+
+// =====================================================
+// HPJ PRODUCT PRICE NEGOTIATION MVP — ADMIN REVIEW SHEET
+// =====================================================
+Future<void> showAdminProductPriceNegotiationMvp(
+  BuildContext context,
+  Product product,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  var negotiation = await fetchHpjProductPriceNegotiationMvp(product.id);
+  var guide = await fetchHpjProductMarketPriceReferenceMvp(
+    cropName: product.name,
+    unit: product.unit,
+  );
+  if (!context.mounted) return;
+
+  double chooseValue(
+    double? guideValue,
+    double? negotiationValue,
+  ) {
+    if (guideValue != null && guideValue > 0) return guideValue;
+    if (negotiationValue != null && negotiationValue > 0) {
+      return negotiationValue;
+    }
+    return 0;
+  }
+
+  String controllerValue(double value) =>
+      value > 0 ? value.toStringAsFixed(2) : '';
+
+  final offerController = TextEditingController(
+    text: negotiation != null && negotiation.hpjPrice > 0
+        ? negotiation.hpjPrice.toStringAsFixed(2)
+        : product.price.toStringAsFixed(2),
+  );
+  final hpjNoteController = TextEditingController(
+    text: negotiation?.hpjNote ?? '',
+  );
+  final sourceController = TextEditingController(
+    text: guide?.marketSource ?? negotiation?.marketSource ?? 'RADA/JAMIS',
+  );
+  final periodController = TextEditingController(
+    text: guide?.marketPeriod ?? negotiation?.marketPeriod ?? '',
+  );
+  final costController = TextEditingController(
+    text: controllerValue(
+      chooseValue(
+        guide?.radaCostOfProduction,
+        negotiation?.radaCostOfProduction,
+      ),
+    ),
+  );
+  final farmLowController = TextEditingController(
+    text: controllerValue(
+      chooseValue(guide?.radaFarmgateLow, negotiation?.radaFarmgateLow),
+    ),
+  );
+  final farmRefController = TextEditingController(
+    text: controllerValue(
+      chooseValue(
+        guide?.radaFarmgateReference,
+        negotiation?.radaFarmgateReference,
+      ),
+    ),
+  );
+  final farmHighController = TextEditingController(
+    text: controllerValue(
+      chooseValue(guide?.radaFarmgateHigh, negotiation?.radaFarmgateHigh),
+    ),
+  );
+  final wholesaleController = TextEditingController(
+    text: controllerValue(
+      chooseValue(
+        guide?.radaWholesaleReference,
+        negotiation?.radaWholesaleReference,
+      ),
+    ),
+  );
+  final retailLowController = TextEditingController(
+    text: controllerValue(
+      chooseValue(guide?.radaRetailLow, negotiation?.radaRetailLow),
+    ),
+  );
+  final retailHighController = TextEditingController(
+    text: controllerValue(
+      chooseValue(guide?.radaRetailHigh, negotiation?.radaRetailHigh),
+    ),
+  );
+
+  var saving = false;
+  var savingGuide = false;
+
+  double valueOf(TextEditingController controller) =>
+      double.tryParse(controller.text.trim()) ?? 0;
+  String money(double value) =>
+      value <= 0 ? '—' : 'J\$${value.toStringAsFixed(2)}';
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) {
+      return StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          Future<void> saveGuide() async {
+            if (savingGuide) return;
+            setSheetState(() => savingGuide = true);
+            try {
+              await hpjAdminUpsertMarketPriceReferenceMvp(
+                cropName: product.name,
+                unit: (product.unit ?? '').trim().isEmpty
+                    ? 'each'
+                    : product.unit!.trim(),
+                marketSource: sourceController.text,
+                marketPeriod: periodController.text,
+                radaCostOfProduction: valueOf(costController),
+                radaFarmgateLow: valueOf(farmLowController),
+                radaFarmgateReference: valueOf(farmRefController),
+                radaFarmgateHigh: valueOf(farmHighController),
+                radaWholesaleReference: valueOf(wholesaleController),
+                radaRetailLow: valueOf(retailLowController),
+                radaRetailHigh: valueOf(retailHighController),
+              );
+              guide = await fetchHpjProductMarketPriceReferenceMvp(
+                cropName: product.name,
+                unit: product.unit,
+              );
+              if (!sheetContext.mounted) return;
+              setSheetState(() => savingGuide = false);
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('RADA/JAMIS market guide saved.'),
+                ),
+              );
+            } catch (error) {
+              if (!sheetContext.mounted) return;
+              setSheetState(() => savingGuide = false);
+              messenger.showSnackBar(
+                SnackBar(content: Text(friendlyAppError(error))),
+              );
+            }
+          }
+
+          Future<void> acceptFarmerPrice() async {
+            if (saving) return;
+            setSheetState(() => saving = true);
+            try {
+              await hpjAdminAcceptFarmerProductPriceMvp(
+                productId: product.id,
+                note: hpjNoteController.text,
+              );
+              if (!sheetContext.mounted) return;
+              Navigator.pop(sheetContext);
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Farmer price accepted. Complete final approval when ready.',
+                  ),
+                ),
+              );
+            } catch (error) {
+              if (!sheetContext.mounted) return;
+              setSheetState(() => saving = false);
+              messenger.showSnackBar(
+                SnackBar(content: Text(friendlyAppError(error))),
+              );
+            }
+          }
+
+          Future<void> sendCounter() async {
+            final offer = valueOf(offerController);
+            if (offer <= 0) {
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Enter a valid HPJ counter price.'),
+                ),
+              );
+              return;
+            }
+            if (saving) return;
+            setSheetState(() => saving = true);
+            try {
+              await hpjAdminCounterProductPriceMvp(
+                productId: product.id,
+                counterPrice: offer,
+                note: hpjNoteController.text,
+              );
+              if (!sheetContext.mounted) return;
+              Navigator.pop(sheetContext);
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('HPJ counter offer sent to the farmer.'),
+                ),
+              );
+            } catch (error) {
+              if (!sheetContext.mounted) return;
+              setSheetState(() => saving = false);
+              messenger.showSnackBar(
+                SnackBar(content: Text(friendlyAppError(error))),
+              );
+            }
+          }
+
+          Future<void> approveAgreed() async {
+            if (saving) return;
+            setSheetState(() => saving = true);
+            try {
+              await updateProductApproval(product.id, 'approved');
+              if (!sheetContext.mounted) return;
+              Navigator.pop(sheetContext);
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Agreed price approved. Product is now live.'),
+                ),
+              );
+            } catch (error) {
+              if (!sheetContext.mounted) return;
+              setSheetState(() => saving = false);
+              messenger.showSnackBar(
+                SnackBar(content: Text(friendlyAppError(error))),
+              );
+            }
+          }
+
+          final farmerPrice = negotiation?.farmerPrice ?? product.price;
+          final hpjPrice = negotiation?.hpjPrice ?? 0;
+          final agreedPrice = negotiation?.agreedPrice ?? 0;
+          final unit = (product.unit ?? '').trim().isEmpty
+              ? 'each'
+              : product.unit!.trim();
+
+          Widget stat(String label, String value, {bool strong = false}) {
+            return Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: strong ? FarmColors.lightGreen : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: FarmColors.line),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      value,
+                      style: TextStyle(
+                        color: strong ? FarmColors.deepGreen : FarmColors.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return SafeArea(
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(sheetContext).size.height * .94,
+              ),
+              padding: EdgeInsets.only(
+                left: 18,
+                right: 18,
+                top: 18,
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+              ),
+              decoration: const BoxDecoration(
+                color: FarmColors.cream,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.handshake_outlined,
+                          color: FarmColors.deepGreen,
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            '${product.name} • Price Review',
+                            style: const TextStyle(
+                              color: FarmColors.ink,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      'Farmer: ${(product.farmName ?? product.farmerName ?? 'Farmer').trim()} • Unit: $unit',
+                      style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        stat('FARMER PRICE', money(farmerPrice)),
+                        const SizedBox(width: 7),
+                        stat('HPJ OFFER', money(hpjPrice)),
+                        const SizedBox(width: 7),
+                        stat(
+                          'AGREED',
+                          money(agreedPrice),
+                          strong: agreedPrice > 0,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: FarmColors.line),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'RADA/JAMIS Market Guide',
+                            style: TextStyle(
+                              color: FarmColors.deepGreen,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Enter the published market reference manually. It is guidance for negotiation, not an automatic price.',
+                            style: TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 10.5,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: sourceController,
+                            decoration: const InputDecoration(
+                              labelText: 'Source',
+                              hintText: 'RADA/JAMIS',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: periodController,
+                            decoration: const InputDecoration(
+                              labelText: 'Price week / period',
+                              hintText: 'Week ending 2026-10-03',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: costController,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'RADA cost of production',
+                              helperText: 'Per selected product unit',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: farmLowController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Farmgate low',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: TextField(
+                                  controller: farmRefController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Farmgate ref.',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: TextField(
+                                  controller: farmHighController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Farmgate high',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: wholesaleController,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Wholesale reference',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: retailLowController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Retail low',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: TextField(
+                                  controller: retailHighController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Retail high',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 9),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: savingGuide ? null : saveGuide,
+                              icon: const Icon(Icons.save_outlined),
+                              label: Text(
+                                savingGuide
+                                    ? 'Saving guide...'
+                                    : 'Save / Update Market Guide',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: offerController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'HPJ counter offer (J\$)',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: hpjNoteController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Message to farmer (optional)',
+                        hintText:
+                            'Example: Current market range supports J\$200–J\$215 per lb.',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (negotiation?.isAgreed == true) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: saving ? null : approveAgreed,
+                          icon: const Icon(Icons.verified_rounded),
+                          label: Text(
+                            saving
+                                ? 'Approving...'
+                                : 'Final Approve at ${money(agreedPrice)}',
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: saving ? null : acceptFarmerPrice,
+                              icon: const Icon(Icons.check_rounded),
+                              label: Text(
+                                saving
+                                    ? 'Saving...'
+                                    : 'Accept Farmer ${money(farmerPrice)}',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: saving ? null : sendCounter,
+                              icon: const Icon(Icons.swap_horiz_rounded),
+                              label: const Text('Send Counter'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Final approval remains separate. A negotiated price does not publish the product until HPJ approves the listing.',
+                      style: TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 10.5,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  offerController.dispose();
+  hpjNoteController.dispose();
+  sourceController.dispose();
+  periodController.dispose();
+  costController.dispose();
+  farmLowController.dispose();
+  farmRefController.dispose();
+  farmHighController.dispose();
+  wholesaleController.dispose();
+  retailLowController.dispose();
+  retailHighController.dispose();
+}
+
+
+// ============================================================================
+// HPJ MANAGED ACCOUNT ACCESS — FLUTLAB MERGED BUILD
+// Merged into admin_screens.dart so no extra `part` file/folder is required.
+// ============================================================================
+
+
+// ============================================================================
+// HPJ MANAGED ACCOUNT ACCESS
+// Explicit, revocable delegation for Farmer + Business accounts.
+// HPJ never needs the partner's password. Every action is tied to an active
+// grant and the database keeps an audit trail.
+// ============================================================================
+
+class HpjManagedAccessGrant {
+  final String id;
+  final String accountType;
+  final String accountId;
+  final String ownerUserId;
+  final String ownerDisplayName;
+  final String status;
+  final bool managePage;
+  final bool manageOrders;
+  final bool manageProducts;
+  final bool manageMessages;
+  final String consentVersion;
+  final DateTime? grantedAt;
+  final DateTime? revokedAt;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const HpjManagedAccessGrant({
+    required this.id,
+    required this.accountType,
+    required this.accountId,
+    required this.ownerUserId,
+    required this.ownerDisplayName,
+    required this.status,
+    required this.managePage,
+    required this.manageOrders,
+    required this.manageProducts,
+    required this.manageMessages,
+    required this.consentVersion,
+    this.grantedAt,
+    this.revokedAt,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory HpjManagedAccessGrant.fromSupabase(Map<String, dynamic> data) {
+    return HpjManagedAccessGrant(
+      id: (data['id'] ?? '').toString(),
+      accountType: (data['account_type'] ?? '').toString().trim().toLowerCase(),
+      accountId: (data['account_id'] ?? '').toString(),
+      ownerUserId: (data['owner_user_id'] ?? '').toString(),
+      ownerDisplayName: (data['owner_display_name'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'revoked').toString().trim().toLowerCase(),
+      managePage: data['manage_page'] == true,
+      manageOrders: data['manage_orders'] == true,
+      manageProducts: data['manage_products'] == true,
+      manageMessages: data['manage_messages'] == true,
+      consentVersion: (data['consent_version'] ?? '').toString(),
+      grantedAt: parseProductDate(data['granted_at']),
+      revokedAt: parseProductDate(data['revoked_at']),
+      createdAt: parseProductDate(data['created_at']),
+      updatedAt: parseProductDate(data['updated_at']),
+    );
+  }
+
+  bool get isActive => status == 'active';
+
+  List<String> get permissionLabels {
+    final labels = <String>[];
+    if (managePage) labels.add('Page');
+    if (manageOrders) labels.add('Orders');
+    if (manageProducts) {
+      labels.add(accountType == 'farmer' ? 'Products & supply' : 'Sourcing');
+    }
+    if (manageMessages) labels.add('Messages');
+    return labels;
+  }
+}
+
+class _HpjManagedOwnerContext {
+  final String accountType;
+  final String accountId;
+  final String displayName;
+
+  const _HpjManagedOwnerContext({
+    required this.accountType,
+    required this.accountId,
+    required this.displayName,
+  });
+}
+
+const String _hpjManagedAccessFields =
+    'id, account_type, account_id, owner_user_id, owner_display_name, status, '
+    'manage_page, manage_orders, manage_products, manage_messages, '
+    'consent_version, granted_at, revoked_at, created_at, updated_at';
+
+Future<_HpjManagedOwnerContext> _resolveHpjManagedOwnerContext(
+  String accountType,
+) async {
+  final cleanType = accountType.trim().toLowerCase();
+  if (cleanType == 'farmer') {
+    final farmer = await fetchCurrentFarmerProfile();
+    if (farmer == null || farmer.id.trim().isEmpty) {
+      throw Exception('A farmer profile is required before HPJ access can be granted.');
+    }
+    return _HpjManagedOwnerContext(
+      accountType: 'farmer',
+      accountId: farmer.id,
+      displayName: farmer.farmName.trim().isEmpty ? farmer.farmerName : farmer.farmName,
+    );
+  }
+
+  if (cleanType == 'business' || cleanType == 'wholesale') {
+    final business = await fetchCurrentBusinessAccount();
+    if (business == null || business.id.trim().isEmpty) {
+      throw Exception('A business account is required before HPJ access can be granted.');
+    }
+    return _HpjManagedOwnerContext(
+      accountType: 'business',
+      accountId: business.id,
+      displayName: business.businessName.trim().isEmpty
+          ? business.contactName
+          : business.businessName,
+    );
+  }
+
+  throw Exception('Unsupported HPJ managed account type.');
+}
+
+Future<HpjManagedAccessGrant?> fetchMyHpjManagedAccessGrant({
+  required String accountType,
+  required String accountId,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return null;
+
+  final response = await supabase
+      .from('hpj_managed_account_access')
+      .select(_hpjManagedAccessFields)
+      .eq('account_type', accountType.trim().toLowerCase())
+      .eq('account_id', accountId.trim())
+      .eq('owner_user_id', user.id)
+      .maybeSingle();
+
+  if (response == null) return null;
+  return HpjManagedAccessGrant.fromSupabase(
+    Map<String, dynamic>.from(response as Map),
+  );
+}
+
+Future<HpjManagedAccessGrant> saveMyHpjManagedAccessGrant({
+  required _HpjManagedOwnerContext account,
+  required bool managePage,
+  required bool manageOrders,
+  required bool manageProducts,
+  required bool manageMessages,
+}) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) throw Exception('Please sign in again.');
+
+  if (!managePage && !manageOrders && !manageProducts && !manageMessages) {
+    throw Exception('Choose at least one permission for HPJ.');
+  }
+
+  final now = DateTime.now().toUtc().toIso8601String();
+  await supabase.from('hpj_managed_account_access').upsert(
+    <String, dynamic>{
+      'account_type': account.accountType,
+      'account_id': account.accountId,
+      'owner_user_id': user.id,
+      'owner_display_name': account.displayName,
+      'status': 'active',
+      'manage_page': managePage,
+      'manage_orders': manageOrders,
+      'manage_products': manageProducts,
+      'manage_messages': manageMessages,
+      'consent_version': '2026-10-03',
+      'granted_at': now,
+      'revoked_at': null,
+      'updated_at': now,
+    },
+    onConflict: 'account_type,account_id',
+  );
+
+  final saved = await fetchMyHpjManagedAccessGrant(
+    accountType: account.accountType,
+    accountId: account.accountId,
+  );
+  if (saved == null) {
+    throw Exception('HPJ access was saved, but the permission record could not be reloaded.');
+  }
+  return saved;
+}
+
+Future<void> revokeMyHpjManagedAccessGrant(HpjManagedAccessGrant grant) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) throw Exception('Please sign in again.');
+
+  final now = DateTime.now().toUtc().toIso8601String();
+  await supabase
+      .from('hpj_managed_account_access')
+      .update(<String, dynamic>{
+        'status': 'revoked',
+        'revoked_at': now,
+        'updated_at': now,
+      })
+      .eq('id', grant.id)
+      .eq('owner_user_id', user.id);
+}
+
+Future<List<HpjManagedAccessGrant>> fetchAdminHpjManagedAccessGrants({
+  bool includeRevoked = false,
+}) async {
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (!const {'owner', 'manager', 'support', 'onboarding'}.contains(role)) {
+    throw Exception('Your HPJ staff role does not include managed-account access.');
+  }
+
+  dynamic query = supabase
+      .from('hpj_managed_account_access')
+      .select(_hpjManagedAccessFields);
+
+  if (!includeRevoked) query = query.eq('status', 'active');
+
+  final response = await query.order('updated_at', ascending: false).limit(500);
+  return (response as List)
+      .map((item) => HpjManagedAccessGrant.fromSupabase(
+            Map<String, dynamic>.from(item as Map),
+          ))
+      .toList();
+}
+
+Future<HpjManagedAccessGrant> _refreshManagedGrantForStaff(
+  HpjManagedAccessGrant grant,
+) async {
+  final response = await supabase
+      .from('hpj_managed_account_access')
+      .select(_hpjManagedAccessFields)
+      .eq('id', grant.id)
+      .maybeSingle();
+
+  if (response == null) throw Exception('This managed-account permission no longer exists.');
+  return HpjManagedAccessGrant.fromSupabase(
+    Map<String, dynamic>.from(response as Map),
+  );
+}
+
+Future<Map<String, dynamic>> fetchHpjManagedPageForStaff(
+  HpjManagedAccessGrant grant,
+) async {
+  final fresh = await _refreshManagedGrantForStaff(grant);
+  if (!fresh.isActive || !fresh.managePage) {
+    throw Exception('Page-management permission is not active for this account.');
+  }
+
+  final response = await supabase.rpc(
+    'hpj_staff_get_managed_page',
+    params: {'p_grant_id': fresh.id},
+  );
+  if (response is! Map) return <String, dynamic>{};
+  return Map<String, dynamic>.from(response);
+}
+
+Future<void> updateHpjManagedPageForStaff({
+  required HpjManagedAccessGrant grant,
+  required Map<String, dynamic> payload,
+}) async {
+  final fresh = await _refreshManagedGrantForStaff(grant);
+  if (!fresh.isActive || !fresh.managePage) {
+    throw Exception('Page-management permission is not active for this account.');
+  }
+  await supabase.rpc(
+    'hpj_staff_update_managed_page',
+    params: {
+      'p_grant_id': fresh.id,
+      'p_payload': payload,
+    },
+  );
+}
+
+Future<List<Map<String, dynamic>>> fetchHpjManagedOrdersForStaff(
+  HpjManagedAccessGrant grant,
+) async {
+  final fresh = await _refreshManagedGrantForStaff(grant);
+  if (!fresh.isActive || !fresh.manageOrders) {
+    throw Exception('Order-management permission is not active for this account.');
+  }
+  final response = await supabase.rpc(
+    'hpj_staff_list_managed_orders',
+    params: {'p_grant_id': fresh.id},
+  );
+  if (response is! List) return <Map<String, dynamic>>[];
+  return response
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
+}
+
+Future<void> hpjManagedUpdateBusinessOrder({
+  required HpjManagedAccessGrant grant,
+  required String orderId,
+  required String status,
+  required double? quotedTotal,
+  required String adminNotes,
+}) async {
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (!staffRoleHasFullAdminAccess(role)) {
+    throw Exception('Only an HPJ owner or manager can change managed business orders.');
+  }
+
+  final fresh = await _refreshManagedGrantForStaff(grant);
+  if (!fresh.isActive || !fresh.manageOrders || fresh.accountType != 'business') {
+    throw Exception('Active business order permission is required.');
+  }
+
+  final response = await supabase
+      .from('wholesale_order_requests')
+      .select('$_wholesaleRequestSelectFields, business_accounts($_businessAccountSelectFields)')
+      .eq('id', orderId)
+      .eq('business_account_id', fresh.accountId)
+      .maybeSingle();
+
+  if (response == null) throw Exception('This order does not belong to the managed business.');
+  final request = WholesaleOrderRequest.fromSupabase(
+    Map<String, dynamic>.from(response as Map),
+  );
+
+  await adminUpdateWholesaleRequest(
+    request: request,
+    status: status,
+    quotedTotal: quotedTotal,
+    adminNotes: adminNotes,
+  );
+
+  if (status == 'approved') {
+    await prepareApprovedWholesaleRequestForProcurement(request.id);
+  }
+
+  try {
+    await supabase.rpc(
+      'hpj_staff_log_managed_action',
+      params: {
+        'p_grant_id': fresh.id,
+        'p_action': 'order_updated',
+        'p_details': <String, dynamic>{
+          'order_id': request.id,
+          'order_kind': 'business',
+          'status': status,
+          'quoted_total': quotedTotal,
+        },
+      },
+    );
+  } catch (auditError) {
+    farmDebugLog('Managed business order audit log failed: $auditError');
+  }
+}
+
+Future<void> hpjManagedUpdateFarmerOrderStatus({
+  required HpjManagedAccessGrant grant,
+  required String orderId,
+  required String status,
+}) async {
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (!staffRoleHasFullAdminAccess(role)) {
+    throw Exception('Only an HPJ owner or manager can change managed farmer orders.');
+  }
+
+  final fresh = await _refreshManagedGrantForStaff(grant);
+  if (!fresh.isActive || !fresh.manageOrders || fresh.accountType != 'farmer') {
+    throw Exception('Active farmer order permission is required.');
+  }
+
+  final linked = await supabase
+      .from('order_items')
+      .select('id')
+      .eq('order_id', orderId)
+      .eq('farmer_id', fresh.accountId)
+      .limit(1);
+  if ((linked as List).isEmpty) {
+    throw Exception('This order is not linked to the managed farm.');
+  }
+
+  await updateOrderStatus(orderId, status);
+
+  try {
+    await supabase.rpc(
+      'hpj_staff_log_managed_action',
+      params: {
+        'p_grant_id': fresh.id,
+        'p_action': 'order_updated',
+        'p_details': <String, dynamic>{
+          'order_id': orderId,
+          'order_kind': 'farmer',
+          'status': status,
+        },
+      },
+    );
+  } catch (auditError) {
+    farmDebugLog('Managed farmer order audit log failed: $auditError');
+  }
+}
+
+String _hpjManagedDate(DateTime? value) {
+  if (value == null) return '—';
+  final local = value.toLocal();
+  const months = <String>[
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${months[local.month - 1]} ${local.day}, ${local.year}';
+}
+
+String _hpjManagedMoney(dynamic value) {
+  final amount = value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+  return formatJmd(amount);
+}
+
+class HpjManagedAccessOwnerScreen extends StatefulWidget {
+  final String accountType;
+
+  const HpjManagedAccessOwnerScreen({
+    super.key,
+    required this.accountType,
+  });
+
+  @override
+  State<HpjManagedAccessOwnerScreen> createState() =>
+      _HpjManagedAccessOwnerScreenState();
+}
+
+class _HpjManagedAccessOwnerScreenState extends State<HpjManagedAccessOwnerScreen> {
+  _HpjManagedOwnerContext? account;
+  HpjManagedAccessGrant? grant;
+  bool loading = true;
+  bool saving = false;
+  bool managePage = true;
+  bool manageOrders = true;
+  bool manageProducts = false;
+  bool manageMessages = false;
+  bool consentAccepted = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    if (mounted) setState(() { loading = true; error = null; });
+    try {
+      final resolved = await _resolveHpjManagedOwnerContext(widget.accountType);
+      final existing = await fetchMyHpjManagedAccessGrant(
+        accountType: resolved.accountType,
+        accountId: resolved.accountId,
+      );
+      if (!mounted) return;
+      setState(() {
+        account = resolved;
+        grant = existing;
+        if (existing != null) {
+          managePage = existing.managePage;
+          manageOrders = existing.manageOrders;
+          manageProducts = existing.manageProducts;
+          manageMessages = existing.manageMessages;
+        }
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { loading = false; error = friendlyAppError(e); });
+    }
+  }
+
+  Future<void> _save() async {
+    final resolved = account;
+    if (resolved == null || saving) return;
+    if (!consentAccepted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please confirm the authorization before saving.')),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      final saved = await saveMyHpjManagedAccessGrant(
+        account: resolved,
+        managePage: managePage,
+        manageOrders: manageOrders,
+        manageProducts: manageProducts,
+        manageMessages: manageMessages,
+      );
+      if (!mounted) return;
+      setState(() { grant = saved; consentAccepted = false; });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('HPJ managed access is now active.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(e))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> _revoke() async {
+    final current = grant;
+    if (current == null || !current.isActive || saving) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Revoke HPJ access?'),
+        content: const Text(
+          'HPJ will immediately lose delegated access to this account. Your login and ownership are not affected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep Access'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Revoke Access'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => saving = true);
+    try {
+      await revokeMyHpjManagedAccessGrant(current);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('HPJ managed access has been revoked.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(e))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Widget _permissionSwitch({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return SwitchListTile.adaptive(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+      secondary: Icon(icon, color: FarmColors.primary),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: FarmColors.ink,
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(
+          color: FarmColors.mutedText,
+          fontSize: 10.2,
+          height: 1.35,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      value: value,
+      onChanged: saving ? null : onChanged,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isFarmer = widget.accountType.trim().toLowerCase() == 'farmer';
+    final active = grant?.isActive == true;
+
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: const Text('HPJ Managed Access'),
+      ),
+      body: FarmPage(
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : error != null
+                ? ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 120),
+                    children: [
+                      FarmCard(
+                        child: Column(
+                          children: [
+                            const Icon(Icons.sync_problem_outlined, size: 36, color: FarmColors.warning),
+                            const SizedBox(height: 10),
+                            Text(error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: _load,
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text('Try again'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: FarmColors.deepGreen,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.verified_user_outlined, color: Colors.white),
+                                const SizedBox(width: 9),
+                                Expanded(
+                                  child: Text(
+                                    active ? 'HPJ assistance is active' : 'Let HPJ help operate your account',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              account?.displayName ?? '',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(.78),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'You keep ownership of your account. HPJ staff never need your password, and you can revoke this permission at any time.',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(.82),
+                                fontSize: 10.5,
+                                height: 1.4,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      if (active)
+                        FarmCard(
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle_rounded, color: FarmColors.green),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Authorized',
+                                      style: TextStyle(fontWeight: FontWeight.w900, color: FarmColors.ink),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      'Granted ${_hpjManagedDate(grant?.grantedAt)} • ${grant!.permissionLabels.join(' • ')}',
+                                      style: const TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontSize: 10,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Choose what HPJ can do',
+                        style: TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      FarmCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            _permissionSwitch(
+                              icon: Icons.web_outlined,
+                              title: 'Manage my page',
+                              subtitle: isFarmer
+                                  ? 'HPJ may update your farm profile and public page information.'
+                                  : 'HPJ may update your business profile and page information.',
+                              value: managePage,
+                              onChanged: (value) => setState(() => managePage = value),
+                            ),
+                            const Divider(height: 1),
+                            _permissionSwitch(
+                              icon: Icons.receipt_long_outlined,
+                              title: 'Manage orders',
+                              subtitle: isFarmer
+                                  ? 'HPJ may coordinate and update orders linked to your farm.'
+                                  : 'HPJ may prepare, review and update wholesale orders for your business.',
+                              value: manageOrders,
+                              onChanged: (value) => setState(() => manageOrders = value),
+                            ),
+                            const Divider(height: 1),
+                            _permissionSwitch(
+                              icon: isFarmer ? Icons.inventory_2_outlined : Icons.shopping_basket_outlined,
+                              title: isFarmer ? 'Manage products & supply' : 'Manage sourcing information',
+                              subtitle: isFarmer
+                                  ? 'HPJ may help maintain products, availability and supply information.'
+                                  : 'HPJ may help maintain recurring needs and sourcing information.',
+                              value: manageProducts,
+                              onChanged: (value) => setState(() => manageProducts = value),
+                            ),
+                            const Divider(height: 1),
+                            _permissionSwitch(
+                              icon: Icons.chat_bubble_outline_rounded,
+                              title: 'Assist with messages',
+                              subtitle: 'HPJ may help respond to marketplace messages related to this account.',
+                              value: manageMessages,
+                              onChanged: (value) => setState(() => manageMessages = value),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+                      FarmCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Authorization',
+                              style: TextStyle(
+                                color: FarmColors.ink,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            const Text(
+                              'By enabling this, I authorize The Harvest Place Ja (HPJ) to act on this account only for the permissions selected above. I remain the account owner and may revoke access at any time.',
+                              style: TextStyle(
+                                color: FarmColors.mutedText,
+                                fontSize: 10.3,
+                                height: 1.45,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              value: consentAccepted,
+                              onChanged: saving
+                                  ? null
+                                  : (value) => setState(() => consentAccepted = value == true),
+                              title: const Text(
+                                'I understand and authorize HPJ',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: saving ? null : _save,
+                          icon: saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.verified_user_outlined),
+                          label: Text(active ? 'Update HPJ Permission' : 'Grant HPJ Permission'),
+                        ),
+                      ),
+                      if (active) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: saving ? null : _revoke,
+                            icon: const Icon(Icons.block_outlined),
+                            label: const Text('Revoke HPJ Access'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: FarmColors.danger,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+      ),
+    );
+  }
+}
+
+class AdminManagedAccountsTab extends StatefulWidget {
+  final int refreshKey;
+  final VoidCallback onChanged;
+
+  const AdminManagedAccountsTab({
+    super.key,
+    required this.refreshKey,
+    required this.onChanged,
+  });
+
+  @override
+  State<AdminManagedAccountsTab> createState() => _AdminManagedAccountsTabState();
+}
+
+class _AdminManagedAccountsTabState extends State<AdminManagedAccountsTab> {
+  late Future<List<HpjManagedAccessGrant>> future;
+  bool includeRevoked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    future = fetchAdminHpjManagedAccessGrants();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminManagedAccountsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) _reload();
+  }
+
+  void _reload() {
+    setState(() {
+      future = fetchAdminHpjManagedAccessGrants(includeRevoked: includeRevoked);
+    });
+  }
+
+  void _open(Widget screen) {
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => screen))
+        .then((_) => _reload());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        _reload();
+        await future;
+      },
+      child: FutureBuilder<List<HpjManagedAccessGrant>>(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return ListView(
+              padding: const EdgeInsets.all(18),
+              children: [
+                FarmCard(
+                  child: Column(
+                    children: [
+                      const Icon(Icons.lock_person_outlined, size: 36, color: FarmColors.warning),
+                      const SizedBox(height: 10),
+                      Text(
+                        friendlyAppError(snapshot.error!),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _reload,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Reload'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          final grants = snapshot.data ?? const <HpjManagedAccessGrant>[];
+          final activeCount = grants.where((g) => g.isActive).length;
+          final farmerCount = grants.where((g) => g.isActive && g.accountType == 'farmer').length;
+          final businessCount = grants.where((g) => g.isActive && g.accountType == 'business').length;
+
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: FarmColors.deepGreen,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Managed Accounts',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$activeCount active authorizations • $farmerCount farmers • $businessCount businesses',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(.78),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Operate only within the permissions the partner has granted. Passwords are never required.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(.82),
+                        fontSize: 10.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile.adaptive(
+                value: includeRevoked,
+                onChanged: (value) {
+                  includeRevoked = value;
+                  _reload();
+                },
+                title: const Text('Show revoked authorizations'),
+                dense: true,
+              ),
+              const SizedBox(height: 4),
+              if (grants.isEmpty)
+                const FarmCard(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Column(
+                      children: [
+                        Icon(Icons.handshake_outlined, size: 42, color: FarmColors.mutedText),
+                        SizedBox(height: 10),
+                        Text(
+                          'No managed-account permissions yet',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        SizedBox(height: 5),
+                        Text(
+                          'A farmer or business must grant HPJ permission from their account first.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                ...grants.map((grant) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: FarmCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: grant.accountType == 'farmer'
+                                      ? const Color(0xFFEAF5E9)
+                                      : const Color(0xFFEAF0F8),
+                                  child: Icon(
+                                    grant.accountType == 'farmer'
+                                        ? Icons.agriculture_outlined
+                                        : Icons.business_outlined,
+                                    color: FarmColors.deepGreen,
+                                  ),
+                                ),
+                                const SizedBox(width: 11),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        grant.ownerDisplayName.isEmpty
+                                            ? '${grant.accountType == 'farmer' ? 'Farmer' : 'Business'} account'
+                                            : grant.ownerDisplayName,
+                                        style: const TextStyle(
+                                          color: FarmColors.ink,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '${grant.accountType == 'farmer' ? 'Farmer' : 'Business'} • ${grant.isActive ? 'ACTIVE' : 'REVOKED'} • ${_hpjManagedDate(grant.grantedAt)}',
+                                        style: TextStyle(
+                                          color: grant.isActive ? FarmColors.green : FarmColors.mutedText,
+                                          fontSize: 9.6,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: grant.permissionLabels
+                                  .map((label) => Chip(
+                                        visualDensity: VisualDensity.compact,
+                                        label: Text(label),
+                                      ))
+                                  .toList(),
+                            ),
+                            if (grant.isActive) ...[
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  if (grant.managePage)
+                                    OutlinedButton.icon(
+                                      onPressed: () => _open(
+                                        HpjManagedPageEditorScreen(grant: grant),
+                                      ),
+                                      icon: const Icon(Icons.edit_note_rounded),
+                                      label: const Text('Manage Page'),
+                                    ),
+                                  if (grant.manageOrders)
+                                    FilledButton.icon(
+                                      onPressed: () => _open(
+                                        HpjManagedOrdersScreen(grant: grant),
+                                      ),
+                                      icon: const Icon(Icons.receipt_long_outlined),
+                                      label: const Text('Orders'),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class HpjManagedPageEditorScreen extends StatefulWidget {
+  final HpjManagedAccessGrant grant;
+
+  const HpjManagedPageEditorScreen({
+    super.key,
+    required this.grant,
+  });
+
+  @override
+  State<HpjManagedPageEditorScreen> createState() => _HpjManagedPageEditorScreenState();
+}
+
+class _HpjManagedPageEditorScreenState extends State<HpjManagedPageEditorScreen> {
+  bool loading = true;
+  bool saving = false;
+  String? error;
+  final Map<String, TextEditingController> controllers = {};
+
+  List<MapEntry<String, String>> get _fields => widget.grant.accountType == 'farmer'
+      ? const [
+          MapEntry('farm_name', 'Farm name'),
+          MapEntry('farmer_name', 'Farmer name'),
+          MapEntry('phone', 'Phone'),
+          MapEntry('parish', 'Parish'),
+          MapEntry('address', 'Address'),
+          MapEntry('bio', 'Farm bio'),
+        ]
+      : const [
+          MapEntry('business_name', 'Business name'),
+          MapEntry('business_type', 'Business type'),
+          MapEntry('contact_name', 'Contact name'),
+          MapEntry('phone', 'Phone'),
+          MapEntry('whatsapp', 'WhatsApp'),
+          MapEntry('parish', 'Parish'),
+          MapEntry('address', 'Address'),
+        ];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    for (final controller in controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() { loading = true; error = null; });
+    try {
+      final data = await fetchHpjManagedPageForStaff(widget.grant);
+      for (final field in _fields) {
+        controllers[field.key]?.dispose();
+        controllers[field.key] = TextEditingController(
+          text: (data[field.key] ?? '').toString(),
+        );
+      }
+      if (mounted) setState(() => loading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { loading = false; error = friendlyAppError(e); });
+    }
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+    setState(() => saving = true);
+    try {
+      final payload = <String, dynamic>{
+        for (final field in _fields)
+          field.key: controllers[field.key]?.text.trim() ?? '',
+      };
+      await updateHpjManagedPageForStaff(
+        grant: widget.grant,
+        payload: payload,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Managed page updated.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(e))),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(title: Text('Manage • ${widget.grant.ownerDisplayName}')),
+      body: FarmPage(
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : error != null
+                ? Center(child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(error!, textAlign: TextAlign.center),
+                  ))
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                    children: [
+                      const FarmCard(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.shield_outlined, color: FarmColors.primary),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'You are editing this page under an active HPJ authorization. Changes are recorded in the managed-access audit trail.',
+                                style: TextStyle(fontSize: 10.5, height: 1.4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ..._fields.map((field) => Padding(
+                            padding: const EdgeInsets.only(bottom: 11),
+                            child: TextField(
+                              controller: controllers[field.key],
+                              maxLines: field.key == 'bio' || field.key == 'address' ? 3 : 1,
+                              decoration: InputDecoration(labelText: field.value),
+                            ),
+                          )),
+                      const SizedBox(height: 4),
+                      FilledButton.icon(
+                        onPressed: saving ? null : _save,
+                        icon: const Icon(Icons.save_outlined),
+                        label: Text(saving ? 'Saving...' : 'Save Managed Page'),
+                      ),
+                    ],
+                  ),
+      ),
+    );
+  }
+}
+
+class HpjManagedOrdersScreen extends StatefulWidget {
+  final HpjManagedAccessGrant grant;
+
+  const HpjManagedOrdersScreen({
+    super.key,
+    required this.grant,
+  });
+
+  @override
+  State<HpjManagedOrdersScreen> createState() => _HpjManagedOrdersScreenState();
+}
+
+class _HpjManagedOrdersScreenState extends State<HpjManagedOrdersScreen> {
+  late Future<List<Map<String, dynamic>>> future;
+
+  @override
+  void initState() {
+    super.initState();
+    future = fetchHpjManagedOrdersForStaff(widget.grant);
+  }
+
+  void _reload() {
+    setState(() => future = fetchHpjManagedOrdersForStaff(widget.grant));
+  }
+
+  Future<void> _editBusinessOrder(Map<String, dynamic> order) async {
+    String status = (order['status'] ?? 'pending').toString().trim().toLowerCase();
+    const statuses = <String>['pending', 'quoted', 'approved', 'rejected', 'cancelled'];
+    if (!statuses.contains(status)) status = 'pending';
+
+    final quoteController = TextEditingController(
+      text: (order['total'] is num && (order['total'] as num) > 0)
+          ? (order['total'] as num).toStringAsFixed(0)
+          : '',
+    );
+    final notesController = TextEditingController(
+      text: (order['admin_notes'] ?? '').toString(),
+    );
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Managed order #${shortIdLabel((order['id'] ?? '').toString())}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: status,
+                  decoration: const InputDecoration(labelText: 'Order status'),
+                  items: statuses
+                      .map((item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(item.replaceAll('_', ' ').toUpperCase()),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => status = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: quoteController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Quoted total (J\$)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notesController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'HPJ note'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Save Update'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) {
+      quoteController.dispose();
+      notesController.dispose();
+      return;
+    }
+
+    try {
+      await hpjManagedUpdateBusinessOrder(
+        grant: widget.grant,
+        orderId: (order['id'] ?? '').toString(),
+        status: status,
+        quotedTotal: double.tryParse(quoteController.text.trim().replaceAll(',', '')),
+        adminNotes: notesController.text,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Managed business order updated.')),
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(e))),
+      );
+    } finally {
+      quoteController.dispose();
+      notesController.dispose();
+    }
+  }
+
+  Future<void> _editFarmerOrder(Map<String, dynamic> order) async {
+    String status = (order['status'] ?? 'pending').toString().trim().toLowerCase();
+    const statuses = <String>[
+      'pending',
+      'preparing',
+      'ready',
+      'out_for_delivery',
+      'delivered',
+      'cancelled',
+    ];
+    if (!statuses.contains(status)) status = 'pending';
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Order #${shortIdLabel((order['id'] ?? '').toString())}'),
+        content: DropdownButtonFormField<String>(
+          value: status,
+          decoration: const InputDecoration(labelText: 'Order status'),
+          items: statuses
+              .map((item) => DropdownMenuItem(
+                    value: item,
+                    child: Text(item.replaceAll('_', ' ').toUpperCase()),
+                  ))
+              .toList(),
+          onChanged: (value) => status = value ?? status,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(status),
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected == null) return;
+    try {
+      await hpjManagedUpdateFarmerOrderStatus(
+        grant: widget.grant,
+        orderId: (order['id'] ?? '').toString(),
+        status: selected,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Managed farmer order updated.')),
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyAppError(e))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: FarmColors.background,
+      appBar: AppBar(
+        title: Text('Orders • ${widget.grant.ownerDisplayName}'),
+      ),
+      body: FarmPage(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            _reload();
+            await future;
+          },
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return ListView(
+                  padding: const EdgeInsets.all(18),
+                  children: [
+                    FarmCard(child: Text(friendlyAppError(snapshot.error!))),
+                  ],
+                );
+              }
+
+              final orders = snapshot.data ?? const <Map<String, dynamic>>[];
+              if (orders.isEmpty) {
+                return ListView(
+                  padding: const EdgeInsets.all(18),
+                  children: const [
+                    FarmCard(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: Text('No orders found for this managed account.')),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                itemCount: orders.length,
+                itemBuilder: (context, index) {
+                  final order = orders[index];
+                  final id = (order['id'] ?? '').toString();
+                  final status = (order['status'] ?? 'pending').toString();
+                  final createdAt = parseProductDate(order['created_at']);
+                  final isBusiness = widget.grant.accountType == 'business';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: FarmCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Order #${shortIdLabel(id)}',
+                                  style: const TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              Chip(label: Text(status.replaceAll('_', ' ').toUpperCase())),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            '${_hpjManagedDate(createdAt)} • ${_hpjManagedMoney(order['total'])}',
+                            style: const TextStyle(
+                              color: FarmColors.mutedText,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (!isBusiness && order['items'] is List) ...[
+                            const SizedBox(height: 7),
+                            Text(
+                              (order['items'] as List)
+                                  .whereType<Map>()
+                                  .map((item) => (item['product_name'] ?? 'Product').toString())
+                                  .toSet()
+                                  .join(' • '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 10.2),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: () => isBusiness
+                                  ? _editBusinessOrder(order)
+                                  : _editFarmerOrder(order),
+                              icon: const Icon(Icons.edit_outlined),
+                              label: const Text('Manage Order'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }

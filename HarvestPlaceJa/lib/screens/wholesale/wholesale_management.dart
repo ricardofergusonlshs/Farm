@@ -11413,6 +11413,24 @@ class AdminWholesaleManagementTab extends StatefulWidget {
       _AdminWholesaleManagementTabState();
 }
 
+// HPJ ADMIN METRIC GRID — shared compatibility helper
+// Keeps existing hero metric children in a Flex parent so Expanded metrics compile.
+class _HpjAdminMetricGrid extends StatelessWidget {
+  final List<Widget> children;
+
+  const _HpjAdminMetricGrid({
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+}
+
 class _PremiumProcurementNeedsHero extends StatelessWidget {
   final int activeDemandCount;
   final int openSourcingCount;
@@ -11440,10 +11458,10 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+        color: FarmColors.cardSoft,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: FarmColors.line,
           ),
         ),
         child: Column(
@@ -11451,14 +11469,14 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -11466,11 +11484,9 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
-                fontSize: 8.6,
+                color: FarmColors.mutedText,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -11485,24 +11501,17 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFFFFEFB),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: const Color(0x08000000),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
-      ),
+       border: Border.all(color: FarmColors.line),
+       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -11510,26 +11519,25 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
             children: [
               Icon(
                 Icons.account_tree_outlined,
-                color: Color(0xFFE8C768),
+                color: FarmColors.primary,
                 size: 22,
               ),
-              SizedBox(width: 8),
-              Text(
+              SizedBox(width: 8), Flexible(child: Text(
                 'PROCUREMENT COMMAND',
                 style: TextStyle(
-                  color: Color(0xFFCFE0CF),
-                  fontSize: 10.3,
+                  color: FarmColors.mutedText,
+                  fontSize: 12,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .9,
                 ),
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 7),
           const Text(
             'Close every supply gap',
             style: TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
@@ -11538,15 +11546,14 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
           Text(
             'Combine usable warehouse stock, prior secured farmer supply and current verified farmer availability before committing more supply.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
-              fontSize: 10.6,
+              color: FarmColors.mutedText,
+              fontSize: 12,
               height: 1.4,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 15),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.warning_amber_rounded,
                 value: '$openSourcingCount',
@@ -11564,8 +11571,7 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
                 value: '$readyCount',
                 label: 'Covered / ready',
               ),
-            ],
-          ),
+            ]),
           const SizedBox(height: 9),
           Container(
             width: double.infinity,
@@ -11574,28 +11580,26 @@ class _PremiumProcurementNeedsHero extends StatelessWidget {
               vertical: 9,
             ),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.10),
+        color: FarmColors.cardSoft,
               borderRadius: BorderRadius.circular(15),
               border: Border.all(
-                color: Colors.white.withOpacity(.14),
+                color: FarmColors.line,
               ),
             ),
             child: Row(
               children: [
                 const Icon(
                   Icons.calendar_month_outlined,
-                  color: Color(0xFFE8C768),
+                  color: FarmColors.primary,
                   size: 17,
                 ),
                 const SizedBox(width: 7),
                 Expanded(
                   child: Text(
                     '$thisWeekCount open requirement${thisWeekCount == 1 ? '' : 's'} need supply within the next 7 days • $activeDemandCount active requirements loaded',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(.83),
-                      fontSize: 9.4,
+                      color: FarmColors.mutedText,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -11638,10 +11642,10 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+        color: FarmColors.cardSoft,
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: FarmColors.line,
           ),
         ),
         child: Column(
@@ -11649,14 +11653,14 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -11664,11 +11668,9 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
-                fontSize: 8.5,
+                color: FarmColors.mutedText,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -11704,24 +11706,17 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFFFFEFB),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: const Color(0x08000000),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
-      ),
+       border: Border.all(color: FarmColors.line),
+       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -11729,7 +11724,7 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
             children: [
               const Icon(
                 Icons.warehouse_outlined,
-                color: Color(0xFFE8C768),
+                color: FarmColors.primary,
                 size: 22,
               ),
               const SizedBox(width: 8),
@@ -11737,8 +11732,8 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
                 child: Text(
                   eyebrow,
                   style: const TextStyle(
-                    color: Color(0xFFCFE0CF),
-                    fontSize: 10.2,
+                    color: FarmColors.mutedText,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .8,
                   ),
@@ -11751,17 +11746,17 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.11),
+        color: FarmColors.cardSoft,
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: Colors.white.withOpacity(.15),
+                      color: FarmColors.line,
                     ),
                   ),
                   child: Text(
                     '$readyToSchedule READY TO SCHEDULE',
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 7.8,
+                      color: FarmColors.ink,
+                      fontSize: 12,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -11772,7 +11767,7 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 20,
               fontWeight: FontWeight.w900,
             ),
@@ -11781,15 +11776,14 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
           Text(
             subtitle,
             style: TextStyle(
-              color: Colors.white.withOpacity(.82),
-              fontSize: 10.4,
+              color: FarmColors.mutedText,
+              fontSize: 12,
               height: 1.4,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 15),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.event_note_outlined,
                 value: '$toCollect',
@@ -11807,11 +11801,9 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
                 value: '$atWarehouse',
                 label: 'At warehouse',
               ),
-            ],
-          ),
+            ]),
           const SizedBox(height: 8),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.done_all_rounded,
                 value: '$completed',
@@ -11829,8 +11821,7 @@ class _PremiumProcurementMovementHero extends StatelessWidget {
                 value: '${toCollect + collected + atWarehouse}',
                 label: 'In movement',
               ),
-            ],
-          ),
+            ]),
         ],
       ),
     );
@@ -11866,10 +11857,10 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+        color: FarmColors.cardSoft,
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: FarmColors.line,
           ),
         ),
         child: Column(
@@ -11877,14 +11868,14 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -11892,11 +11883,9 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
-                fontSize: 8.5,
+                color: FarmColors.mutedText,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -11911,24 +11900,17 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFFFFEFB),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: const Color(0x08000000),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
-      ),
+       border: Border.all(color: FarmColors.line),
+       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -11936,26 +11918,25 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
             children: [
               Icon(
                 Icons.inventory_2_outlined,
-                color: Color(0xFFE8C768),
+                color: FarmColors.primary,
                 size: 22,
               ),
-              SizedBox(width: 8),
-              Text(
+              SizedBox(width: 8), Flexible(child: Text(
                 'WHOLESALE WAREHOUSE',
                 style: TextStyle(
-                  color: Color(0xFFCFE0CF),
-                  fontSize: 10.3,
+                  color: FarmColors.mutedText,
+                  fontSize: 12,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .9,
                 ),
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 7),
           const Text(
             'Prepare every approved business order',
             style: TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 20.5,
               fontWeight: FontWeight.w900,
             ),
@@ -11964,15 +11945,14 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
           Text(
             'Move orders through warehouse-stock readiness, preparation, packing and final dispatch handoff.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
-              fontSize: 10.5,
+              color: FarmColors.mutedText,
+              fontSize: 12,
               height: 1.4,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 15),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.add_box_outlined,
                 value: '$approvedToCreate',
@@ -11990,11 +11970,9 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
                 value: '$preparing',
                 label: 'Preparing',
               ),
-            ],
-          ),
+            ]),
           const SizedBox(height: 8),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.inventory_2_outlined,
                 value: '$packing',
@@ -12012,8 +11990,7 @@ class _PremiumWebWholesaleFulfillmentHero extends StatelessWidget {
                 value: '$activeWarehouseOrders',
                 label: 'Active warehouse',
               ),
-            ],
-          ),
+            ]),
         ],
       ),
     );
@@ -12051,10 +12028,10 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+        color: FarmColors.cardSoft,
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: FarmColors.line,
           ),
         ),
         child: Column(
@@ -12062,14 +12039,14 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -12077,11 +12054,9 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
-                fontSize: 8.5,
+                color: FarmColors.mutedText,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -12096,24 +12071,17 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFFFFEFB),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: const Color(0x08000000),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
-      ),
+       border: Border.all(color: FarmColors.line),
+       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -12121,7 +12089,7 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
             children: [
               const Icon(
                 Icons.local_shipping_outlined,
-                color: Color(0xFFE8C768),
+                color: FarmColors.primary,
                 size: 22,
               ),
               const SizedBox(width: 8),
@@ -12129,8 +12097,8 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
                 child: Text(
                   'DISPATCH CONTROL',
                   style: TextStyle(
-                    color: Color(0xFFCFE0CF),
-                    fontSize: 10.3,
+                    color: FarmColors.mutedText,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .9,
                   ),
@@ -12139,9 +12107,9 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onManageScheduling,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
+                  foregroundColor: FarmColors.primary,
                   side: BorderSide(
-                    color: Colors.white.withOpacity(.30),
+                    color: FarmColors.mutedText,
                   ),
                 ),
                 icon: const Icon(
@@ -12158,7 +12126,7 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
           const Text(
             'Schedule, assign and close every handoff',
             style: TextStyle(
-              color: Colors.white,
+              color: FarmColors.ink,
               fontSize: 20.5,
               fontWeight: FontWeight.w900,
             ),
@@ -12167,15 +12135,14 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
           Text(
             'Coordinate HPJ delivery and business collection from ready-for-dispatch through proof and completion.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
-              fontSize: 10.5,
+              color: FarmColors.mutedText,
+              fontSize: 12,
               height: 1.4,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 15),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.inventory_2_outlined,
                 value: '$readyToDispatch',
@@ -12193,11 +12160,9 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
                 value: '$assigned',
                 label: 'Assigned',
               ),
-            ],
-          ),
+            ]),
           const SizedBox(height: 8),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.local_shipping_outlined,
                 value: '$outForDelivery',
@@ -12215,8 +12180,7 @@ class _PremiumWebWholesaleDispatchHero extends StatelessWidget {
                 value: '$driverCount',
                 label: 'Delivery staff',
               ),
-            ],
-          ),
+            ]),
         ],
       ),
     );
@@ -26894,7 +26858,7 @@ class _AdminWholesaleManagementTabState
       _WholesaleAdminSectionSpec(
         keyName: 'warehouse',
         tab: const Tab(icon: Icon(Icons.factory_outlined), text: 'Warehouse'),
-        child: const WarehouseOperationsPanel(),
+        child: const WarehouseOperationsPanel(lightAdmin: true),
       ),
       _WholesaleAdminSectionSpec(
         keyName: 'fulfillment',
@@ -27017,10 +26981,10 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
           vertical: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+        color: FarmColors.cardSoft,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withOpacity(.16),
+            color: FarmColors.line,
           ),
         ),
         child: Column(
@@ -27028,16 +26992,14 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: const Color(0xFFE8C768),
+              color: FarmColors.primary,
               size: 17,
             ),
             const SizedBox(height: 7),
             Text(
               value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
+                color: FarmColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -27045,11 +27007,9 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withOpacity(.72),
-                fontSize: 8.6,
+                color: FarmColors.mutedText,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -27066,24 +27026,17 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFFFFEFB),
         boxShadow: [
           BoxShadow(
-            color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: const Color(0x08000000),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
-      ),
+       border: Border.all(color: FarmColors.line),
+       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -27094,17 +27047,17 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                 height: 49,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.13),
+        color: FarmColors.cardSoft,
                   borderRadius: BorderRadius.circular(
                     16,
                   ),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.18),
+                    color: FarmColors.line,
                   ),
                 ),
                 child: const Icon(
                   Icons.storefront_outlined,
-                  color: Colors.white,
+                  color: FarmColors.ink,
                   size: 25,
                 ),
               ),
@@ -27119,7 +27072,7 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                         color: Color(
                           0xFFCFE0CF,
                         ),
-                        fontSize: 10.3,
+                        fontSize: 12,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .9,
                       ),
@@ -27128,7 +27081,7 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                     Text(
                       'Business order desk',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: FarmColors.ink,
                         fontSize: 21,
                         fontWeight: FontWeight.w900,
                       ),
@@ -27142,19 +27095,19 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.11),
+        color: FarmColors.cardSoft,
                   borderRadius: BorderRadius.circular(
                     999,
                   ),
                   border: Border.all(
-                    color: Colors.white.withOpacity(.15),
+                    color: FarmColors.line,
                   ),
                 ),
                 child: Text(
                   '$activeCount ACTIVE',
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 8.2,
+                    color: FarmColors.ink,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -27165,15 +27118,14 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
           Text(
             'Review business requirements, prepare the quote and move confirmed orders into procurement and fulfilment.',
             style: TextStyle(
-              color: Colors.white.withOpacity(.83),
-              fontSize: 10.7,
+              color: FarmColors.mutedText,
+              fontSize: 12,
               height: 1.4,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 15),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.pending_actions_outlined,
                 value: '$pendingOrders',
@@ -27191,11 +27143,9 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                 value: '$approvedOrders',
                 label: 'Confirmed',
               ),
-            ],
-          ),
+            ]),
           const SizedBox(height: 8),
-          Row(
-            children: [
+          _HpjAdminMetricGrid(children: [
               _metric(
                 icon: Icons.receipt_long_outlined,
                 value: capped ? '$totalOrders+' : '$totalOrders',
@@ -27215,8 +27165,7 @@ class _PremiumAdminWholesaleOrdersHero extends StatelessWidget {
                 ),
                 label: 'Active estimate',
               ),
-            ],
-          ),
+            ]),
         ],
       ),
     );

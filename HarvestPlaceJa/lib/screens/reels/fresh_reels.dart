@@ -3424,28 +3424,27 @@ class _HpjAdminSelectedVideoPreviewState
             else
               const DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF315E3A), Color(0xFF91B86D)],
+                  color: Color(0xFFFFFEFB),
+                  border:
+                      Border.fromBorderSide(BorderSide(color: FarmColors.line)),
+                ),
+              ),
+            if (hasVideo)
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x10000000),
+                        Color(0x00000000),
+                        Color(0x8F000000),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0x10000000),
-                      Color(0x00000000),
-                      Color(0x8F000000),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             Center(
               child: Material(
                 color: Colors.white.withOpacity(.90),
@@ -3485,7 +3484,7 @@ class _HpjAdminSelectedVideoPreviewState
                   'Choose a Reel video to preview it here.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: FarmColors.mutedText,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),

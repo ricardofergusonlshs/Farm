@@ -5040,222 +5040,473 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
     );
   }
 
+  String _referenceQuantity(num value) {
+    final d = value.toDouble();
+    if (!d.isFinite) return '0';
+    final raw = d == d.roundToDouble()
+        ? d.toInt().toString()
+        : d.toStringAsFixed(1);
+    final parts = raw.split('.');
+    final whole = parts.first.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]},',
+    );
+    return parts.length == 1 ? whole : '$whole.${parts.last}';
+  }
+
+  Future<void> _addProduce(BuildContext context) async {
+    var supplyWasSaved = false;
+    await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _FarmerSupplyEntrySheet(
+        farmerId: profile.id,
+        recentSupplies: supplies,
+        onSupplySaved: () => supplyWasSaved = true,
+      ),
+    );
+    if (context.mounted && supplyWasSaved) onRefresh();
+  }
+
+  Widget _referenceSectionTitle({
+    required IconData icon,
+    required String title,
+    String subtitle = '',
+    Widget? trailing,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = trailing != null &&
+            (constraints.maxWidth < 330 || MediaQuery.textScaleFactorOf(context) > 1.25);
+        final heading = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: const BoxDecoration(
+            color: Color(0xFFE4F2E3),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: const Color(0xFF07563D), size: 24),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFF101A15),
+                  fontSize: 21,
+                  height: 1.12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -.5,
+                ),
+              ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF53645D),
+                    fontSize: 11.2,
+                    height: 1.3,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null && !stacked) ...[
+          const SizedBox(width: 8),
+          trailing,
+        ],
+      ],
+        );
+        return stacked
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  heading,
+                  const SizedBox(height: 8),
+                  Align(alignment: Alignment.centerRight, child: trailing!),
+                ],
+              )
+            : heading;
+      },
+    );
+  }
+
+  Widget _referenceStatusPill({
+    required String label,
+    required Color color,
+    required Color background,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 10.5,
+                height: 1.15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _referenceDemandCard(
+    BuildContext context,
+    FarmerMarketDemandOpportunity item,
+  ) {
+    final open = item.opportunityGap > 0.0001;
+    final isMatch = matches(item);
+    final action = open ? 'View demand' : 'View details';
+    final void Function() view = () => _openMarketNeedDetails(context, item);
+
+    Widget button() {
+      final style = open
+          ? FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF07563D),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+            )
+          : OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF07563D),
+              side: const BorderSide(color: Color(0xFF07563D)),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+            );
+      final child = FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(action, style: const TextStyle(fontSize: 11.2, fontWeight: FontWeight.w800)),
+          const SizedBox(width: 3),
+          const Icon(Icons.chevron_right_rounded, size: 15),
+        ],
+      ),
+      );
+      return open
+          ? FilledButton(onPressed: view, style: style, child: child)
+          : OutlinedButton(onPressed: view, style: style, child: child);
+    }
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(19),
+      child: InkWell(
+        onTap: view,
+        borderRadius: BorderRadius.circular(19),
+        child: Container(
+          padding: const EdgeInsets.all(11),
+          decoration: _surface(radius: 19),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 250 &&
+                  MediaQuery.textScaleFactorOf(context) <= 1.15;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  HpjProductThumb(
+                    productName: item.productName,
+                    size: wide ? (constraints.maxWidth * .28).clamp(62.0, 110.0).toDouble() : 72,
+                    radius: 13,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.productName,
+                          style: const TextStyle(
+                            color: Color(0xFF101A15),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        _referenceStatusPill(
+                          label: open ? 'Open opportunity' : 'Demand covered',
+                          color: open ? const Color(0xFF1E7335) : const Color(0xFF536169),
+                          background: open ? const Color(0xFFDCF1D4) : const Color(0xFFE9ECEE),
+                        ),
+                        const SizedBox(height: 7),
+                        if (open) ...[
+                          Text(
+                            'Buyer demand: ${_referenceQuantity(item.visibleDemand)} ${item.unit}',
+                            style: const TextStyle(color: Color(0xFF536169), fontSize: 10.7, height: 1.35),
+                          ),
+                          Text(
+                            'Still needed: ${_referenceQuantity(item.opportunityGap)} ${item.unit}',
+                            style: const TextStyle(color: Color(0xFF536169), fontSize: 10.7, height: 1.35),
+                          ),
+                          if (isMatch) ...[
+                            const SizedBox(height: 5),
+                            const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.eco_outlined, color: Color(0xFF07563D), size: 14),
+                                SizedBox(width: 4),
+                                Expanded(child: Text(
+                                  'Matches crops you grow',
+                                  style: TextStyle(color: Color(0xFF53645D), fontSize: 10.5, height: 1.3),
+                                )),
+                              ],
+                            ),
+                          ],
+                        ] else
+                          const Text(
+                            'Current buyer demand is fulfilled.',
+                            style: TextStyle(color: Color(0xFF536169), fontSize: 10.7, height: 1.35),
+                          ),
+                        if (!wide) ...[
+                          const SizedBox(height: 8),
+                          button(),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (wide) ...[
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: (constraints.maxWidth * .26).clamp(76.0, 112.0).toDouble(),
+                      child: button(),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _latestProduce(BuildContext context) {
     final grouped = <String, List<FarmerSupplyForecast>>{};
     final displayNames = <String, String>{};
-
     for (final supply in supplies) {
-      final displayName = supply.cropName.trim();
-      if (displayName.isEmpty) continue;
-      final key = hpjSmartNormalizeSearch(displayName);
-      if (key.isEmpty) continue;
+      final name = supply.cropName.trim();
+      final key = hpjSmartNormalizeSearch(name);
+      if (name.isEmpty || key.isEmpty) continue;
       grouped.putIfAbsent(key, () => <FarmerSupplyForecast>[]).add(supply);
-      displayNames.putIfAbsent(key, () => displayName);
+      displayNames.putIfAbsent(key, () => name);
     }
-
     final keys = grouped.keys.take(12).toList(growable: false);
 
-    Widget card(String key) {
-      final group = grouped[key] ?? const <FarmerSupplyForecast>[];
-      if (group.isEmpty) return const SizedBox.shrink();
-
-      final representative = group.first;
-      final cropName = displayNames[key] ?? representative.cropName;
-      final anyReview = group.any(_farmerSupplyNeedsReview);
-      final anyLive = group.any(
-        (item) => item.isHpjConfirmed && !_farmerSupplyNeedsReview(item),
-      );
-      final status = anyReview
-          ? 'NEEDS REVIEW'
-          : anyLive
-              ? 'LIVE'
-              : 'COMING SOON';
-
-      final unitKeys = group
-          .map((item) => item.unit.trim().toLowerCase())
-          .where((value) => value.isNotEmpty)
-          .toSet();
-      final sameUnit = unitKeys.length == 1;
-      final totalQuantity = group.fold<double>(
-        0,
-        (sum, item) => sum + _supplyQty(item),
-      );
-      final quantityText = sameUnit
-          ? '${_number(totalQuantity)} ${representative.unit} available'
-          : '${group.length} listings';
-
-      return SizedBox(
-        width: 140,
-        child: Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(15),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => _openProduceGroupDetails(
-              context,
-              cropName,
-              group,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _referenceSectionTitle(
+          icon: Icons.spa_rounded,
+          title: 'My Produce',
+          subtitle: 'Keep your crops and availability up to date.',
+          trailing: FilledButton.icon(
+            onPressed: () => _addProduce(context),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF07563D),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: const Color(0xFFE1E8DE)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 82,
-                    width: double.infinity,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        HpjProductThumb(
-                          productName: cropName,
-                          size: 160,
-                          radius: 0,
-                        ),
-                        Positioned(
-                          left: 7,
-                          bottom: 6,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Add produce', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+          ),
+        ),
+        const SizedBox(height: 13),
+        if (keys.isEmpty)
+          _HpjFarmerHomeEmptyCard(
+            icon: Icons.add_circle_outline_rounded,
+            title: 'Add your first produce',
+            subtitle: 'Tell HPJ what you have available for buyers.',
+            onTap: () => _addProduce(context),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = MediaQuery.textScaleFactorOf(context);
+              final singleCard = constraints.maxWidth < 280 || scale > 1.25;
+              final cardWidth = singleCard ? constraints.maxWidth : (constraints.maxWidth - 10) / 2;
+              final imageHeight = cardWidth * .58;
+              const titleStyle = TextStyle(
+                color: Color(0xFF101A15), fontSize: 14.2,
+                height: 1.12, fontWeight: FontWeight.w900,
+              );
+              const quantityStyle = TextStyle(
+                color: Color(0xFF536169), fontSize: 11.5,
+                height: 1.3, fontWeight: FontWeight.w600,
+              );
+              const entryStyle = TextStyle(
+                color: Color(0xFF536169), fontSize: 10.8, height: 1.2,
+              );
+              const statusStyle = TextStyle(
+                fontSize: 10.5, height: 1.15, fontWeight: FontWeight.w800,
+              );
+              // Match the actual text instead of reserving an empty footer.
+              // The tallest visible card sets the row height so badges align.
+              double measureText(
+                String text, TextStyle style, {
+                int? maxLines, double? width,
+              }) {
+                final painter = TextPainter(
+                  text: TextSpan(
+                    text: text,
+                    style: DefaultTextStyle.of(context).style.merge(style),
+                  ),
+                  textDirection: Directionality.of(context),
+                  textScaleFactor: scale,
+                  maxLines: maxLines,
+                  ellipsis: maxLines == null ? null : '…',
+                )..layout(maxWidth: width ?? cardWidth - 22);
+                final height = painter.height;
+                painter.dispose();
+                return height;
+              }
+              var textSpace = 0.0;
+              for (final key in keys) {
+                final group = grouped[key]!;
+                final representative = group.first;
+                final name = displayNames[key] ?? representative.cropName;
+                final units = group.map((supply) => supply.unit.trim().toLowerCase()).toSet();
+                final sameUnit = units.length == 1 && units.first.isNotEmpty;
+                final total = group.fold<double>(0, (sum, supply) => sum + _supplyQty(supply));
+                final quantity = sameUnit
+                    ? '${_referenceQuantity(total)} ${representative.unit} available'
+                    : 'Available in ${units.length} units';
+                final needsUpdate = group.any(_farmerSupplyNeedsReview);
+                final confirmed = group.every((supply) => supply.isHpjConfirmed);
+                final status = needsUpdate ? 'Update availability'
+                    : confirmed ? 'HPJ confirmed' : 'Awaiting HPJ approval';
+                final statusHeight = measureText(
+                  status, statusStyle, width: cardWidth - 57,
+                );
+                final cardTextHeight = 20 +
+                    measureText(name, titleStyle, maxLines: 2) + 5 +
+                    measureText(quantity, quantityStyle) +
+                    (group.length > 1
+                        ? 2 + measureText('${group.length} supply entries', entryStyle)
+                        : 0) +
+                    8 + (statusHeight < 14 ? 14 : statusHeight) + 12;
+                if (cardTextHeight > textSpace) textSpace = cardTextHeight;
+              }
+              // Add a small safety allowance for the real rendered status pill.
+              // TextPainter measures the label text, but the pill also has its own
+              // vertical padding/border. Without this allowance some phone widths
+              // can overflow by ~4 px.
+              textSpace = textSpace.ceilToDouble() + 8;
+              return SizedBox(
+                height: imageHeight + textSpace,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: keys.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (context, index) {
+                    final key = keys[index];
+                    final group = grouped[key]!;
+                    final representative = group.first;
+                    final name = displayNames[key] ?? representative.cropName;
+                    final needsUpdate = group.any(_farmerSupplyNeedsReview);
+                    final confirmed = group.every((supply) => supply.isHpjConfirmed);
+                    final units = group.map((supply) => supply.unit.trim().toLowerCase()).toSet();
+                    final sameUnit = units.length == 1 && units.first.isNotEmpty;
+                    final total = group.fold<double>(0, (sum, supply) => sum + _supplyQty(supply));
+                    // Freshness and HPJ approval are separate states. Never hide
+                    // an availability update behind an approval-only label.
+                    final label = needsUpdate
+                        ? 'Update availability'
+                        : confirmed ? 'HPJ confirmed' : 'Awaiting HPJ approval';
+                    final green = confirmed && !needsUpdate;
+                    return SizedBox(
+                      width: cardWidth,
+                      child: Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(19),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => _openProduceGroupDetails(context, name, group),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: anyReview
-                                  ? const Color(0xFFFFE8EA)
-                                  : anyLive
-                                      ? const Color(0xFFE6F5E5)
-                                      : const Color(0xFFFFF0CE),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                            decoration: _surface(radius: 19),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: anyReview
-                                        ? const Color(0xFFD64554)
-                                        : anyLive
-                                            ? const Color(0xFF19A54A)
-                                            : const Color(0xFFE29600),
-                                  ),
+                                SizedBox(
+                                  height: imageHeight,
+                                  width: double.infinity,
+                                  child: HpjProductThumb(productName: name, size: cardWidth, radius: 0),
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  status,
-                                  style: TextStyle(
-                                    color: anyReview
-                                        ? const Color(0xFFC93A49)
-                                        : anyLive
-                                            ? FarmColors.primary
-                                            : const Color(0xFFA66500),
-                                    fontSize: 6.8,
-                                    fontWeight: FontWeight.w900,
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(name, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                          style: titleStyle),
+                                        const SizedBox(height: 5),
+                                        Text(sameUnit ? '${_referenceQuantity(total)} ${representative.unit} available' : 'Available in ${units.length} units',
+                                          style: quantityStyle),
+                                        if (group.length > 1) ...[
+                                          const SizedBox(height: 2),
+                                          Text('${group.length} supply entries',
+                                            style: entryStyle),
+                                        ],
+                                        const Spacer(),
+                                        const SizedBox(height: 8),
+                                        _referenceStatusPill(
+                                          label: label,
+                                          icon: needsUpdate ? Icons.update_rounded : green ? Icons.verified_outlined : Icons.access_time_rounded,
+                                          color: green ? const Color(0xFF1E7335) : const Color(0xFFB56600),
+                                          background: green ? const Color(0xFFDCF1D4) : const Color(0xFFFFEDC5),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                        if (group.length > 1)
-                          Positioned(
-                            right: 7,
-                            top: 7,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(.92),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                '${group.length} listings',
-                                style: const TextStyle(
-                                  color: FarmColors.primaryDark,
-                                  fontSize: 7.2,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          cropName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 11.2,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          quantityText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: FarmColors.mutedText,
-                            fontSize: 7.8,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
           ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _sectionTitle(
-          icon: Icons.spa_rounded,
-          title: 'My Produce',
-          subtitle: 'One card for each crop you grow',
-          onTap: onOpenSupply,
-          iconColor: FarmColors.primary,
-          iconBackground: const Color(0xFFE6F5E5),
-        ),
-        const SizedBox(height: 9),
-        if (keys.isEmpty)
-          _HpjFarmerHomeEmptyCard(
-            icon: Icons.add_circle_outline_rounded,
-            title: 'Add your first produce',
-            subtitle: 'Tell HPJ what you have available for buyers.',
-            onTap: onOpenSupply,
-          )
-        else
-          SizedBox(
-            height: 139,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.only(right: 14),
-              itemCount: keys.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) => card(keys[index]),
-            ),
+        if (grouped.length > 2)
+          Row(
+            children: [
+              const Expanded(child: Text('Swipe to see more produce',
+                style: TextStyle(color: Color(0xFF53645D), fontSize: 10.5))),
+              TextButton(onPressed: onOpenSupply, child: const Text('View all')),
+            ],
           ),
       ],
     );
@@ -5694,141 +5945,30 @@ class _HpjFarmerApprovedHome extends StatelessWidget {
         return b.visibleDemand.compareTo(a.visibleDemand);
       });
 
-    final visibleRows = rows.take(12).toList(growable: false);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _sectionTitle(
+        _referenceSectionTitle(
           icon: Icons.handshake_rounded,
-          title: 'Matches',
-          subtitle: 'Buyer demand matched with your produce',
-          onTap: onOpenDemand,
-          iconColor: FarmColors.primary,
-          iconBackground: const Color(0xFFE6F5E5),
+          title: 'Buyer Matches',
+          subtitle: 'See where buyers need your produce.',
+          trailing: rows.length > 2
+              ? TextButton(onPressed: onOpenDemand, child: const Text('View all'))
+              : null,
         ),
-        const SizedBox(height: 9),
+        const SizedBox(height: 12),
         if (rows.isEmpty)
           _HpjFarmerHomeEmptyCard(
             icon: Icons.handshake_outlined,
             title: 'No matches yet',
-            subtitle:
-                'Keep your produce current and matching opportunities will appear here.',
+            subtitle: 'Keep your produce current and matching opportunities will appear here.',
             onTap: onOpenDemand,
           )
         else
-          SizedBox(
-            height: 104,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.only(right: 14),
-              itemCount: visibleRows.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final item = visibleRows[index];
-                final gap = item.opportunityGap > 0
-                    ? item.opportunityGap
-                    : item.visibleDemand;
-                return SizedBox(
-                  width: 156,
-                  child: Material(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(15),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () => _openMarketNeedDetails(context, item),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: const Color(0xFFE2E9DF)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF154A2E).withOpacity(.03),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            HpjProductThumb(
-                              productName: item.productName,
-                              size: 58,
-                              radius: 13,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFE6F5E5),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: const Text(
-                                      'MATCH',
-                                      style: TextStyle(
-                                        color: FarmColors.primary,
-                                        fontSize: 6.5,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    item.productName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: FarmColors.ink,
-                                      fontSize: 10.2,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${_number(gap)} ${item.unit} needed',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: FarmColors.mutedText,
-                                      fontSize: 7.3,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  if (item.myHpjConfirmedSupply > 0) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Your supply is confirmed',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: FarmColors.primary,
-                                        fontSize: 6.8,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+          ...rows.take(2).map((item) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _referenceDemandCard(context, item),
+          )),
       ],
     );
   }
@@ -29442,10 +29582,12 @@ Future<void> _createFarmerInitialSupplyChannelOfferMvp({
 class _FarmerSupplyEntrySheet extends StatefulWidget {
   final String farmerId;
   final List<FarmerSupplyForecast> recentSupplies;
+  final VoidCallback? onSupplySaved;
 
   const _FarmerSupplyEntrySheet({
     required this.farmerId,
     required this.recentSupplies,
+    this.onSupplySaved,
   });
 
   @override
@@ -30731,6 +30873,9 @@ class _FarmerSupplyEntrySheetState extends State<_FarmerSupplyEntrySheet> {
         notes: notesController.text.trim(),
       );
 
+      // Record the successful insert even if Add another is later cancelled.
+      widget.onSupplySaved?.call();
+
       String? warning;
       try {
         await setFarmerSupplyMarketChannels(
@@ -30805,7 +30950,8 @@ class _FarmerSupplyEntrySheetState extends State<_FarmerSupplyEntrySheet> {
       if (addAnother) {
         _resetForAnother();
       } else {
-        Navigator.of(context).pop(true);
+        // The enclosing Add Produce route is showModalBottomSheet<String>.
+        Navigator.of(context).pop<String>(crop);
       }
     } catch (error) {
       if (!mounted) return;
@@ -32662,6 +32808,7 @@ class _FarmerSupplyScreenState
     List<FarmerSupplyForecast>
         recentSupplies,
   ) async {
+    var supplyWasSaved = false;
     final savedCrop =
         await showModalBottomSheet<String>(
       context: context,
@@ -32674,16 +32821,17 @@ class _FarmerSupplyScreenState
         farmerId: widget.profile.id,
         recentSupplies:
             recentSupplies,
+        onSupplySaved: () => supplyWasSaved = true,
       ),
     );
 
-    if (!mounted ||
-        savedCrop == null ||
-        savedCrop.trim().isEmpty) {
-      return;
-    }
+    if (!mounted) return;
 
-    refreshSupply();
+    // Refresh after any successful insert, including Add another then Close,
+    // back navigation, a swipe, or tapping outside the entry sheet.
+    if (supplyWasSaved) refreshSupply();
+
+    if (savedCrop == null || savedCrop.trim().isEmpty) return;
 
     await _showSupplyValueFeedback(
       savedCrop.trim(),

@@ -382,10 +382,12 @@ class _WarehouseWholesaleActionScreenState
 }
 
 class WarehouseOperationsPanel extends StatefulWidget {
+  final bool lightAdmin;
   final bool showNavigationCards;
 
   const WarehouseOperationsPanel({
     super.key,
+    this.lightAdmin = false,
     this.showNavigationCards = true,
   });
 
@@ -1163,8 +1165,9 @@ class _WarehouseOperationsPanelState
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cardWidth =
-            (constraints.maxWidth - 9) / 2;
+        final textScale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 3.0);
+        final columns = widget.lightAdmin && constraints.maxWidth < 480 * textScale ? 1 : 2;
+        final cardWidth = (constraints.maxWidth - 9 * (columns - 1)) / columns;
 
         return Wrap(
           spacing: 9,
@@ -1422,7 +1425,17 @@ class _WarehouseOperationsPanelState
               // ------------------------------------------------
               Container(
                 padding: const EdgeInsets.all(17),
-                decoration: BoxDecoration(
+                decoration: (widget.lightAdmin ? BoxDecoration(
+        color: const Color(0xFFFFFEFB),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0x08000000),
+                      blurRadius: 18,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                 border: Border.all(color: FarmColors.line),) : BoxDecoration(
                   color: FarmColors.primary,
                   borderRadius: BorderRadius.circular(22),
                   boxShadow: [
@@ -1434,7 +1447,7 @@ class _WarehouseOperationsPanelState
                       offset: const Offset(0, 8),
                     ),
                   ],
-                ),
+                )),
                 child: Column(
                   crossAxisAlignment:
                       CrossAxisAlignment.start,
@@ -1445,20 +1458,18 @@ class _WarehouseOperationsPanelState
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(
-                              0.12,
-                            ),
+                            color: widget.lightAdmin ? FarmColors.cardSoft : Colors.white.withOpacity(0.12),
                             borderRadius:
                                 BorderRadius.circular(14),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.warehouse_outlined,
-                            color: Colors.white,
+                            color: widget.lightAdmin ? FarmColors.ink : Colors.white,
                             size: 24,
                           ),
                         ),
                         const SizedBox(width: 12),
-                        const Expanded(
+                        Expanded(
                           child: Column(
                             crossAxisAlignment:
                                 CrossAxisAlignment.start,
@@ -1466,7 +1477,7 @@ class _WarehouseOperationsPanelState
                               Text(
                                 'Warehouse Today',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: widget.lightAdmin ? FarmColors.ink : Colors.white,
                                   fontSize: 21,
                                   fontWeight:
                                       FontWeight.w900,
@@ -1476,7 +1487,7 @@ class _WarehouseOperationsPanelState
                               Text(
                                 'HPJ keeps the next action clear from receiving to dispatch.',
                                 style: TextStyle(
-                                  color: Colors.white70,
+                                  color: widget.lightAdmin ? FarmColors.mutedText : Colors.white70,
                                   fontSize: 11.5,
                                   height: 1.3,
                                   fontWeight:

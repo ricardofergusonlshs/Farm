@@ -2,6 +2,7 @@ part of harvest_place_app;
 // HPJ WEBSITE HOME — desktop rail logo opens public homepage
 
 class EliteGreenHeroCard extends StatelessWidget {
+  final bool lightAdmin;
   final String eyebrow;
   final String title;
   final String subtitle;
@@ -11,6 +12,7 @@ class EliteGreenHeroCard extends StatelessWidget {
 
   const EliteGreenHeroCard({
     super.key,
+    this.lightAdmin = false,
     required this.eyebrow,
     required this.title,
     required this.subtitle,
@@ -21,6 +23,71 @@ class EliteGreenHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (lightAdmin) {
+      return Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFEFB),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: FarmColors.line),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x08000000), blurRadius: 12, offset: Offset(0, 3))
+          ],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (icon != null) ...[
+              Icon(icon, color: FarmColors.primary, size: 22),
+              const SizedBox(width: 10)
+            ],
+            Expanded(
+                child: Text(eyebrow.toUpperCase(),
+                    style: const TextStyle(
+                        color: FarmColors.mutedText,
+                        fontSize: 12,
+                        height: 1.35,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .4))),
+          ]),
+          const SizedBox(height: 8),
+          Text(title,
+              style: const TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 21,
+                  height: 1.2,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          Text(subtitle,
+              style: const TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 13,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600)),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final chip in chips)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                      color: FarmColors.cardSoft,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: FarmColors.line)),
+                  child: Text(chip,
+                      style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 12,
+                          height: 1.3,
+                          fontWeight: FontWeight.w700)),
+                )
+            ]),
+          ],
+        ]),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),

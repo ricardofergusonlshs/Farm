@@ -4424,25 +4424,41 @@ Future<void> ensureStockReducedAfterCheckout({
 
 Future<void> restockProduct(String productId, int amount) async {
   await requireAdminAccess();
-  if (productId.isEmpty || amount <= 0) return;
+
+  final cleanProductId = productId.trim();
+  if (cleanProductId.isEmpty || amount <= 0) return;
 
   final current = await supabase
       .from('products')
       .select('stock_quantity')
-      .eq('id', productId)
+      .eq('id', cleanProductId)
       .maybeSingle();
 
   final currentStock =
       current == null ? 0 : Product._toInt(current['stock_quantity']);
+  final newStock = currentStock + amount;
 
+  // Restocking must restore every customer-facing availability flag.
+  // Previously stock_quantity/is_available were updated, but a product could
+  // remain product_status=out_of_stock/hidden or ready_soon=true. The Shop
+  // correctly filtered that product out even though Admin showed new stock.
   await adminUpdateProduct(
-    productId: productId,
-    stockQuantity: currentStock + amount,
+    productId: cleanProductId,
+    stockQuantity: newStock,
     isAvailable: true,
     approvalStatus: 'approved',
-    adminNote: 'Admin restocked product from app by $amount',
+    productStatus: 'available',
+    readySoon: false,
+    expectedStockQuantity: null,
+    adminNote:
+        'Admin restocked product from app by $amount; restored live Shop availability',
   );
-  await maybeNotifyProductReady(productId);
+
+  // Clear both normal and Ready Soon product caches immediately so the
+  // customer Shop cannot continue showing the stale out-of-stock state.
+  FarmDataCache.clearProducts();
+
+  await maybeNotifyProductReady(cleanProductId);
 }
 
 Future<void> reuseProductThisWeek({
@@ -5962,8 +5978,10 @@ Future<void> hpjAdminSaveCommercialFeeSettings({
     wholesaleServiceMarginPercent,
     deliveryMarginPercent,
   ];
-  if (values.any((value) => value < 0 || value > 100)) {
-    throw Exception('Percentage fees must be between 0% and 100%.');
+  // A service charge may be 0%, but must never consume the full sale.
+  // Keep this aligned with the Admin Commercial Fees validation.
+  if (values.any((value) => value < 0 || value >= 100)) {
+    throw Exception('Percentage fees must be between 0% and 99.99%.');
   }
   if (managedServiceMonthlyFee < 0) {
     throw Exception('Managed-service fee cannot be negative.');
@@ -6760,15 +6778,30 @@ Future<void> updateFarmerPayoutStatus({
 }
 
 Map<String, double> marketplaceAmounts(Product product, int quantity) {
-  final gross = product.effectivePrice * quantity;
-  final rate = product.platformCommissionPercent <= 0
-      ? 10
-      : product.platformCommissionPercent;
-  final commission = gross * (rate / 100);
-  return {
+  // IMPORTANT: use the fee snapshot stored on the product/listing.
+  // Do not fetch today's Admin setting here: changing the global service
+  // charge must never rewrite the economics of an existing listing/order.
+  final safeQuantity = quantity < 0 ? 0 : quantity;
+  final gross = product.effectivePrice * safeQuantity;
+
+  // `platformCommissionPercent` is the historical snapshot. A genuine 0%
+  // service charge is valid and must remain 0%; do NOT silently replace it
+  // with the old hard-coded 10% default.
+  final rawRate = product.platformCommissionPercent;
+  final rate = rawRate < 0
+      ? 0.0
+      : rawRate >= 100
+          ? 99.99
+          : rawRate;
+
+  final commission = gross * (rate / 100.0);
+  final farmerNet = gross - commission;
+
+  return <String, double>{
     'gross': gross,
     'commission': commission,
-    'farmer': gross - commission,
+    'farmer': farmerNet,
+    'service_charge_percent': rate,
   };
 }
 

@@ -1,3 +1,6 @@
+// HPJ PHASE 5 — FARMER REPLY → STAFF-VERIFIED SUPPLY UPDATE
+// PHASE 6 — SMART FARMER ASSISTANT — 2026-10-07
+// Builds on Phase 5 Reply-to-Supply + Phase 4 WhatsApp Farmer Support Inbox
 // HPJ PHASE 97 — OWNER/MANAGER GROW INTELLIGENCE
 // HPJ RC2K HOTFIX 003 VERIFIED REPLACEMENT — 2026-08-27
 // Compile repair base: Hotfix 002 + visible verification marker.
@@ -1931,7 +1934,7 @@ String staffRoleWorkflowSummary(String? value) {
     case 'support':
       return 'Can view and respond to customer support messages.';
     case 'onboarding':
-      return 'Can recruit and follow up farmers and businesses. Orders, payouts, finance, staff, and business settings stay private.';
+      return 'Can recruit and follow up farmers and businesses, and upload assisted farmer photos. Orders, payouts, finance, staff, approvals, and business settings stay private.';
     default:
       return 'No staff access assigned.';
   }
@@ -5347,130 +5350,108 @@ class _AdminTodayActionCard extends StatelessWidget {
   final int count;
   final Color color;
   final VoidCallback onTap;
-
-  const _AdminTodayActionCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.count,
-    required this.color,
-    required this.onTap,
-  });
+  const _AdminTodayActionCard({required this.icon, required this.title,
+    required this.subtitle, required this.count, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final desktopWeb = HpjWebUi.isDesktop(context);
-
     return Material(
       color: FarmColors.card,
-      borderRadius: BorderRadius.circular(21),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(21),
-        hoverColor:
-            desktopWeb ? HpjWebUi.hover : Colors.transparent,
-        mouseCursor: kIsWeb
-            ? SystemMouseCursors.click
-            : MouseCursor.defer,
-        onTap: onTap,
+        onTap: onTap, borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(21),
-            border: Border.all(
-              color: count > 0
-                  ? color.withOpacity(.18)
-                  : FarmColors.line,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(.025),
-                blurRadius: 14,
-                offset: const Offset(0, 5),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(.18)),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(.10),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 21,
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 9.6,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 9),
-              Container(
-                constraints: const BoxConstraints(
-                  minWidth: 36,
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: count > 0
-                      ? color
-                      : const Color(0xFFF4F5F1),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$count',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: count > 0
-                        ? Colors.white
-                        : FarmColors.mutedText,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 5),
-              const Icon(
-                Icons.arrow_forward_rounded,
-                color: FarmColors.mutedText,
-                size: 18,
-              ),
-            ],
-          ),
+          child: LayoutBuilder(builder: (context, constraints) {
+            if (constraints.maxWidth < 220 || MediaQuery.textScaleFactorOf(context) > 1.3) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(icon, color: color, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('$count queued', style: TextStyle(
+                    color: color, fontSize: 13, fontWeight: FontWeight.w800))),
+                  const Icon(Icons.chevron_right_rounded, color: FarmColors.mutedText, size: 20),
+                ]),
+                const SizedBox(height: 10),
+                Text(title, style: const TextStyle(color: FarmColors.ink,
+                  fontSize: 14, height: 1.3, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(subtitle, style: const TextStyle(color: FarmColors.mutedText,
+                  fontSize: 12, height: 1.4)),
+              ]);
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            Container(width: 38, height: 38, alignment: Alignment.center,
+              decoration: BoxDecoration(color: color.withOpacity(.10),
+                borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, color: color, size: 20)),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: const TextStyle(color: FarmColors.ink,
+                fontSize: 14, height: 1.3, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(subtitle, style: const TextStyle(color: FarmColors.mutedText,
+                fontSize: 12, height: 1.4)),
+            ])),
+            const SizedBox(width: 10),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(color: color.withOpacity(.10),
+                borderRadius: BorderRadius.circular(10)),
+              child: Text('$count', style: TextStyle(color: color,
+                fontSize: 13, fontWeight: FontWeight.w800))),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right_rounded, size: 20, color: FarmColors.mutedText),
+          ]);
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+class _HpjAdminTodayWorkGroup extends StatelessWidget {
+  final String id;
+  final String title;
+  final IconData icon;
+  final Color color;
+  final List<_AdminTodayActionCard> items;
+  final bool initiallyExpanded;
+  const _HpjAdminTodayWorkGroup({required this.id, required this.title,
+    required this.icon, required this.color, required this.items,
+    this.initiallyExpanded = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = items.fold<int>(0, (sum, item) => sum + item.count);
+    return Container(
+      decoration: BoxDecoration(color: FarmColors.card,
+        borderRadius: BorderRadius.circular(18), border: Border.all(color: FarmColors.line)),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: PageStorageKey<String>('admin-work-$id'),
+          initiallyExpanded: initiallyExpanded,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          leading: Container(width: 38, height: 38, alignment: Alignment.center,
+            decoration: BoxDecoration(color: color.withOpacity(.10),
+              borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: color, size: 20)),
+          title: Text(title, style: const TextStyle(color: FarmColors.ink,
+            fontSize: 15, height: 1.3, fontWeight: FontWeight.w800)),
+          subtitle: Text('${items.length} ${items.length == 1 ? 'queue' : 'queues'} · $total items',
+            style: const TextStyle(color: FarmColors.mutedText, fontSize: 12, height: 1.4)),
+          children: [LayoutBuilder(builder: (context, constraints) {
+            const gap = 10.0;
+            final columns = constraints.maxWidth >= 760 && MediaQuery.textScaleFactorOf(context) <= 1.25 ? 2 : 1;
+            final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(spacing: gap, runSpacing: gap,
+              children: items.map((item) => SizedBox(width: width, child: item)).toList());
+          })],
         ),
       ),
     );
@@ -5502,7 +5483,7 @@ class _AdminTodayReminderPill extends StatelessWidget {
         label,
         style: const TextStyle(
           color: FarmColors.warning,
-          fontSize: 8.8,
+          fontSize: 12,
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -5526,11 +5507,22 @@ class _AdminOperationsTodayTabState
     extends State<_AdminOperationsTodayTab> {
   late Future<_AdminTodayOperationsSnapshot> future;
   bool _sendingReminders = false;
+  DateTime? _lastLoadedAt;
+  int _loadGeneration = 0;
+
+  Future<_AdminTodayOperationsSnapshot> _loadToday() async {
+    final generation = ++_loadGeneration;
+    final data = await _fetchAdminTodayOperations();
+    if (mounted && generation == _loadGeneration) {
+      _lastLoadedAt = DateTime.now();
+    }
+    return data;
+  }
 
   @override
   void initState() {
     super.initState();
-    future = _fetchAdminTodayOperations();
+    future = _loadToday();
   }
 
   @override
@@ -5540,18 +5532,22 @@ class _AdminOperationsTodayTabState
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.refreshKey != widget.refreshKey) {
-      future = _fetchAdminTodayOperations();
+      future = _loadToday();
     }
   }
 
   Future<void> _reload() async {
-    final next = _fetchAdminTodayOperations();
+    final next = _loadToday();
 
     setState(() {
       future = next;
     });
 
-    await next;
+    try {
+      await next;
+    } catch (_) {
+      // FutureBuilder owns the error and retry UI.
+    }
   }
 
   void _open(
@@ -5802,6 +5798,126 @@ class _AdminOperationsTodayTabState
     );
   }
 
+  Widget _sectionHeading(String title, String subtitle) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(
+            color: FarmColors.ink, fontSize: 19, fontWeight: FontWeight.w800,
+          )),
+          const SizedBox(height: 4),
+          Text(subtitle, style: const TextStyle(
+            color: FarmColors.mutedText, fontSize: 12.5, height: 1.4,
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _responsiveTiles(List<Widget> children, {double minWidth = 210}) {
+    return LayoutBuilder(builder: (context, constraints) {
+      const gap = 12.0;
+      final scale = MediaQuery.textScaleFactorOf(context);
+      final effectiveWidth = minWidth * (scale > 1 ? scale : 1);
+      final columns = ((constraints.maxWidth + gap) / (effectiveWidth + gap))
+          .floor().clamp(1, 4).toInt();
+      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap, runSpacing: gap,
+        children: children.map((child) => SizedBox(width: width, child: child)).toList(),
+      );
+    });
+  }
+
+  Widget _secondarySection({
+    required String id,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: FarmColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FarmColors.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: PageStorageKey<String>('admin-today-$id'),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          leading: Icon(icon, color: FarmColors.primary),
+          title: Text(title, style: const TextStyle(
+            color: FarmColors.ink, fontSize: 15, fontWeight: FontWeight.w800,
+          )),
+          subtitle: Text(subtitle, style: const TextStyle(
+            color: FarmColors.mutedText, fontSize: 12, height: 1.35,
+          )),
+          children: [child],
+        ),
+      ),
+    );
+  }
+
+  Widget _reminderTools(_AdminTodayOperationsSnapshot data) {
+    final pills = <Widget>[
+      if (data.pendingOrdersOver24h > 0)
+        _AdminTodayReminderPill(label: '${data.pendingOrdersOver24h} orders >24h'),
+      if (data.bankTransferReviews > 0)
+        _AdminTodayReminderPill(label: '${data.bankTransferReviews} payment reviews'),
+      if (data.supportWaitingOver24h > 0)
+        _AdminTodayReminderPill(label: '${data.supportWaitingOver24h} support >24h'),
+      if (data.farmerReviewsOver48h > 0)
+        _AdminTodayReminderPill(label: '${data.farmerReviewsOver48h} farmers >48h'),
+      if (data.wholesaleFollowups > 0)
+        _AdminTodayReminderPill(label: '${data.wholesaleFollowups} business follow-ups'),
+      if (data.reelsOver24h > 0)
+        _AdminTodayReminderPill(label: '${data.reelsOver24h} reels >24h'),
+      if (data.procurementNeedsSupply > 0)
+        _AdminTodayReminderPill(label: '${data.procurementNeedsSupply} supply gaps'),
+      if (data.lotsMissingBestBefore > 0)
+        _AdminTodayReminderPill(label: '${data.lotsMissingBestBefore} missing lot dates'),
+    ];
+    final previewUnavailable = data.unavailableSources.contains('Reminder preview');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (pills.isNotEmpty) ...[
+          Wrap(spacing: 8, runSpacing: 8, children: pills),
+          const SizedBox(height: 12),
+        ],
+        Text(
+          previewUnavailable
+              ? 'Reminder status could not be loaded. Review the preview before sending.'
+              : data.reminderRowsAlreadyCreatedToday > 0
+                  ? '${data.reminderRowsAlreadyCreatedToday} staff reminders created today.'
+                  : 'No staff reminders have been created today.',
+          style: const TextStyle(color: FarmColors.mutedText, fontSize: 12.5, height: 1.4),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: _sendingReminders ? null : _sendOperationalReminders,
+            icon: _sendingReminders
+                ? const SizedBox(width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.notifications_active_outlined, size: 18),
+            label: Text(_sendingReminders ? 'Sending…' : 'Review & send reminders'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text('You will review the reminder categories before sending.',
+          style: TextStyle(color: FarmColors.mutedText, fontSize: 12, height: 1.35)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -5809,841 +5925,232 @@ class _AdminOperationsTodayTabState
       child: FutureBuilder<_AdminTodayOperationsSnapshot>(
         future: future,
         builder: (context, snapshot) {
-          final desktopWeb =
-              HpjWebUi.isDesktop(context);
+          final refreshing = snapshot.connectionState == ConnectionState.waiting;
+          if (refreshing && snapshot.data == null) return _loadingState();
+          if (snapshot.hasError) return _errorState(snapshot.error);
+          final data = snapshot.data;
+          if (data == null) return _errorState(null);
 
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              snapshot.data == null) {
-            return _loadingState();
-          }
-
-          if (snapshot.hasError && snapshot.data == null) {
-            return _errorState(snapshot.error);
-          }
-
-          final data = snapshot.data ??
-              const _AdminTodayOperationsSnapshot(
-                customerPendingOrders: 0,
-                customerReadyOrders: 0,
-                wholesalePendingOrders: 0,
-                procurementNeedsSupply: 0,
-                farmerSupplyNeedsVerification: 0,
-                collectionsToday: 0,
-                receivingIssues: 0,
-                wholesaleReadyForDispatch: 0,
-              );
-
-          final priorityCount =
-              data.customerPendingOrders +
-                  data.bankTransferReviews +
-                  data.wholesalePendingOrders +
-                  data.procurementNeedsSupply +
-                  data.farmerSupplyNeedsVerification +
-                  data.openSupportTickets +
-                  data.pendingFarmerReviews +
-                  data.pendingReels +
-                  data.receivingIssues;
-
-          final attentionCount =
-              priorityCount + data.lotsMissingBestBefore;
-
-          final readyToMove =
-              data.customerReadyOrders +
-                  data.wholesaleReadyForDispatch;
-
-          final attention = <Widget>[
+          final blockers = <_AdminTodayActionCard>[
             if (data.bankTransferReviews > 0)
               _AdminTodayActionCard(
-                icon: Icons.account_balance_outlined,
-                title: 'Payments to verify',
-                subtitle:
-                    'Review bank-transfer orders that still need payment confirmation.',
-                count: data.bankTransferReviews,
-                color: FarmColors.danger,
-                onTap: () => _open(
-                  'Orders',
-                  subSection: 'customer',
-                  filter: 'unpaid',
-                ),
+                icon: Icons.account_balance_outlined, title: 'Verify payments',
+                subtitle: 'Confirm bank-transfer payments before fulfilment.',
+                count: data.bankTransferReviews, color: FarmColors.danger,
+                onTap: () => _open('Orders', subSection: 'customer', filter: 'unpaid'),
               ),
-
-            if (data.openSupportTickets > 0)
-              _AdminTodayActionCard(
-                icon: Icons.support_agent_outlined,
-                title: 'Support conversations',
-                subtitle:
-                    'Open active customer support requests and respond or resolve them.',
-                count: data.openSupportTickets,
-                color: FarmColors.warning,
-                onTap: () => _open('Messages'),
-              ),
-
-            if (data.pendingFarmerReviews > 0)
-              _AdminTodayActionCard(
-                icon: Icons.how_to_reg_outlined,
-                title: 'Farmer applications to review',
-                subtitle:
-                    'Review pending Farmer profiles before marketplace access is granted.',
-                count: data.pendingFarmerReviews,
-                color: FarmColors.warning,
-                onTap: () => _open('Farmers'),
-              ),
-
-            if (data.wholesalePendingOrders > 0)
-              _AdminTodayActionCard(
-                icon: Icons.storefront_outlined,
-                title: 'Wholesale work to review',
-                subtitle:
-                    'Open active business requests and move them through fulfilment.',
-                count: data.wholesalePendingOrders,
-                color: FarmColors.warning,
-                onTap: () => _open(
-                  'Orders',
-                  subSection: 'wholesale',
-                ),
-              ),
-
             if (data.procurementNeedsSupply > 0)
               _AdminTodayActionCard(
-                icon: Icons.account_tree_outlined,
-                title: 'Critical procurement gaps',
-                subtitle:
-                    'Review HPJ shortage suggestions before creating sourcing actions.',
-                count: data.procurementNeedsSupply,
-                color: FarmColors.danger,
-                onTap: () => _open(
-                  'Procurement',
-                  subSection: 'needs_supply',
-                ),
+                icon: Icons.account_tree_outlined, title: 'Resolve supply gaps',
+                subtitle: 'Review shortages and plan sourcing.',
+                count: data.procurementNeedsSupply, color: FarmColors.danger,
+                onTap: () => _open('Procurement', subSection: 'needs_supply'),
               ),
-
-            if (data.farmerSupplyNeedsVerification > 0)
-              _AdminTodayActionCard(
-                icon: Icons.verified_outlined,
-                title: 'Farmer supply to review',
-                subtitle:
-                    'Check reported quantities before HPJ uses them for matching.',
-                count:
-                    data.farmerSupplyNeedsVerification,
-                color: FarmColors.warning,
-                onTap: () => _open(
-                  'Procurement',
-                  subSection: 'farmer_supply',
-                ),
-              ),
-
             if (data.receivingIssues > 0)
               _AdminTodayActionCard(
-                icon: Icons.report_problem_outlined,
-                title: 'Receiving issues',
-                subtitle:
-                    'Inspect short or rejected quantities at warehouse receiving.',
-                count: data.receivingIssues,
-                color: FarmColors.danger,
-                onTap: () => _open(
-                  'Procurement',
-                  subSection: 'receiving',
-                  filter: 'issues',
-                ),
+                icon: Icons.report_problem_outlined, title: 'Check receiving issues',
+                subtitle: 'Resolve short or rejected warehouse quantities.',
+                count: data.receivingIssues, color: FarmColors.danger,
+                onTap: () => _open('Procurement', subSection: 'receiving', filter: 'issues'),
               ),
-
-            if (data.customerPendingOrders > 0)
-              _AdminTodayActionCard(
-                icon: Icons.person_outline_rounded,
-                title: 'Customer orders to review',
-                subtitle:
-                    'Open pending customer orders before fulfilment.',
-                count: data.customerPendingOrders,
-                color: FarmColors.warning,
-                onTap: () => _open(
-                  'Orders',
-                  subSection: 'customer',
-                  filter: 'pending',
-                ),
-              ),
-
-            if (data.pendingReels > 0)
-              _AdminTodayActionCard(
-                icon:
-                    Icons.play_circle_outline_rounded,
-                title: 'Reels awaiting moderation',
-                subtitle:
-                    'Review pending Farmer or HPJ video content before publication.',
-                count: data.pendingReels,
-                color: FarmColors.warning,
-                onTap: () => _open('Reels'),
-              ),
-
             if (data.lotsMissingBestBefore > 0)
               _AdminTodayActionCard(
-                icon: Icons.event_busy_outlined,
-                title: 'Warehouse dates missing',
-                subtitle:
-                    'Add verified best-before dates to active inventory lots.',
-                count: data.lotsMissingBestBefore,
-                color: FarmColors.warning,
+                icon: Icons.event_busy_outlined, title: 'Add warehouse dates',
+                subtitle: 'Record verified best-before dates for active lots.',
+                count: data.lotsMissingBestBefore, color: FarmColors.warning,
                 onTap: () => _open('Warehouse'),
               ),
-
           ];
-
-          final growthWatch = <Widget>[
-            if (data.activeSponsorCampaigns == 0)
+          final orders = <_AdminTodayActionCard>[
+            if (data.customerPendingOrders > 0)
               _AdminTodayActionCard(
-                icon: Icons.campaign_outlined,
-                title: 'No active sponsor campaign',
-                subtitle:
-                    'Review sponsor dates or prepare the next campaign for the marketplace.',
-                count: 0,
-                color: FarmColors.primary,
-                onTap: () => _open('Sponsors'),
+                icon: Icons.shopping_bag_outlined, title: 'Review customer orders',
+                subtitle: 'Move pending orders into fulfilment.',
+                count: data.customerPendingOrders, color: FarmColors.primary,
+                onTap: () => _open('Orders', subSection: 'customer', filter: 'pending'),
+              ),
+            if (data.wholesalePendingOrders > 0)
+              _AdminTodayActionCard(
+                icon: Icons.storefront_outlined, title: 'Review business orders',
+                subtitle: 'Check business requests and their next steps.',
+                count: data.wholesalePendingOrders, color: FarmColors.primary,
+                onTap: () => _open('Orders', subSection: 'wholesale'),
+              ),
+            if (data.openSupportTickets > 0)
+              _AdminTodayActionCard(
+                icon: Icons.support_agent_outlined, title: 'Reply to customers',
+                subtitle: 'Respond to open support conversations.',
+                count: data.openSupportTickets, color: FarmColors.warning,
+                onTap: () => _open('Messages'),
               ),
           ];
+          final reviews = <_AdminTodayActionCard>[
+            if (data.pendingFarmerReviews > 0)
+              _AdminTodayActionCard(
+                icon: Icons.how_to_reg_outlined, title: 'Review farmer applications',
+                subtitle: 'Check profiles before granting marketplace access.',
+                count: data.pendingFarmerReviews, color: FarmColors.warning,
+                onTap: () => _open('Farmers'),
+              ),
+            if (data.farmerSupplyNeedsVerification > 0)
+              _AdminTodayActionCard(
+                icon: Icons.verified_outlined, title: 'Verify farmer supply',
+                subtitle: 'Check quantities before using them for matching.',
+                count: data.farmerSupplyNeedsVerification, color: FarmColors.warning,
+                onTap: () => _open('Procurement', subSection: 'farmer_supply'),
+              ),
+            if (data.pendingReels > 0)
+              _AdminTodayActionCard(
+                icon: Icons.play_circle_outline_rounded, title: 'Review Fresh Reels',
+                subtitle: 'Approve video submissions before publication.',
+                count: data.pendingReels, color: FarmColors.warning,
+                onTap: () => _open('Reels'),
+              ),
+          ];
+          final attentionCount = [...blockers, ...orders, ...reviews]
+              .fold<int>(0, (total, item) => total + item.count);
+          String count(int value, List<String> sources) =>
+              sources.any(data.unavailableSources.contains) ? '—' : '$value';
 
           return ListView(
-            physics:
-                const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              120,
-            ),
+            key: const PageStorageKey<String>('admin-today-scroll'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
             children: [
               _PremiumAdminOperationsHero(
-                urgentCount: priorityCount,
-                collectionsToday:
-                    data.collectionsToday,
-                readyToMove: readyToMove,
-                wholesalePending:
-                    data.wholesalePendingOrders,
-                hasUnavailableSources:
-                    data.hasUnavailableSources,
+                urgentCount: attentionCount,
+                collectionsToday: data.collectionsToday,
+                readyToMove: data.customerReadyOrders + data.wholesaleReadyForDispatch,
+                wholesalePending: data.wholesalePendingOrders,
+                hasUnavailableSources: data.hasUnavailableSources,
+                updatedAt: _lastLoadedAt,
+                refreshing: refreshing,
+                onRefresh: refreshing ? null : _reload,
               ),
-
-              const SizedBox(height: 14),
-
+              if (refreshing) ...[
+                const SizedBox(height: 8),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
+              const SizedBox(height: 20),
               if (data.hasUnavailableSources) ...[
                 Container(
-                  padding: const EdgeInsets.all(13),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF8E9),
-                    borderRadius:
-                        BorderRadius.circular(17),
-                    border: Border.all(
-                      color: FarmColors.warning
-                          .withOpacity(.20),
-                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: FarmColors.warning.withOpacity(.25)),
                   ),
-                  child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.cloud_off_outlined,
-                        color: FarmColors.warning,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Some operational data is unavailable',
-                              style: TextStyle(
-                                color: FarmColors.ink,
-                                fontSize: 11.5,
-                                fontWeight:
-                                    FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${data.unavailableSources.join(', ')} could not be loaded. '
-                              'HPJ will not treat missing data as an all-clear result.',
-                              style: const TextStyle(
-                                color:
-                                    FarmColors.mutedText,
-                                fontSize: 9.5,
-                                height: 1.35,
-                                fontWeight:
-                                    FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Retry',
-                        onPressed: _reload,
-                        icon: const Icon(
-                          Icons.refresh_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.cloud_off_outlined, color: FarmColors.warning, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          data.hasUnavailableSources
-                              ? 'Available work'
-                              : attention.isEmpty
-                                  ? 'Operational status'
-                                  : 'Needs attention',
-                          style: const TextStyle(
-                            color: FarmColors.ink,
-                            fontSize: 17,
-                            fontWeight:
-                                FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          attention.isEmpty
-                              ? 'No blocking operational items are showing right now.'
-                              : 'Open the highest-priority work first.',
-                          style: const TextStyle(
-                            color:
-                                FarmColors.mutedText,
-                            fontSize: 9.5,
-                            fontWeight:
-                                FontWeight.w600,
-                          ),
-                        ),
+                        const Text('Some counts are unavailable', style: TextStyle(
+                          color: FarmColors.ink, fontSize: 14, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 4),
+                        Text('Showing the work that could be loaded. Retry to check the full picture. '
+                          'Unavailable: ${data.unavailableSources.map((source) => source == 'Today summary'
+                              ? 'Review counts' : source == 'Reminder preview' ? 'Reminder status' : source).join(', ')}.',
+                          style: const TextStyle(color: FarmColors.mutedText, fontSize: 12, height: 1.4)),
                       ],
-                    ),
-                  ),
-                  if (!data.hasUnavailableSources)
-                    Container(
-                      padding:
-                          const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: attention.isEmpty
-                            ? const Color(0xFFF1F6EF)
-                            : const Color(0xFFFFF8E9),
-                        borderRadius:
-                            BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        attention.isEmpty
-                            ? 'CLEAR'
-                            : '$attentionCount OPEN',
-                        style: TextStyle(
-                          color: attention.isEmpty
-                              ? FarmColors.success
-                              : FarmColors.warning,
-                          fontSize: 8.6,
-                          fontWeight:
-                              FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              if (attention.isEmpty &&
-                  !data.hasUnavailableSources)
+                    )),
+                    IconButton(tooltip: 'Retry', onPressed: refreshing ? null : _reload,
+                      icon: const Icon(Icons.refresh_rounded)),
+                  ]),
+                ),
+                const SizedBox(height: 16),
+              ],
+              _sectionHeading('Work queues', 'Resolve blockers first, then review orders and approvals.'),
+              if (attentionCount == 0)
                 Container(
-                  padding: const EdgeInsets.all(13),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F6EF),
-                    borderRadius:
-                        BorderRadius.circular(17),
-                    border: Border.all(
-                      color: FarmColors.success
-                          .withOpacity(.16),
-                    ),
+                    color: data.hasUnavailableSources ? FarmColors.card : FarmColors.primarySoft,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: FarmColors.line),
                   ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline_rounded,
-                        color: FarmColors.success,
-                      ),
-                      SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          'HPJ has no blocking operational items in the currently loaded data.',
-                          style: TextStyle(
-                            color:
-                                FarmColors.mutedText,
-                            fontSize: 9.7,
-                            fontWeight:
-                                FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else if (attention.isNotEmpty)
-                if (desktopWeb)
-                  HpjWebResponsiveGrid(
-                    minItemWidth: 470,
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: attention,
-                  )
-                else
-                  Column(
-                    children: [
-                      for (var index = 0;
-                          index < attention.length;
-                          index++) ...[
-                        attention[index],
-                        if (index !=
-                            attention.length - 1)
-                          const SizedBox(height: 9),
-                      ],
-                    ],
-                  ),
-
-
-              const SizedBox(height: 18),
-
-              Container(
-                padding: const EdgeInsets.all(15),
-                decoration: BoxDecoration(
-                  color: FarmColors.card,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: FarmColors.line,
-                  ),
+                  child: Row(children: [
+                    Icon(data.hasUnavailableSources ? Icons.info_outline : Icons.check_circle_outline_rounded,
+                      color: FarmColors.primary),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(data.hasUnavailableSources
+                        ? 'No queued work was found in the available data. Retry to check the remaining counts.'
+                        : 'No review or blocker queues are showing work. Check collections and ready orders below.',
+                      style: const TextStyle(color: FarmColors.ink, fontSize: 13, height: 1.4))),
+                  ]),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: FarmColors.primarySoft,
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                          child: const Icon(
-                            Icons.notifications_active_outlined,
-                            color: FarmColors.deepGreen,
-                            size: 21,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Operational reminders',
-                                style: TextStyle(
-                                  color: FarmColors.ink,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Send one deduplicated reminder per category to authorized HPJ staff.',
-                                style: TextStyle(
-                                  color: FarmColors.mutedText,
-                                  fontSize: 9.4,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 11),
-                    Wrap(
-                      spacing: 7,
-                      runSpacing: 7,
-                      children: [
-                        if (data.pendingOrdersOver24h > 0)
-                          _AdminTodayReminderPill(
-                            label:
-                                '${data.pendingOrdersOver24h} orders >24h',
-                          ),
-                        if (data.supportWaitingOver24h > 0)
-                          _AdminTodayReminderPill(
-                            label:
-                                '${data.supportWaitingOver24h} support >24h',
-                          ),
-                        if (data.farmerReviewsOver48h > 0)
-                          _AdminTodayReminderPill(
-                            label:
-                                '${data.farmerReviewsOver48h} Farmers >48h',
-                          ),
-                        if (data.wholesaleFollowups > 0)
-                          _AdminTodayReminderPill(
-                            label:
-                                '${data.wholesaleFollowups} wholesale',
-                          ),
-                        if (data.reelsOver24h > 0)
-                          _AdminTodayReminderPill(
-                            label:
-                                '${data.reelsOver24h} Reels >24h',
-                          ),
-                        if (data.procurementNeedsSupply > 0)
-                          _AdminTodayReminderPill(
-                            label:
-                                '${data.procurementNeedsSupply} procurement',
-                          ),
-                        if (data.lotsMissingBestBefore > 0)
-                          _AdminTodayReminderPill(
-                            label:
-                                '${data.lotsMissingBestBefore} lot dates',
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 11),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            data.reminderRowsAlreadyCreatedToday > 0
-                                ? '${data.reminderRowsAlreadyCreatedToday} reminder notification row${data.reminderRowsAlreadyCreatedToday == 1 ? '' : 's'} already created today.'
-                                : 'No Phase 13D reminder notifications have been created today.',
-                            style: const TextStyle(
-                              color: FarmColors.mutedText,
-                              fontSize: 9.2,
-                              height: 1.35,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton.icon(
-                          onPressed: _sendingReminders
-                              ? null
-                              : _sendOperationalReminders,
-                          icon: _sendingReminders
-                              ? const SizedBox(
-                                  width: 15,
-                                  height: 15,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.send_outlined,
-                                  size: 17,
-                                ),
-                          label: Text(
-                            data.reminderRowsAlreadyCreatedToday > 0
-                                ? 'Refresh reminders'
-                                : 'Send reminders',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              if (growthWatch.isNotEmpty) ...[
-                const SizedBox(height: 18),
-                const Text(
-                  'Growth watch',
-                  style: TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                const Text(
-                  'Lower-priority commercial items that should not inflate the urgent operations count.',
-                  style: TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (desktopWeb)
-                  HpjWebResponsiveGrid(
-                    minItemWidth: 470,
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: growthWatch,
-                  )
-                else
-                  Column(
-                    children: growthWatch,
-                  ),
+              if (blockers.isNotEmpty) ...[
+                _HpjAdminTodayWorkGroup(id: 'blockers', title: 'Resolve blockers',
+                  icon: Icons.warning_amber_rounded, color: FarmColors.danger,
+                  items: blockers, initiallyExpanded: true),
+                const SizedBox(height: 12),
               ],
-
-              const SizedBox(height: 18),
-
-              const Text(
-                'Operations pipeline',
-                style: TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              const Text(
-                'Jump directly into today’s collection, dispatch and ready-order flow.',
-                style: TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              AdminSummaryGrid(
-                children: [
-                  GestureDetector(
-                    onTap: () => _open(
-                      'Procurement',
-                      subSection: 'collections',
-                      filter: 'today',
-                    ),
-                    child: _AdminTodayMetricCard(
-                      label: 'Collections today',
-                      value: '${data.collectionsToday}',
-                      icon:
-                          Icons.local_shipping_outlined,
-                      accent: FarmColors.primary,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => _open(
-                      'Fulfillment',
-                      subSection: 'wholesale',
-                    ),
-                    child: _AdminTodayMetricCard(
-                      label: 'Wholesale dispatch',
-                      value:
-                          '${data.wholesaleReadyForDispatch}',
-                      icon:
-                          Icons.inventory_2_outlined,
-                      accent: FarmColors.success,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => _open(
-                      'Fulfillment',
-                      subSection: 'customer',
-                    ),
-                    child: _AdminTodayMetricCard(
-                      label: 'Customer ready',
-                      value:
-                          '${data.customerReadyOrders}',
-                      icon:
-                          Icons.shopping_bag_outlined,
-                      accent: FarmColors.success,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => _open(
-                      'Orders',
-                      subSection: 'wholesale',
-                    ),
-                    child: _AdminTodayMetricCard(
-                      label: 'Wholesale open',
-                      value:
-                          '${data.wholesalePendingOrders}',
-                      icon:
-                          Icons.storefront_outlined,
-                      accent: FarmColors.warning,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 18),
-
-              const Text(
-                'Quick actions',
-                style: TextStyle(
-                  color: FarmColors.ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              const Text(
-                'Secondary tools used frequently during daily operations.',
-                style: TextStyle(
-                  color: FarmColors.mutedText,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              if (desktopWeb)
-                HpjWebResponsiveGrid(
-                  minItemWidth: 245,
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _AdminTodayQuickActionTile(
-                      icon: Icons.receipt_long_outlined,
-                      title: 'Orders',
-                      subtitle:
-                          'Review customer and business orders',
-                      onTap: () =>
-                          _open('Orders'),
-                    ),
-                    _AdminTodayQuickActionTile(
-                      icon: Icons.chat_bubble_outline_rounded,
-                      title: 'Messages',
-                      subtitle:
-                          'Reply to customer support requests',
-                      onTap: () =>
-                          _open('Messages'),
-                    ),
-                    _AdminTodayQuickActionTile(
-                      icon: Icons.add_box_outlined,
-                      title: 'Products',
-                      subtitle:
-                          'Add, edit or restock a product',
-                      onTap: () =>
-                          _open('Products'),
-                    ),
-                    _AdminTodayQuickActionTile(
-                      icon: Icons
-                          .play_circle_outline_rounded,
-                      title: 'Fresh Reels',
-                      subtitle:
-                          'Review submissions or publish HPJ content',
-                      onTap: () =>
-                          _open('Reels'),
-                    ),
-                    _AdminTodayQuickActionTile(
-                      icon:
-                          Icons.agriculture_outlined,
-                      title: 'Farmer partners',
-                      subtitle:
-                          'Review farmer profiles and approvals',
-                      onTap: () =>
-                          _open('Farmers'),
-                    ),
-                    _AdminTodayQuickActionTile(
-                      icon: Icons.business_outlined,
-                      title: 'Business setup',
-                      subtitle:
-                          'Applications, access, pricing and account controls',
-                      onTap: () =>
-                          _open('Business Setup'),
-                    ),
-                  ],
-                )
-              else
-                LayoutBuilder(
-                  builder: (
-                    context,
-                    constraints,
-                  ) {
-                    const gap = 8.0;
-                    final width =
-                        (constraints.maxWidth - gap) /
-                            2;
-
-                    return Wrap(
-                      spacing: gap,
-                      runSpacing: gap,
-                      children: [
-                        SizedBox(
-                          width: width,
-                          child: _AdminMobileQuickTile(
-                            icon: Icons
-                                .receipt_long_outlined,
-                            title: 'Orders',
-                            subtitle:
-                                'Review customer and business orders.',
-                            onTap: () =>
-                                _open('Orders'),
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: _AdminMobileQuickTile(
-                            icon: Icons
-                                .chat_bubble_outline_rounded,
-                            title: 'Messages',
-                            subtitle:
-                                'Reply to customer support requests.',
-                            onTap: () =>
-                                _open('Messages'),
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: _AdminMobileQuickTile(
-                            icon: Icons
-                                .inventory_2_outlined,
-                            title: 'Products',
-                            subtitle:
-                                'Edit stock, listings and availability.',
-                            onTap: () =>
-                                _open('Products'),
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: _AdminMobileQuickTile(
-                            icon: Icons
-                                .agriculture_outlined,
-                            title: 'Farmers',
-                            subtitle:
-                                'Review partners and approvals.',
-                            onTap: () =>
-                                _open('Farmers'),
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: _AdminMobileQuickTile(
-                            icon: Icons
-                                .play_circle_outline_rounded,
-                            title: 'Fresh Reels',
-                            subtitle:
-                                'Review submissions and publish content.',
-                            onTap: () =>
-                                _open('Reels'),
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: _AdminMobileQuickTile(
-                            icon: Icons.business_outlined,
-                            title: 'Business setup',
-                            subtitle:
-                                'Manage business access and account controls.',
-                            onTap: () =>
-                                _open('Business Setup'),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+              if (orders.isNotEmpty) ...[
+                _HpjAdminTodayWorkGroup(id: 'orders', title: 'Orders & customer care',
+                  icon: Icons.receipt_long_outlined, color: FarmColors.primary,
+                  items: orders, initiallyExpanded: true),
+                const SizedBox(height: 12),
+              ],
+              if (reviews.isNotEmpty)
+                _HpjAdminTodayWorkGroup(id: 'reviews', title: 'Partner & content reviews',
+                  icon: Icons.fact_check_outlined, color: FarmColors.warning,
+                  items: reviews, initiallyExpanded: blockers.isEmpty && orders.isEmpty),
+              const SizedBox(height: 24),
+              _sectionHeading('Move today’s work', 'Open collections, dispatch and ready orders.'),
+              _responsiveTiles([
+                _AdminTodayMetricCard(label: 'Collections today',
+                  value: count(data.collectionsToday, ['Receiving']),
+                  icon: Icons.local_shipping_outlined,
+                  onTap: () => _open('Procurement', subSection: 'collections', filter: 'today')),
+                _AdminTodayMetricCard(label: 'Business ready to dispatch',
+                  value: count(data.wholesaleReadyForDispatch, ['Wholesale fulfillment']),
+                  icon: Icons.inventory_2_outlined, accent: FarmColors.success,
+                  onTap: () => _open('Fulfillment', subSection: 'wholesale')),
+                _AdminTodayMetricCard(label: 'Customer orders ready',
+                  value: count(data.customerReadyOrders, ['Customer orders']),
+                  icon: Icons.shopping_bag_outlined, accent: FarmColors.success,
+                  onTap: () => _open('Fulfillment', subSection: 'customer')),
+                _AdminTodayMetricCard(label: 'Business orders open',
+                  value: count(data.wholesalePendingOrders, ['Today summary', 'Wholesale orders']),
+                  icon: Icons.storefront_outlined, accent: FarmColors.primary,
+                  onTap: () => _open('Orders', subSection: 'wholesale')),
+              ], minWidth: 155),
+              const SizedBox(height: 24),
+              _secondarySection(id: 'daily-tools', icon: Icons.grid_view_outlined,
+                title: 'Daily tools', subtitle: 'Orders, messages, products and partner tools.',
+                child: _responsiveTiles([
+                _AdminTodayQuickActionTile(icon: Icons.receipt_long_outlined,
+                  title: 'Orders', subtitle: 'Customer and business orders', onTap: () => _open('Orders')),
+                _AdminTodayQuickActionTile(icon: Icons.chat_bubble_outline_rounded,
+                  title: 'Messages', subtitle: 'Customer support conversations', onTap: () => _open('Messages')),
+                _AdminTodayQuickActionTile(icon: Icons.add_box_outlined,
+                  title: 'Products', subtitle: 'Listings, stock and availability', onTap: () => _open('Products')),
+                _AdminTodayQuickActionTile(icon: Icons.agriculture_outlined,
+                  title: 'Farmer partners', subtitle: 'Profiles and approvals', onTap: () => _open('Farmers')),
+                _AdminTodayQuickActionTile(icon: Icons.business_outlined,
+                  title: 'Business partners', subtitle: 'Access, pricing and account controls', onTap: () => _open('Business Setup')),
+                _AdminTodayQuickActionTile(icon: Icons.play_circle_outline_rounded,
+                  title: 'Fresh Reels', subtitle: 'Review and publish video content', onTap: () => _open('Reels')),
+              ], minWidth: 270)),
+              const SizedBox(height: 12),
+              _secondarySection(id: 'reminders', icon: Icons.notifications_active_outlined,
+                title: 'Staff reminders', subtitle: 'Review overdue work and notify authorized staff.',
+                child: _reminderTools(data)),
+              const SizedBox(height: 12),
+              _secondarySection(id: 'growth', icon: Icons.campaign_outlined,
+                title: 'Growth & promotion', subtitle: 'Sponsor campaigns and marketplace promotion.',
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Text(data.unavailableSources.contains('Today summary')
+                      ? 'Sponsor campaign status is unavailable.'
+                      : data.activeSponsorCampaigns == 0
+                          ? 'No sponsor campaign is active. Review dates or prepare the next campaign.'
+                          : '${data.activeSponsorCampaigns} sponsor campaigns are active.',
+                    style: const TextStyle(color: FarmColors.mutedText, fontSize: 12.5, height: 1.4)),
+                  const SizedBox(height: 12),
+                  _AdminTodayQuickActionTile(icon: Icons.campaign_outlined,
+                    title: 'Sponsors', subtitle: 'Campaigns, dates and placements', onTap: () => _open('Sponsors')),
+                ])),
             ],
           );
         },
@@ -6714,370 +6221,88 @@ class _PremiumAdminOperationsHero extends StatelessWidget {
   final int readyToMove;
   final int wholesalePending;
   final bool hasUnavailableSources;
+  final DateTime? updatedAt;
+  final bool refreshing;
+  final VoidCallback? onRefresh;
+  const _PremiumAdminOperationsHero({required this.urgentCount,
+    required this.collectionsToday, required this.readyToMove, required this.wholesalePending,
+    required this.hasUnavailableSources, this.updatedAt, this.refreshing = false, this.onRefresh});
 
-  const _PremiumAdminOperationsHero({
-    required this.urgentCount,
-    required this.collectionsToday,
-    required this.readyToMove,
-    required this.wholesalePending,
-    required this.hasUnavailableSources,
-  });
-
-  Widget _metric({
-    required IconData icon,
-    required String value,
-    required String label,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 10,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.white.withOpacity(.16),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              icon,
-              color: const Color(0xFFE8C768),
-              size: 17,
-            ),
-            const SizedBox(height: 7),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withOpacity(.72),
-                fontSize: 8.7,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget _summary(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(.10),
+        borderRadius: BorderRadius.circular(14)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        FittedBox(fit: BoxFit.scaleDown, child: Text(value, style: const TextStyle(
+          color: Colors.white, fontSize: 25, height: 1.05, fontWeight: FontWeight.w800))),
+        const SizedBox(height: 6),
+        Text(label, style: const TextStyle(color: Color(0xFFE1EEE4),
+          fontSize: 12, height: 1.3, fontWeight: FontWeight.w600)),
+      ]),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final statusText = hasUnavailableSources
-        ? 'PARTIAL DATA'
-        : urgentCount == 0
-            ? 'OPERATIONS CLEAR'
-            : '$urgentCount NEED ATTENTION';
-
-    if (!kIsWeb) {
-      return Container(
-        padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFEFB),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: const Color(0xFFE0E6DE)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF3E7),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Image.asset(
-                    'lib/assets/images/logo.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.dashboard_outlined,
-                      color: FarmColors.green,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 11),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'STAFF OPERATIONS',
-                        style: TextStyle(
-                          color: FarmColors.green,
-                          fontSize: 8.4,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: .8,
-                        ),
-                      ),
-                      SizedBox(height: 3),
-                      Text(
-                        'Run HPJ today',
-                        style: TextStyle(
-                          color: FarmColors.ink,
-                          fontSize: 18,
-                          height: 1,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: urgentCount == 0 && !hasUnavailableSources
-                        ? const Color(0xFFEAF4E8)
-                        : const Color(0xFFFFF7E8),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: TextStyle(
-                      color: urgentCount == 0 && !hasUnavailableSources
-                          ? FarmColors.green
-                          : FarmColors.warning,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _HpjAdminMobileMetric(
-                  value: '$urgentCount',
-                  label: 'Attention',
-                  warning: urgentCount > 0,
-                ),
-                const SizedBox(width: 7),
-                _HpjAdminMobileMetric(
-                  value: '$collectionsToday',
-                  label: 'Collections',
-                ),
-                const SizedBox(width: 7),
-                _HpjAdminMobileMetric(
-                  value: '$readyToMove',
-                  label: 'Ready',
-                ),
-                const SizedBox(width: 7),
-                _HpjAdminMobileMetric(
-                  value: '$wholesalePending',
-                  label: 'Business',
-                  warning: wholesalePending > 0,
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
-
+    final status = hasUnavailableSources ? 'Some counts unavailable'
+        : urgentCount == 0 ? 'No queued reviews or blockers' : '$urgentCount queue items';
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FarmColors.deepGreen,
-            FarmColors.green,
-            Color(0xFF4E8157),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: FarmColors.deepGreen.withOpacity(.14),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
+      decoration: BoxDecoration(color: FarmColors.deepGreen,
+        borderRadius: BorderRadius.circular(22)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 44, height: 44, padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(color: Colors.white,
+              borderRadius: BorderRadius.circular(13)),
+            child: Image.asset('lib/assets/images/logo.png', fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.eco_rounded, color: FarmColors.primary))),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('HPJ ADMIN', style: TextStyle(color: Color(0xFFE1EEE4),
+              fontSize: 11, letterSpacing: .8, fontWeight: FontWeight.w700)),
+            SizedBox(height: 3),
+            Text('Today', style: TextStyle(color: Colors.white, fontSize: 25,
+              height: 1.15, fontWeight: FontWeight.w800)),
+          ])),
+          IconButton(tooltip: 'Refresh Today', onPressed: onRefresh,
+            icon: refreshing
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.refresh_rounded, color: Colors.white)),
+        ]),
+        const SizedBox(height: 14),
+        Text(MaterialLocalizations.of(context).formatFullDate(DateTime.now()),
+          style: const TextStyle(color: Color(0xFFE1EEE4), fontSize: 12.5, height: 1.4)),
+        const SizedBox(height: 8),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: Colors.white.withOpacity(.12),
+            borderRadius: BorderRadius.circular(10)),
+          child: Text(status, style: const TextStyle(color: Colors.white,
+            fontSize: 12, height: 1.3, fontWeight: FontWeight.w700))),
+        const SizedBox(height: 14),
+        LayoutBuilder(builder: (context, constraints) {
+          const gap = 8.0;
+          final columns = constraints.maxWidth >= 260 && MediaQuery.textScaleFactorOf(context) <= 1.25 ? 3 : 1;
+          final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+          String value(int count) => hasUnavailableSources ? '—' : '$count';
+          return Wrap(spacing: gap, runSpacing: gap, children: [
+            SizedBox(width: width, child: _summary('Queued work', value(urgentCount))),
+            SizedBox(width: width, child: _summary('Collections', value(collectionsToday))),
+            SizedBox(width: width, child: _summary('Ready to move', value(readyToMove))),
+          ]);
+        }),
+        const SizedBox(height: 12),
+        Text(refreshing ? 'Refreshing counts…' : updatedAt == null ? 'Latest available counts'
+            : 'Last checked ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(updatedAt!))}',
+          style: const TextStyle(color: Color(0xFFE1EEE4), fontSize: 12, height: 1.4)),
+        if (urgentCount > 0) ...[
+          const SizedBox(height: 4),
+          const Text('An order may appear in more than one review queue.',
+            style: TextStyle(color: Color(0xFFE1EEE4), fontSize: 11.5, height: 1.35)),
         ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.14),
-                  borderRadius: BorderRadius.circular(17),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(.20),
-                  ),
-                ),
-                child: Image.asset(
-                  'lib/assets/images/logo.png',
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.dashboard_outlined,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'OPERATIONS COMMAND',
-                      style: TextStyle(
-                        color: Color(0xFFCFE0CF),
-                        fontSize: 10.3,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: .9,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Run HPJ today',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        height: 1.05,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.11),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(.15),
-                  ),
-                ),
-                child: Text(
-                  statusText,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 8.1,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .35,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 10),
-
-          Text(
-            'Move demand through supply, collection, receiving, fulfilment and dispatch without losing sight of urgent orders.',
-            style: TextStyle(
-              color: Colors.white.withOpacity(.84),
-              fontSize: 10.8,
-              height: 1.42,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          const SizedBox(height: 15),
-
-          Row(
-            children: [
-              _metric(
-                icon: urgentCount > 0
-                    ? Icons.warning_amber_rounded
-                    : Icons.check_circle_outline_rounded,
-                value: hasUnavailableSources
-                    ? '—'
-                    : '$urgentCount',
-                label: 'Needs attention',
-              ),
-              const SizedBox(width: 8),
-              _metric(
-                icon: Icons.local_shipping_outlined,
-                value: '$collectionsToday',
-                label: 'Collections today',
-              ),
-              const SizedBox(width: 8),
-              _metric(
-                icon: Icons.inventory_2_outlined,
-                value: '$readyToMove',
-                label: 'Ready to move',
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 9),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 11,
-              vertical: 9,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.10),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: Colors.white.withOpacity(.14),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.storefront_outlined,
-                  color: Color(0xFFE8C768),
-                  size: 17,
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    '$wholesalePending new wholesale order${wholesalePending == 1 ? '' : 's'} currently waiting for review',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(.83),
-                      fontSize: 10.3,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      ]),
     );
   }
 }
@@ -7159,93 +6384,34 @@ class _AdminTodayQuickActionTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-
-  const _AdminTodayQuickActionTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+  const _AdminTodayQuickActionTile({required this.icon, required this.title,
+    required this.subtitle, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: FarmColors.card,
-      borderRadius: BorderRadius.circular(19),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(19),
-        hoverColor: HpjWebUi.isDesktop(context)
-            ? HpjWebUi.hover
-            : Colors.transparent,
-        mouseCursor: kIsWeb
-            ? SystemMouseCursors.click
-            : MouseCursor.defer,
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(13),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(19),
-            border: Border.all(
-              color: FarmColors.line,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 39,
-                height: 39,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: FarmColors.primarySoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: FarmColors.deepGreen,
-                  size: 19,
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.ink,
-                        fontSize: 11.8,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: FarmColors.mutedText,
-                        fontSize: 8.9,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                Icons.arrow_forward_rounded,
-                color: FarmColors.mutedText,
-                size: 18,
-              ),
-            ],
-          ),
+    return Material(color: FarmColors.card, borderRadius: BorderRadius.circular(16),
+      child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16),
+        child: Container(padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: FarmColors.line)),
+          child: Row(children: [
+            Container(width: 38, height: 38, alignment: Alignment.center,
+              decoration: BoxDecoration(color: FarmColors.primarySoft,
+                borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, color: FarmColors.primary, size: 20)),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: const TextStyle(color: FarmColors.ink,
+                fontSize: 14, height: 1.3, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(subtitle, style: const TextStyle(color: FarmColors.mutedText,
+                fontSize: 12, height: 1.4)),
+            ])),
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right_rounded, color: FarmColors.mutedText, size: 20),
+          ]),
         ),
-      ),
-    );
+      ));
   }
 }
 
@@ -7255,69 +6421,32 @@ class _AdminTodayMetricCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color accent;
-
-  const _AdminTodayMetricCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.accent = FarmColors.primary,
-  });
+  final VoidCallback? onTap;
+  const _AdminTodayMetricCard({required this.label, required this.value,
+    required this.icon, this.accent = FarmColors.primary, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return FarmCard(
-      padding: const EdgeInsets.all(13),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: accent.withOpacity(.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              icon,
-              color: accent,
-              size: 19,
-            ),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.1,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: FarmColors.mutedText,
-            size: 17,
-          ),
-        ],
-      ),
-    );
+    return Material(color: FarmColors.card, borderRadius: BorderRadius.circular(16),
+      child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16),
+        child: Container(padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: FarmColors.line)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(icon, color: accent, size: 22),
+              const Spacer(),
+              const Icon(Icons.chevron_right_rounded, color: FarmColors.mutedText, size: 18),
+            ]),
+            const SizedBox(height: 12),
+            Text(value, style: const TextStyle(color: FarmColors.ink,
+              fontSize: 24, height: 1.1, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 5),
+            Text(label, style: const TextStyle(color: FarmColors.mutedText,
+              fontSize: 12.5, height: 1.4, fontWeight: FontWeight.w600)),
+          ]),
+        ),
+      ));
   }
 }
 
@@ -26472,6 +25601,7 @@ class _AdminFloatingMessagesButtonState
 
 String _adminDesktopGroupForLabel(String value) {
   switch (value.trim()) {
+    case 'Today':
     case 'Dashboard':
     case 'Pilot':
     case 'Orders':
@@ -26501,12 +25631,15 @@ String _adminDesktopGroupForLabel(String value) {
     case 'Hero':
     case 'Welcome':
     case 'Meals':
+    case 'Marketing':
     case 'Feed':
     case 'Sponsors':
     case 'Reels':
     case 'Tutorials':
       return 'Content';
 
+    case 'Managed Accounts':
+    case 'Inbox':
     case 'Company':
     case 'Launch':
     case 'Messages':
@@ -26545,7 +25678,18 @@ class _AdminDesktopSectionRail extends StatelessWidget {
     final navigationItems = <Widget>[];
     String? previousGroup;
 
-    for (var index = 0; index < tabs.length; index++) {
+    const groupOrder = [
+      'Operations', 'Marketplace & Partners', 'Finance & Insights',
+      'Content', 'Management', 'Other',
+    ];
+    final groupedIndices = List<int>.generate(tabs.length, (index) => index)
+      ..sort((a, b) {
+        final first = groupOrder.indexOf(_adminDesktopGroupForLabel(tabs[a].tab.text ?? ''));
+        final second = groupOrder.indexOf(_adminDesktopGroupForLabel(tabs[b].tab.text ?? ''));
+        final byGroup = first.compareTo(second);
+        return byGroup != 0 ? byGroup : a.compareTo(b);
+      });
+    for (final index in groupedIndices) {
       final tab = tabs[index].tab;
       final rawLabel = (tab.text ?? 'Section').trim();
       final visibleLabel = _adminDesktopVisibleLabel(rawLabel);
@@ -27576,6 +26720,7 @@ class _AdminMoreScreen extends StatelessWidget {
       case 'Sponsors':
       case 'Reels':
         return 'Content & Growth';
+      case 'Pilot':
       case 'Warehouse':
       case 'Drivers':
       case 'Payouts':
@@ -27589,6 +26734,8 @@ class _AdminMoreScreen extends StatelessWidget {
         return 'Insights';
       case 'Inbox':
       case 'Messages':
+      case 'Launch':
+      case 'Managed Accounts':
       case 'Company':
       case 'Staff':
         return 'Management';
@@ -27643,7 +26790,7 @@ class _AdminMoreScreen extends StatelessWidget {
       case 'Content & Growth':
         return 'Feed, reels, sponsors and sharing';
       case 'Operations & Finance':
-        return 'Warehouse, delivery and payouts';
+        return 'Daily operations, warehouse, delivery and payouts';
       case 'Insights':
         return 'Measure, decide, prove and export';
       case 'Management':
@@ -52635,6 +51782,9 @@ class HpjPartnerOnboardingLead {
   final String status;
   final String notes;
   final DateTime? followUpDate;
+  final String assignedOnboarderId;
+  final String assignedOnboarderEmail;
+  final String assignedOnboarderName;
   final String createdByEmail;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -52652,6 +51802,9 @@ class HpjPartnerOnboardingLead {
     required this.status,
     required this.notes,
     this.followUpDate,
+    this.assignedOnboarderId = '',
+    this.assignedOnboarderEmail = '',
+    this.assignedOnboarderName = '',
     required this.createdByEmail,
     this.createdAt,
     this.updatedAt,
@@ -52680,6 +51833,12 @@ class HpjPartnerOnboardingLead {
           .toLowerCase(),
       notes: (data['notes'] ?? '').toString().trim(),
       followUpDate: parseProductDate(data['follow_up_date']),
+      assignedOnboarderId:
+          (data['assigned_onboarder_id'] ?? '').toString().trim(),
+      assignedOnboarderEmail:
+          (data['assigned_onboarder_email'] ?? '').toString().trim().toLowerCase(),
+      assignedOnboarderName:
+          (data['assigned_onboarder_name'] ?? '').toString().trim(),
       createdByEmail:
           (data['created_by_email'] ?? '').toString().trim().toLowerCase(),
       createdAt: parseProductDate(data['created_at']),
@@ -52699,6 +51858,9 @@ class HpjPartnerOnboardingLead {
     String? status,
     String? notes,
     DateTime? followUpDate,
+    String? assignedOnboarderId,
+    String? assignedOnboarderEmail,
+    String? assignedOnboarderName,
     bool clearFollowUpDate = false,
   }) {
     return HpjPartnerOnboardingLead(
@@ -52715,6 +51877,11 @@ class HpjPartnerOnboardingLead {
       notes: notes ?? this.notes,
       followUpDate:
           clearFollowUpDate ? null : (followUpDate ?? this.followUpDate),
+      assignedOnboarderId: assignedOnboarderId ?? this.assignedOnboarderId,
+      assignedOnboarderEmail:
+          assignedOnboarderEmail ?? this.assignedOnboarderEmail,
+      assignedOnboarderName:
+          assignedOnboarderName ?? this.assignedOnboarderName,
       createdByEmail: createdByEmail,
       createdAt: createdAt,
       updatedAt: updatedAt,
@@ -52749,7 +51916,7 @@ Future<List<HpjPartnerOnboardingLead>> fetchHpjPartnerOnboardingLeads() async {
     final response = await supabase
         .from('hpj_partner_onboarding_leads')
         .select(
-          'id, partner_type, contact_name, partner_name, phone, email, parish, community, main_need_or_produce, status, notes, follow_up_date, created_by_email, created_at, updated_at',
+          'id, partner_type, contact_name, partner_name, phone, email, parish, community, main_need_or_produce, status, notes, follow_up_date, assigned_onboarder_id, assigned_onboarder_email, assigned_onboarder_name, created_by_email, created_at, updated_at',
         )
         .order('updated_at', ascending: false)
         .limit(500);
@@ -52766,6 +51933,60 @@ Future<List<HpjPartnerOnboardingLead>> fetchHpjPartnerOnboardingLeads() async {
       'Could not load Partner Onboarding. Run the HPJ Partner Onboarding SQL, then retry.',
     );
   }
+}
+
+
+class HpjOnboardingAgent {
+  final String userId;
+  final String email;
+  final String name;
+
+  const HpjOnboardingAgent({
+    required this.userId,
+    required this.email,
+    required this.name,
+  });
+
+  String get label => name.trim().isNotEmpty ? name.trim() : email.trim();
+}
+
+Future<List<HpjOnboardingAgent>> fetchHpjActiveOnboardingAgents() async {
+  await _requirePartnerOnboardingAccess();
+  final response = await supabase
+      .from('staff_users')
+      .select('user_id, email, full_name, role, is_active')
+      .eq('is_active', true)
+      .eq('role', 'onboarding')
+      .order('full_name');
+  return (response as List)
+      .map((item) {
+        final data = Map<String, dynamic>.from(item as Map);
+        return HpjOnboardingAgent(
+          userId: (data['user_id'] ?? '').toString().trim(),
+          email: (data['email'] ?? '').toString().trim().toLowerCase(),
+          name: (data['full_name'] ?? '').toString().trim(),
+        );
+      })
+      .where((agent) => agent.userId.isNotEmpty)
+      .toList(growable: false);
+}
+
+Future<void> assignHpjFarmerToOnboarder({
+  required String leadId,
+  HpjOnboardingAgent? agent,
+}) async {
+  await _requirePartnerOnboardingAccess();
+  final role = normalizeStaffRole(await fetchCurrentStaffRole());
+  if (role != 'owner' && role != 'manager') {
+    throw Exception('Only the Owner or Manager can assign/reassign farmers.');
+  }
+  await supabase.from('hpj_partner_onboarding_leads').update({
+    'assigned_onboarder_id': agent?.userId,
+    'assigned_onboarder_email': agent?.email ?? '',
+    'assigned_onboarder_name': agent?.name ?? '',
+    'assigned_at': agent == null ? null : DateTime.now().toIso8601String(),
+    'updated_at': DateTime.now().toIso8601String(),
+  }).eq('id', leadId.trim());
 }
 
 Future<void> saveHpjPartnerOnboardingLead({
@@ -52840,6 +52061,7 @@ Future<void> saveHpjPartnerOnboardingLead({
   }
 }
 
+
 String hpjPartnerSignupMessage({
   required String partnerType,
   String contactName = '',
@@ -52876,6 +52098,67 @@ String _hpjWhatsAppDigits(String value) {
   return digits;
 }
 
+
+String hpjFarmerSupportMessage({
+  required HpjPartnerOnboardingLead farmer,
+  required String messageType,
+}) {
+  final name = farmer.contactName.trim().isEmpty
+      ? (farmer.partnerName.trim().isEmpty ? 'Farmer' : farmer.partnerName.trim())
+      : farmer.contactName.trim();
+  final produce = farmer.mainNeedOrProduce.trim();
+  final produceText = produce.isEmpty ? 'your produce' : produce;
+
+  switch (messageType) {
+    case 'availability':
+      return 'Hello $name, this is The Harvest Place Ja (HPJ). '
+          'We are checking your produce availability. You currently told us you have $produceText. '
+          'Please reply: 1 - Still available, 2 - Quantity changed, 3 - Sold out, or 4 - I have new produce. '
+          'You can also simply type what you have available.';
+    case 'quantity':
+      return 'Hello $name, HPJ here. About how much $produceText do you still have available to sell? '
+          'You can reply with a simple amount, for example: 20 lb.';
+    case 'new_produce':
+      return 'Hello $name, HPJ here. Do you have any new produce ready or coming soon? '
+          'Just reply with the produce name, amount and when it will be ready.';
+    case 'harvest':
+      return 'Hello $name, HPJ here. We are checking your upcoming harvest. '
+          'Is $produceText ready now, or when do you expect it to be ready?';
+    case 'price':
+      return 'Hello $name, HPJ here. We are checking that your produce information is still correct. '
+          'Has your selling price for $produceText changed? If yes, please reply with the new price and unit.';
+    case 'collection':
+      return 'Hello $name, HPJ here. We are confirming your produce for collection. '
+          'Please reply YES if $produceText will be ready for the agreed collection, or tell us what has changed.';
+    case 'buyer_demand':
+      return 'Hello $name, HPJ here. Buyers are looking for produce. '
+          'Please tell us how much $produceText you can supply now or soon.';
+    case 'order_received':
+      return 'Hello $name, HPJ here. Good news — HPJ has an order/request involving your produce. '
+          'Please confirm what quantity of $produceText you can supply and when it will be ready. '
+          'An HPJ team member can assist you if you prefer to reply here.';
+    case 'collection_reminder':
+      return 'Hello $name, HPJ here. This is a reminder about an upcoming produce collection. '
+          'Please reply YES if $produceText will be ready, or tell us immediately if the quantity, time or availability has changed.';
+    case 'payment':
+      return 'Hello $name, HPJ here. We are contacting you about your farmer payment/payout. '
+          'For your security, HPJ will not ask you to send passwords, PINs or verification codes by message. '
+          'Please reply if you need help confirming your payment status.';
+    case 'quality_issue':
+      return 'Hello $name, HPJ here. We need to speak with you about the quality/condition of produce received from your farm. '
+          'Please reply to this message or contact the HPJ team so we can review it with you.';
+    case 'inactive':
+      return 'Hello $name, HPJ here. We have not received a recent produce update from you. '
+          'Do you currently have anything available to sell, or anything coming soon? '
+          'You can simply reply with the produce, amount and expected ready date.';
+    case 'general':
+    default:
+      return 'Hello $name, this is The Harvest Place Ja (HPJ). '
+          'We are checking in with you. Please reply with any update about your produce, availability or upcoming harvest. '
+          'If using the app is difficult, you can simply reply here and the HPJ team can assist you.';
+  }
+}
+
 Future<bool> openHpjPartnerWhatsAppInvite({
   required String partnerType,
   required String phone,
@@ -52892,6 +52175,138 @@ Future<bool> openHpjPartnerWhatsAppInvite({
       : 'https://wa.me/$digits?text=$encoded';
 
   return openExternalShareUrl(url);
+}
+
+
+class HpjFarmerCommunicationLog {
+  final String id;
+  final String leadId;
+  final String messageType;
+  final String channel;
+  final String direction;
+  final String messageText;
+  final String status;
+  final String responseText;
+  final DateTime? followUpAt;
+  final String createdByEmail;
+  final DateTime? createdAt;
+  final DateTime? respondedAt;
+  final DateTime? completedAt;
+
+  const HpjFarmerCommunicationLog({
+    required this.id,
+    required this.leadId,
+    required this.messageType,
+    required this.channel,
+    required this.direction,
+    required this.messageText,
+    required this.status,
+    required this.responseText,
+    this.followUpAt,
+    required this.createdByEmail,
+    this.createdAt,
+    this.respondedAt,
+    this.completedAt,
+  });
+
+  factory HpjFarmerCommunicationLog.fromSupabase(Map<String, dynamic> data) {
+    return HpjFarmerCommunicationLog(
+      id: (data['id'] ?? '').toString(),
+      leadId: (data['lead_id'] ?? '').toString(),
+      messageType: (data['message_type'] ?? 'general').toString(),
+      channel: (data['channel'] ?? 'whatsapp').toString(),
+      direction: (data['direction'] ?? 'outbound').toString(),
+      messageText: (data['message_text'] ?? '').toString(),
+      status: (data['status'] ?? 'sent').toString(),
+      responseText: (data['response_text'] ?? '').toString(),
+      followUpAt: parseProductDate(data['follow_up_at']),
+      createdByEmail: (data['created_by_email'] ?? '').toString(),
+      createdAt: parseProductDate(data['created_at']),
+      respondedAt: parseProductDate(data['responded_at']),
+      completedAt: parseProductDate(data['completed_at']),
+    );
+  }
+}
+
+Future<String?> hpjRecordFarmerCommunication({
+  required HpjPartnerOnboardingLead farmer,
+  required String messageType,
+  required String messageText,
+  String channel = 'whatsapp',
+  String status = 'waiting',
+  DateTime? followUpAt,
+}) async {
+  await _requirePartnerOnboardingAccess();
+  try {
+    final user = supabase.auth.currentUser;
+    final email = user?.email?.trim().toLowerCase() ?? '';
+    final response = await supabase
+        .from('hpj_farmer_communications')
+        .insert({
+          'lead_id': farmer.id,
+          'message_type': messageType,
+          'channel': channel,
+          'direction': 'outbound',
+          'message_text': messageText,
+          'status': status,
+          'follow_up_at': followUpAt?.toIso8601String(),
+          'created_by': user?.id,
+          'created_by_email': email,
+        })
+        .select('id')
+        .maybeSingle();
+    return response == null ? null : (response['id'] ?? '').toString();
+  } catch (error) {
+    farmDebugLog('Farmer communication history unavailable: $error');
+    return null; // Phase 1 WhatsApp remains usable even before SQL is installed.
+  }
+}
+
+Future<List<HpjFarmerCommunicationLog>> fetchHpjFarmerCommunicationHistory(
+  String leadId,
+) async {
+  await _requirePartnerOnboardingAccess();
+  if (leadId.trim().isEmpty) return const <HpjFarmerCommunicationLog>[];
+  try {
+    final response = await supabase
+        .from('hpj_farmer_communications')
+        .select(
+          'id, lead_id, message_type, channel, direction, message_text, status, response_text, follow_up_at, created_by_email, created_at, responded_at, completed_at',
+        )
+        .eq('lead_id', leadId.trim())
+        .order('created_at', ascending: false)
+        .limit(100);
+    return (response as List)
+        .map((item) => HpjFarmerCommunicationLog.fromSupabase(
+              Map<String, dynamic>.from(item as Map),
+            ))
+        .toList(growable: false);
+  } catch (_) {
+    return const <HpjFarmerCommunicationLog>[];
+  }
+}
+
+Future<void> hpjUpdateFarmerCommunication({
+  required String communicationId,
+  required String status,
+  String responseText = '',
+  DateTime? followUpAt,
+}) async {
+  await _requirePartnerOnboardingAccess();
+  final cleanStatus = status.trim().toLowerCase();
+  if (!const {'sent', 'waiting', 'responded', 'follow_up', 'completed'}
+      .contains(cleanStatus)) {
+    throw Exception('Choose a valid communication status.');
+  }
+  final now = DateTime.now().toIso8601String();
+  await supabase.from('hpj_farmer_communications').update({
+    'status': cleanStatus,
+    'response_text': responseText.trim(),
+    'follow_up_at': followUpAt?.toIso8601String(),
+    'responded_at': cleanStatus == 'responded' ? now : null,
+    'completed_at': cleanStatus == 'completed' ? now : null,
+    'updated_at': now,
+  }).eq('id', communicationId.trim());
 }
 
 class AdminPartnerOnboardingTab extends StatefulWidget {
@@ -52915,6 +52330,9 @@ class _AdminPartnerOnboardingTabState
   late Future<List<HpjPartnerOnboardingLead>> _future;
   final TextEditingController _searchController = TextEditingController();
   String _filter = 'all';
+  bool _myFarmersOnly = false;
+  String _currentStaffRole = '';
+  String _currentUserId = '';
   late String _farmerQuickInviteMessage;
   late String _businessQuickInviteMessage;
 
@@ -52924,6 +52342,83 @@ class _AdminPartnerOnboardingTabState
     _farmerQuickInviteMessage = hpjPartnerSignupMessage(partnerType: 'farmer');
     _businessQuickInviteMessage = hpjPartnerSignupMessage(partnerType: 'business');
     _future = fetchHpjPartnerOnboardingLeads();
+    _loadAssignmentIdentity();
+  }
+
+  Future<void> _loadAssignmentIdentity() async {
+    try {
+      final role = normalizeStaffRole(await fetchCurrentStaffRole());
+      final userId = supabase.auth.currentUser?.id ?? '';
+      if (!mounted) return;
+      setState(() {
+        _currentStaffRole = role;
+        _currentUserId = userId;
+        if (role == 'onboarding') _myFarmersOnly = true;
+      });
+    } catch (_) {}
+  }
+
+  bool get _canAssignFarmers =>
+      _currentStaffRole == 'owner' || _currentStaffRole == 'manager';
+
+  Future<void> _assignFarmer(HpjPartnerOnboardingLead lead) async {
+    if (!_canAssignFarmers) return;
+    final agents = await fetchHpjActiveOnboardingAgents();
+    if (!mounted) return;
+    final chosen = await showModalBottomSheet<HpjOnboardingAgent?>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+          children: [
+            const Text(
+              'Assign Onboarding Agent',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Choose the primary HPJ contact for ${lead.displayName}.',
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (final agent in agents)
+              ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.support_agent_rounded),
+                ),
+                title: Text(agent.label),
+                subtitle: agent.name.trim().isNotEmpty ? Text(agent.email) : null,
+                trailing: lead.assignedOnboarderId == agent.userId
+                    ? const Icon(Icons.check_circle_rounded, color: FarmColors.green)
+                    : null,
+                onTap: () => Navigator.pop(sheetContext, agent),
+              ),
+            if (lead.assignedOnboarderId.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.person_off_outlined),
+                title: const Text('Remove assignment'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  assignHpjFarmerToOnboarder(leadId: lead.id).then((_) => _reload());
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null) return;
+    await assignHpjFarmerToOnboarder(leadId: lead.id, agent: chosen);
+    await _reload();
   }
 
   @override
@@ -53145,6 +52640,1491 @@ class _AdminPartnerOnboardingTabState
     }
   }
 
+
+  Future<void> _sendFarmerSupportMessage(
+    HpjPartnerOnboardingLead farmer,
+    String messageType,
+  ) async {
+    final message = hpjFarmerSupportMessage(
+      farmer: farmer,
+      messageType: messageType,
+    );
+
+    // PHASE 3 — send directly through the secured Supabase Edge Function.
+    // Meta credentials remain server-side; they are never stored in Flutter.
+    try {
+      final response = await supabase.functions.invoke(
+        'whatsapp-send',
+        body: <String, dynamic>{
+          'lead_id': farmer.id,
+          'message_type': messageType,
+          'message_text': message,
+        },
+      );
+
+      if (response.status >= 200 && response.status < 300) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'WhatsApp message sent to ${farmer.displayName} through HPJ.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      throw Exception(
+        'WhatsApp service returned status ${response.status}: ${response.data}',
+      );
+    } catch (error) {
+      farmDebugLog(
+        'Direct HPJ WhatsApp send unavailable; using WhatsApp fallback: $error',
+      );
+    }
+
+    // Safe compatibility fallback while Meta production setup is being tested.
+    // Only the fallback is recorded here because whatsapp-send records successful
+    // API sends server-side, preventing duplicate communication-history rows.
+    final digits = _hpjWhatsAppDigits(farmer.phone);
+    final encoded = Uri.encodeComponent(message);
+    final url = digits.isEmpty
+        ? 'https://wa.me/?text=$encoded'
+        : 'https://wa.me/$digits?text=$encoded';
+
+    await hpjRecordFarmerCommunication(
+      farmer: farmer,
+      messageType: messageType,
+      messageText: message,
+      channel: 'whatsapp',
+      status: 'waiting',
+      followUpAt: DateTime.now().add(const Duration(days: 2)),
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Direct WhatsApp API is not ready yet. Opening WhatsApp as a backup.',
+        ),
+      ),
+    );
+
+    final opened = await openExternalShareUrl(url);
+    if (!mounted) return;
+    if (!opened) {
+      await _copyText(message, 'Farmer check-in message');
+    }
+  }
+
+  Future<void> _sendFarmerQuickAction(
+    HpjPartnerOnboardingLead farmer,
+    String action,
+  ) async {
+    final name = farmer.contactName.trim().isEmpty
+        ? farmer.displayName
+        : farmer.contactName.trim();
+
+    late final String message;
+    late final String messageType;
+
+    switch (action) {
+      case 'availability':
+        messageType = 'quick_availability';
+        message =
+            'Hello $name, HPJ is checking your current produce availability. '
+            'Please reply with one option: AVAILABLE, NOT AVAILABLE, or NEED HELP. '
+            'If available, also tell us the produce, quantity, unit and ready date.';
+        break;
+      case 'collection':
+        messageType = 'quick_collection';
+        message =
+            'Hello $name, HPJ is checking collection readiness. '
+            'Please reply with one option: READY FOR COLLECTION, NOT READY, or NEED HELP. '
+            'If ready, please confirm the produce and quantity.';
+        break;
+      default:
+        messageType = 'quick_help';
+        message =
+            'Hello $name, this is HPJ Farmer Support. '
+            'Please reply with one option: SUPPLY UPDATE, COLLECTION HELP, or NEED HELP. '
+            'You can also type your update in your own words.';
+    }
+
+    try {
+      final response = await supabase.functions.invoke(
+        'whatsapp-send',
+        body: <String, dynamic>{
+          'lead_id': farmer.id,
+          'message_type': messageType,
+          'message_text': message,
+          'interactive_buttons': action == 'availability'
+              ? <Map<String, String>>[
+                  {'id': 'available', 'title': 'Available'},
+                  {'id': 'not_available', 'title': 'Not Available'},
+                  {'id': 'need_help', 'title': 'Need Help'},
+                ]
+              : action == 'collection'
+                  ? <Map<String, String>>[
+                      {'id': 'ready_collection', 'title': 'Ready Collection'},
+                      {'id': 'not_ready', 'title': 'Not Ready'},
+                      {'id': 'need_help', 'title': 'Need Help'},
+                    ]
+                  : <Map<String, String>>[
+                      {'id': 'supply_update', 'title': 'Supply Update'},
+                      {'id': 'collection_help', 'title': 'Collection Help'},
+                      {'id': 'need_help', 'title': 'Need Help'},
+                    ],
+        },
+      );
+      if (response.status >= 200 && response.status < 300) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Quick WhatsApp check sent to ${farmer.displayName}.')),
+        );
+        return;
+      }
+      throw Exception('WhatsApp service returned ${response.status}: ${response.data}');
+    } catch (error) {
+      farmDebugLog('HPJ quick WhatsApp action unavailable: $error');
+    }
+
+    final digits = _hpjWhatsAppDigits(farmer.phone);
+    final encoded = Uri.encodeComponent(message);
+    final opened = await openExternalShareUrl(
+      digits.isEmpty
+          ? 'https://wa.me/?text=$encoded'
+          : 'https://wa.me/$digits?text=$encoded',
+    );
+    if (!opened && mounted) {
+      await _copyText(message, 'HPJ quick farmer message');
+    }
+  }
+
+  Future<void> _showFarmerQuickActions(
+    HpjPartnerOnboardingLead farmer,
+  ) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'WhatsApp Quick Actions',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              'Send ${farmer.displayName} a short, easy-to-answer HPJ message.',
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.inventory_2_outlined, color: FarmColors.primary),
+              title: const Text('Availability Check',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: const Text('AVAILABLE • NOT AVAILABLE • NEED HELP'),
+              onTap: () => Navigator.pop(sheetContext, 'availability'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.local_shipping_outlined, color: FarmColors.primary),
+              title: const Text('Collection Readiness',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: const Text('READY FOR COLLECTION • NOT READY • NEED HELP'),
+              onTap: () => Navigator.pop(sheetContext, 'collection'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.support_agent_rounded, color: FarmColors.primary),
+              title: const Text('Farmer Support',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: const Text('SUPPLY UPDATE • COLLECTION HELP • NEED HELP'),
+              onTap: () => Navigator.pop(sheetContext, 'help'),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'HPJ records the farmer reply for staff review. A quick reply never '
+                'changes supply, price, collection, inventory or payout automatically.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (action == null || !mounted) return;
+    await _sendFarmerQuickAction(farmer, action);
+  }
+
+  String _hpjFarmerReplyIntent(String raw) {
+    final value = raw.trim().toLowerCase();
+    if (value.contains('not available')) return 'not_available';
+    if (value.contains('ready for collection') ||
+        value.contains('ready collection')) return 'ready_collection';
+    if (value.contains('not ready')) return 'not_ready';
+    if (value.contains('collection help')) return 'collection_help';
+    if (value.contains('supply update')) return 'supply_update';
+    if (value.contains('need help') || value == 'help') return 'need_help';
+    if (value == 'available' || value.startsWith('available ')) {
+      return 'available';
+    }
+    return 'free_text';
+  }
+
+  String _hpjFarmerOperationalQueue(String raw) {
+    switch (_hpjFarmerReplyIntent(raw)) {
+      case 'available':
+      case 'supply_update':
+        return 'Procurement';
+      case 'ready_collection':
+        return 'Collection Planning';
+      case 'collection_help':
+        return 'Collection Support';
+      case 'need_help':
+        return 'Onboarding Support';
+      case 'not_available':
+      case 'not_ready':
+        return 'Follow-up';
+      default:
+        return 'Review';
+    }
+  }
+
+  int _hpjFarmerOperationalPriority(String raw) {
+    switch (_hpjFarmerReplyIntent(raw)) {
+      case 'ready_collection':
+      case 'collection_help':
+      case 'need_help':
+        return 1;
+      case 'available':
+      case 'supply_update':
+      case 'not_ready':
+        return 2;
+      case 'not_available':
+        return 3;
+      default:
+        return 4;
+    }
+  }
+
+  String _hpjFarmerOperationalPriorityLabel(String raw) {
+    switch (_hpjFarmerOperationalPriority(raw)) {
+      case 1:
+        return 'Priority';
+      case 2:
+        return 'Action';
+      case 3:
+        return 'Follow-up';
+      default:
+        return 'Review';
+    }
+  }
+
+  String _hpjFarmerPaymentSupportMessage(
+    HpjPartnerOnboardingLead farmer,
+    String kind,
+  ) {
+    final name = farmer.contactName.trim().isEmpty
+        ? farmer.displayName
+        : farmer.contactName.trim();
+    switch (kind) {
+      case 'payment_status':
+        return 'Hello $name, this is HPJ Farmer Support. '
+            'We are checking your payment status. HPJ will only confirm payment '
+            'information from our official records. Please do not send passwords, '
+            'PINs or verification codes.';
+      case 'payment_ready':
+        return 'Hello $name, HPJ Farmer Support is following up regarding a payment. '
+            'Please wait for the official HPJ payment confirmation before treating '
+            'the payment as completed. HPJ will never ask for your password or PIN.';
+      default:
+        return 'Hello $name, this is HPJ Farmer Support. '
+            'If you have a question about a payment, reply here and a staff member '
+            'will review it against the official HPJ record.';
+    }
+  }
+
+  Future<void> _sendFarmerPaymentSupport(
+    HpjPartnerOnboardingLead farmer,
+    String kind,
+  ) async {
+    final message = _hpjFarmerPaymentSupportMessage(farmer, kind);
+    try {
+      final response = await supabase.functions.invoke(
+        'whatsapp-send',
+        body: <String, dynamic>{
+          'lead_id': farmer.id,
+          'message_type': 'payment_$kind',
+          'message_text': message,
+        },
+      );
+      if (response.status >= 200 && response.status < 300) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment support message sent to ${farmer.displayName}.')),
+        );
+        return;
+      }
+      throw Exception('WhatsApp returned ${response.status}: ${response.data}');
+    } catch (error) {
+      farmDebugLog('HPJ farmer payment support fallback: $error');
+    }
+
+    final digits = _hpjWhatsAppDigits(farmer.phone);
+    final encoded = Uri.encodeComponent(message);
+    final opened = await openExternalShareUrl(
+      digits.isEmpty
+          ? 'https://wa.me/?text=$encoded'
+          : 'https://wa.me/$digits?text=$encoded',
+    );
+    if (!opened && mounted) {
+      await _copyText(message, 'Farmer payment support message');
+    }
+  }
+
+  String _hpjFarmerOperationalNextAction(String raw) {
+    switch (_hpjFarmerReplyIntent(raw)) {
+      case 'available':
+      case 'supply_update':
+        return 'Review the farmer reply and create a confirmed supply update.';
+      case 'ready_collection':
+        return 'Verify produce, quantity, collection date and collection location.';
+      case 'collection_help':
+        return 'Contact the farmer and resolve the collection issue.';
+      case 'need_help':
+        return 'Onboarding agent should contact the farmer.';
+      case 'not_available':
+        return 'Record the response and schedule a later availability check.';
+      case 'not_ready':
+        return 'Confirm the revised ready date before changing collection plans.';
+      default:
+        return 'Review the farmer message before taking an operational action.';
+    }
+  }
+
+  String _hpjFarmerReplyIntentLabel(String raw) {
+    switch (_hpjFarmerReplyIntent(raw)) {
+      case 'available':
+        return 'Available';
+      case 'not_available':
+        return 'Not Available';
+      case 'ready_collection':
+        return 'Ready for Collection';
+      case 'not_ready':
+        return 'Not Ready';
+      case 'supply_update':
+        return 'Supply Update';
+      case 'collection_help':
+        return 'Collection Help';
+      case 'need_help':
+        return 'Needs Help';
+      default:
+        return 'Farmer Reply';
+    }
+  }
+
+  IconData _hpjFarmerReplyIntentIcon(String raw) {
+    switch (_hpjFarmerReplyIntent(raw)) {
+      case 'available':
+      case 'supply_update':
+        return Icons.inventory_2_outlined;
+      case 'ready_collection':
+        return Icons.local_shipping_outlined;
+      case 'not_available':
+      case 'not_ready':
+        return Icons.pause_circle_outline_rounded;
+      case 'collection_help':
+      case 'need_help':
+        return Icons.support_agent_rounded;
+      default:
+        return Icons.chat_bubble_outline_rounded;
+    }
+  }
+
+  Future<void> _showFarmerCommunicationHub(
+    HpjPartnerOnboardingLead farmer,
+  ) async {
+    const options = <MapEntry<String, String>>[
+      MapEntry('availability', 'Check produce availability'),
+      MapEntry('quantity', 'Check quantity remaining'),
+      MapEntry('new_produce', 'Ask about new produce'),
+      MapEntry('harvest', 'Check harvest readiness'),
+      MapEntry('buyer_demand', 'Share buyer demand'),
+      MapEntry('collection', 'Confirm collection readiness'),
+      MapEntry('price', 'Confirm price'),
+      MapEntry('order_received', 'Order / supply request'),
+      MapEntry('collection_reminder', 'Collection reminder'),
+      MapEntry('payment', 'Payment / payout communication'),
+      MapEntry('quality_issue', 'Quality issue follow-up'),
+      MapEntry('inactive', 'Inactive farmer / no recent update'),
+      MapEntry('general', 'General farmer check-in'),
+    ];
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Farmer Communication',
+              style: TextStyle(
+                color: FarmColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              'Send a simple HPJ message to ${farmer.displayName}. '
+              'The farmer can reply in ordinary language and an onboarding agent can update HPJ for them.',
+              style: const TextStyle(
+                color: FarmColors.mutedText,
+                fontSize: 11,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: FarmColors.primarySoft,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Text(
+                'Use these messages for assisted farmers who prefer WhatsApp or phone support. '
+                'For orders, collections and payments, staff should verify the actual HPJ record before sending.',
+                style: TextStyle(
+                  color: FarmColors.mutedText,
+                  fontSize: 10,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                _showFarmerQuickActions(farmer);
+              },
+              icon: const Icon(Icons.bolt_rounded),
+              label: const Text('WhatsApp Quick Actions'),
+            ),
+            const SizedBox(height: 10),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final option in options)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: FarmColors.primarySoft,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          color: FarmColors.primary,
+                          size: 19,
+                        ),
+                      ),
+                      title: Text(
+                        option.value,
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.pop(sheetContext, option.key),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+    await _sendFarmerSupportMessage(farmer, selected);
+  }
+
+
+  Map<String, String> _hpjSuggestFarmerReplyFields(String raw) {
+    final text = raw.trim();
+    final lower = text.toLowerCase();
+    String quantity = '';
+    String unit = '';
+    String crop = '';
+
+    final amount = RegExp(r'\b(\d+(?:\.\d+)?)\s*(boxes?|crates?|bags?|lbs?|pounds?|kg|kgs|kilograms?|heads?|bunches?|dozens?|trays?)?\b', caseSensitive: false).firstMatch(text);
+    if (amount != null) {
+      quantity = amount.group(1) ?? '';
+      unit = (amount.group(2) ?? '').trim();
+    }
+
+    const crops = <String>[
+      'tomato','tomatoes','cabbage','cucumber','cucumbers','carrot','carrots',
+      'sweet pepper','pepper','peppers','callaloo','lettuce','pumpkin','yam',
+      'sweet potato','cassava','dasheen','banana','bananas','plantain','plantains',
+      'pineapple','pineapples','watermelon','watermelons','okra','scallion','thyme'
+    ];
+    for (final item in crops) {
+      if (lower.contains(item)) { crop = item; break; }
+    }
+    if (crop == 'tomatoes') crop = 'Tomato';
+    else if (crop.isNotEmpty) crop = '${crop[0].toUpperCase()}${crop.substring(1)}';
+
+    String status = 'expected';
+    if (lower.contains('ready now') || lower.contains('available now') || lower.contains('harvested')) status = 'harvested';
+    else if (lower.contains('ready') || lower.contains('harvest ready')) status = 'harvest_ready';
+    else if (lower.contains('growing')) status = 'growing';
+    else if (lower.contains('planting') || lower.contains('plan to')) status = 'planning';
+
+    final missing = <String>[];
+    if (crop.isEmpty) missing.add('produce');
+    if (quantity.isEmpty) missing.add('quantity');
+    if (unit.isEmpty) missing.add('unit');
+    return <String,String>{
+      'crop': crop, 'quantity': quantity, 'unit': unit, 'status': status,
+      'missing': missing.join(', '),
+    };
+  }
+
+  Future<void> _askFarmerForMissingSupplyDetails({
+    required HpjPartnerOnboardingLead farmer,
+    required String missing,
+  }) async {
+    final details = missing.trim().isEmpty ? 'the produce, quantity, unit and ready date' : missing;
+    final message = 'Hello ${farmer.contactName.trim().isEmpty ? farmer.displayName : farmer.contactName.trim()}, thanks for the update. Before HPJ records the supply, please confirm $details. You can reply in one message, for example: 20 boxes of tomatoes ready Friday.';
+    try {
+      final response = await supabase.functions.invoke('whatsapp-send', body: <String,dynamic>{
+        'lead_id': farmer.id,
+        'message_type': 'supply_clarification',
+        'message_text': message,
+      });
+      if (response.status >= 200 && response.status < 300) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clarification sent to farmer through HPJ WhatsApp.')));
+        return;
+      }
+      throw Exception('WhatsApp service returned ${response.status}');
+    } catch (error) {
+      farmDebugLog('Supply clarification direct send unavailable: $error');
+      final digits = _hpjWhatsAppDigits(farmer.phone);
+      final encoded = Uri.encodeComponent(message);
+      final opened = await openExternalShareUrl(digits.isEmpty ? 'https://wa.me/?text=$encoded' : 'https://wa.me/$digits?text=$encoded');
+      if (!opened && mounted) await _copyText(message, 'Clarification message');
+    }
+  }
+
+  Future<void> _createSupplyFromFarmerReply({
+    required HpjPartnerOnboardingLead farmer,
+    required Map<String, dynamic> communication,
+  }) async {
+    final farmerReply = (communication['message_text'] ?? '').toString().trim();
+    final suggestion = _hpjSuggestFarmerReplyFields(farmerReply);
+    final cropController = TextEditingController(
+      text: suggestion['crop']!.isNotEmpty ? suggestion['crop']! : farmer.mainNeedOrProduce.trim(),
+    );
+    final quantityController = TextEditingController(text: suggestion['quantity']);
+    final unitController = TextEditingController(text: suggestion['unit']!.isNotEmpty ? suggestion['unit']! : 'lb');
+    final categoryController = TextEditingController();
+    final priceController = TextEditingController();
+    final notesController = TextEditingController(
+      text: (communication['message_text'] ?? '').toString().trim(),
+    );
+    DateTime? harvestDate;
+    String supplyStatus = suggestion['status'] ?? 'expected';
+    bool saving = false;
+
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Create Supply Update'),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: FarmColors.primarySoft,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        'Review the farmer reply before saving. Nothing changes in HPJ supply until you confirm this form.\n\nFarmer: ${farmer.displayName}',
+                        style: const TextStyle(
+                          color: FarmColors.ink,
+                          fontSize: 11,
+                          height: 1.4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7E6),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE6C76B)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(children: [
+                            Icon(Icons.auto_awesome_rounded, size: 18, color: FarmColors.primary),
+                            SizedBox(width: 7),
+                            Text('HPJ Smart Assist', style: TextStyle(fontWeight: FontWeight.w900, color: FarmColors.ink)),
+                          ]),
+                          const SizedBox(height: 6),
+                          Text(
+                            suggestion['missing']!.isEmpty
+                                ? 'HPJ found enough basic information to pre-fill this review. Check every field before confirming.'
+                                : 'HPJ could not confidently identify: ${suggestion['missing']}. Ask the farmer or complete the fields manually.',
+                            style: const TextStyle(fontSize: 11, height: 1.35, color: FarmColors.mutedText, fontWeight: FontWeight.w600),
+                          ),
+                          if (suggestion['missing']!.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              onPressed: saving ? null : () async {
+                                Navigator.pop(dialogContext, false);
+                                await _askFarmerForMissingSupplyDetails(farmer: farmer, missing: suggestion['missing']!);
+                              },
+                              icon: const Icon(Icons.help_outline_rounded, size: 17),
+                              label: const Text('Ask Farmer for Missing Details'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: cropController,
+                      decoration: const InputDecoration(
+                        labelText: 'Produce / crop *',
+                        hintText: 'Example: Tomato',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: quantityController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Quantity *'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: unitController,
+                            decoration: const InputDecoration(labelText: 'Unit *'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: categoryController,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        hintText: 'Vegetables, Fruits, Ground Provisions...',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: supplyStatus,
+                      decoration: const InputDecoration(labelText: 'Supply stage'),
+                      items: const [
+                        DropdownMenuItem(value: 'planning', child: Text('Planning')),
+                        DropdownMenuItem(value: 'growing', child: Text('Growing')),
+                        DropdownMenuItem(value: 'expected', child: Text('Expected / available soon')),
+                        DropdownMenuItem(value: 'harvest_ready', child: Text('Harvest ready')),
+                        DropdownMenuItem(value: 'harvested', child: Text('Harvested / available now')),
+                      ],
+                      onChanged: saving ? null : (value) {
+                        if (value != null) setDialogState(() => supplyStatus = value);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: saving ? null : () async {
+                        final now = DateTime.now();
+                        final picked = await showDatePicker(
+                          context: dialogContext,
+                          initialDate: harvestDate ?? now,
+                          firstDate: DateTime(now.year - 1),
+                          lastDate: DateTime(now.year + 3),
+                        );
+                        if (picked != null) setDialogState(() => harvestDate = picked);
+                      },
+                      icon: const Icon(Icons.event_outlined),
+                      label: Text(
+                        harvestDate == null
+                            ? 'Set expected / harvest date'
+                            : 'Date: ${shortProductDate(harvestDate)}',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: priceController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Farmer asking price (optional)',
+                        prefixText: 'J\$',
+                        helperText: 'Saved as a note only; this does not approve or change HPJ pricing.',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: notesController,
+                      minLines: 3,
+                      maxLines: 6,
+                      decoration: const InputDecoration(
+                        labelText: 'Farmer reply / staff notes',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: saving ? null : () async {
+                  final crop = cropController.text.trim();
+                  final unit = unitController.text.trim();
+                  final quantity = double.tryParse(
+                    quantityController.text.trim().replaceAll(',', ''),
+                  );
+                  if (crop.isEmpty || unit.isEmpty || quantity == null || quantity <= 0) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('Enter the produce, a quantity greater than zero, and a unit.')),
+                    );
+                    return;
+                  }
+                  setDialogState(() => saving = true);
+                  try {
+                    final askingPrice = double.tryParse(
+                      priceController.text.trim().replaceAll(',', ''),
+                    );
+                    final notes = <String>[
+                      if (notesController.text.trim().isNotEmpty) notesController.text.trim(),
+                      if (askingPrice != null && askingPrice > 0)
+                        'Farmer asking price reported via WhatsApp: J\$${askingPrice.toStringAsFixed(2)} per $unit. Price not approved by this action.',
+                    ].join('\n');
+                    final response = await supabase.rpc(
+                      'hpj_admin_create_supply_from_farmer_reply',
+                      params: <String, dynamic>{
+                        'p_lead_id': farmer.id,
+                        'p_communication_id': (communication['id'] ?? '').toString().trim().isEmpty
+                            ? null
+                            : (communication['id'] ?? '').toString().trim(),
+                        'p_crop_name': crop,
+                        'p_category': categoryController.text.trim().isEmpty
+                            ? null
+                            : categoryController.text.trim(),
+                        'p_quantity': quantity,
+                        'p_unit': unit,
+                        'p_expected_harvest_date': harvestDate == null
+                            ? null
+                            : harvestDate!.toIso8601String().split('T').first,
+                        'p_status': supplyStatus,
+                        'p_notes': notes.isEmpty ? null : notes,
+                      },
+                    );
+                    if (response == null) {
+                      throw Exception('HPJ did not return the new supply record.');
+                    }
+                    if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                  } catch (error) {
+                    if (dialogContext.mounted) {
+                      setDialogState(() => saving = false);
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        SnackBar(content: Text('Could not create supply update: $error')),
+                      );
+                    }
+                  }
+                },
+                icon: saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.inventory_2_outlined),
+                label: Text(saving ? 'Saving...' : 'Confirm Supply Update'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (saved == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${farmer.displayName} supply update created. It is now available to HPJ procurement for review/verification.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      cropController.dispose();
+      quantityController.dispose();
+      unitController.dispose();
+      categoryController.dispose();
+      priceController.dispose();
+      notesController.dispose();
+    }
+  }
+
+  Future<void> _showFarmerSupportInbox() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: .92,
+        child: StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            String inboxFilter = 'attention';
+
+            Future<List<Map<String, dynamic>>> loadInbox() async {
+              await _requirePartnerOnboardingAccess();
+              final response = await supabase
+                  .from('hpj_farmer_communications')
+                  .select(
+                    'id, lead_id, message_type, channel, direction, message_text, status, response_text, follow_up_at, created_by_email, created_at, responded_at, completed_at, whatsapp_status, whatsapp_phone',
+                  )
+                  .eq('channel', 'whatsapp')
+                  .order('created_at', ascending: false)
+                  .limit(250);
+
+              final rows = (response as List)
+                  .map((item) => Map<String, dynamic>.from(item as Map))
+                  .toList(growable: false);
+
+              final leadIds = rows
+                  .map((row) => (row['lead_id'] ?? '').toString().trim())
+                  .where((id) => id.isNotEmpty)
+                  .toSet();
+              final leadNames = <String, String>{};
+              final leadsById = <String, HpjPartnerOnboardingLead>{};
+
+              if (leadIds.isNotEmpty) {
+                final leads = await fetchHpjPartnerOnboardingLeads();
+                for (final lead in leads) {
+                  if (leadIds.contains(lead.id)) {
+                    leadNames[lead.id] = lead.displayName;
+                    leadsById[lead.id] = lead;
+                  }
+                }
+              }
+
+              for (final row in rows) {
+                final leadId = (row['lead_id'] ?? '').toString().trim();
+                row['_farmer_name'] = leadNames[leadId] ??
+                    (leadId.isEmpty ? 'Unmatched WhatsApp number' : 'Farmer');
+                row['_lead'] = leadsById[leadId];
+              }
+              return rows;
+            }
+
+            return FutureBuilder<List<Map<String, dynamic>>>(
+              future: loadInbox(),
+              builder: (context, snapshot) {
+                final all = snapshot.data ?? const <Map<String, dynamic>>[];
+                final now = DateTime.now();
+
+                bool needsAttention(Map<String, dynamic> row) {
+                  final direction = (row['direction'] ?? '').toString();
+                  final status = (row['status'] ?? '').toString();
+                  final leadId = (row['lead_id'] ?? '').toString().trim();
+                  final followUp = parseProductDate(row['follow_up_at']);
+                  return leadId.isEmpty ||
+                      direction == 'inbound' ||
+                      status == 'responded' ||
+                      status == 'follow_up' ||
+                      (followUp != null && !followUp.isAfter(now));
+                }
+
+                List<Map<String, dynamic>> filtered() {
+                  switch (inboxFilter) {
+                    case 'replies':
+                      return all
+                          .where((row) => (row['direction'] ?? '') == 'inbound')
+                          .toList(growable: false);
+                    case 'waiting':
+                      return all
+                          .where((row) => (row['status'] ?? '') == 'waiting')
+                          .toList(growable: false);
+                    case 'follow_up':
+                      return all.where((row) {
+                        final status = (row['status'] ?? '').toString();
+                        final date = parseProductDate(row['follow_up_at']);
+                        return status == 'follow_up' ||
+                            (date != null && !date.isAfter(now));
+                      }).toList(growable: false);
+                    case 'unmatched':
+                      return all
+                          .where((row) =>
+                              (row['lead_id'] ?? '').toString().trim().isEmpty)
+                          .toList(growable: false);
+                    case 'all':
+                      return all;
+                    case 'attention':
+                    default:
+                      return all.where(needsAttention).toList(growable: false);
+                  }
+                }
+
+                final items = filtered();
+                final attentionCount = all.where(needsAttention).length;
+                final unmatchedCount = all
+                    .where((row) =>
+                        (row['lead_id'] ?? '').toString().trim().isEmpty)
+                    .length;
+
+                Future<void> markCompleted(Map<String, dynamic> row) async {
+                  final id = (row['id'] ?? '').toString();
+                  if (id.isEmpty) return;
+                  await hpjUpdateFarmerCommunication(
+                    communicationId: id,
+                    status: 'completed',
+                    responseText: (row['response_text'] ?? '').toString(),
+                  );
+                  if (sheetContext.mounted) setSheetState(() {});
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Farmer Support Inbox',
+                                  style: TextStyle(
+                                    color: FarmColors.ink,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '$attentionCount need attention • $unmatchedCount unmatched',
+                                  style: const TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Refresh inbox',
+                            onPressed: () => setSheetState(() {}),
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final option in const <MapEntry<String, String>>[
+                              MapEntry('attention', 'Needs Attention'),
+                              MapEntry('replies', 'New Replies'),
+                              MapEntry('waiting', 'Waiting'),
+                              MapEntry('follow_up', 'Follow-up Due'),
+                              MapEntry('unmatched', 'Unmatched'),
+                              MapEntry('all', 'All'),
+                            ]) ...[
+                              ChoiceChip(
+                                label: Text(option.value),
+                                selected: inboxFilter == option.key,
+                                onSelected: (_) =>
+                                    setSheetState(() => inboxFilter = option.key),
+                              ),
+                              const SizedBox(width: 7),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: snapshot.connectionState == ConnectionState.waiting
+                            ? const Center(child: CircularProgressIndicator())
+                            : snapshot.hasError
+                                ? Center(
+                                    child: Text(
+                                      'Could not load Farmer Support Inbox.\n${snapshot.error}',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: FarmColors.mutedText,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  )
+                                : items.isEmpty
+                                    ? const Center(
+                                        child: Text(
+                                          'Nothing in this queue right now.',
+                                          style: TextStyle(
+                                            color: FarmColors.mutedText,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        itemCount: items.length,
+                                        separatorBuilder: (_, __) =>
+                                            const SizedBox(height: 9),
+                                        itemBuilder: (context, index) {
+                                          final row = items[index];
+                                          final lead = row['_lead']
+                                              as HpjPartnerOnboardingLead?;
+                                          final farmerName =
+                                              (row['_farmer_name'] ?? 'Farmer')
+                                                  .toString();
+                                          final direction =
+                                              (row['direction'] ?? '').toString();
+                                          final status =
+                                              (row['status'] ?? '').toString();
+                                          final phone =
+                                              (row['whatsapp_phone'] ?? '')
+                                                  .toString();
+                                          final message =
+                                              (row['message_text'] ?? '').toString();
+                                          final createdAt =
+                                              parseProductDate(row['created_at']);
+                                          final isInbound = direction == 'inbound';
+                                          final isUnmatched = lead == null;
+
+                                          return Container(
+                                            padding: const EdgeInsets.all(13),
+                                            decoration: BoxDecoration(
+                                              color: isInbound
+                                                  ? FarmColors.primarySoft
+                                                  : FarmColors.card,
+                                              borderRadius:
+                                                  BorderRadius.circular(17),
+                                              border: Border.all(
+                                                color: isInbound
+                                                    ? FarmColors.primary
+                                                        .withOpacity(.18)
+                                                    : FarmColors.line,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      width: 38,
+                                                      height: 38,
+                                                      alignment: Alignment.center,
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white,
+                                                        borderRadius:
+                                                            BorderRadius.circular(12),
+                                                      ),
+                                                      child: Icon(
+                                                        isInbound
+                                                            ? Icons.mark_chat_unread_outlined
+                                                            : Icons.send_outlined,
+                                                        color: FarmColors.primary,
+                                                        size: 19,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 9),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment.start,
+                                                        children: [
+                                                          Text(
+                                                            farmerName,
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              color: FarmColors.ink,
+                                                              fontWeight:
+                                                                  FontWeight.w900,
+                                                            ),
+                                                          ),
+                                                          Text(
+                                                            [
+                                                              if (phone.isNotEmpty) phone,
+                                                              direction,
+                                                              status.replaceAll('_', ' '),
+                                                              if (createdAt != null)
+                                                                shortProductDate(createdAt),
+                                                            ].join(' • '),
+                                                            style: const TextStyle(
+                                                              color: FarmColors.mutedText,
+                                                              fontSize: 9.5,
+                                                              fontWeight:
+                                                                  FontWeight.w700,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 9),
+                                                Text(
+                                                  message.isEmpty
+                                                      ? '(No text message)'
+                                                      : message,
+                                                  style: const TextStyle(
+                                                    color: FarmColors.ink,
+                                                    fontSize: 12,
+                                                    height: 1.35,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 10),
+                                                Wrap(
+                                                  spacing: 7,
+                                                  runSpacing: 7,
+                                                  children: [
+                                                    if (lead != null)
+                                                      FilledButton.icon(
+                                                        onPressed: () async {
+                                                          Navigator.pop(sheetContext);
+                                                          if (mounted) {
+                                                            await _showFarmerCommunicationHub(
+                                                              lead,
+                                                            );
+                                                          }
+                                                        },
+                                                        icon: const Icon(
+                                                          Icons.reply_rounded,
+                                                          size: 17,
+                                                        ),
+                                                        label: const Text('Reply'),
+                                                      ),
+                                                    if (lead != null)
+                                                      OutlinedButton.icon(
+                                                        onPressed: () async {
+                                                          Navigator.pop(sheetContext);
+                                                          if (mounted) {
+                                                            await _showFarmerCommunicationHistory(
+                                                              lead,
+                                                            );
+                                                          }
+                                                        },
+                                                        icon: const Icon(
+                                                          Icons.history_rounded,
+                                                          size: 17,
+                                                        ),
+                                                        label: const Text('History'),
+                                                      ),
+                                                    if (lead != null &&
+                                                        status != 'completed' &&
+                                                        (direction == 'inbound' ||
+                                                            status == 'responded'))
+                                                      FilledButton.icon(
+                                                        onPressed: () async {
+                                                          Navigator.pop(sheetContext);
+                                                          if (mounted) {
+                                                            await _createSupplyFromFarmerReply(
+                                                              farmer: lead,
+                                                              communication: row,
+                                                            );
+                                                          }
+                                                        },
+                                                        icon: const Icon(
+                                                          Icons.add_business_outlined,
+                                                          size: 17,
+                                                        ),
+                                                        label: const Text('Create Supply Update'),
+                                                      ),
+                                                    if (status != 'completed')
+                                                      OutlinedButton.icon(
+                                                        onPressed: () =>
+                                                            markCompleted(row),
+                                                        icon: const Icon(
+                                                          Icons.check_circle_outline_rounded,
+                                                          size: 17,
+                                                        ),
+                                                        label: const Text('Complete'),
+                                                      ),
+                                                    if (isUnmatched)
+                                                      OutlinedButton.icon(
+                                                        onPressed: () {
+                                                          Navigator.pop(sheetContext);
+                                                          if (mounted) _editLead();
+                                                        },
+                                                        icon: const Icon(
+                                                          Icons.person_add_alt_1_rounded,
+                                                          size: 17,
+                                                        ),
+                                                        label: const Text('Create Lead'),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _recordFarmerResponse(HpjFarmerCommunicationLog item) async {
+    final controller = TextEditingController(text: item.responseText);
+    String status = item.status == 'completed' ? 'completed' : 'responded';
+    DateTime? followUp = item.followUpAt;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Record Farmer Response'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'What did the farmer say?',
+                    alignLabelWithHint: true,
+                    hintText: 'Example: 20 lb cucumber remaining, ready Friday.',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: status,
+                  decoration: const InputDecoration(labelText: 'Status'),
+                  items: const [
+                    DropdownMenuItem(value: 'responded', child: Text('Farmer Responded')),
+                    DropdownMenuItem(value: 'follow_up', child: Text('Needs Follow-up')),
+                    DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => status = value);
+                  },
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final now = DateTime.now();
+                    final picked = await showDatePicker(
+                      context: dialogContext,
+                      initialDate: followUp ?? now.add(const Duration(days: 1)),
+                      firstDate: now,
+                      lastDate: DateTime(now.year + 2),
+                    );
+                    if (picked != null) setDialogState(() => followUp = picked);
+                  },
+                  icon: const Icon(Icons.event_outlined),
+                  label: Text(
+                    followUp == null
+                        ? 'Set follow-up date'
+                        : 'Follow up ${shortProductDate(followUp)}',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Save Response'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true) {
+      await hpjUpdateFarmerCommunication(
+        communicationId: item.id,
+        status: status,
+        responseText: controller.text,
+        followUpAt: status == 'completed' ? null : followUp,
+      );
+    }
+    controller.dispose();
+  }
+
+  Future<void> _showFarmerCommunicationHistory(
+    HpjPartnerOnboardingLead farmer,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: .86,
+        child: FutureBuilder<List<HpjFarmerCommunicationLog>>(
+          future: fetchHpjFarmerCommunicationHistory(farmer.id),
+          builder: (context, snapshot) {
+            final items = snapshot.data ?? const <HpjFarmerCommunicationLog>[];
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${farmer.displayName} • Communication History',
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'WhatsApp check-ins, farmer responses and follow-up work are kept here.',
+                    style: TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: snapshot.connectionState == ConnectionState.waiting
+                        ? const Center(child: CircularProgressIndicator())
+                        : items.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No recorded farmer communication yet.',
+                                  style: TextStyle(color: FarmColors.mutedText),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: items.length,
+                                separatorBuilder: (_, __) => const Divider(height: 18),
+                                itemBuilder: (context, index) {
+                                  final item = items[index];
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: const Icon(Icons.chat_outlined),
+                                    title: Text(
+                                      item.messageType.replaceAll('_', ' '),
+                                      style: const TextStyle(fontWeight: FontWeight.w800),
+                                    ),
+                                    subtitle: Text(
+                                      [
+                                        item.status.replaceAll('_', ' '),
+                                        if (item.responseText.trim().isNotEmpty)
+                                          'Reply: ${item.responseText.trim()}',
+                                        if (item.followUpAt != null)
+                                          'Follow up ${shortProductDate(item.followUpAt)}',
+                                      ].join('\n'),
+                                    ),
+                                    trailing: IconButton(
+                                      tooltip: 'Record response',
+                                      onPressed: () async {
+                                        await _recordFarmerResponse(item);
+                                        if (sheetContext.mounted) {
+                                          Navigator.pop(sheetContext);
+                                        }
+                                        if (mounted) {
+                                          await _showFarmerCommunicationHistory(farmer);
+                                        }
+                                      },
+                                      icon: const Icon(Icons.edit_note_rounded),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _markActive(HpjPartnerOnboardingLead lead) async {
   try {
     await saveHpjPartnerOnboardingLead(
@@ -53209,6 +54189,7 @@ class _AdminPartnerOnboardingTabState
     final needController =
         TextEditingController(text: lead?.mainNeedOrProduce ?? '');
     final notesController = TextEditingController(text: lead?.notes ?? '');
+    final assistedImageController = TextEditingController();
 
     var partnerType = lead?.partnerType == 'business' ? 'business' : 'farmer';
     var status = _hpjOnboardingStatuses.contains(lead?.status)
@@ -53216,6 +54197,7 @@ class _AdminPartnerOnboardingTabState
         : 'contacted';
     var followUpDate = lead?.followUpDate;
     var saving = false;
+    var uploadingFarmerImage = false;
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -53225,6 +54207,131 @@ class _AdminPartnerOnboardingTabState
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
+            Future<void> uploadFarmerPhoto() async {
+              if (saving || uploadingFarmerImage || partnerType != 'farmer') {
+                return;
+              }
+
+              ImageSource source = ImageSource.gallery;
+              if (!kIsWeb) {
+                final selected = await showModalBottomSheet<ImageSource>(
+                  context: sheetContext,
+                  showDragHandle: true,
+                  builder: (sourceContext) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.camera_alt_outlined),
+                          title: const Text('Take farmer / farm photo'),
+                          onTap: () => Navigator.pop(
+                            sourceContext,
+                            ImageSource.camera,
+                          ),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.photo_library_outlined),
+                          title: const Text('Choose photo from device'),
+                          onTap: () => Navigator.pop(
+                            sourceContext,
+                            ImageSource.gallery,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                );
+                if (selected == null) return;
+                source = selected;
+              }
+
+              try {
+                setSheetState(() => uploadingFarmerImage = true);
+
+                final picked = await ImagePicker().pickImage(
+                  source: source,
+                  imageQuality: 88,
+                  maxWidth: 1800,
+                );
+                if (picked == null) {
+                  if (sheetContext.mounted) {
+                    setSheetState(() => uploadingFarmerImage = false);
+                  }
+                  return;
+                }
+
+                final bytes = await picked.readAsBytes();
+                if (bytes.isEmpty) {
+                  throw Exception('Choose a valid farmer image.');
+                }
+                const maxBytes = 6 * 1024 * 1024;
+                if (bytes.length > maxBytes) {
+                  throw Exception(
+                    'Farmer image is too large. Please use an image under 6 MB.',
+                  );
+                }
+
+                final lowerName = picked.name.toLowerCase();
+                final extension = lowerName.endsWith('.png')
+                    ? 'png'
+                    : lowerName.endsWith('.webp')
+                        ? 'webp'
+                        : 'jpg';
+                final contentType = extension == 'png'
+                    ? 'image/png'
+                    : extension == 'webp'
+                        ? 'image/webp'
+                        : 'image/jpeg';
+
+                final userId = supabase.auth.currentUser?.id ?? 'onboarding';
+                final cleanLead = (lead?.id ?? '')
+                    .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+                final timestamp = DateTime.now().millisecondsSinceEpoch;
+                final storagePath =
+                    'onboarding/$userId/${cleanLead.isEmpty ? 'new' : cleanLead}/farmer-$timestamp.$extension';
+
+                await supabase.storage
+                    .from(productImageStorageBucket)
+                    .uploadBinary(
+                      storagePath,
+                      bytes,
+                      fileOptions: FileOptions(
+                        contentType: contentType,
+                        upsert: false,
+                      ),
+                    );
+
+                final url = supabase.storage
+                    .from(productImageStorageBucket)
+                    .getPublicUrl(storagePath);
+
+                assistedImageController.text = url;
+                final currentNotes = notesController.text.trim();
+                final marker = 'Assisted farmer image: $url';
+                if (!currentNotes.contains(url)) {
+                  notesController.text = currentNotes.isEmpty
+                      ? marker
+                      : '$currentNotes\n$marker';
+                }
+
+                if (sheetContext.mounted) {
+                  setSheetState(() => uploadingFarmerImage = false);
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Farmer photo uploaded successfully.'),
+                    ),
+                  );
+                }
+              } catch (error) {
+                if (!sheetContext.mounted) return;
+                setSheetState(() => uploadingFarmerImage = false);
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  SnackBar(content: Text(friendlyAppError(error))),
+                );
+              }
+            }
+
             Future<void> pickFollowUp() async {
               final now = DateTime.now();
               final picked = await showDatePicker(
@@ -53423,6 +54530,103 @@ class _AdminPartnerOnboardingTabState
                             alignLabelWithHint: true,
                           ),
                         ),
+                        if (partnerType == 'farmer') ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: FarmColors.primarySoft,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: FarmColors.primary.withOpacity(.14),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.add_a_photo_outlined,
+                                      color: FarmColors.primary,
+                                    ),
+                                    SizedBox(width: 9),
+                                    Expanded(
+                                      child: Text(
+                                        'Assisted farmer photos',
+                                        style: TextStyle(
+                                          color: FarmColors.ink,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'For farmers who need help using a phone. The onboarding agent may take or choose a farmer, farm or produce photo on the farmer’s behalf.',
+                                  style: TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 11,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (assistedImageController.text.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Image.network(
+                                      assistedImageController.text.trim(),
+                                      height: 150,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const SizedBox(
+                                        height: 80,
+                                        child: Center(
+                                          child: Icon(Icons.broken_image_outlined),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: saving || uploadingFarmerImage
+                                        ? null
+                                        : uploadFarmerPhoto,
+                                    icon: uploadingFarmerImage
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.camera_alt_outlined),
+                                    label: Text(
+                                      uploadingFarmerImage
+                                          ? 'Uploading photo...'
+                                          : 'Take / Upload Farmer Photo',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Photo is recorded as uploaded by the onboarding agent. This does not give the agent approval, payout or finance access.',
+                                  style: TextStyle(
+                                    color: FarmColors.mutedText,
+                                    fontSize: 9.5,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           value: status,
@@ -53513,6 +54717,7 @@ class _AdminPartnerOnboardingTabState
     communityController.dispose();
     needController.dispose();
     notesController.dispose();
+    assistedImageController.dispose();
 
     if (saved == true && mounted) {
       await _reload(notifyParent: true);
@@ -54075,6 +55280,40 @@ class _AdminPartnerOnboardingTabState
           ),
         ],
 
+        if (lead.partnerType == 'farmer') ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                lead.assignedOnboarderId.isEmpty
+                    ? Icons.person_search_outlined
+                    : Icons.support_agent_rounded,
+                size: 15,
+                color: lead.assignedOnboarderId.isEmpty
+                    ? FarmColors.warning
+                    : FarmColors.primary,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  lead.assignedOnboarderId.isEmpty
+                      ? 'No onboarding agent assigned'
+                      : 'Assigned to ${lead.assignedOnboarderName.trim().isNotEmpty ? lead.assignedOnboarderName : lead.assignedOnboarderEmail}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: lead.assignedOnboarderId.isEmpty
+                        ? FarmColors.warning
+                        : FarmColors.primary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+
         // Shows which HPJ agent originally recruited this partner.
         if (lead.createdByEmail.trim().isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -54108,6 +55347,29 @@ class _AdminPartnerOnboardingTabState
           spacing: 7,
           runSpacing: 7,
           children: [
+            if (lead.partnerType == 'farmer' && _canAssignFarmers)
+              OutlinedButton.icon(
+                onPressed: () => _assignFarmer(lead),
+                icon: const Icon(Icons.person_add_alt_1_rounded, size: 17),
+                label: Text(
+                  lead.assignedOnboarderId.isEmpty ? 'Assign Agent' : 'Reassign',
+                ),
+              ),
+            if (lead.partnerType == 'farmer')
+              FilledButton.icon(
+                onPressed: () => _showFarmerCommunicationHub(lead),
+                icon: const Icon(
+                  Icons.support_agent_rounded,
+                  size: 17,
+                ),
+                label: const Text('Farmer Check-In'),
+              ),
+            if (lead.partnerType == 'farmer')
+              OutlinedButton.icon(
+                onPressed: () => _showFarmerCommunicationHistory(lead),
+                icon: const Icon(Icons.history_rounded, size: 17),
+                label: const Text('History'),
+              ),
             OutlinedButton.icon(
               onPressed: () => _openWhatsApp(lead),
               icon: const Icon(
@@ -54192,6 +55454,11 @@ class _AdminPartnerOnboardingTabState
         final query = _searchController.text.trim().toLowerCase();
 
         final filtered = leads.where((lead) {
+          if (_myFarmersOnly &&
+              lead.partnerType == 'farmer' &&
+              lead.assignedOnboarderId != _currentUserId) {
+            return false;
+          }
           if (_filter == 'farmer' && lead.partnerType != 'farmer') return false;
           if (_filter == 'business' && lead.partnerType != 'business') return false;
           if (_filter == 'follow_up' && lead.status != 'follow_up') return false;
@@ -54236,6 +55503,19 @@ class _AdminPartnerOnboardingTabState
                       ),
                     ),
                     const SizedBox(width: 10),
+                    if (desktopWeb)
+                      OutlinedButton.icon(
+                        onPressed: _showFarmerSupportInbox,
+                        icon: const Icon(Icons.support_agent_rounded),
+                        label: const Text('Support Inbox'),
+                      )
+                    else
+                      IconButton.filledTonal(
+                        tooltip: 'Farmer Support Inbox',
+                        onPressed: _showFarmerSupportInbox,
+                        icon: const Icon(Icons.support_agent_rounded),
+                      ),
+                    const SizedBox(width: 8),
                     FilledButton.icon(
                       onPressed: () => _editLead(),
                       icon: const Icon(Icons.add_rounded),
@@ -54347,6 +55627,17 @@ class _AdminPartnerOnboardingTabState
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
+                            if (_currentStaffRole == 'onboarding')
+                              Padding(
+                                padding: const EdgeInsets.only(right: 7),
+                                child: FilterChip(
+                                  avatar: const Icon(Icons.person_pin_rounded, size: 16),
+                                  label: const Text('My Farmers'),
+                                  selected: _myFarmersOnly,
+                                  onSelected: (value) =>
+                                      setState(() => _myFarmersOnly = value),
+                                ),
+                              ),
                             for (final item in const <MapEntry<String, String>>[
                               MapEntry('all', 'All'),
                               MapEntry('farmer', 'Farmers'),

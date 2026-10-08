@@ -914,6 +914,35 @@ String _safeFreshReelFileName(String raw) {
   return clean.length > 80 ? clean.substring(clean.length - 80) : clean;
 }
 
+/// Read the picked file before uploading; Android gallery selections may be
+/// temporary cache files and can become unavailable after the picker returns.
+Future<Uint8List> _readFreshReelVideoBytes(XFile video) async {
+  try {
+    final length = await video.length();
+    if (length == 0) {
+      throw Exception('The selected video is empty. Choose another video.');
+    }
+    if (length > _freshReelMaxBytes) {
+      throw Exception('Keep Fresh Reels under 30 MB.');
+    }
+    final bytes = await video.readAsBytes();
+    if (bytes.isEmpty) {
+      throw Exception('The selected video is empty. Choose another video.');
+    }
+    return bytes;
+  } on Exception catch (error) {
+    if (error.toString().contains('Keep Fresh Reels') ||
+        error.toString().contains('selected video is empty')) {
+      rethrow;
+    }
+    throw Exception(
+      'Could not read the selected video from device storage. '
+      'Please select the video again, ensure there is free storage space, '
+      'and retry. Details: $error',
+    );
+  }
+}
+
 Future<void> submitFarmerFreshReel({
   required FarmerProfile profile,
   required XFile video,
@@ -939,8 +968,7 @@ Future<void> submitFarmerFreshReel({
     throw Exception('Choose a valid Farmer Reel category.');
   }
 
-  final bytes = await video.readAsBytes();
-  if (bytes.isEmpty) throw Exception('The selected video is empty.');
+  final bytes = await _readFreshReelVideoBytes(video);
   if (bytes.length > _freshReelMaxBytes) {
     throw Exception(
         'Keep Fresh Reels under 30 MB. Shorter videos upload faster.');
@@ -1018,8 +1046,7 @@ Future<void> submitAdminFreshReel({
     throw Exception('Choose Published or Draft.');
   }
 
-  final bytes = await video.readAsBytes();
-  if (bytes.isEmpty) throw Exception('The selected video is empty.');
+  final bytes = await _readFreshReelVideoBytes(video);
   if (bytes.length > _freshReelMaxBytes) {
     throw Exception('Keep Fresh Reels under 30 MB.');
   }
@@ -3166,12 +3193,30 @@ class _FarmerFreshReelSubmissionScreenState
   }
 
   Future<void> _pickVideo() async {
-    final picked = await ImagePicker().pickVideo(
-      source: ImageSource.gallery,
-      maxDuration: const Duration(seconds: 60),
-    );
-    if (picked == null || !mounted) return;
-    setState(() => _video = picked);
+    try {
+      final picked = await ImagePicker().pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(seconds: 60),
+      );
+      if (picked == null || !mounted) return;
+      final size = await picked.length();
+      if (size == 0 || size > _freshReelMaxBytes) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(size == 0
+              ? 'This video is empty. Choose another video.'
+              : 'Choose a video smaller than 30 MB.'),
+        ));
+        return;
+      }
+      if (mounted) setState(() => _video = picked);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Unable to open the video. Check device storage and try again. $error'),
+      ));
+    }
   }
 
   Future<void> _submit() async {
@@ -3690,12 +3735,30 @@ class _AdminFreshReelSubmissionScreenState
   }
 
   Future<void> _pickVideo() async {
-    final picked = await ImagePicker().pickVideo(
-      source: ImageSource.gallery,
-      maxDuration: const Duration(seconds: 60),
-    );
-    if (picked == null || !mounted) return;
-    setState(() => _video = picked);
+    try {
+      final picked = await ImagePicker().pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(seconds: 60),
+      );
+      if (picked == null || !mounted) return;
+      final size = await picked.length();
+      if (size == 0 || size > _freshReelMaxBytes) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(size == 0
+              ? 'This video is empty. Choose another video.'
+              : 'Choose a video smaller than 30 MB.'),
+        ));
+        return;
+      }
+      if (mounted) setState(() => _video = picked);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Unable to open the video. Check device storage and try again. $error'),
+      ));
+    }
   }
 
   Future<void> _pickCoverImage() async {

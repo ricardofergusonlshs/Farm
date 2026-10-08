@@ -916,30 +916,47 @@ String _safeFreshReelFileName(String raw) {
 
 /// Read the picked file before uploading; Android gallery selections may be
 /// temporary cache files and can become unavailable after the picker returns.
+// Read once, immediately after the picker returns, and retain the bytes in
+// an in-memory XFile. Android picker cache paths can disappear before Submit.
+Future<XFile> _prepareFreshReelPickedVideo(XFile picked) async {
+  try {
+    final bytes = await picked.readAsBytes();
+    if (bytes.isEmpty) {
+      throw StateError('The selected video is empty. Choose another video.');
+    }
+    if (bytes.lengthInBytes > _freshReelMaxBytes) {
+      throw StateError('Choose a video smaller than 30 MB.');
+    }
+    return XFile.fromData(
+      bytes,
+      name: picked.name,
+      mimeType:
+          (picked.mimeType ?? '').isNotEmpty ? picked.mimeType : 'video/mp4',
+    );
+  } catch (error) {
+    if (error is StateError) rethrow;
+    throw StateError(
+      'Android could not provide the selected video. Try selecting a local '
+      'video from Gallery or Files again. Details: $error',
+    );
+  }
+}
+
 Future<Uint8List> _readFreshReelVideoBytes(XFile video) async {
   try {
-    final length = await video.length();
-    if (length == 0) {
-      throw Exception('The selected video is empty. Choose another video.');
-    }
-    if (length > _freshReelMaxBytes) {
-      throw Exception('Keep Fresh Reels under 30 MB.');
-    }
+    // Prepared videos are memory-backed, not dependent on the Android cache.
     final bytes = await video.readAsBytes();
     if (bytes.isEmpty) {
-      throw Exception('The selected video is empty. Choose another video.');
+      throw StateError('The selected video is empty. Choose another video.');
+    }
+    if (bytes.lengthInBytes > _freshReelMaxBytes) {
+      throw StateError('Keep Fresh Reels under 30 MB.');
     }
     return bytes;
-  } on Exception catch (error) {
-    if (error.toString().contains('Keep Fresh Reels') ||
-        error.toString().contains('selected video is empty')) {
-      rethrow;
-    }
-    throw Exception(
-      'Could not read the selected video from device storage. '
-      'Please select the video again, ensure there is free storage space, '
-      'and retry. Details: $error',
-    );
+  } catch (error) {
+    if (error is StateError) rethrow;
+    throw StateError('Could not read the selected Reel video. '
+        'Please select it again. Details: $error');
   }
 }
 
@@ -3199,17 +3216,9 @@ class _FarmerFreshReelSubmissionScreenState
         maxDuration: const Duration(seconds: 60),
       );
       if (picked == null || !mounted) return;
-      final size = await picked.length();
-      if (size == 0 || size > _freshReelMaxBytes) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(size == 0
-              ? 'This video is empty. Choose another video.'
-              : 'Choose a video smaller than 30 MB.'),
-        ));
-        return;
-      }
-      if (mounted) setState(() => _video = picked);
+      final prepared = await _prepareFreshReelPickedVideo(picked);
+      if (!mounted) return;
+      setState(() => _video = prepared);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -3741,17 +3750,9 @@ class _AdminFreshReelSubmissionScreenState
         maxDuration: const Duration(seconds: 60),
       );
       if (picked == null || !mounted) return;
-      final size = await picked.length();
-      if (size == 0 || size > _freshReelMaxBytes) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(size == 0
-              ? 'This video is empty. Choose another video.'
-              : 'Choose a video smaller than 30 MB.'),
-        ));
-        return;
-      }
-      if (mounted) setState(() => _video = picked);
+      final prepared = await _prepareFreshReelPickedVideo(picked);
+      if (!mounted) return;
+      setState(() => _video = prepared);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

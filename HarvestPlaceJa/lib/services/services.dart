@@ -8973,26 +8973,37 @@ Future<AgricultureFeedUpdate> saveAgricultureFeedUpdate({
   };
 
   final cleanId = id?.trim() ?? '';
-  dynamic response;
-  if (cleanId.isEmpty) {
-    row['created_by'] = supabase.auth.currentUser?.id;
-    response = await supabase
-        .from('agriculture_feed_updates')
-        .insert(row)
-        .select(_agricultureFeedSelectFields)
-        .single();
-  } else {
-    response = await supabase
-        .from('agriculture_feed_updates')
-        .update(row)
-        .eq('id', cleanId)
-        .select(_agricultureFeedSelectFields)
-        .single();
-  }
+  try {
+    dynamic response;
+    if (cleanId.isEmpty) {
+      final currentUserId = supabase.auth.currentUser?.id;
+      if (currentUserId == null) {
+        throw Exception('Your session has expired. Sign in and try again.');
+      }
+      row['created_by'] = currentUserId;
+      response = await supabase
+          .from('agriculture_feed_updates')
+          .insert(row)
+          .select(_agricultureFeedSelectFields)
+          .single();
+    } else {
+      response = await supabase
+          .from('agriculture_feed_updates')
+          .update(row)
+          .eq('id', cleanId)
+          .select(_agricultureFeedSelectFields)
+          .single();
+    }
 
-  return AgricultureFeedUpdate.fromSupabase(
-    Map<String, dynamic>.from(response as Map),
-  );
+    return AgricultureFeedUpdate.fromSupabase(
+      Map<String, dynamic>.from(response as Map),
+    );
+  } catch (error) {
+    farmDebugLog('Agriculture feed publish failed: $error');
+    // Keep the actual Supabase error available for diagnosis. A generic
+    // success message must never be shown when INSERT/UPDATE fails.
+    throw Exception('Could not publish feed update: $error');
+  }
 }
 
 Future<void> setAgricultureFeedUpdateActive({

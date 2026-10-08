@@ -45131,7 +45131,7 @@ class _AdminProductsTabState extends State<AdminProductsTab> {
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              height: 40,
+              height: 52,
               child: ElevatedButton.icon(
                 onPressed: () => openProductEditor(
                   context,

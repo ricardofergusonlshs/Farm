@@ -19600,14 +19600,14 @@ Future<void> openHpjNotificationHubMenu(
   BuildContext context, {
   int? unreadCount,
 }) async {
-  var resolvedUnreadCount = unreadCount;
+  int? resolvedUnreadCount;
 
-  if (resolvedUnreadCount == null) {
+  {
     try {
       resolvedUnreadCount = await fetchUnreadNotificationCount();
     } catch (error) {
       farmDebugLog('Notification hub unread count lookup skipped: $error');
-      resolvedUnreadCount = 0;
+      resolvedUnreadCount = unreadCount ?? 0;
     }
   }
 
@@ -19618,6 +19618,7 @@ Future<void> openHpjNotificationHubMenu(
   final action = await showModalBottomSheet<String>(
     context: context,
     useSafeArea: true,
+    isScrollControlled: true,
     backgroundColor: FarmColors.background,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(
@@ -19626,9 +19627,20 @@ Future<void> openHpjNotificationHubMenu(
     ),
     builder: (sheetContext) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
+          ),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              16, 10, 16,
+              24 + MediaQuery.viewPaddingOf(sheetContext).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: 42,
@@ -19765,6 +19777,8 @@ Future<void> openHpjNotificationHubMenu(
               onTap: () => Navigator.pop(sheetContext, 'chat'),
             ),
           ],
+            ),
+          ),
         ),
       );
     },

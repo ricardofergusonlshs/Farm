@@ -8472,41 +8472,48 @@ class _HpjFarmerCalendarMvpPageState
                         .microsecondsSinceEpoch
                         .remainder(2147483647);
 
-                if (existing != null) {
-                  await FarmReminderService.cancel(id);
-                }
-
-                final phoneScheduled =
-                    await FarmReminderService.schedule(
-                  id: id,
-                  title: title,
-                  body: cropName == null &&
-                          existing?.cropName == null
-                      ? 'Farm reminder from The Harvest Place Ja'
-                      : 'Farm reminder for ${cropName ?? existing?.cropName}',
-                  scheduledAt: notifyAt,
-                );
-
+                // Persist the calendar event independently of notification permissions.
+                // Camera/browser/OS notification support must never prevent saving.
                 final updated = _HpjFarmReminder(
                   notificationId: id,
                   title: title,
                   eventAt: eventAt,
                   notifyAt: notifyAt,
-                  remindBeforeMinutes:
-                      remindBeforeMinutes,
-                  cropName:
-                      cropName ?? existing?.cropName,
+                  remindBeforeMinutes: remindBeforeMinutes,
+                  cropName: cropName ?? existing?.cropName,
                 );
-
                 final next = _reminders
-                    .where(
-                      (item) =>
-                          item.notificationId != id,
-                    )
+                    .where((item) => item.notificationId != id)
                     .toList()
                   ..add(updated);
+                try {
+                  await _saveReminders(next);
+                } catch (error) {
+                  if (sheetContext.mounted) {
+                    setSheetState(() => saving = false);
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
+                      SnackBar(content: Text('Could not save reminder: $error')),
+                    );
+                  }
+                  return;
+                }
 
-                await _saveReminders(next);
+                bool phoneScheduled = false;
+                try {
+                  if (existing != null) {
+                    await FarmReminderService.cancel(id);
+                  }
+                  phoneScheduled = await FarmReminderService.schedule(
+                    id: id,
+                    title: title,
+                    body: cropName == null && existing?.cropName == null
+                        ? 'Farm reminder from The Harvest Place Ja'
+                        : 'Farm reminder for ${cropName ?? existing?.cropName}',
+                    scheduledAt: notifyAt,
+                  );
+                } catch (error) {
+                  debugPrint('Farm Calendar: notification unavailable: $error');
+                }
 
                 if (!sheetContext.mounted) return;
 

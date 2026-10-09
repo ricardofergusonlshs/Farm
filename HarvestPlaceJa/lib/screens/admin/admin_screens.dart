@@ -26067,6 +26067,31 @@ class _AdminDesktopWebsiteConsole extends StatelessWidget {
 // The selected Admin section lives in AdminDashboardScreen, not in the
 // disposable DefaultTabController. Observe changes without rebuilding the
 // parent (which would recreate all Admin tab contents during an edit).
+// HPJ PRE-LAUNCH PHASE 4 — preserve section-to-section navigation history.
+// A TabController belongs to one Admin shell and is disposed with its watcher.
+final Map<TabController, List<int>> _hpjAdminTabHistory =
+    <TabController, List<int>>{};
+final Set<TabController> _hpjAdminHistoryBackInProgress =
+    <TabController>{};
+
+void _hpjAdminNavigateBack(TabController controller, int fallbackIndex) {
+  final history = _hpjAdminTabHistory[controller];
+  while (history != null && history.isNotEmpty) {
+    final previous = history.removeLast();
+    if (previous >= 0 && previous < controller.length &&
+        previous != controller.index) {
+      _hpjAdminHistoryBackInProgress.add(controller);
+      controller.animateTo(previous);
+      return;
+    }
+  }
+  if (controller.index != fallbackIndex &&
+      fallbackIndex >= 0 && fallbackIndex < controller.length) {
+    _hpjAdminHistoryBackInProgress.add(controller);
+    controller.animateTo(fallbackIndex);
+  }
+}
+
 class _AdminTabSelectionWatcher extends StatefulWidget {
   final TabController controller;
   final ValueChanged<int> onSelected;
@@ -26091,6 +26116,7 @@ class _AdminTabSelectionWatcherState
   void initState() {
     super.initState();
     _lastIndex = widget.controller.index;
+    _hpjAdminTabHistory[widget.controller] = <int>[];
     widget.controller.addListener(_onTabChanged);
   }
 
@@ -26099,7 +26125,10 @@ class _AdminTabSelectionWatcherState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onTabChanged);
+      _hpjAdminTabHistory.remove(oldWidget.controller);
+      _hpjAdminHistoryBackInProgress.remove(oldWidget.controller);
       _lastIndex = widget.controller.index;
+      _hpjAdminTabHistory[widget.controller] = <int>[];
       widget.controller.addListener(_onTabChanged);
     }
   }
@@ -26107,13 +26136,24 @@ class _AdminTabSelectionWatcherState
   void _onTabChanged() {
     final index = widget.controller.index;
     if (!mounted || index == _lastIndex) return;
+    final previous = _lastIndex;
     _lastIndex = index;
+    if (!_hpjAdminHistoryBackInProgress.remove(widget.controller) &&
+        previous != null && previous != index) {
+      final history = _hpjAdminTabHistory.putIfAbsent(
+        widget.controller, () => <int>[],
+      );
+      history.add(previous);
+      if (history.length > 30) history.removeAt(0);
+    }
     widget.onSelected(index);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onTabChanged);
+    _hpjAdminTabHistory.remove(widget.controller);
+    _hpjAdminHistoryBackInProgress.remove(widget.controller);
     super.dispose();
   }
 
@@ -26537,10 +26577,9 @@ class _AdminBottomNavigationShell
                                 : actualIndex == workspaceRootIndex
                                     ? null
                                     : IconButton(
-                                        tooltip: 'Back to $roleLabel',
-                                        onPressed: () =>
-                                            controller.animateTo(
-                                          workspaceRootIndex,
+                                        tooltip: 'Back to previous Admin page',
+                                        onPressed: () => _hpjAdminNavigateBack(
+                                          controller, workspaceRootIndex,
                                         ),
                                         icon: const Icon(
                                           Icons.arrow_back_rounded,
@@ -26628,10 +26667,8 @@ class _AdminBottomNavigationShell
                                               alignment: Alignment.centerLeft,
                                               child: IconButton(
                                                 tooltip: 'Back',
-                                                onPressed: () => _openMore(
-                                                  context,
-                                                  controller,
-                                                  primary,
+                                                onPressed: () => _hpjAdminNavigateBack(
+                                                  controller, workspaceRootIndex,
                                                 ),
                                                 icon: const Icon(
                                                   Icons.arrow_back_rounded,
@@ -37328,9 +37365,10 @@ class _AdminOrdersTabState extends State<AdminOrdersTab> {
       final savedUrl = updatedOrder?['box_photo_url']?.toString();
 
       if (savedUrl != null && savedUrl.isNotEmpty) {
-        // Reload only the current Admin section. This updates the order card
-        // without sending the user back to Today.
-        widget.onChanged();
+        // Refresh this Orders tab only. Calling the parent onChanged here
+        // rebuilds the Admin shell and can reset the active route/tab after
+        // Android returns from the camera. Keep the same order/search visible.
+        if (mounted) setState(() {});
       }
 
       ScaffoldMessenger.of(context).showSnackBar(

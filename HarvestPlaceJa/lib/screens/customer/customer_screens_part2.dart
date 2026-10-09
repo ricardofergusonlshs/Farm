@@ -9571,7 +9571,7 @@ if (harvestPulseContext == 'fresh' &&
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(
                   desktopWeb ? 24 : 18,
-                  desktopWeb ? 10 : 5,
+                  desktopWeb ? 22 : 10,
                   desktopWeb ? 24 : 18,
                   18,
                 ),
@@ -10200,7 +10200,7 @@ class SafeShopProductTile extends StatelessWidget {
       }
 
       return SizedBox(
-        height: 396,
+        height: 432,
         child: Material(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -10321,7 +10321,7 @@ class SafeShopProductTile extends StatelessWidget {
                           ),
                           const Spacer(),
                           desktopPrice(),
-                          const SizedBox(height: 11),
+                          const SizedBox(height: 9),
                           primaryAction(fullWidth: true),
                         ],
                       ),

@@ -8998,10 +8998,32 @@ Future<AgricultureFeedUpdate> saveAgricultureFeedUpdate({
     return AgricultureFeedUpdate.fromSupabase(
       Map<String, dynamic>.from(response as Map),
     );
+  } on PostgrestException catch (error) {
+    farmDebugLog(
+      'Agriculture feed publish database failure: '
+      'code=${error.code}; message=${error.message}; '
+      'details=${error.details}; hint=${error.hint}',
+    );
+    final code = error.code ?? 'unknown';
+    final message = error.message;
+    if (code == '42501' ||
+        message.toLowerCase().contains('row-level security') ||
+        message.toLowerCase().contains('permission denied')) {
+      throw Exception(
+        'Feed publishing was blocked by database permissions (code $code). '
+        'Ask the HPJ owner to check the agriculture_feed_updates policies. '
+        'Details: $message',
+      );
+    }
+    if (code == '23514' || code == '23502' || code == '22P02') {
+      throw Exception(
+        'The feed update does not match a database requirement '
+        '(code $code). Details: $message',
+      );
+    }
+    throw Exception('Feed publishing failed (database code $code): $message');
   } catch (error) {
     farmDebugLog('Agriculture feed publish failed: $error');
-    // Keep the actual Supabase error available for diagnosis. A generic
-    // success message must never be shown when INSERT/UPDATE fails.
     throw Exception('Could not publish feed update: $error');
   }
 }

@@ -17115,7 +17115,10 @@ class _MainNavigationState extends State<MainNavigation>
         onToggleFavorite: toggleFavorite,
       ),
       ShopScreen(
-        key: ValueKey('shop-$authViewKey-$shopRefreshVersion'),
+        // Keep the Shop widget mounted across ordinary tab refreshes so
+        // nutrient, price, farm, category, search and sort state survive.
+        // Auth changes still reset private/customer state safely.
+        key: ValueKey('shop-$authViewKey'),
         onAddToCart: increaseProductQuantity,
         onRemoveFromCart: decreaseProductQuantity,
         quantityForProduct: quantityForProduct,

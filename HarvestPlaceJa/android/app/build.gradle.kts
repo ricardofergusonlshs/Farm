@@ -30,7 +30,7 @@ android {
         targetSdk = flutter.targetSdkVersion
 
         // Must increase for each Google Play upload.
-        versionCode = 59
+        versionCode = 60
         versionName = "1.0.4"
     }
 

@@ -7040,7 +7040,7 @@ class HeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(top: 4),
-      height: 188,
+      constraints: const BoxConstraints(minHeight: 188),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
         gradient: const LinearGradient(
@@ -7085,11 +7085,8 @@ class HeroCard extends StatelessWidget {
                 color: Colors.white.withOpacity(0.075),
               ),
             ),
-            Positioned(
-              left: 22,
-              top: 22,
-              right: 22,
-              bottom: 20,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -7115,7 +7112,7 @@ class HeroCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 16),
                   const Wrap(
                     spacing: 8,
                     runSpacing: 8,

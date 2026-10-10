@@ -10279,9 +10279,21 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      // OAuth must return to the same web origin that started the flow.
+      // The farm:// callback is reserved for installed Android builds.
+      final googleRedirect = kIsWeb
+          ? Uri.base
+              .replace(
+                path: '/',
+                query: '',
+                fragment: '',
+              )
+              .toString()
+          : AppConfig.googleOAuthRedirectTo;
+
       final launched = await supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: AppConfig.googleOAuthRedirectTo,
+        redirectTo: googleRedirect,
       );
 
       if (!launched) {

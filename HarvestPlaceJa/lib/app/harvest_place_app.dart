@@ -9504,6 +9504,7 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
     if (mounted) {
       setState(() {
         preparingRecoverySession = true;
+        recoverySessionReady = false;
         recoverySessionError = null;
       });
     }
@@ -9512,19 +9513,26 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
       final code = AppConfig.passwordRecoveryCode;
       final refreshToken = AppConfig.passwordRecoveryRefreshToken;
       final accessToken = AppConfig.passwordRecoveryAccessToken;
-      final currentSession = supabase.auth.currentSession;
 
-      // Supabase Flutter can consume a PKCE callback automatically before this
-      // screen is built. Never exchange the same single-use code twice.
-      if (currentSession == null && code != null && code.isNotEmpty) {
+      // Allow supabase_flutter to consume the deep link first. It may be
+      // exchanging the PKCE code asynchronously when this widget appears.
+      for (var attempt = 0;
+          attempt < 8 && supabase.auth.currentSession == null;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+
+      // Fallback if the SDK did not complete the recovery callback itself.
+      if (supabase.auth.currentSession == null &&
+          code != null &&
+          code.isNotEmpty) {
         try {
           await supabase.auth.exchangeCodeForSession(code);
         } catch (error) {
-          // A concurrent SDK deep-link handler may have completed the exchange.
-          // Accept that case only if it actually established a session.
+          // An SDK listener might have exchanged this single-use code.
           if (supabase.auth.currentSession == null) rethrow;
         }
-      } else if (currentSession == null &&
+      } else if (supabase.auth.currentSession == null &&
           refreshToken != null &&
           refreshToken.isNotEmpty) {
         if (accessToken != null && accessToken.isNotEmpty) {
@@ -9537,12 +9545,17 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
         }
       }
 
-      // A recovery URL marker alone is not proof of authorization.
-      // Supabase must have established a valid session.
+      // Wait briefly for session persistence after the exchange.
+      for (var attempt = 0;
+          attempt < 8 && supabase.auth.currentSession == null;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+
       if (supabase.auth.currentSession == null) {
         throw Exception(
-          'The password reset link has not established a session. '
-          'Request a new reset email and open its latest link in HPJ.',
+          'The recovery link did not establish a session. '
+          'Please request a new password-reset email and open its newest link.'
         );
       }
 

@@ -1987,7 +1987,18 @@ class _AuthGateState extends State<AuthGate> {
         isEmailConfirmation = false;
         hasEnteredMarket = false;
         shouldChooseWorkspace = false;
-        emailConfirmationError = friendlyAppError(error);
+        // Expired, consumed or invalid one-time links are a recoverable
+        // authentication state, not an application crash.
+        final authMessage = error.toString().toLowerCase();
+        final expiredLink = authMessage.contains('otp_expired') ||
+            authMessage.contains('access_denied') ||
+            authMessage.contains('invalid or has expired') ||
+            authMessage.contains('expired') ||
+            authMessage.contains('invalid_grant');
+        emailConfirmationError = expiredLink
+            ? 'This confirmation link has expired or has already been used. '
+                'Please sign in, or request a new confirmation email.'
+            : friendlyAppError(error);
       });
     }
   }
@@ -17547,4 +17558,179 @@ class FarmPage extends StatelessWidget {
       child: SafeArea(child: child),
     );
   }
+}
+
+// HPJ Reliability Phase 2 — embedded in existing app library part.
+// Do not also register hpj_reliability_phase2_widget.dart.
+class HpjReliabilityPhase2Panel extends StatefulWidget {
+  const HpjReliabilityPhase2Panel({super.key});
+
+  @override
+  State<HpjReliabilityPhase2Panel> createState() =>
+      _HpjReliabilityPhase2PanelState();
+}
+
+class _HpjReliabilityPhase2PanelState extends State<HpjReliabilityPhase2Panel> {
+  late Future<HpjPlatformHealthSnapshot> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchHpjAdminPlatformHealth(days: 7);
+  }
+
+  void _refresh() {
+    setState(() {
+      _future = fetchHpjAdminPlatformHealth(days: 7);
+    });
+  }
+
+  static String _field(Map<String, dynamic> row, List<String> keys,
+      [String fallback = 'Not available']) {
+    for (final key in keys) {
+      final value = row[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString();
+      }
+    }
+    return fallback;
+  }
+
+  static Map<String, dynamic> _metadata(Map<String, dynamic> row) {
+    final raw = row['metadata'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return const <String, dynamic>{};
+  }
+
+  void _openReport(Map<String, dynamic> event) {
+    final metadata = _metadata(event);
+    final severity = _field(event, ['severity'], 'unknown').toUpperCase();
+    final area = _field(event, ['area'], 'app');
+    final key = _field(event, ['event_key', 'eventKey'], 'event');
+    final message = _field(event, ['message'], 'No message recorded');
+    final time = _field(event, ['created_at', 'occurred_at', 'timestamp'],
+        _field(metadata, ['captured_at'], 'Not available'));
+    final platform = _field(event, ['platform'], 'Not available');
+    final version = _field(event, ['app_version'], 'Not available');
+    final build = _field(event, ['app_build'], 'Not available');
+    final stack = _field(metadata, ['stack_trace', 'stackTrace'],
+        _field(event, ['stack_trace'], 'Not captured for this event'));
+
+    Widget detail(String title, String value, {bool code = false}) => Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 5),
+              SelectableText(value,
+                  style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      fontFamily: code ? 'monospace' : null)),
+            ],
+          ),
+        );
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$severity · $area / $key'),
+        content: SizedBox(
+          width: 650,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                detail('Message', message),
+                detail('Recorded at', time),
+                detail('Platform', platform),
+                detail('App version / build', '$version / $build'),
+                detail('Stack trace', stack, code: true),
+                if (metadata.isNotEmpty)
+                  detail('Additional metadata', metadata.toString(),
+                      code: true),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FutureBuilder<HpjPlatformHealthSnapshot>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Could not load Reliability events.'),
+                TextButton(onPressed: _refresh, child: const Text('Retry')),
+              ],
+            );
+          }
+          final data = snapshot.data!;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                const Expanded(
+                  child: Text('Reliability',
+                      style:
+                          TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
+                ),
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              Wrap(spacing: 12, runSpacing: 8, children: [
+                Chip(label: Text('Errors · 24h: ${data.errors24h}')),
+                Chip(label: Text('Fatal · 24h: ${data.fatals24h}')),
+                Chip(
+                    label:
+                        Text('Events · ${data.days}d: ${data.eventsPeriod}')),
+              ]),
+              const SizedBox(height: 14),
+              const Text('Recent signals',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (data.recent.isEmpty) const Text('No recent health events.'),
+              for (final event in data.recent)
+                Card(
+                  child: ListTile(
+                    title: Text(
+                      '${_field(event, ['area'], 'app')} · '
+                      '${_field(event, ['event_key'], 'event')}',
+                    ),
+                    subtitle: Text(
+                      _field(event, ['message'], 'No message recorded'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _openReport(event),
+                  ),
+                ),
+            ],
+          );
+        },
+      );
 }

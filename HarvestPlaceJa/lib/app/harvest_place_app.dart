@@ -1602,6 +1602,8 @@ class _AuthGateState extends State<AuthGate> {
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _deepLinkSubscription;
   bool _referralCaptureScheduled = false;
+  bool _googleOAuthProcessing = false;
+  String? _lastCompletedGoogleOAuthCode;
 
   String get _normalizedWebsitePath {
     if (!kIsWeb) return '';
@@ -1823,8 +1825,18 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _prepareGoogleOAuthSession() async {
-    if (!AppConfig.hasGoogleOAuthCallback) return;
+    if (!AppConfig.hasGoogleOAuthCallback || _googleOAuthProcessing) return;
 
+    final code = AppConfig.googleOAuthCode;
+    if (code != null &&
+        code.isNotEmpty &&
+        code == _lastCompletedGoogleOAuthCode &&
+        supabase.auth.currentSession != null) {
+      AppConfig.cleanAuthCallbackUrl();
+      return;
+    }
+
+    _googleOAuthProcessing = true;
     if (mounted) {
       setState(() {
         isGoogleOAuthCallback = true;
@@ -1837,24 +1849,41 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     try {
-      final code = AppConfig.googleOAuthCode;
+      // Supabase's deep-link handler may be processing the same callback.
+      // Give it the first opportunity to establish the session.
+      for (var attempt = 0;
+          attempt < 10 && supabase.auth.currentSession == null;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
 
-      // supabase_flutter normally completes the PKCE exchange automatically.
-      // This fallback covers Android/deep-link timing where the callback arrives
-      // before the SDK has established the session.
+      // Only use manual PKCE exchange as a fallback. An SDK exchange may
+      // already have consumed the one-time code; in that case, wait for its
+      // session rather than failing immediately on the duplicate exchange.
       if (supabase.auth.currentSession == null &&
           code != null &&
           code.isNotEmpty) {
-        await supabase.auth.exchangeCodeForSession(code);
+        try {
+          await supabase.auth.exchangeCodeForSession(code);
+        } catch (error) {
+          farmDebugLog('Google OAuth fallback exchange: $error');
+        }
+      }
+
+      for (var attempt = 0;
+          attempt < 20 && supabase.auth.currentSession == null;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
       }
 
       if (supabase.auth.currentSession == null) {
         throw Exception(
-          'Google sign-in returned to HPJ but no session was created.',
+          'Google sign-in did not finish. Please try again.',
         );
       }
 
       FarmDataCache.clearAll();
+      _lastCompletedGoogleOAuthCode = code;
       AppConfig.cleanAuthCallbackUrl();
 
       if (!mounted) return;
@@ -1868,7 +1897,7 @@ class _AuthGateState extends State<AuthGate> {
       });
     } catch (error) {
       AppConfig.cleanAuthCallbackUrl();
-
+      farmDebugLog('Google OAuth callback failed: $error');
       if (!mounted) return;
       setState(() {
         isGoogleOAuthCallback = false;
@@ -1876,6 +1905,8 @@ class _AuthGateState extends State<AuthGate> {
         shouldChooseWorkspace = false;
         googleOAuthError = friendlyAppError(error);
       });
+    } finally {
+      _googleOAuthProcessing = false;
     }
   }
 
@@ -9553,10 +9584,8 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
       }
 
       if (supabase.auth.currentSession == null) {
-        throw Exception(
-          'The recovery link did not establish a session. '
-          'Please request a new password-reset email and open its newest link.'
-        );
+        throw Exception('The recovery link did not establish a session. '
+            'Please request a new password-reset email and open its newest link.');
       }
 
       if (!mounted) return;
@@ -10065,7 +10094,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     _googleAuthSubscription = supabase.auth.onAuthStateChange.listen((data) {
-      if (!googleFlowStarted || data.session == null || !mounted) return;
+      // Never treat an existing/restored session as completion of a new
+      // Google OAuth attempt. Only a fresh sign-in event can complete it.
+      if (!googleFlowStarted ||
+          data.event != AuthChangeEvent.signedIn ||
+          data.session?.user.id.trim().isEmpty != false ||
+          !mounted) return;
 
       googleFlowStarted = false;
       FarmDataCache.clearAll();
@@ -10307,21 +10341,26 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      // A previously persisted Supabase session must NOT be mistaken for
+      // the account the user is about to select in Google's account chooser.
+      // Reuse HPJ's established cleanup for private caches and push tokens.
+      if (supabase.auth.currentSession != null) {
+        await signOutFromHpjSession();
+      } else {
+        clearHpjPrivateAccountMemory(forceBoundary: true);
+      }
+
+      if (!mounted) return;
+
       // OAuth must return to the same web origin that started the flow.
       // The farm:// callback is reserved for installed Android builds.
-      final googleRedirect = kIsWeb
-          ? Uri.base
-              .replace(
-                path: '/',
-                query: '',
-                fragment: '',
-              )
-              .toString()
-          : AppConfig.googleOAuthRedirectTo;
+      final googleRedirect = AppConfig.googleOAuthRedirectTo;
 
       final launched = await supabase.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: googleRedirect,
+        // Always let the user select which Google account to use.
+        queryParams: const <String, String>{'prompt': 'select_account'},
       );
 
       if (!launched) {
@@ -10336,10 +10375,8 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => googleLoading = false);
       }
 
-      if (supabase.auth.currentSession != null && googleFlowStarted) {
-        googleFlowStarted = false;
-        _finishGoogleSignInNavigation();
-      }
+      // Do not navigate here. The browser opening is NOT an authentication
+      // result; wait for Supabase's signedIn event / the OAuth callback.
     } on AuthException catch (error) {
       googleFlowStarted = false;
       if (!mounted) return;

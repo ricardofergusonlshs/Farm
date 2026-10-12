@@ -1,8 +1,11 @@
 part of harvest_place_app;
 
 // ============================================================================
+
 // HPJ 9/10 MVP — GROWTH & OPERATIONS CONTROL CENTER
+
 // Audience, conversion, needs-attention, substitutions, app releases, health.
+
 // ============================================================================
 
 class AdminMvpProductionControlCenter extends StatefulWidget {
@@ -18,17 +21,43 @@ class AdminMvpProductionControlCenter extends StatefulWidget {
 class _AdminMvpProductionControlCenterState
     extends State<AdminMvpProductionControlCenter> {
   int _days = 30;
+  String _healthFilter = 'all';
+  bool _groupHealthSignals = true;
+  bool _showAllHealthSignals = false;
+  Map<String, Map<String, dynamic>> _issueRecords = {};
+  bool _issuesLoading = false;
+  String? _issueLoadError;
+
+  Future<void> _loadReliabilityIssues() async {
+    if (!mounted) return;
+    setState(() {
+      _issuesLoading = true;
+      _issueLoadError = null;
+    });
+    try {
+      final records = await fetchHpjReliabilityIssues();
+      if (mounted) setState(() => _issueRecords = records);
+    } catch (error) {
+      if (mounted) setState(() => _issueLoadError = error.toString());
+    } finally {
+      if (mounted) setState(() => _issuesLoading = false);
+    }
+  }
+
   late Future<List<dynamic>> _future;
 
   @override
   void initState() {
     super.initState();
+
     _reload();
+    _loadReliabilityIssues();
   }
 
   @override
   void didUpdateWidget(covariant AdminMvpProductionControlCenter oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (oldWidget.refreshKey != widget.refreshKey) _reload();
   }
 
@@ -44,6 +73,7 @@ class _AdminMvpProductionControlCenterState
 
   void _reload() {
     final next = _load();
+
     if (mounted) {
       setState(() {
         _future = next;
@@ -57,6 +87,7 @@ class _AdminMvpProductionControlCenterState
     setState(() {
       _future = _load();
     });
+
     await _future;
   }
 
@@ -193,6 +224,97 @@ class _AdminMvpProductionControlCenterState
     );
   }
 
+  Future<void> _showOperationsDetails({
+    required String title,
+    required String summary,
+    required List<String> details,
+    VoidCallback? manage,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 22),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                        color: FarmColors.ink)),
+                const SizedBox(height: 8),
+                Text(summary,
+                    style: const TextStyle(
+                        color: FarmColors.mutedText, height: 1.4)),
+                const SizedBox(height: 15),
+                for (final detail in details)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 11),
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.check_circle_outline,
+                              color: FarmColors.deepGreen, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                              child: Text(detail,
+                                  style: const TextStyle(
+                                      color: FarmColors.ink, height: 1.35))),
+                        ]),
+                  ),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                      child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _reload();
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Refresh data'),
+                  )),
+                  if (manage != null) ...[
+                    const SizedBox(width: 9),
+                    Expanded(
+                        child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        manage();
+                      },
+                      icon: const Icon(Icons.tune),
+                      label: const Text('Manage'),
+                    )),
+                  ],
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAttentionDetails(String label, int count, String detail) {
+    _showOperationsDetails(
+      title: label,
+      summary: '$count outstanding signal(s) • $detail',
+      details: [
+        'This count is taken from the current HPJ operational snapshot.',
+        'Review the corresponding Orders, Products, Messages, Substitutions or Reliability workspace to act on individual records.',
+        'Refresh after resolving items to see the updated total.',
+      ],
+    );
+  }
+
   Widget _attentionRow({
     required IconData icon,
     required String label,
@@ -201,84 +323,91 @@ class _AdminMvpProductionControlCenterState
     bool urgent = false,
   }) {
     final active = count > 0;
+
     final tone = urgent ? FarmColors.danger : FarmColors.warning;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-      decoration: BoxDecoration(
-        color: active
-            ? urgent
-                ? FarmColors.dangerSoft
-                : FarmColors.warningSoft
-            : FarmColors.cardSoft,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color:
-              active ? tone.withOpacity(.16) : FarmColors.line.withOpacity(.6),
+
+    return InkWell(
+      onTap: () => _showAttentionDetails(label, count, detail),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        decoration: BoxDecoration(
+          color: active
+              ? urgent
+                  ? FarmColors.dangerSoft
+                  : FarmColors.warningSoft
+              : FarmColors.cardSoft,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: active
+                ? tone.withOpacity(.16)
+                : FarmColors.line.withOpacity(.6),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 31,
-            height: 31,
-            decoration: BoxDecoration(
-              color: active ? Colors.white.withOpacity(.75) : Colors.white,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              icon,
-              size: 17,
-              color: active ? tone : FarmColors.mutedText,
-            ),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.7,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            constraints: const BoxConstraints(minWidth: 30),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '$count',
-              style: TextStyle(
-                color: active ? FarmColors.deepGreen : FarmColors.mutedText,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
+        child: Row(
+          children: [
+            Container(
+              width: 31,
+              height: 31,
+              decoration: BoxDecoration(
+                color: active ? Colors.white.withOpacity(.75) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                size: 17,
+                color: active ? tone : FarmColors.mutedText,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 9.7,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              constraints: const BoxConstraints(minWidth: 30),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  color: active ? FarmColors.deepGreen : FarmColors.mutedText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -288,34 +417,40 @@ class _AdminMvpProductionControlCenterState
     required String label,
     bool positive = false,
     bool warning = false,
+    VoidCallback? onTap,
   }) {
     final background = warning
         ? FarmColors.warningSoft
         : positive
             ? FarmColors.primarySoft
             : FarmColors.cardSoft;
+
     final foreground = warning ? FarmColors.warning : FarmColors.deepGreen;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: foreground),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: foreground,
-              fontSize: 9.8,
-              fontWeight: FontWeight.w900,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: foreground),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 9.8,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -402,6 +537,7 @@ class _AdminMvpProductionControlCenterState
                 icon: Icons.people_alt_outlined,
                 label: '${audience.visitorsToday} visitors',
                 positive: true,
+                onTap: _openVisitorIntelligence,
               ),
               _statusPill(
                 icon: attention.total > 0
@@ -412,12 +548,37 @@ class _AdminMvpProductionControlCenterState
                     : 'Operations clear',
                 positive: attention.total == 0,
                 warning: attention.total > 0,
+                onTap: () => _showOperationsDetails(
+                  title: 'Needs attention',
+                  summary:
+                      '${attention.total} operational signals require review',
+                  details: [
+                    'Bank transfers: ${attention.paymentReviews}',
+                    'Orders preparing too long: ${attention.ordersPreparingTooLong}',
+                    'Overdue orders: ${attention.overdueOrders}',
+                    'Low stock: ${attention.lowStockProducts}',
+                    'Unanswered messages: ${attention.unansweredMessages}',
+                    'Replacement approvals: ${attention.pendingSubstitutions}',
+                    'Platform errors (24h): ${attention.platformErrors24h}',
+                  ],
+                ),
               ),
               _statusPill(
                 icon: Icons.android_rounded,
                 label: 'Play build ${release.latestAndroidBuild}',
                 positive: !release.forceLatestUpdate,
                 warning: release.forceLatestUpdate,
+                onTap: () => _showOperationsDetails(
+                  title: 'Android release control',
+                  summary: 'Google Play build ${release.latestAndroidBuild}',
+                  details: [
+                    'Minimum supported build: ${release.minAndroidBuild}',
+                    'Latest build: ${release.latestAndroidBuild}',
+                    'Force latest update: ${release.forceLatestUpdate ? 'ON' : 'OFF'}',
+                    'Snooze window: ${release.snoozeHours} hours',
+                  ],
+                  manage: () => _manageReleaseControl(release),
+                ),
               ),
             ],
           ),
@@ -429,14 +590,20 @@ class _AdminMvpProductionControlCenterState
   Future<void> _manageReleaseControl(HpjAppReleaseControl current) async {
     final minController =
         TextEditingController(text: '${current.minAndroidBuild}');
+
     final latestController =
         TextEditingController(text: '${current.latestAndroidBuild}');
+
     final titleController = TextEditingController(text: current.updateTitle);
+
     final messageController =
         TextEditingController(text: current.updateMessage);
+
     final snoozeController =
         TextEditingController(text: '${current.snoozeHours}');
+
     var forceLatest = current.forceLatestUpdate;
+
     var saving = false;
 
     await showDialog<void>(
@@ -446,9 +613,13 @@ class _AdminMvpProductionControlCenterState
           builder: (context, setDialogState) {
             Future<void> save() async {
               if (saving) return;
+
               final minBuild = int.tryParse(minController.text.trim());
+
               final latestBuild = int.tryParse(latestController.text.trim());
+
               final snooze = int.tryParse(snoozeController.text.trim());
+
               if (minBuild == null ||
                   latestBuild == null ||
                   latestBuild < minBuild) {
@@ -458,9 +629,12 @@ class _AdminMvpProductionControlCenterState
                         'Enter valid builds. Latest build must be at least the minimum build.'),
                   ),
                 );
+
                 return;
               }
+
               setDialogState(() => saving = true);
+
               try {
                 await updateHpjAdminAppReleaseControl(
                   HpjAppReleaseControl(
@@ -473,11 +647,15 @@ class _AdminMvpProductionControlCenterState
                     snoozeHours: (snooze ?? 12).clamp(1, 168),
                   ),
                 );
+
                 if (!dialogContext.mounted) return;
+
                 Navigator.of(dialogContext).pop();
+
                 _reload();
               } catch (error) {
                 if (!dialogContext.mounted) return;
+
                 ScaffoldMessenger.of(dialogContext).showSnackBar(
                   SnackBar(content: Text(friendlyAppError(error))),
                 );
@@ -589,9 +767,12 @@ class _AdminMvpProductionControlCenterState
         fetchHpjSubstitutionOrderCandidates(),
         fetchAllProducts(),
       ]);
+
       if (!mounted) return;
+
       final orders =
           List<HpjSubstitutionOrderCandidate>.from(loaded[0] as List);
+
       final products = List<Product>.from(loaded[1] as List)
           .where((p) => p.canAddToCart && !p.isSampleProduct)
           .toList(growable: false);
@@ -602,21 +783,28 @@ class _AdminMvpProductionControlCenterState
               content: Text(
                   'No unpaid active orders are available for substitution.')),
         );
+
         return;
       }
+
       if (products.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text(
                   'No live in-stock products are available as replacements.')),
         );
+
         return;
       }
 
       HpjSubstitutionOrderCandidate? selectedOrder;
+
       HpjSubstitutionOrderItemCandidate? selectedItem;
+
       Product? replacement;
+
       final noteController = TextEditingController();
+
       var saving = false;
 
       await showModalBottomSheet<void>(
@@ -637,7 +825,9 @@ class _AdminMvpProductionControlCenterState
                     selectedOrder == null ||
                     selectedItem == null ||
                     replacement == null) return;
+
                 setSheetState(() => saving = true);
+
                 try {
                   await hpjAdminProposeOrderSubstitution(
                     orderId: selectedOrder!.orderId,
@@ -645,9 +835,13 @@ class _AdminMvpProductionControlCenterState
                     replacementProductId: replacement!.id,
                     note: noteController.text,
                   );
+
                   if (!sheetContext.mounted) return;
+
                   Navigator.of(sheetContext).pop();
+
                   _reload();
+
                   if (mounted) {
                     ScaffoldMessenger.of(this.context).showSnackBar(
                       const SnackBar(
@@ -657,6 +851,7 @@ class _AdminMvpProductionControlCenterState
                   }
                 } catch (error) {
                   if (!sheetContext.mounted) return;
+
                   ScaffoldMessenger.of(sheetContext).showSnackBar(
                     SnackBar(content: Text(friendlyAppError(error))),
                   );
@@ -712,7 +907,9 @@ class _AdminMvpProductionControlCenterState
                             : (value) {
                                 setSheetState(() {
                                   selectedOrder = value;
+
                                   selectedItem = null;
+
                                   replacement = null;
                                 });
                               },
@@ -738,6 +935,7 @@ class _AdminMvpProductionControlCenterState
                             : (value) {
                                 setSheetState(() {
                                   selectedItem = value;
+
                                   replacement = null;
                                 });
                               },
@@ -806,6 +1004,7 @@ class _AdminMvpProductionControlCenterState
       );
     } catch (error) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(friendlyAppError(error))),
       );
@@ -888,18 +1087,51 @@ class _AdminMvpProductionControlCenterState
                   _releaseStat(
                     width: itemWidth,
                     label: 'Minimum',
+                    onTap: () => _showOperationsDetails(
+                      title: 'Minimum',
+                      summary:
+                          'The oldest Android build currently allowed by your release policy.',
+                      details: [
+                        'Minimum build: ${control.minAndroidBuild}',
+                        'Latest build: ${control.latestAndroidBuild}',
+                        'Force update: ${control.forceLatestUpdate ? 'ON' : 'OFF'}',
+                      ],
+                      manage: () => _manageReleaseControl(control),
+                    ),
                     value: '${control.minAndroidBuild}',
                     icon: Icons.security_update_warning_outlined,
                   ),
                   _releaseStat(
                     width: itemWidth,
                     label: 'Latest',
+                    onTap: () => _showOperationsDetails(
+                      title: 'Latest',
+                      summary:
+                          'The latest Android build configured in HPJ release control.',
+                      details: [
+                        'Minimum build: ${control.minAndroidBuild}',
+                        'Latest build: ${control.latestAndroidBuild}',
+                        'Force update: ${control.forceLatestUpdate ? 'ON' : 'OFF'}',
+                      ],
+                      manage: () => _manageReleaseControl(control),
+                    ),
                     value: '${control.latestAndroidBuild}',
                     icon: Icons.new_releases_outlined,
                   ),
                   _releaseStat(
                     width: itemWidth,
                     label: 'Force update',
+                    onTap: () => _showOperationsDetails(
+                      title: 'Force update',
+                      summary:
+                          'When enabled, older app builds may be required to update.',
+                      details: [
+                        'Minimum build: ${control.minAndroidBuild}',
+                        'Latest build: ${control.latestAndroidBuild}',
+                        'Force update: ${control.forceLatestUpdate ? 'ON' : 'OFF'}',
+                      ],
+                      manage: () => _manageReleaseControl(control),
+                    ),
                     value: forced ? 'ON' : 'OFF',
                     icon: Icons.shield_outlined,
                     warning: forced,
@@ -931,51 +1163,56 @@ class _AdminMvpProductionControlCenterState
     required String value,
     required IconData icon,
     bool warning = false,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      width: width,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: FarmColors.line.withOpacity(.8)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 16,
-            color: warning ? FarmColors.warning : FarmColors.green,
-          ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.ink,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.2,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: width,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: FarmColors.line.withOpacity(.8)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: warning ? FarmColors.warning : FarmColors.green,
             ),
-          ),
-        ],
+            const SizedBox(width: 7),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: FarmColors.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: FarmColors.mutedText,
+                      fontSize: 9.2,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1081,6 +1318,232 @@ class _AdminMvpProductionControlCenterState
     );
   }
 
+  Future<void> _editReliabilityIssue(Map<String, dynamic> event) async {
+    final key = hpjReliabilityIssueKey(event);
+    final existing = _issueRecords[key] ?? const <String, dynamic>{};
+    var status = (existing['status'] ?? 'new').toString();
+    if (!{'new', 'investigating', 'resolved', 'reopened'}.contains(status)) {
+      status = 'new';
+    }
+    final note =
+        TextEditingController(text: (existing['admin_note'] ?? '').toString());
+    final owner =
+        TextEditingController(text: (existing['assigned_to'] ?? '').toString());
+    var saving = false;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, updateDialog) => AlertDialog(
+            title: const Text('Manage reliability issue'),
+            content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SelectableText(key, style: const TextStyle(fontSize: 11)),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: status,
+                        decoration: const InputDecoration(labelText: 'Status'),
+                        items: const [
+                          DropdownMenuItem(value: 'new', child: Text('New')),
+                          DropdownMenuItem(
+                              value: 'investigating',
+                              child: Text('Investigating')),
+                          DropdownMenuItem(
+                              value: 'resolved', child: Text('Resolved')),
+                          DropdownMenuItem(
+                              value: 'reopened', child: Text('Reopened')),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value != null)
+                                  updateDialog(() => status = value);
+                              },
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                          controller: owner,
+                          decoration: const InputDecoration(
+                              labelText: 'Assigned to (name)')),
+                      const SizedBox(height: 10),
+                      TextField(
+                          controller: note,
+                          maxLines: 4,
+                          decoration: const InputDecoration(
+                              labelText: 'Investigation notes')),
+                    ]),
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          updateDialog(() => saving = true);
+                          try {
+                            await saveHpjReliabilityIssue(
+                                issueKey: key,
+                                status: status,
+                                note: note.text,
+                                assignedTo: owner.text);
+                            if (dialogContext.mounted)
+                              Navigator.pop(dialogContext);
+                            await _loadReliabilityIssues();
+                          } catch (error) {
+                            if (dialogContext.mounted) {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                  SnackBar(
+                                      content: Text(
+                                          'Could not save issue: $error')));
+                              updateDialog(() => saving = false);
+                            }
+                          }
+                        },
+                  child: Text(saving ? 'Saving…' : 'Save issue')),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      // Defer disposal until the dialog's closing animation has completed.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        note.dispose();
+        owner.dispose();
+      });
+    }
+  }
+
+  Future<void> _openHpjHealthReport(Map<String, dynamic> event) async {
+    final rawMetadata = event['metadata'];
+    final metadata = rawMetadata is Map
+        ? Map<String, dynamic>.from(rawMetadata)
+        : <String, dynamic>{};
+    String field(String key, [String fallback = 'Not recorded']) {
+      final value = event[key] ?? metadata[key];
+      final result = value?.toString().trim() ?? '';
+      return result.isEmpty ? fallback : result;
+    }
+
+    final severity = field('severity');
+    final area = field('area');
+    final eventKey = field('event_key');
+    final message = field('message');
+    final captured = field('created_at', field('captured_at_client'));
+    final stack = field('stack_trace', 'No stack trace recorded');
+    final report = <String>[
+      'HPJ RELIABILITY REPORT',
+      'Severity: $severity',
+      'Area: $area',
+      'Event: $eventKey',
+      'Time: $captured',
+      'Platform: ${field('platform')}',
+      'Version: ${field('app_version')}',
+      'Build: ${field('build_number')}',
+      'Message: $message',
+      'Stack trace: $stack',
+      'Metadata: $metadata',
+    ].join('\n');
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reliability event details'),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: SelectableText(report),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _editReliabilityIssue(event);
+            },
+            icon: const Icon(Icons.assignment_turned_in_outlined),
+            label: const Text('Manage issue'),
+          ),
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: report));
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Reliability report copied')),
+              );
+            },
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copy report'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Phase 3: local investigation tools. No new database tables required.
+  DateTime? _healthTimestamp(Map<String, dynamic> row) {
+    final metadata = row['metadata'];
+    final fallback = metadata is Map ? metadata['captured_at_client'] : null;
+    return DateTime.tryParse((row['created_at'] ?? fallback ?? '').toString());
+  }
+
+  String _healthSeverity(Map<String, dynamic> row) =>
+      (row['severity'] ?? '').toString().toLowerCase();
+
+  List<Map<String, dynamic>> _visibleHealthSignals(
+      HpjPlatformHealthSnapshot health) {
+    final now = DateTime.now();
+    final filtered = health.recent.where((row) {
+      final severity = _healthSeverity(row);
+      if (_healthFilter == 'fatal' &&
+          severity != 'fatal' &&
+          severity != 'critical') return false;
+      if (_healthFilter == 'error' && severity != 'error') return false;
+      if (_healthFilter == 'warning' &&
+          severity != 'warning' &&
+          severity != 'warn') return false;
+      if (_healthFilter == '24h') {
+        final time = _healthTimestamp(row);
+        if (time == null ||
+            now.difference(time).inHours >= 24 ||
+            time.isAfter(now)) return false;
+      }
+      return true;
+    }).toList();
+    filtered.sort((a, b) {
+      final at = _healthTimestamp(a);
+      final bt = _healthTimestamp(b);
+      if (at == null) return bt == null ? 0 : 1;
+      if (bt == null) return -1;
+      return bt.compareTo(at);
+    });
+    if (!_groupHealthSignals) return filtered;
+    final grouped = <String, Map<String, dynamic>>{};
+    for (final row in filtered) {
+      final key =
+          '${row['area'] ?? 'app'}|${row['event_key'] ?? row['message'] ?? 'unknown'}|${_healthSeverity(row)}';
+      if (grouped.containsKey(key)) {
+        grouped[key]!['_phase3_count'] =
+            (grouped[key]!['_phase3_count'] as int) + 1;
+      } else {
+        grouped[key] = {...row, '_phase3_count': 1};
+      }
+    }
+    return grouped.values.toList();
+  }
+
   Widget _healthSection(HpjPlatformHealthSnapshot health) {
     final healthy = health.errors24h == 0 && health.fatals24h == 0;
 
@@ -1145,40 +1608,149 @@ class _AdminMvpProductionControlCenterState
               );
             },
           ),
-          if (health.recent.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Recent signals',
-              style: TextStyle(
-                color: FarmColors.ink,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 7),
-            for (final row in health.recent.take(4))
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: FarmColors.cardSoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          const SizedBox(height: 12),
+          if (_issuesLoading) const LinearProgressIndicator(),
+          if (_issueLoadError != null)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  '${row['area'] ?? 'app'} • ${row['event_key'] ?? 'event'} — ${row['message'] ?? ''}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: FarmColors.mutedText,
-                    fontSize: 9.8,
-                    height: 1.3,
-                    fontWeight: FontWeight.w600,
+                    'Issue tracking unavailable. Run Phase 4 SQL and check admin access. $_issueLoadError',
+                    style: const TextStyle(color: Colors.red, fontSize: 10))),
+          TextButton.icon(
+              onPressed: _issuesLoading ? null : _loadReliabilityIssues,
+              icon: const Icon(Icons.sync_rounded, size: 16),
+              label: const Text('Refresh issue statuses')),
+          const Text('Investigate signals',
+              style: TextStyle(
+                  color: FarmColors.ink,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final choice in const <String, String>{
+                'all': 'All',
+                'fatal': 'Fatal',
+                'error': 'Errors',
+                'warning': 'Warnings',
+                '24h': 'Last 24h',
+              }.entries)
+                ChoiceChip(
+                  label: Text(choice.value),
+                  selected: _healthFilter == choice.key,
+                  onSelected: (_) => setState(() => _healthFilter = choice.key),
+                ),
+              FilterChip(
+                label: const Text('Group repeats'),
+                selected: _groupHealthSignals,
+                onSelected: (value) =>
+                    setState(() => _groupHealthSignals = value),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_visibleHealthSignals(health).isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('No signals match this filter.',
+                  style: TextStyle(color: FarmColors.mutedText)),
+            ),
+          for (final row in (_showAllHealthSignals
+              ? _visibleHealthSignals(health)
+              : _visibleHealthSignals(health).take(8)))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Material(
+                color: FarmColors.cardSoft,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _openHpjHealthReport(row),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _healthSeverity(row) == 'fatal' ||
+                                  _healthSeverity(row) == 'critical'
+                              ? Icons.report_rounded
+                              : Icons.bug_report_outlined,
+                          color: _healthSeverity(row) == 'fatal' ||
+                                  _healthSeverity(row) == 'critical'
+                              ? Colors.red.shade700
+                              : FarmColors.deepGreen,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${row['area'] ?? 'app'} • ${row['event_key'] ?? 'event'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.ink,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                '${row['message'] ?? 'No message'}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: FarmColors.mutedText,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if ((row['_phase3_count'] ?? 1) != 1)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Text('×${row['_phase3_count']}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900)),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 5),
+                          child: Text(
+                            (_issueRecords[hpjReliabilityIssueKey(row)]
+                                        ?['status'] ??
+                                    'new')
+                                .toString()
+                                .toUpperCase(),
+                            style: const TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w800,
+                                color: FarmColors.deepGreen),
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded,
+                            color: FarmColors.deepGreen, size: 18),
+                      ],
+                    ),
                   ),
                 ),
               ),
-          ],
+            ),
+          if (_visibleHealthSignals(health).length > 8)
+            TextButton.icon(
+              onPressed: () => setState(
+                  () => _showAllHealthSignals = !_showAllHealthSignals),
+              icon: Icon(_showAllHealthSignals
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded),
+              label: Text(_showAllHealthSignals
+                  ? 'Show fewer signals'
+                  : 'Show all ${_visibleHealthSignals(health).length} signals'),
+            ),
         ],
       ),
     );
@@ -1217,8 +1789,10 @@ class _AdminMvpProductionControlCenterState
                   selected: _days == value,
                   onSelected: (_) {
                     if (_days == value) return;
+
                     setState(() {
                       _days = value;
+
                       _future = _load();
                     });
                   },
@@ -1312,6 +1886,15 @@ class _AdminMvpProductionControlCenterState
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openVisitorIntelligence,
+              icon: const Icon(Icons.public_rounded, size: 17),
+              label: const Text('Visitor locations & behaviour'),
+            ),
+          ),
           if (audience.appVersions.isNotEmpty) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),
@@ -1339,6 +1922,23 @@ class _AdminMvpProductionControlCenterState
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  // Location is voluntarily supplied; never infer a street address.
+  Future<void> _openVisitorIntelligence() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: .88,
+        child: _HpjVisitorIntelligencePanel(days: _days),
       ),
     );
   }
@@ -1517,10 +2117,15 @@ class _AdminMvpProductionControlCenterState
         }
 
         final data = snapshot.data!;
+
         final audience = data[0] as HpjAudienceSnapshot;
+
         final attention = data[1] as HpjNeedsAttentionSnapshot;
+
         final health = data[2] as HpjPlatformHealthSnapshot;
+
         final substitutions = List<HpjOrderSubstitution>.from(data[3] as List);
+
         final release = data[4] as HpjAppReleaseControl;
 
         return RefreshIndicator(
@@ -1544,6 +2149,165 @@ class _AdminMvpProductionControlCenterState
           ),
         );
       },
+    );
+  }
+}
+
+// Standalone admin-only aggregate viewer. No raw IP addresses or precise GPS.
+class _HpjVisitorIntelligencePanel extends StatefulWidget {
+  final int days;
+  const _HpjVisitorIntelligencePanel({required this.days});
+  @override
+  State<_HpjVisitorIntelligencePanel> createState() =>
+      _HpjVisitorIntelligencePanelState();
+}
+
+class _HpjVisitorIntelligencePanelState
+    extends State<_HpjVisitorIntelligencePanel> {
+  late Future<Map<String, dynamic>> _report;
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  void _refresh() {
+    setState(() {
+      _report = _fetch();
+    });
+  }
+
+  Future<Map<String, dynamic>> _fetch() async {
+    final result = await Supabase.instance.client.rpc(
+      'hpj_admin_visitor_intelligence',
+      params: {'p_days': widget.days},
+    );
+    if (result is Map) return Map<String, dynamic>.from(result);
+    if (result == null) {
+      throw StateError(
+          'No analytics report returned. Verify admin access and the Supabase reporting function.');
+    }
+    throw StateError(
+        'Unexpected analytics response type: ${result.runtimeType}');
+  }
+
+  Widget _group(String title, dynamic raw, String nameKey) {
+    final items = raw is List ? raw : const [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 15, bottom: 8),
+          child: Text(title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+              )),
+        ),
+        if (items.isEmpty)
+          const Text('No tracked data yet.',
+              style: TextStyle(color: Colors.black54))
+        else
+          ...items.take(12).map((item) {
+            final row = item is Map ? item : <String, dynamic>{};
+            final name = (row[nameKey] ?? 'Unknown').toString();
+            final count = (row['visitors'] ?? row['events'] ?? 0).toString();
+            return ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(name),
+              trailing: Text(count,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            );
+          }),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Expanded(
+                  child: Text('Visitor Intelligence',
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w900))),
+              IconButton(
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh'),
+              IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Close'),
+            ]),
+            Text('Last ${widget.days} days • aggregated visitor activity',
+                style: const TextStyle(color: Colors.black54)),
+            const SizedBox(height: 10),
+            Expanded(
+                child: FutureBuilder<Map<String, dynamic>>(
+              future: _report,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return ListView(children: [
+                    const Text('Visitor analytics are not available yet.',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text('${snapshot.error}'),
+                    const SizedBox(height: 8),
+                    const Text('Run the included SQL migration and ensure '
+                        'your account has admin access.'),
+                  ]);
+                }
+                final report = snapshot.data ?? {};
+                return ListView(children: [
+                  Card(
+                      child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            '${report['unique_visitors'] ?? 0} tracked visitors',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 18)),
+                        Text('${report['total_events'] ?? 0} tracked events'),
+                        const SizedBox(height: 6),
+                        const Text(
+                            'Location is self-reported and optional. '
+                            'Unknown locations are shown separately; '
+                            'these counts may differ from existing audience estimates.',
+                            style:
+                                TextStyle(fontSize: 12, color: Colors.black54)),
+                      ],
+                    ),
+                  )),
+                  _group('Countries', report['countries'], 'country'),
+                  _group('Jamaican parishes / regions', report['parishes'],
+                      'parish'),
+                  _group('Visitor actions', report['actions'], 'event_name'),
+                  _group(
+                      'Platforms / devices', report['platforms'], 'platform'),
+                  const SizedBox(height: 12),
+                  const Text(
+                      'Privacy: No exact address, GPS coordinates, '
+                      'or IP address is stored by this feature. '
+                      'Only authenticated, opted-in activity is included.',
+                      style: TextStyle(fontSize: 12, color: Colors.black54)),
+                ]);
+              },
+            )),
+          ],
+        ),
+      ),
     );
   }
 }

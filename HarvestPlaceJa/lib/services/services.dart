@@ -9092,3 +9092,46 @@ Future<List<JamaicaSupplyDemandInsight>> fetchJamaicaSupplyDemandIntelligence({
     return const <JamaicaSupplyDemandInsight>[];
   }
 }
+
+
+// HPJ Visitor Intelligence — consent-based event collection.
+// Call only after a user has explicitly opted in to analytics.
+// Do not pass names, addresses, IPs, GPS coordinates, or sensitive details.
+const Set<String> hpjVisitorAllowedEvents = <String>{
+  'app_open', 'catalog_view', 'product_view', 'search',
+  'cart_view', 'add_to_cart', 'checkout_started', 'order_placed',
+};
+
+Future<bool> recordHpjVisitorEvent({
+  required String eventName,
+  required bool analyticsConsent,
+  String? country,
+  String? parish,
+  String? platform,
+}) async {
+  if (!analyticsConsent || !isLoggedIn ||
+      supabase.auth.currentUser == null ||
+      !hpjVisitorAllowedEvents.contains(eventName)) {
+    return false;
+  }
+
+  String? safeOptional(String? input, int maxLength) {
+    final value = input?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value.length <= maxLength ? value : value.substring(0, maxLength);
+  }
+
+  try {
+    await supabase.from('hpj_visitor_intelligence_events').insert({
+      'user_id': supabase.auth.currentUser!.id,
+      'event_name': eventName,
+      'country': safeOptional(country, 80),
+      'parish': safeOptional(parish, 80),
+      'platform': safeOptional(platform, 32),
+    });
+    return true;
+  } catch (error) {
+    farmDebugLog('Optional visitor analytics event skipped: $error');
+    return false; // Analytics must never interrupt shopping.
+  }
+}

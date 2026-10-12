@@ -1,41 +1,54 @@
 part of harvest_place_app;
 
 // ============================================================================
+
 // HPJ 9/10 MVP PRODUCTION SERVICES
+
 // Audience analytics, operational health, substitutions and release control.
+
 // ============================================================================
 
 String _hpjMvpClean(String? value, {int max = 180}) {
   final clean = (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+
   return clean.length <= max ? clean : clean.substring(0, max);
 }
 
 int _hpjMvpInt(dynamic value, [int fallback = 0]) {
   if (value is int) return value;
+
   if (value is num) return value.toInt();
+
   return int.tryParse((value ?? '').toString()) ?? fallback;
 }
 
 double _hpjMvpDouble(dynamic value, [double fallback = 0]) {
   if (value is num) return value.toDouble();
+
   return double.tryParse((value ?? '').toString()) ?? fallback;
 }
 
 bool _hpjMvpBool(dynamic value, [bool fallback = false]) {
   if (value is bool) return value;
+
   final text = (value ?? '').toString().trim().toLowerCase();
+
   if (text == 'true' || text == '1' || text == 'yes') return true;
+
   if (text == 'false' || text == '0' || text == 'no') return false;
+
   return fallback;
 }
 
 DateTime? _hpjMvpDate(dynamic value) {
   final text = (value ?? '').toString().trim();
+
   return text.isEmpty ? null : DateTime.tryParse(text);
 }
 
 class HpjRuntimePackageInfo {
   final String version;
+
   final int build;
 
   const HpjRuntimePackageInfo({required this.version, required this.build});
@@ -44,24 +57,32 @@ class HpjRuntimePackageInfo {
 
   static Future<HpjRuntimePackageInfo> load() async {
     final cached = _cache;
+
     if (cached != null) return cached;
 
     try {
       final info = await PackageInfo.fromPlatform();
+
       final value = HpjRuntimePackageInfo(
-        version: info.version.trim().isEmpty ? AppConfig.appVersion : info.version.trim(),
+        version: info.version.trim().isEmpty
+            ? AppConfig.appVersion
+            : info.version.trim(),
         build: int.tryParse(info.buildNumber.trim()) ??
             int.tryParse(AppConfig.appBuildNumber) ??
             0,
       );
+
       _cache = value;
+
       return value;
     } catch (_) {
       final value = HpjRuntimePackageInfo(
         version: AppConfig.appVersion,
         build: int.tryParse(AppConfig.appBuildNumber) ?? 0,
       );
+
       _cache = value;
+
       return value;
     }
   }
@@ -69,37 +90,55 @@ class HpjRuntimePackageInfo {
 
 class HpjAudienceAnalytics {
   static const _visitorKey = 'hpj_audience_visitor_id_v1';
+
   static String? _sessionId;
+
   static String? _visitorId;
+
   static Timer? _heartbeat;
+
   static bool _starting = false;
 
   static String get _platform {
     if (kIsWeb) return 'web';
+
     if (defaultTargetPlatform == TargetPlatform.android) return 'android';
+
     if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
+
     return 'other';
   }
 
   static String _newId(String prefix) {
     final random = Random.secure();
+
     final bytes = List<int>.generate(12, (_) => random.nextInt(256));
+
     final tail = base64UrlEncode(bytes).replaceAll('=', '');
+
     return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$tail';
   }
 
   static Future<String> _ensureVisitorId() async {
     if (_visitorId != null) return _visitorId!;
+
     try {
       final prefs = await SharedPreferences.getInstance();
+
       final existing = (prefs.getString(_visitorKey) ?? '').trim();
+
       if (existing.length >= 8) {
         _visitorId = existing;
+
         return existing;
       }
+
       final created = _newId('visitor');
+
       await prefs.setString(_visitorKey, created);
+
       _visitorId = created;
+
       return created;
     } catch (_) {
       return _visitorId ??= _newId('visitor');
@@ -108,24 +147,32 @@ class HpjAudienceAnalytics {
 
   static String _trafficSource() {
     final uri = Uri.base;
+
     for (final key in const ['utm_source', 'source', 'ref']) {
       final value = uri.queryParameters[key]?.trim() ?? '';
+
       if (value.isNotEmpty) return _hpjMvpClean(value, max: 120);
     }
+
     return 'direct';
   }
 
   static Future<void> startSession() async {
     if (_sessionId != null || _starting) return;
+
     _starting = true;
+
     try {
       _sessionId = _newId('session');
+
       await track(
         'session_start',
         screenName: kIsWeb ? 'website' : 'app',
         metadata: <String, dynamic>{'presentation': kIsWeb ? 'web' : 'native'},
       );
+
       _heartbeat?.cancel();
+
       _heartbeat = Timer.periodic(const Duration(minutes: 2), (_) {
         unawaited(track('heartbeat', screenName: 'active_session'));
       });
@@ -143,8 +190,11 @@ class HpjAudienceAnalytics {
   }) async {
     try {
       final visitorId = await _ensureVisitorId();
+
       _sessionId ??= _newId('session');
+
       final package = await HpjRuntimePackageInfo.load();
+
       await supabase.rpc(
         'hpj_record_analytics_event',
         params: <String, dynamic>{
@@ -185,7 +235,9 @@ class HpjAudienceAnalytics {
       'checkout_start': 'checkout_start',
       'purchase': 'order_complete',
     };
+
     final mapped = map[eventType];
+
     if (mapped == null) return Future<void>.value();
 
     final merged = <String, dynamic>{
@@ -204,7 +256,11 @@ class HpjAudienceAnalytics {
     return track(
       mapped,
       screenName: source,
-      entityType: product != null ? 'product' : mapped == 'order_complete' ? 'order' : '',
+      entityType: product != null
+          ? 'product'
+          : mapped == 'order_complete'
+              ? 'order'
+              : '',
       entityId: product?.id ?? orderId,
       metadata: merged,
     );
@@ -214,45 +270,63 @@ class HpjAudienceAnalytics {
 class _HpjAudienceNavigatorObserver extends NavigatorObserver {
   void _record(Route<dynamic>? route) {
     if (route == null) return;
+
     final name = route.settings.name?.trim();
-    final screen = name != null && name.isNotEmpty ? name : route.runtimeType.toString();
+
+    final screen =
+        name != null && name.isNotEmpty ? name : route.runtimeType.toString();
+
     unawaited(HpjAudienceAnalytics.track('screen_view', screenName: screen));
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
+
     _record(route);
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+
     _record(newRoute);
   }
 }
 
-final NavigatorObserver hpjAudienceNavigatorObserver = _HpjAudienceNavigatorObserver();
+final NavigatorObserver hpjAudienceNavigatorObserver =
+    _HpjAudienceNavigatorObserver();
 
 class HpjReliability {
   static bool _initialised = false;
 
   static String get _platform {
     if (kIsWeb) return 'web';
+
     if (defaultTargetPlatform == TargetPlatform.android) return 'android';
+
     if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
+
     return 'other';
   }
 
   static Future<void> initialise() async {
     if (_initialised) return;
+
     _initialised = true;
+
     final info = await HpjRuntimePackageInfo.load();
+
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
-        await FirebaseCrashlytics.instance.setCustomKey('hpj_version', info.version);
-        await FirebaseCrashlytics.instance.setCustomKey('hpj_build', info.build);
-        await FirebaseCrashlytics.instance.setCustomKey('hpj_platform', _platform);
+        await FirebaseCrashlytics.instance
+            .setCustomKey('hpj_version', info.version);
+
+        await FirebaseCrashlytics.instance
+            .setCustomKey('hpj_build', info.build);
+
+        await FirebaseCrashlytics.instance
+            .setCustomKey('hpj_platform', _platform);
       } catch (error) {
         farmDebugLog('Crashlytics setup skipped safely: $error');
       }
@@ -261,31 +335,42 @@ class HpjReliability {
 
   static Future<void> recordFlutterError(FlutterErrorDetails details) async {
     await initialise();
+
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
         await FirebaseCrashlytics.instance.recordFlutterFatalError(details);
       } catch (_) {}
     }
+
     await recordHealthOnly(
       severity: 'fatal',
       area: 'flutter',
       eventKey: 'flutter_error',
       message: details.exceptionAsString(),
+      stackTrace: details.stack ?? StackTrace.current,
+      metadata: <String, dynamic>{
+        'library': details.library ?? '',
+        'context': details.context?.toDescription() ?? '',
+      },
     );
   }
 
   static Future<void> recordUncaught(Object error, StackTrace stack) async {
     await initialise();
+
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
-        await FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        await FirebaseCrashlytics.instance
+            .recordError(error, stack, fatal: true);
       } catch (_) {}
     }
+
     await recordHealthOnly(
       severity: 'fatal',
       area: 'platform',
       eventKey: 'uncaught_platform_error',
       message: error.toString(),
+      stackTrace: stack,
     );
   }
 
@@ -297,6 +382,7 @@ class HpjReliability {
     Map<String, dynamic> metadata = const <String, dynamic>{},
   }) async {
     await initialise();
+
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
         await FirebaseCrashlytics.instance.recordError(
@@ -307,11 +393,13 @@ class HpjReliability {
         );
       } catch (_) {}
     }
+
     await recordHealthOnly(
       severity: 'error',
       area: area,
       eventKey: eventKey,
       message: error.toString(),
+      stackTrace: stackTrace ?? StackTrace.current,
       metadata: metadata,
     );
   }
@@ -321,10 +409,12 @@ class HpjReliability {
     required String area,
     required String eventKey,
     required String message,
+    StackTrace? stackTrace,
     Map<String, dynamic> metadata = const <String, dynamic>{},
   }) async {
     try {
       final info = await HpjRuntimePackageInfo.load();
+
       await supabase.rpc(
         'hpj_record_platform_health_event',
         params: <String, dynamic>{
@@ -335,7 +425,14 @@ class HpjReliability {
           'p_platform': _platform,
           'p_app_version': info.version,
           'p_app_build': info.build,
-          'p_metadata': metadata,
+          'p_metadata': <String, dynamic>{
+            ...metadata,
+            if (stackTrace != null)
+              'stack_trace': stackTrace.toString().length > 6000
+                  ? stackTrace.toString().substring(0, 6000)
+                  : stackTrace.toString(),
+            'captured_at_client': DateTime.now().toUtc().toIso8601String(),
+          },
         },
       );
     } catch (_) {
@@ -346,12 +443,19 @@ class HpjReliability {
 
 class HpjAppReleaseControl {
   final int minAndroidBuild;
+
   final int latestAndroidBuild;
+
   final bool forceLatestUpdate;
+
   final String updateTitle;
+
   final String updateMessage;
+
   final String playStoreUrl;
+
   final int snoozeHours;
+
   final DateTime? updatedAt;
 
   const HpjAppReleaseControl({
@@ -383,8 +487,10 @@ class HpjAppReleaseControl {
     latestAndroidBuild: 1,
     forceLatestUpdate: false,
     updateTitle: 'HPJ update available',
-    updateMessage: 'A newer version of The Harvest Place Ja is ready with improvements and fixes.',
-    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp',
+    updateMessage:
+        'A newer version of The Harvest Place Ja is ready with improvements and fixes.',
+    playStoreUrl:
+        'https://play.google.com/store/apps/details?id=com.harvestplaceja.myapp',
     snoozeHours: 12,
   );
 }
@@ -392,18 +498,24 @@ class HpjAppReleaseControl {
 Future<HpjAppReleaseControl> fetchHpjPublicAppReleaseControl() async {
   try {
     final raw = await supabase.rpc('hpj_public_app_release_control');
+
     if (raw is List && raw.isNotEmpty && raw.first is Map) {
-      return HpjAppReleaseControl.fromMap(Map<String, dynamic>.from(raw.first as Map));
+      return HpjAppReleaseControl.fromMap(
+          Map<String, dynamic>.from(raw.first as Map));
     }
-    if (raw is Map) return HpjAppReleaseControl.fromMap(Map<String, dynamic>.from(raw));
+
+    if (raw is Map)
+      return HpjAppReleaseControl.fromMap(Map<String, dynamic>.from(raw));
   } catch (error) {
     farmDebugLog('Release control fallback: $error');
   }
+
   return HpjAppReleaseControl.fallback;
 }
 
 Future<void> updateHpjAdminAppReleaseControl(HpjAppReleaseControl value) async {
   await requireAdminAccess();
+
   await supabase.rpc(
     'hpj_admin_update_app_release_control',
     params: <String, dynamic>{
@@ -419,19 +531,33 @@ Future<void> updateHpjAdminAppReleaseControl(HpjAppReleaseControl value) async {
 
 class HpjAudienceSnapshot {
   final int days;
+
   final int visitorsToday;
+
   final int activeNow;
+
   final int visitorsPeriod;
+
   final int webVisitors;
+
   final int androidVisitors;
+
   final int signedInVisitors;
+
   final int guestVisitors;
+
   final int newVisitors;
+
   final int returningVisitors;
+
   final int checkoutStarts;
+
   final int ordersCompleted;
+
   final double conversionPct;
+
   final List<Map<String, dynamic>> appVersions;
+
   final List<Map<String, dynamic>> daily;
 
   const HpjAudienceSnapshot({
@@ -455,8 +581,13 @@ class HpjAudienceSnapshot {
   factory HpjAudienceSnapshot.fromMap(Map<String, dynamic> map) {
     List<Map<String, dynamic>> maps(dynamic value) {
       if (value is! List) return const <Map<String, dynamic>>[];
-      return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(growable: false);
+
+      return value
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false);
     }
+
     return HpjAudienceSnapshot(
       days: _hpjMvpInt(map['days'], 30),
       visitorsToday: _hpjMvpInt(map['visitors_today']),
@@ -477,21 +608,34 @@ class HpjAudienceSnapshot {
   }
 }
 
-Future<HpjAudienceSnapshot> fetchHpjAdminAudienceSnapshot({int days = 30}) async {
+Future<HpjAudienceSnapshot> fetchHpjAdminAudienceSnapshot(
+    {int days = 30}) async {
   await requireAdminAccess();
-  final raw = await supabase.rpc('hpj_admin_audience_snapshot', params: {'p_days': days});
-  if (raw is Map) return HpjAudienceSnapshot.fromMap(Map<String, dynamic>.from(raw));
+
+  final raw = await supabase
+      .rpc('hpj_admin_audience_snapshot', params: {'p_days': days});
+
+  if (raw is Map)
+    return HpjAudienceSnapshot.fromMap(Map<String, dynamic>.from(raw));
+
   throw Exception('Audience analytics returned an invalid response.');
 }
 
 class HpjNeedsAttentionSnapshot {
   final int paymentReviews;
+
   final int ordersPreparingTooLong;
+
   final int overdueOrders;
+
   final int lowStockProducts;
+
   final int unansweredMessages;
+
   final int pendingSubstitutions;
+
   final int platformErrors24h;
+
   final int total;
 
   const HpjNeedsAttentionSnapshot({
@@ -521,16 +665,24 @@ class HpjNeedsAttentionSnapshot {
 
 Future<HpjNeedsAttentionSnapshot> fetchHpjAdminNeedsAttention() async {
   await requireAdminAccess();
+
   final raw = await supabase.rpc('hpj_admin_needs_attention');
-  if (raw is Map) return HpjNeedsAttentionSnapshot.fromMap(Map<String, dynamic>.from(raw));
+
+  if (raw is Map)
+    return HpjNeedsAttentionSnapshot.fromMap(Map<String, dynamic>.from(raw));
+
   throw Exception('Needs Attention returned an invalid response.');
 }
 
 class HpjPlatformHealthSnapshot {
   final int days;
+
   final int errors24h;
+
   final int fatals24h;
+
   final int eventsPeriod;
+
   final List<Map<String, dynamic>> recent;
 
   const HpjPlatformHealthSnapshot({
@@ -543,43 +695,70 @@ class HpjPlatformHealthSnapshot {
 
   factory HpjPlatformHealthSnapshot.fromMap(Map<String, dynamic> map) {
     final rawRecent = map['recent'];
+
     return HpjPlatformHealthSnapshot(
       days: _hpjMvpInt(map['days'], 7),
       errors24h: _hpjMvpInt(map['errors_24h']),
       fatals24h: _hpjMvpInt(map['fatals_24h']),
       eventsPeriod: _hpjMvpInt(map['events_period']),
       recent: rawRecent is List
-          ? rawRecent.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(growable: false)
+          ? rawRecent
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList(growable: false)
           : const <Map<String, dynamic>>[],
     );
   }
 }
 
-Future<HpjPlatformHealthSnapshot> fetchHpjAdminPlatformHealth({int days = 7}) async {
+Future<HpjPlatformHealthSnapshot> fetchHpjAdminPlatformHealth(
+    {int days = 7}) async {
   await requireAdminAccess();
-  final raw = await supabase.rpc('hpj_admin_platform_health_snapshot', params: {'p_days': days});
-  if (raw is Map) return HpjPlatformHealthSnapshot.fromMap(Map<String, dynamic>.from(raw));
+
+  final raw = await supabase
+      .rpc('hpj_admin_platform_health_snapshot', params: {'p_days': days});
+
+  if (raw is Map)
+    return HpjPlatformHealthSnapshot.fromMap(Map<String, dynamic>.from(raw));
+
   throw Exception('Platform health returned an invalid response.');
 }
 
 class HpjOrderSubstitution {
   final String id;
+
   final String orderId;
+
   final String originalProductId;
+
   final String originalProductName;
+
   final String replacementProductId;
+
   final String replacementProductName;
+
   final int quantity;
+
   final double originalUnitPrice;
+
   final double replacementUnitPrice;
+
   final double originalLineTotal;
+
   final double replacementLineTotal;
+
   final double priceDifference;
+
   final String status;
+
   final String adminNote;
+
   final String customerNote;
+
   final DateTime? proposedAt;
+
   final DateTime? respondedAt;
+
   final DateTime? appliedAt;
 
   const HpjOrderSubstitution({
@@ -604,7 +783,9 @@ class HpjOrderSubstitution {
   });
 
   bool get awaitingCustomer => status.toLowerCase() == 'proposed';
+
   bool get accepted => status.toLowerCase() == 'accepted';
+
   bool get rejected => status.toLowerCase() == 'rejected';
 
   factory HpjOrderSubstitution.fromMap(Map<String, dynamic> map) {
@@ -612,9 +793,11 @@ class HpjOrderSubstitution {
       id: (map['id'] ?? '').toString(),
       orderId: (map['order_id'] ?? '').toString(),
       originalProductId: (map['original_product_id'] ?? '').toString(),
-      originalProductName: (map['original_product_name'] ?? 'Original item').toString(),
+      originalProductName:
+          (map['original_product_name'] ?? 'Original item').toString(),
       replacementProductId: (map['replacement_product_id'] ?? '').toString(),
-      replacementProductName: (map['replacement_product_name'] ?? 'Replacement item').toString(),
+      replacementProductName:
+          (map['replacement_product_name'] ?? 'Replacement item').toString(),
       quantity: _hpjMvpInt(map['quantity']),
       originalUnitPrice: _hpjMvpDouble(map['original_unit_price']),
       replacementUnitPrice: _hpjMvpDouble(map['replacement_unit_price']),
@@ -633,18 +816,30 @@ class HpjOrderSubstitution {
 
 List<HpjOrderSubstitution> _hpjSubstitutionList(dynamic raw) {
   if (raw is! List) return const <HpjOrderSubstitution>[];
-  return raw.whereType<Map>().map((e) => HpjOrderSubstitution.fromMap(Map<String, dynamic>.from(e))).toList(growable: false);
+
+  return raw
+      .whereType<Map>()
+      .map((e) => HpjOrderSubstitution.fromMap(Map<String, dynamic>.from(e)))
+      .toList(growable: false);
 }
 
-Future<List<HpjOrderSubstitution>> fetchHpjAdminOrderSubstitutions({int limit = 100}) async {
+Future<List<HpjOrderSubstitution>> fetchHpjAdminOrderSubstitutions(
+    {int limit = 100}) async {
   await requireAdminAccess();
-  final raw = await supabase.rpc('hpj_admin_order_substitutions', params: {'p_limit': limit});
+
+  final raw = await supabase
+      .rpc('hpj_admin_order_substitutions', params: {'p_limit': limit});
+
   return _hpjSubstitutionList(raw);
 }
 
-Future<List<HpjOrderSubstitution>> fetchHpjCustomerOrderSubstitutions(String orderId) async {
+Future<List<HpjOrderSubstitution>> fetchHpjCustomerOrderSubstitutions(
+    String orderId) async {
   if (!isLoggedIn) return const <HpjOrderSubstitution>[];
-  final raw = await supabase.rpc('hpj_customer_order_substitutions', params: {'p_order_id': orderId});
+
+  final raw = await supabase
+      .rpc('hpj_customer_order_substitutions', params: {'p_order_id': orderId});
+
   return _hpjSubstitutionList(raw);
 }
 
@@ -655,6 +850,7 @@ Future<void> hpjAdminProposeOrderSubstitution({
   String note = '',
 }) async {
   await requireAdminAccess();
+
   await supabase.rpc(
     'hpj_admin_propose_order_substitution',
     params: <String, dynamic>{
@@ -664,10 +860,12 @@ Future<void> hpjAdminProposeOrderSubstitution({
       'p_admin_note': note.trim().isEmpty ? null : note.trim(),
     },
   );
+
   await createOrderCustomerNotification(
     orderId: orderId,
     title: 'Fresh item replacement needs your approval',
-    message: 'HPJ proposed a replacement for one item in order #${shortIdLabel(orderId)}. Open Order Details to accept or reject it.',
+    message:
+        'HPJ proposed a replacement for one item in order #${shortIdLabel(orderId)}. Open Order Details to accept or reject it.',
     type: 'order',
   );
 }
@@ -681,24 +879,31 @@ Future<void> hpjCustomerRespondToSubstitution({
     params: <String, dynamic>{
       'p_substitution_id': substitution.id,
       'p_accept': accept,
-      'p_customer_note': accept ? 'Customer accepted in HPJ.' : 'Customer rejected in HPJ.',
+      'p_customer_note':
+          accept ? 'Customer accepted in HPJ.' : 'Customer rejected in HPJ.',
     },
   );
+
   await createAdminNotification(
     title: accept ? 'Substitution accepted' : 'Substitution rejected',
-    message: 'Customer ${accept ? 'accepted' : 'rejected'} the proposed replacement on order #${shortIdLabel(substitution.orderId)}.',
+    message:
+        'Customer ${accept ? 'accepted' : 'rejected'} the proposed replacement on order #${shortIdLabel(substitution.orderId)}.',
     type: 'admin',
     orderId: substitution.orderId,
     actionType: 'admin_customer_order',
     actionId: substitution.orderId,
-    dedupeKey: 'substitution-response:${substitution.id}:${accept ? 'accepted' : 'rejected'}',
+    dedupeKey:
+        'substitution-response:${substitution.id}:${accept ? 'accepted' : 'rejected'}',
   );
 }
 
 class HpjSubstitutionOrderItemCandidate {
   final String productId;
+
   final String productName;
+
   final int quantity;
+
   final double unitPrice;
 
   const HpjSubstitutionOrderItemCandidate({
@@ -711,9 +916,13 @@ class HpjSubstitutionOrderItemCandidate {
 
 class HpjSubstitutionOrderCandidate {
   final String orderId;
+
   final String orderStatus;
+
   final String paymentStatus;
+
   final DateTime? createdAt;
+
   final List<HpjSubstitutionOrderItemCandidate> items;
 
   const HpjSubstitutionOrderCandidate({
@@ -725,29 +934,45 @@ class HpjSubstitutionOrderCandidate {
   });
 }
 
-Future<List<HpjSubstitutionOrderCandidate>> fetchHpjSubstitutionOrderCandidates() async {
+Future<List<HpjSubstitutionOrderCandidate>>
+    fetchHpjSubstitutionOrderCandidates() async {
   await requireAdminAccess();
+
   final raw = await supabase
       .from('orders')
-      .select('id,order_status,payment_status,created_at,order_items(product_id,product_name,quantity,unit_price)')
+      .select(
+          'id,order_status,payment_status,created_at,order_items(product_id,product_name,quantity,unit_price)')
       .order('created_at', ascending: false)
       .limit(80);
 
   final result = <HpjSubstitutionOrderCandidate>[];
+
   for (final row in (raw as List)) {
     final map = Map<String, dynamic>.from(row as Map);
+
     final status = (map['order_status'] ?? 'pending').toString().toLowerCase();
-    final payment = (map['payment_status'] ?? 'unpaid').toString().toLowerCase();
-    if (<String>{'cancelled', 'rejected', 'delivered', 'completed', 'collected'}.contains(status)) continue;
-    if (<String>{'paid', 'verified', 'completed', 'complete'}.contains(payment)) continue;
+
+    final payment =
+        (map['payment_status'] ?? 'unpaid').toString().toLowerCase();
+
+    if (<String>{'cancelled', 'rejected', 'delivered', 'completed', 'collected'}
+        .contains(status)) continue;
+
+    if (<String>{'paid', 'verified', 'completed', 'complete'}.contains(payment))
+      continue;
 
     final items = <HpjSubstitutionOrderItemCandidate>[];
+
     final rawItems = map['order_items'];
+
     if (rawItems is List) {
       for (final item in rawItems.whereType<Map>()) {
         final m = Map<String, dynamic>.from(item);
+
         final id = (m['product_id'] ?? '').toString();
+
         if (id.isEmpty) continue;
+
         items.add(HpjSubstitutionOrderItemCandidate(
           productId: id,
           productName: (m['product_name'] ?? 'Product').toString(),
@@ -756,7 +981,9 @@ Future<List<HpjSubstitutionOrderCandidate>> fetchHpjSubstitutionOrderCandidates(
         ));
       }
     }
+
     if (items.isEmpty) continue;
+
     result.add(HpjSubstitutionOrderCandidate(
       orderId: (map['id'] ?? '').toString(),
       orderStatus: status,
@@ -765,5 +992,65 @@ Future<List<HpjSubstitutionOrderCandidate>> fetchHpjSubstitutionOrderCandidates(
       items: items,
     ));
   }
+
   return result;
+}
+
+// HPJ Phase 4 — issue workflow. Requires HPJ_PHASE4_reliability.sql.
+String hpjReliabilityIssueKey(Map<String, dynamic> row) {
+  final area = (row['area'] ?? 'app').toString().trim().toLowerCase();
+  final event = (row['event_key'] ?? row['message'] ?? 'unknown')
+      .toString()
+      .trim()
+      .toLowerCase();
+  final severity = (row['severity'] ?? 'error').toString().trim().toLowerCase();
+  return '$area|$event|$severity';
+}
+
+Future<Map<String, Map<String, dynamic>>> fetchHpjReliabilityIssues() async {
+  await requireAdminAccess();
+  final response = await supabase
+      .from('hpj_reliability_issues')
+      .select('issue_key,status,assigned_to,admin_note,updated_at')
+      .order('updated_at', ascending: false)
+      .limit(500);
+  return {
+    for (final value in (response as List))
+      if (value is Map)
+        Map<String, dynamic>.from(value)['issue_key'].toString():
+            Map<String, dynamic>.from(value),
+  };
+}
+
+Future<void> saveHpjReliabilityIssue({
+  required String issueKey,
+  required String status,
+  required String note,
+  required String assignedTo,
+}) async {
+  await requireAdminAccess();
+  const allowed = {'new', 'investigating', 'resolved', 'reopened'};
+  if (!allowed.contains(status)) throw ArgumentError('Invalid issue status');
+  final userId = supabase.auth.currentUser?.id;
+  if (userId == null) throw StateError('Sign in required');
+  await supabase.from('hpj_reliability_issues').upsert({
+    'issue_key': issueKey,
+    'status': status,
+    'admin_note': note.trim(),
+    'assigned_to': assignedTo.trim(),
+    'updated_by': userId,
+    'updated_at': DateTime.now().toUtc().toIso8601String(),
+  }, onConflict: 'issue_key');
+}
+
+// Priority scoring is calculated server-side over all historical health events.
+// This avoids truncating counts to the small recent-events dashboard sample.
+Future<List<Map<String, dynamic>>> fetchHpjReliabilityPriorities() async {
+  await requireAdminAccess();
+  final result = await supabase.rpc('hpj_reliability_priorities');
+  if (result is! List) return <Map<String, dynamic>>[];
+  return result
+      .whereType<Map>()
+      .map((row) => Map<String, dynamic>.from(row))
+      .toList();
 }

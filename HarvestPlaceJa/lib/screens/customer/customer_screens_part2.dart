@@ -29415,6 +29415,7 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final nameController = TextEditingController();
+  bool _deliveryNameEdited = false;
   final phoneController = TextEditingController();
   final addressController = TextEditingController();
   final notesController = TextEditingController();
@@ -29514,6 +29515,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.initState();
     final user = supabase.auth.currentUser;
     nameController.text = user?.userMetadata?['full_name']?.toString() ?? '';
+    nameController.addListener(_onDeliveryNameChanged);
     final now = DateTime.now();
     final daysUntilFriday = (DateTime.friday - now.weekday + 7) % 7;
     final nextFriday = now.add(
@@ -29606,13 +29608,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
   }
 
+  void _onDeliveryNameChanged() {
+    _deliveryNameEdited = true;
+  }
+
   Future<void> loadSavedCustomerProfile() async {
     final profile = await fetchCurrentCustomerProfile();
     if (!mounted || profile == null) return;
     setState(() {
       savedProfile = profile;
-      if (nameController.text.trim().isEmpty) {
-        nameController.text = profile.fullName;
+      // The saved HPJ customer profile is authoritative for the default
+      // recipient name. Google metadata may still contain the old name.
+      // Do not overwrite a recipient name the customer has typed manually.
+      if (!_deliveryNameEdited && profile.fullName.trim().isNotEmpty) {
+        nameController.text = profile.fullName.trim();
+        _deliveryNameEdited = false;
       }
       phoneController.text = profile.phone;
       addressController.text = profile.address;
@@ -29688,6 +29698,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   void dispose() {
+    nameController.removeListener(_onDeliveryNameChanged);
     nameController.dispose();
     phoneController.dispose();
     addressController.dispose();

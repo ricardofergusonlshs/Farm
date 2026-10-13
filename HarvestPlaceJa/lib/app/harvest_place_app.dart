@@ -1276,18 +1276,29 @@ Future<void> openHpjHelpTutorial(
   );
 }
 
-class FamilyFarmApp extends StatelessWidget {
+class FamilyFarmApp extends StatefulWidget {
   const FamilyFarmApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  State<FamilyFarmApp> createState() => _FamilyFarmAppState();
+}
+
+class _FamilyFarmAppState extends State<FamilyFarmApp> {
+  @override
+  void initState() {
+    super.initState();
+    // One-time app startup work. Never re-register it on widget rebuilds.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       unawaited(PushNotificationService.flushPendingNavigation());
       unawaited(HpjReliability.initialise());
       unawaited(HpjAudienceAnalytics.startSession());
       unawaited(HpjAppUpdateService.checkForUpdate());
     });
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: hpjRootNavigatorKey,
       navigatorObservers: [hpjAudienceNavigatorObserver],
